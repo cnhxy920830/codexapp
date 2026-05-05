@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+src-tauri/target/
+src-tauri/gen/
+
+# Keep lockfiles under version control for reproducible app builds.
+!package-lock.json
+!src-tauri/Cargo.lock
+
+# Reverse-engineering artifacts can grow without bound; keep only tracker/docs placeholders.
+compare/*

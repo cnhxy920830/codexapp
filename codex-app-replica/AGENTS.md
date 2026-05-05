@@ -32,10 +32,11 @@ This directory is for building a Windows Codex App replica with Tauri + React.
 
 ## Source Of Truth
 
-- The installed Windows Codex App is the authoritative source of truth for UI, layout, assets, window behavior, interactions, shortcuts, auth handling, and protocol behavior.
-- When behavior is unknown or unverifiable from code, only use these comparison methods against the installed app: screenshots, resource extraction, network packet capture, and protocol observation.
-- Resource extraction has the highest priority among comparison methods.
-- Prefer observed behavior from the installed app over inference from adjacent code.
+- The installed Windows Codex App is the sole authoritative baseline for UI, page layout, static assets, window behavior, interaction logic, shortcuts, auth handling, and protocol behavior.
+- If code cannot determine or verify behavior, comparison against the installed app is limited to these methods only: resource extraction, network packet capture, and protocol observation.
+- Resource extraction is the default and highest-priority comparison method.
+- Do not continue with lower-priority comparison methods unless there is a concrete, necessary, and tracker-documented reason that resource extraction is insufficient for the specific question being answered.
+- Prefer extracted resources and directly observed runtime behavior from the installed app over inference from adjacent code.
 
 ## Backend And Auth Constraints
 
@@ -60,7 +61,7 @@ This directory is for building a Windows Codex App replica with Tauri + React.
 - Store all comparison artifacts in `codex-app-replica/compare/`.
 - Keep artifact subdirectories stable across sessions to avoid directory drift and duplicate work.
 - Use the same comparison artifact locations for repeated captures of the same target version unless the user explicitly requests a new baseline.
-- Use stable subdirectories under `compare/` for `resources/`, `screenshots/`, `network/`, `protocol/`, `recordings/`, and `baselines/<target-version>/`.
+- Use stable subdirectories under `compare/` for `resources/`, `network/`, `protocol/`, `recordings/`, and `baselines/<target-version>/`.
 - Maintain a single living tracker at `codex-app-replica/compare/tracker.md` for the full feature list, open TODOs, blocked items, and verification status.
 - The tracker format is a single Markdown file.
 - Track entries must use stable fields: `ID`, `Status`, `Priority`, `Blocked Reason`, `Evidence`, and `Notes`.
@@ -107,7 +108,7 @@ This directory is for building a Windows Codex App replica with Tauri + React.
 ## Verification And Acceptance
 
 - Validate by stages, not by frequent ad hoc acceptance checks.
-- Preferred evidence includes screenshot diff, interaction replay, protocol or RPC comparison, local build validation, and local install validation.
+- Preferred evidence includes resource extraction diff, interaction replay, protocol or RPC comparison, local build validation, and local install validation.
 - Do not claim parity without evidence against the installed Windows Codex App baseline.
 
 ## Implementation Guardrails

@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+:root {
+  --app-shell-surface: #e9e7e3;
+  --app-shell-topbar: #e6e3df;
+  --app-shell-sidebar: #e4e1dc;
+  --app-shell-main-surface: #f9f8f6;
+  --app-shell-right: #f3f1ed;
+  --app-shell-border: color-mix(in srgb, #181818 8%, transparent);
+  --app-shell-border-heavy: color-mix(in srgb, #181818 12%, transparent);
+  --app-shell-text: #201d19;
+  --app-shell-muted: #6b635a;
+  --app-shell-subtle: #8e877d;
+  --app-shell-toolbar: 46px;
+  --app-shell-toolbar-sm: 36px;
+  --app-shell-toolbar-pane: 40px;
+  --app-shell-sidebar-width: clamp(240px, 300px, min(520px, calc(100vw - 320px)));
+  --app-shell-right-width: 332px;
+  --app-shell-panel-gap: 12px;
+  --app-shell-ui-font-size: 14px;
+  --app-shell-code-font-size: 12px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+html {
+  background: var(--app-shell-surface);
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--app-shell-surface);
+  color: var(--app-shell-text);
+  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: var(--app-shell-ui-font-size);
+  line-height: 1.5;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+button,
+[role="button"],
+a,
+input[type="checkbox"],
+select {
+  cursor: pointer;
+}
+
+.app-no-pointer-cursors button,
+.app-no-pointer-cursors [role="button"],
+.app-no-pointer-cursors a,
+.app-no-pointer-cursors input[type="checkbox"],
+.app-no-pointer-cursors select {
+  cursor: default;
+}
+
+code,
+pre,
+.font-mono {
+  font-size: var(--app-shell-code-font-size);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: color-mix(in srgb, #0285ff 22%, white);
+}
