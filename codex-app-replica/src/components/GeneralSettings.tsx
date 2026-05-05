@@ -2,14 +2,18 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   applyGeneralSettingsSnapshot,
   DEFAULT_GENERAL_SETTINGS,
+  type FollowUpQueueMode,
   readGeneralSettingsSnapshot,
   resolveLocalePreference,
+  type ReviewDelivery,
   setGlobalState,
   type GeneralSettingsSnapshot,
   type GlobalStateKey,
 } from "../services/settings";
 import { useI18n } from "../i18n/i18n";
 import { SUPPORTED_LOCALES, getLocaleLabel, type LocaleCode } from "../i18n/messages";
+
+const INVERT_FOLLOW_UP_SHORTCUT_LABEL = "Ctrl+Enter";
 
 export function GeneralSettings() {
   const { locale, setLocale, t } = useI18n();
@@ -81,6 +85,25 @@ export function GeneralSettings() {
     }
   };
 
+  const persistChoice = async (
+    field: "followUpQueueMode" | "reviewDelivery",
+    key: GlobalStateKey,
+    value: FollowUpQueueMode | ReviewDelivery,
+  ) => {
+    const previousState = state;
+    setState((current) => ({ ...current, [field]: value }));
+    setError(null);
+    setIsSaving(true);
+    try {
+      await setGlobalState(key, value);
+    } catch (err) {
+      setState(previousState);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const persistLocale = async (value: string) => {
     const nextValue = value === "auto" ? null : value;
     const previousState = state;
@@ -106,7 +129,7 @@ export function GeneralSettings() {
       <div className="rounded-[18px] border border-[var(--app-shell-border)] bg-white/92 px-5 py-4">
         <div className="text-[12px] uppercase tracking-[0.16em] text-[var(--app-shell-subtle)]">{t("general.appearance")}</div>
         <div className="mt-4 space-y-4 text-[14px]">
-          <Row label={t("general.language")}>
+          <SettingRow label={t("general.language")} description={t("general.languageDescription")}>
             <select
               value={state.localeOverride ?? "auto"}
               disabled={isLoading || isSaving}
@@ -125,16 +148,16 @@ export function GeneralSettings() {
                 </option>
               ))}
             </select>
-          </Row>
-          <Row label={t("general.usePointerCursors")}>
+          </SettingRow>
+          <SettingRow label={t("general.usePointerCursors")} description={t("general.usePointerCursorsDescription")}>
             <input
               type="checkbox"
               checked={state.usePointerCursors}
               disabled={isLoading || isSaving}
               onChange={(event) => void persistBoolean("usePointerCursors", event.target.checked)}
             />
-          </Row>
-          <Row label={t("general.uiFontSize")}>
+          </SettingRow>
+          <SettingRow label={t("general.uiFontSize")} description={t("general.uiFontSizeDescription")}>
             <NumberInput
               value={state.uiFontSize}
               disabled={isLoading || isSaving}
@@ -142,8 +165,8 @@ export function GeneralSettings() {
               max={16}
               onCommit={(value) => void persistNumber("uiFontSize", "sansFontSize", value)}
             />
-          </Row>
-          <Row label={t("general.codeFontSize")}>
+          </SettingRow>
+          <SettingRow label={t("general.codeFontSize")} description={t("general.codeFontSizeDescription")}>
             <NumberInput
               value={state.codeFontSize}
               disabled={isLoading || isSaving}
@@ -151,7 +174,40 @@ export function GeneralSettings() {
               max={24}
               onCommit={(value) => void persistNumber("codeFontSize", "codeFontSize", value)}
             />
-          </Row>
+          </SettingRow>
+        </div>
+      </div>
+      <div className="rounded-[18px] border border-[var(--app-shell-border)] bg-white/92 px-5 py-4">
+        <div className="space-y-4 text-[14px]">
+          <SettingRow
+            label={t("general.followUpBehavior")}
+            description={t("general.followUpBehaviorDescription", {
+              invertFollowUpShortcutLabel: INVERT_FOLLOW_UP_SHORTCUT_LABEL,
+            })}
+          >
+            <SegmentedControl
+              value={state.followUpQueueMode}
+              disabled={isLoading || isSaving}
+              options={[
+                { value: "queue", label: t("general.followUpQueue") },
+                { value: "steer", label: t("general.followUpSteer") },
+              ]}
+              onChange={(value) =>
+                void persistChoice("followUpQueueMode", "followUpQueueMode", value as FollowUpQueueMode)
+              }
+            />
+          </SettingRow>
+          <SettingRow label={t("general.reviewDelivery")} description={t("general.reviewDeliveryDescription")}>
+            <SegmentedControl
+              value={state.reviewDelivery}
+              disabled={isLoading || isSaving}
+              options={[
+                { value: "inline", label: t("general.reviewInline") },
+                { value: "detached", label: t("general.reviewDetached") },
+              ]}
+              onChange={(value) => void persistChoice("reviewDelivery", "reviewDelivery", value as ReviewDelivery)}
+            />
+          </SettingRow>
         </div>
       </div>
       {error ? (
@@ -166,12 +222,54 @@ export function GeneralSettings() {
   );
 }
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
+function SettingRow({
+  label,
+  description,
+  children,
+}: {
+  label: string;
+  description?: string;
+  children: ReactNode;
+}) {
   return (
-    <label className="flex items-center justify-between gap-4">
-      <span>{label}</span>
+    <div className="flex items-start justify-between gap-4">
+      <div className="min-w-0 flex-1">
+        <div>{label}</div>
+        {description ? <div className="mt-1 text-[12px] leading-5 text-[#7f766d]">{description}</div> : null}
+      </div>
       {children}
-    </label>
+    </div>
+  );
+}
+
+function SegmentedControl({
+  disabled,
+  onChange,
+  options,
+  value,
+}: {
+  disabled: boolean;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+  value: string;
+}) {
+  return (
+    <div className="inline-flex rounded-[12px] border border-black/8 bg-white p-1">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(option.value)}
+          className={[
+            "rounded-[9px] px-3 py-1.5 text-[13px] transition disabled:cursor-not-allowed disabled:text-[#a29a91]",
+            option.value === value ? "bg-[#ecebea] text-[#302b25]" : "text-[#6a6259] hover:bg-[#f5f3f0]",
+          ].join(" ")}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
   );
 }
 

@@ -1,15 +1,20 @@
 mod auth_bridge;
 mod global_settings;
+mod thread_history;
 use auth_bridge::cancel_login;
-use auth_bridge::read_config;
 use auth_bridge::get_auth_state;
+use auth_bridge::interrupt_turn;
 use auth_bridge::list_recent_threads;
-use auth_bridge::read_thread;
 use auth_bridge::login_api_key;
 use auth_bridge::login_chatgpt;
 use auth_bridge::login_chatgpt_device_code;
 use auth_bridge::logout;
+use auth_bridge::read_config;
+use auth_bridge::read_thread;
+use auth_bridge::respond_to_approval_request;
 use auth_bridge::shared_state;
+use auth_bridge::start_thread;
+use auth_bridge::start_turn;
 use auth_bridge::write_config_value;
 use global_settings::get_global_state;
 use global_settings::set_global_state;
@@ -45,6 +50,10 @@ pub fn run() {
             get_auth_state,
             read_config,
             list_recent_threads,
+            start_thread,
+            start_turn,
+            interrupt_turn,
+            respond_to_approval_request,
             read_thread,
             get_global_state,
             login_api_key,

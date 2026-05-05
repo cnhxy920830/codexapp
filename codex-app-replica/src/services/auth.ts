@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { MessageKey } from "../i18n/messages";
+import type { MessageKey, MessageValues } from "../i18n/messages";
 
 export type AuthState = {
   authMethod: string | null;
@@ -86,7 +86,7 @@ export function onAuthSnapshotChange(handler: (snapshot: AuthSnapshot) => void) 
   });
 }
 
-type TranslateMessage = (key: MessageKey) => string;
+type TranslateMessage = (key: MessageKey, values?: MessageValues) => string;
 
 export function formatAuthLabel(snapshot: AuthSnapshot | null, t: TranslateMessage) {
   if (!snapshot || snapshot.isLoading) {

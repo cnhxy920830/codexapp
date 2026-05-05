@@ -8,7 +8,18 @@ use tokio::process::{ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{sleep, Duration};
 
+use crate::thread_history::append_agent_message_delta;
+use crate::thread_history::append_command_execution_output_delta;
+use crate::thread_history::map_file_change_summary;
+use crate::thread_history::map_thread_item;
+use crate::thread_history::replace_file_change_changes;
+use crate::thread_history::thread_item_id;
+use crate::thread_history::FileChangeSummary;
+use crate::thread_history::ThreadConversation;
+use crate::thread_history::ThreadConversationItem;
+
 const AUTH_EVENT: &str = "auth-state-changed";
+const THREAD_EVENT: &str = "thread-event";
 const CLIENT_NAME: &str = "codex-app-replica";
 const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -53,21 +64,11 @@ pub struct ThreadHistoryEntry {
     pub name: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct ThreadConversation {
-    pub id: String,
-    pub title: String,
-    pub cwd: String,
-    pub messages: Vec<ThreadConversationMessage>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct ThreadConversationMessage {
-    pub id: String,
-    pub role: String,
-    pub text: String,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(untagged)]
+pub enum JsonRpcId {
+    Integer(i64),
+    String(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -176,6 +177,30 @@ struct ThreadReadResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct ThreadStartResponse {
+    thread: ThreadStartThread,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TurnStartResponse {
+    turn: TurnStartTurn,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TurnStartTurn {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadStartThread {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ThreadReadThread {
     id: String,
     preview: String,
@@ -187,6 +212,7 @@ struct ThreadReadThread {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ThreadReadTurn {
+    id: String,
     items: Vec<serde_json::Value>,
 }
 
@@ -218,7 +244,46 @@ impl Default for AuthSnapshot {
 pub struct AuthBridgeState {
     snapshot: Mutex<AuthSnapshot>,
     is_ready: Mutex<bool>,
-    request_tx: Mutex<Option<mpsc::UnboundedSender<AppServerRequest>>>,
+    request_tx: Mutex<Option<mpsc::UnboundedSender<AppServerMessage>>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ThreadEventPayload {
+    ThreadItemUpdated {
+        thread_id: String,
+        turn_id: String,
+        item: ThreadConversationItem,
+    },
+    TurnCompleted {
+        thread_id: String,
+        turn_id: String,
+        status: String,
+        error: Option<String>,
+    },
+    CommandApprovalRequested {
+        request_id: JsonRpcId,
+        thread_id: String,
+        turn_id: String,
+        item_id: String,
+        reason: Option<String>,
+        command: Option<String>,
+        cwd: Option<String>,
+        available_decisions: Option<Vec<String>>,
+    },
+    FileChangeApprovalRequested {
+        request_id: JsonRpcId,
+        thread_id: String,
+        turn_id: String,
+        item_id: String,
+        reason: Option<String>,
+        grant_root: Option<String>,
+        changes: Vec<FileChangeSummary>,
+    },
+    ServerRequestResolved {
+        request_id: JsonRpcId,
+        thread_id: String,
+    },
 }
 
 impl Default for AuthBridgeState {
@@ -274,11 +339,17 @@ enum LoginStartResult {
 #[serde(untagged)]
 enum JsonRpcMessage {
     Response {
-        id: i64,
+        id: JsonRpcId,
         #[serde(default)]
         result: Option<serde_json::Value>,
         #[serde(default)]
         error: Option<JsonRpcError>,
+    },
+    Request {
+        id: JsonRpcId,
+        method: String,
+        #[serde(default)]
+        params: serde_json::Value,
     },
     Notification {
         method: String,
@@ -303,13 +374,27 @@ enum AppServerRequestKind {
     ConfigRead,
     ConfigValueWrite,
     ThreadList,
+    ThreadStart,
     ThreadRead,
+    TurnStart,
+    TurnInterrupt,
 }
 
 struct AppServerRequest {
     kind: AppServerRequestKind,
     payload: serde_json::Value,
     response_tx: Option<oneshot::Sender<Result<serde_json::Value, String>>>,
+}
+
+struct AppServerResponse {
+    request_id: JsonRpcId,
+    result: serde_json::Value,
+    response_tx: Option<oneshot::Sender<Result<(), String>>>,
+}
+
+enum AppServerMessage {
+    Request(AppServerRequest),
+    Response(AppServerResponse),
 }
 
 #[tauri::command]
@@ -462,14 +547,18 @@ pub async fn cancel_login(
 
 #[tauri::command]
 pub async fn logout(app: AppHandle, state: State<'_, Arc<AuthBridgeState>>) -> Result<(), String> {
-    send_request(state.inner(), AppServerRequestKind::Logout, serde_json::json!({}))
-        .await
-        .map(|_| ())
-        .map(|_| clear_login_state(&app, state.inner()))
-        .map_err(|error| {
-            set_login_error(&app, state.inner(), error.clone());
-            error
-        })
+    send_request(
+        state.inner(),
+        AppServerRequestKind::Logout,
+        serde_json::json!({}),
+    )
+    .await
+    .map(|_| ())
+    .map(|_| clear_login_state(&app, state.inner()))
+    .map_err(|error| {
+        set_login_error(&app, state.inner(), error.clone());
+        error
+    })
 }
 
 #[tauri::command]
@@ -548,6 +637,83 @@ pub async fn list_recent_threads(
 }
 
 #[tauri::command]
+pub async fn start_thread(
+    state: State<'_, Arc<AuthBridgeState>>,
+    cwd: Option<String>,
+) -> Result<String, String> {
+    let payload = match cwd {
+        Some(cwd) => serde_json::json!({ "cwd": cwd }),
+        None => serde_json::json!({}),
+    };
+    let value = send_request(state.inner(), AppServerRequestKind::ThreadStart, payload).await?;
+    let response = serde_json::from_value::<ThreadStartResponse>(value)
+        .map_err(|err| format!("failed to decode thread start response: {err}"))?;
+    Ok(response.thread.id)
+}
+
+#[tauri::command]
+pub async fn start_turn(
+    state: State<'_, Arc<AuthBridgeState>>,
+    thread_id: String,
+    text: String,
+    cwd: Option<String>,
+) -> Result<String, String> {
+    let payload = match cwd {
+        Some(cwd) => serde_json::json!({
+            "threadId": thread_id,
+            "input": [
+                { "type": "text", "text": text }
+            ],
+            "cwd": cwd,
+        }),
+        None => serde_json::json!({
+            "threadId": thread_id,
+            "input": [
+                { "type": "text", "text": text }
+            ],
+        }),
+    };
+    let value = send_request(state.inner(), AppServerRequestKind::TurnStart, payload).await?;
+    let response = serde_json::from_value::<TurnStartResponse>(value)
+        .map_err(|err| format!("failed to decode turn start response: {err}"))?;
+    Ok(response.turn.id)
+}
+
+#[tauri::command]
+pub async fn interrupt_turn(
+    state: State<'_, Arc<AuthBridgeState>>,
+    thread_id: String,
+    turn_id: String,
+) -> Result<(), String> {
+    send_request(
+        state.inner(),
+        AppServerRequestKind::TurnInterrupt,
+        serde_json::json!({
+            "threadId": thread_id,
+            "turnId": turn_id,
+        }),
+    )
+    .await
+    .map(|_| ())
+}
+
+#[tauri::command]
+pub async fn respond_to_approval_request(
+    state: State<'_, Arc<AuthBridgeState>>,
+    request_id: JsonRpcId,
+    decision: serde_json::Value,
+) -> Result<(), String> {
+    send_response(
+        state.inner(),
+        request_id,
+        serde_json::json!({
+            "decision": decision,
+        }),
+    )
+    .await
+}
+
+#[tauri::command]
 pub async fn read_thread(
     state: State<'_, Arc<AuthBridgeState>>,
     thread_id: String,
@@ -563,12 +729,16 @@ pub async fn read_thread(
     .await?;
     let response = serde_json::from_value::<ThreadReadResponse>(value)
         .map_err(|err| format!("failed to decode thread read response: {err}"))?;
-    let messages = response
+    let items = response
         .thread
         .turns
         .into_iter()
-        .flat_map(|turn| turn.items.into_iter())
-        .filter_map(map_thread_message)
+        .flat_map(|turn| {
+            let turn_id = turn.id;
+            turn.items
+                .into_iter()
+                .filter_map(move |item| map_thread_item(&turn_id, &item))
+        })
         .collect::<Vec<_>>();
     Ok(ThreadConversation {
         id: response.thread.id,
@@ -579,7 +749,7 @@ pub async fn read_thread(
             .trim()
             .to_string(),
         cwd: response.thread.cwd,
-        messages,
+        items,
     })
 }
 
@@ -623,12 +793,13 @@ async fn run_client(
     state: Arc<AuthBridgeState>,
     mut stdin: ChildStdin,
     stdout: ChildStdout,
-    mut request_rx: mpsc::UnboundedReceiver<AppServerRequest>,
+    mut request_rx: mpsc::UnboundedReceiver<AppServerMessage>,
 ) {
     let mut next_request_id: i64 = 1;
-    let mut pending = HashMap::<i64, AppServerRequestKind>::new();
+    let mut pending = HashMap::<JsonRpcId, AppServerRequestKind>::new();
     let mut pending_result =
-        HashMap::<i64, oneshot::Sender<Result<serde_json::Value, String>>>::new();
+        HashMap::<JsonRpcId, oneshot::Sender<Result<serde_json::Value, String>>>::new();
+    let mut pending_thread_items = HashMap::<String, ThreadConversationItem>::new();
     let mut lines = BufReader::new(stdout).lines();
     let mut initialized = false;
 
@@ -651,34 +822,58 @@ async fn run_client(
         set_bridge_error(&app, &state, err);
         return;
     }
-    pending.insert(next_request_id, AppServerRequestKind::AccountRead);
+    pending.insert(
+        JsonRpcId::Integer(next_request_id),
+        AppServerRequestKind::AccountRead,
+    );
     next_request_id += 1;
 
     loop {
         tokio::select! {
-            maybe_request = request_rx.recv() => {
-                let Some(request) = maybe_request else {
+            maybe_message = request_rx.recv() => {
+                let Some(message) = maybe_message else {
                     break;
                 };
-                let request_id = next_request_id;
-                next_request_id += 1;
-                let method = request_method(&request.kind);
-                let payload = serde_json::json!({
-                    "method": method,
-                    "id": request_id,
-                    "params": request.payload,
-                });
-                if let Some(response_tx) = request.response_tx {
-                    pending_result.insert(request_id, response_tx);
-                }
-                pending.insert(request_id, request.kind);
-                if let Err(err) = write_json(&mut stdin, &payload).await {
-                    if let Some(response_tx) = pending_result.remove(&request_id) {
-                        let _ = response_tx.send(Err(err.clone()));
+                match message {
+                    AppServerMessage::Request(request) => {
+                        let request_id = next_request_id;
+                        next_request_id += 1;
+                        let request_id_value = JsonRpcId::Integer(request_id);
+                        let method = request_method(&request.kind);
+                        let payload = serde_json::json!({
+                            "method": method,
+                            "id": request_id,
+                            "params": request.payload,
+                        });
+                        if let Some(response_tx) = request.response_tx {
+                            pending_result.insert(request_id_value.clone(), response_tx);
+                        }
+                        pending.insert(request_id_value.clone(), request.kind);
+                        if let Err(err) = write_json(&mut stdin, &payload).await {
+                            if let Some(response_tx) = pending_result.remove(&request_id_value) {
+                                let _ = response_tx.send(Err(err.clone()));
+                            }
+                            pending.remove(&request_id_value);
+                            set_bridge_error(&app, &state, err);
+                            break;
+                        }
                     }
-                    pending.remove(&request_id);
-                    set_bridge_error(&app, &state, err);
-                    break;
+                    AppServerMessage::Response(response) => {
+                        let payload = serde_json::json!({
+                            "id": response.request_id,
+                            "result": response.result,
+                        });
+                        if let Err(err) = write_json(&mut stdin, &payload).await {
+                            if let Some(response_tx) = response.response_tx {
+                                let _ = response_tx.send(Err(err.clone()));
+                            }
+                            set_bridge_error(&app, &state, err);
+                            break;
+                        }
+                        if let Some(response_tx) = response.response_tx {
+                            let _ = response_tx.send(Ok(()));
+                        }
+                    }
                 }
             }
             line = lines.next_line() => {
@@ -694,7 +889,7 @@ async fn run_client(
                 match message {
                     JsonRpcMessage::Response { id, result, error } => {
                         let kind = pending.remove(&id);
-                        if id == 1 && !initialized {
+                        if id == JsonRpcId::Integer(1) && !initialized {
                             initialized = true;
                             *state.is_ready.lock().expect("ready mutex poisoned") = true;
                             let _ = write_json(&mut stdin, &serde_json::json!({"method":"initialized","params":{}})).await;
@@ -731,6 +926,22 @@ async fn run_client(
                             }
                         }
                     }
+                    JsonRpcMessage::Request { id, method, params } => {
+                        match method.as_str() {
+                            "item/commandExecution/requestApproval" => {
+                                handle_command_approval_request(&app, id, params);
+                            }
+                            "item/fileChange/requestApproval" => {
+                                handle_file_change_approval_request(
+                                    &app,
+                                    id,
+                                    params,
+                                    &pending_thread_items,
+                                );
+                            }
+                            _ => {}
+                        }
+                    }
                     JsonRpcMessage::Notification { method, params } => {
                         match method.as_str() {
                             "account/updated" => {
@@ -739,6 +950,27 @@ async fn run_client(
                             "account/login/completed" => {
                                 handle_login_completed(&app, &state, params);
                                 queue_account_read(&mut stdin, &mut next_request_id, &mut pending).await;
+                            }
+                            "item/started" => {
+                                handle_item_started(&app, params, &mut pending_thread_items);
+                            }
+                            "item/completed" => {
+                                handle_item_completed(&app, params, &mut pending_thread_items);
+                            }
+                            "item/agentMessage/delta" => {
+                                handle_agent_message_delta(&app, params, &mut pending_thread_items);
+                            }
+                            "item/commandExecution/outputDelta" => {
+                                handle_command_execution_output_delta(&app, params, &mut pending_thread_items);
+                            }
+                            "item/fileChange/patchUpdated" => {
+                                handle_file_change_patch_updated(&app, params, &mut pending_thread_items);
+                            }
+                            "serverRequest/resolved" => {
+                                handle_server_request_resolved(&app, params);
+                            }
+                            "turn/completed" => {
+                                handle_turn_completed(&app, params);
                             }
                             _ => {}
                         }
@@ -752,11 +984,14 @@ async fn run_client(
 async fn queue_account_read(
     stdin: &mut ChildStdin,
     next_request_id: &mut i64,
-    pending: &mut HashMap<i64, AppServerRequestKind>,
+    pending: &mut HashMap<JsonRpcId, AppServerRequestKind>,
 ) {
     let request_id = *next_request_id;
     *next_request_id += 1;
-    pending.insert(request_id, AppServerRequestKind::AccountRead);
+    pending.insert(
+        JsonRpcId::Integer(request_id),
+        AppServerRequestKind::AccountRead,
+    );
     let _ = write_json(
         stdin,
         &serde_json::json!({
@@ -804,61 +1039,341 @@ fn request_method(kind: &AppServerRequestKind) -> &'static str {
         AppServerRequestKind::ConfigRead => "config/read",
         AppServerRequestKind::ConfigValueWrite => "config/value/write",
         AppServerRequestKind::ThreadList => "thread/list",
+        AppServerRequestKind::ThreadStart => "thread/start",
         AppServerRequestKind::ThreadRead => "thread/read",
+        AppServerRequestKind::TurnStart => "turn/start",
+        AppServerRequestKind::TurnInterrupt => "turn/interrupt",
     }
 }
 
-fn map_thread_message(value: serde_json::Value) -> Option<ThreadConversationMessage> {
-    let item_type = value.get("type")?.as_str()?;
-    match item_type {
-        "userMessage" => {
-            let id = value.get("id")?.as_str()?.to_string();
-            let text = value
-                .get("content")
-                .and_then(serde_json::Value::as_array)
-                .map(|content| extract_user_text(content.as_slice()))
-                .unwrap_or_default()
-                .trim()
-                .to_string();
-            if text.is_empty() {
-                return None;
-            }
-            Some(ThreadConversationMessage {
-                id,
-                role: "user".to_string(),
-                text,
-            })
-        }
-        "agentMessage" => {
-            let id = value.get("id")?.as_str()?.to_string();
-            let text = value.get("text")?.as_str()?.trim().to_string();
-            if text.is_empty() {
-                return None;
-            }
-            Some(ThreadConversationMessage {
-                id,
-                role: "assistant".to_string(),
-                text,
-            })
-        }
-        _ => None,
+fn handle_item_started(
+    app: &AppHandle,
+    params: serde_json::Value,
+    pending_thread_items: &mut HashMap<String, ThreadConversationItem>,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(item) = params.get("item").cloned() else {
+        return;
+    };
+    let Some(thread_item) = map_thread_item(turn_id, &item) else {
+        return;
+    };
+    if matches!(
+        thread_item,
+        ThreadConversationItem::CommandExecution { .. } | ThreadConversationItem::FileChange { .. }
+    ) {
+        pending_thread_items.insert(
+            thread_item_id(&thread_item).to_string(),
+            thread_item.clone(),
+        );
     }
+    if matches!(thread_item, ThreadConversationItem::AgentMessage { .. }) {
+        return;
+    }
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ThreadItemUpdated {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            item: thread_item,
+        },
+    );
 }
 
-fn extract_user_text(content: &[serde_json::Value]) -> String {
-    content
-        .iter()
-        .filter_map(|item| {
-            let item_type = item.get("type")?.as_str()?;
-            if item_type != "text" {
-                return None;
-            }
-            item.get("text")
-                .and_then(serde_json::Value::as_str)
+fn handle_item_completed(
+    app: &AppHandle,
+    params: serde_json::Value,
+    pending_thread_items: &mut HashMap<String, ThreadConversationItem>,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(item) = params.get("item").cloned() else {
+        return;
+    };
+    let Some(thread_item) = map_thread_item(turn_id, &item) else {
+        return;
+    };
+    if matches!(
+        thread_item,
+        ThreadConversationItem::CommandExecution { .. } | ThreadConversationItem::FileChange { .. }
+    ) {
+        pending_thread_items.remove(thread_item_id(&thread_item));
+    }
+    if matches!(thread_item, ThreadConversationItem::AgentMessage { .. }) {
+        pending_thread_items.remove(thread_item_id(&thread_item));
+    }
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ThreadItemUpdated {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            item: thread_item,
+        },
+    );
+}
+
+fn handle_agent_message_delta(
+    app: &AppHandle,
+    params: serde_json::Value,
+    pending_thread_items: &mut HashMap<String, ThreadConversationItem>,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(item_id) = params.get("itemId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(delta) = params.get("delta").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let item = pending_thread_items
+        .entry(item_id.to_string())
+        .or_insert_with(|| ThreadConversationItem::AgentMessage {
+            id: item_id.to_string(),
+            turn_id: turn_id.to_string(),
+            role: "assistant".to_string(),
+            text: String::new(),
+        });
+    let Some(updated_item) = append_agent_message_delta(item, delta) else {
+        return;
+    };
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ThreadItemUpdated {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            item: updated_item,
+        },
+    );
+}
+
+fn handle_turn_completed(app: &AppHandle, params: serde_json::Value) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(turn) = params.get("turn") else {
+        return;
+    };
+    let Some(turn_id) = turn.get("id").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(status) = turn.get("status").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let error = turn
+        .get("error")
+        .and_then(|value| value.get("message"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::TurnCompleted {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            status: status.to_string(),
+            error,
+        },
+    );
+}
+
+fn handle_command_execution_output_delta(
+    app: &AppHandle,
+    params: serde_json::Value,
+    pending_thread_items: &mut HashMap<String, ThreadConversationItem>,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(item_id) = params.get("itemId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(delta) = params.get("delta").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(item) = pending_thread_items.get_mut(item_id) else {
+        return;
+    };
+    let Some(updated_item) = append_command_execution_output_delta(item, delta) else {
+        return;
+    };
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ThreadItemUpdated {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            item: updated_item,
+        },
+    );
+}
+
+fn handle_file_change_patch_updated(
+    app: &AppHandle,
+    params: serde_json::Value,
+    pending_thread_items: &mut HashMap<String, ThreadConversationItem>,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(item_id) = params.get("itemId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(changes) = params.get("changes").and_then(serde_json::Value::as_array) else {
+        return;
+    };
+    let Some(item) = pending_thread_items.get_mut(item_id) else {
+        return;
+    };
+    let Some(updated_item) = replace_file_change_changes(
+        item,
+        changes
+            .iter()
+            .filter_map(map_file_change_summary)
+            .collect::<Vec<_>>(),
+    ) else {
+        return;
+    };
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ThreadItemUpdated {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            item: updated_item,
+        },
+    );
+}
+
+fn handle_command_approval_request(
+    app: &AppHandle,
+    request_id: JsonRpcId,
+    params: serde_json::Value,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(item_id) = params.get("itemId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let reason = params
+        .get("reason")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let command = params
+        .get("command")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let cwd = params
+        .get("cwd")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let available_decisions = params
+        .get("availableDecisions")
+        .and_then(serde_json::Value::as_array)
+        .map(|decisions| {
+            decisions
+                .iter()
+                .filter_map(serde_json::Value::as_str)
                 .map(str::to_string)
+                .collect::<Vec<_>>()
         })
-        .collect::<Vec<_>>()
-        .join("\n")
+        .filter(|decisions| !decisions.is_empty());
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::CommandApprovalRequested {
+            request_id,
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            item_id: item_id.to_string(),
+            reason,
+            command,
+            cwd,
+            available_decisions,
+        },
+    );
+}
+
+fn handle_file_change_approval_request(
+    app: &AppHandle,
+    request_id: JsonRpcId,
+    params: serde_json::Value,
+    pending_thread_items: &HashMap<String, ThreadConversationItem>,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(item_id) = params.get("itemId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let reason = params
+        .get("reason")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let grant_root = params
+        .get("grantRoot")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let changes = pending_thread_items
+        .get(item_id)
+        .and_then(|item| match item {
+            ThreadConversationItem::FileChange { changes, .. } => Some(changes.clone()),
+            _ => None,
+        })
+        .unwrap_or_default();
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::FileChangeApprovalRequested {
+            request_id,
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            item_id: item_id.to_string(),
+            reason,
+            grant_root,
+            changes,
+        },
+    );
+}
+
+fn handle_server_request_resolved(app: &AppHandle, params: serde_json::Value) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(request_id) = params
+        .get("requestId")
+        .cloned()
+        .and_then(|value| serde_json::from_value::<JsonRpcId>(value).ok())
+    else {
+        return;
+    };
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ServerRequestResolved {
+            request_id,
+            thread_id: thread_id.to_string(),
+        },
+    );
 }
 
 fn map_account(response: AccountReadResponse) -> AuthState {
@@ -951,7 +1466,7 @@ fn set_bridge_error(app: &AppHandle, state: &Arc<AuthBridgeState>, error: String
 
 async fn wait_for_request_sender(
     state: &Arc<AuthBridgeState>,
-) -> Result<mpsc::UnboundedSender<AppServerRequest>, String> {
+) -> Result<mpsc::UnboundedSender<AppServerMessage>, String> {
     for _ in 0..40 {
         let is_ready = *state.is_ready.lock().expect("ready mutex poisoned");
         let sender = state
@@ -977,11 +1492,30 @@ async fn send_request(
     let sender = wait_for_request_sender(state).await?;
     let (response_tx, response_rx) = oneshot::channel();
     sender
-        .send(AppServerRequest {
+        .send(AppServerMessage::Request(AppServerRequest {
             kind,
             payload,
             response_tx: Some(response_tx),
-        })
+        }))
+        .map_err(|_| "auth bridge request channel closed".to_string())?;
+    response_rx
+        .await
+        .map_err(|_| "auth bridge response channel closed".to_string())?
+}
+
+async fn send_response(
+    state: &Arc<AuthBridgeState>,
+    request_id: JsonRpcId,
+    result: serde_json::Value,
+) -> Result<(), String> {
+    let sender = wait_for_request_sender(state).await?;
+    let (response_tx, response_rx) = oneshot::channel();
+    sender
+        .send(AppServerMessage::Response(AppServerResponse {
+            request_id,
+            result,
+            response_tx: Some(response_tx),
+        }))
         .map_err(|_| "auth bridge request channel closed".to_string())?;
     response_rx
         .await

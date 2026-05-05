@@ -31,7 +31,8 @@ pub fn set_global_state(app: AppHandle, key: String, value: Value) -> Result<(),
 
 fn ensure_supported_key(key: &str) -> Result<(), String> {
     match key {
-        "usePointerCursors" | "sansFontSize" | "codeFontSize" | "localeOverride" => Ok(()),
+        "usePointerCursors" | "sansFontSize" | "codeFontSize" | "localeOverride"
+        | "followUpQueueMode" | "reviewDelivery" => Ok(()),
         _ => Err(format!("unsupported global setting key: {key}")),
     }
 }
@@ -47,7 +48,9 @@ fn read_global_settings(app: &AppHandle) -> Result<Map<String, Value>, String> {
         .map_err(|err| format!("failed to parse {path:?}: {err}"))?;
     match value {
         Value::Object(map) => Ok(map),
-        _ => Err(format!("global settings file {path:?} must contain a JSON object")),
+        _ => Err(format!(
+            "global settings file {path:?} must contain a JSON object"
+        )),
     }
 }
 

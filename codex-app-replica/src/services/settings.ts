@@ -38,7 +38,16 @@ export type ConfigLayer = {
   disabledReason: string | null;
 };
 
-export type GlobalStateKey = "usePointerCursors" | "sansFontSize" | "codeFontSize" | "localeOverride";
+export type FollowUpQueueMode = "queue" | "steer";
+export type ReviewDelivery = "inline" | "detached";
+
+export type GlobalStateKey =
+  | "usePointerCursors"
+  | "sansFontSize"
+  | "codeFontSize"
+  | "localeOverride"
+  | "followUpQueueMode"
+  | "reviewDelivery";
 
 export type GlobalStateValue = boolean | number | string | null;
 
@@ -47,6 +56,8 @@ export type GeneralSettingsSnapshot = {
   uiFontSize: number;
   codeFontSize: number;
   localeOverride: string | null;
+  followUpQueueMode: FollowUpQueueMode;
+  reviewDelivery: ReviewDelivery;
 };
 
 export const DEFAULT_GENERAL_SETTINGS: GeneralSettingsSnapshot = {
@@ -54,6 +65,8 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettingsSnapshot = {
   uiFontSize: 14,
   codeFontSize: 12,
   localeOverride: null,
+  followUpQueueMode: "queue",
+  reviewDelivery: "inline",
 };
 
 export type ConfigScopeOption = {
@@ -158,11 +171,13 @@ export async function setGlobalState(key: GlobalStateKey, value: GlobalStateValu
 }
 
 export async function readGeneralSettingsSnapshot(): Promise<GeneralSettingsSnapshot> {
-  const [localeOverride, usePointerCursors, uiFontSize, codeFontSize] = await Promise.all([
+  const [localeOverride, usePointerCursors, uiFontSize, codeFontSize, followUpQueueMode, reviewDelivery] = await Promise.all([
     getGlobalState("localeOverride"),
     getGlobalState("usePointerCursors"),
     getGlobalState("sansFontSize"),
     getGlobalState("codeFontSize"),
+    getGlobalState("followUpQueueMode"),
+    getGlobalState("reviewDelivery"),
   ]);
   return {
     localeOverride: typeof localeOverride.value === "string" ? localeOverride.value : DEFAULT_GENERAL_SETTINGS.localeOverride,
@@ -173,6 +188,8 @@ export async function readGeneralSettingsSnapshot(): Promise<GeneralSettingsSnap
     uiFontSize: typeof uiFontSize.value === "number" ? uiFontSize.value : DEFAULT_GENERAL_SETTINGS.uiFontSize,
     codeFontSize:
       typeof codeFontSize.value === "number" ? codeFontSize.value : DEFAULT_GENERAL_SETTINGS.codeFontSize,
+    followUpQueueMode: normalizeFollowUpQueueMode(followUpQueueMode.value),
+    reviewDelivery: normalizeReviewDelivery(reviewDelivery.value),
   };
 }
 
@@ -240,4 +257,15 @@ function normalizeApprovalPolicy(value: unknown) {
 
 function normalizeSandboxMode(value: unknown) {
   return value === "read-only" || value === "workspace-write" || value === "danger-full-access" ? value : null;
+}
+
+function normalizeFollowUpQueueMode(value: unknown): FollowUpQueueMode {
+  if (value === "interrupt") {
+    return "steer";
+  }
+  return value === "queue" || value === "steer" ? value : DEFAULT_GENERAL_SETTINGS.followUpQueueMode;
+}
+
+function normalizeReviewDelivery(value: unknown): ReviewDelivery {
+  return value === "inline" || value === "detached" ? value : DEFAULT_GENERAL_SETTINGS.reviewDelivery;
 }

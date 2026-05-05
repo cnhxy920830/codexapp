@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 export type ThreadHistoryEntry = {
   id: string;
@@ -22,24 +23,149 @@ export type HistoryProjectGroup = {
 };
 
 export type ThreadConversationMessage = {
+  type: "userMessage" | "agentMessage";
   id: string;
+  turnId: string;
   role: "user" | "assistant";
   text: string;
+};
+
+export type ThreadCommandAction =
+  | {
+      type: "read";
+      command: string;
+      name: string;
+      path: string;
+    }
+  | {
+      type: "listFiles";
+      command: string;
+      path: string | null;
+    }
+  | {
+      type: "search";
+      command: string;
+      query: string | null;
+      path: string | null;
+    }
+  | {
+      type: "unknown";
+      command: string;
+    };
+
+export type ThreadConversationCommandExecution = {
+  type: "commandExecution";
+  id: string;
+  turnId: string;
+  command: string;
+  cwd: string;
+  status: string;
+  commandActions: ThreadCommandAction[];
+  aggregatedOutput: string | null;
+  exitCode: number | null;
+  durationMs: number | null;
 };
 
 export type ThreadConversation = {
   id: string;
   title: string;
   cwd: string;
-  messages: ThreadConversationMessage[];
+  items: ThreadConversationItem[];
 };
+
+export type JsonRpcId = number | string;
+
+export type ApprovalDecision = "accept" | "acceptForSession" | "decline" | "cancel";
+
+export type FileChangeSummary = {
+  path: string;
+  kind: string;
+  diff: string | null;
+  movePath: string | null;
+};
+
+export type ThreadConversationFileChange = {
+  type: "fileChange";
+  id: string;
+  turnId: string;
+  status: string;
+  changes: FileChangeSummary[];
+};
+
+export type ThreadConversationItem =
+  | ThreadConversationMessage
+  | ThreadConversationCommandExecution
+  | ThreadConversationFileChange;
+
+export type ThreadEvent =
+  | {
+      type: "threadItemUpdated";
+      threadId: string;
+      turnId: string;
+      item: ThreadConversationItem;
+    }
+  | {
+      type: "turnCompleted";
+      threadId: string;
+      turnId: string;
+      status: string;
+      error: string | null;
+    }
+  | {
+      type: "commandApprovalRequested";
+      requestId: JsonRpcId;
+      threadId: string;
+      turnId: string;
+      itemId: string;
+      reason: string | null;
+      command: string | null;
+      cwd: string | null;
+      availableDecisions: ApprovalDecision[] | null;
+    }
+  | {
+      type: "fileChangeApprovalRequested";
+      requestId: JsonRpcId;
+      threadId: string;
+      turnId: string;
+      itemId: string;
+      reason: string | null;
+      grantRoot: string | null;
+      changes: FileChangeSummary[];
+    }
+  | {
+      type: "serverRequestResolved";
+      requestId: JsonRpcId;
+      threadId: string;
+    };
 
 export async function getRecentThreads() {
   return invoke<ThreadHistoryEntry[]>("list_recent_threads");
 }
 
+export async function startThread(cwd: string | null) {
+  return invoke<string>("start_thread", { cwd });
+}
+
+export async function startTurn(params: { threadId: string; text: string; cwd: string | null }) {
+  return invoke<string>("start_turn", params);
+}
+
+export async function interruptTurn(params: { threadId: string; turnId: string }) {
+  return invoke<void>("interrupt_turn", params);
+}
+
+export async function respondToApprovalRequest(params: { requestId: JsonRpcId; decision: ApprovalDecision }) {
+  return invoke<void>("respond_to_approval_request", params);
+}
+
 export async function readThread(threadId: string) {
   return invoke<ThreadConversation>("read_thread", { threadId });
+}
+
+export function onThreadEvent(handler: (event: ThreadEvent) => void) {
+  return listen<ThreadEvent>("thread-event", (event) => {
+    handler(event.payload);
+  });
 }
 
 export function buildProjectGroups(

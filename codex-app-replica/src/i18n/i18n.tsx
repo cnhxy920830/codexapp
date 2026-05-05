@@ -1,14 +1,25 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { DEFAULT_LOCALE, MESSAGES, getMessageLocale, type LocaleCode, type MessageKey } from "./messages";
+import { DEFAULT_LOCALE, MESSAGES, getMessageLocale, type LocaleCode, type MessageKey, type MessageValues } from "./messages";
 import { getGlobalState, resolveLocalePreference } from "../services/settings";
 
 type I18nContextValue = {
   locale: LocaleCode;
   setLocale: (locale: LocaleCode) => void;
-  t: (key: MessageKey) => string;
+  t: (key: MessageKey, values?: MessageValues) => string;
 };
 
 const I18N_CONTEXT = createContext<I18nContextValue | null>(null);
+
+function formatMessage(template: string, values?: MessageValues) {
+  if (!values) {
+    return template;
+  }
+  return template.replace(/\{(\w+)\}/g, (match, token) => {
+    const value = values[token];
+    return value === undefined ? match : String(value);
+  });
+}
+
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<LocaleCode>(DEFAULT_LOCALE);
 
@@ -43,7 +54,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       setLocale: (nextLocale) => {
         setLocaleState(nextLocale);
       },
-      t: (key) => MESSAGES[getMessageLocale(locale)][key],
+      t: (key, values) => formatMessage(MESSAGES[getMessageLocale(locale)][key], values),
     }),
     [locale],
   );

@@ -68,6 +68,7 @@ export const UPSTREAM_LOCALE_CODES = [
 
 export type LocaleCode = (typeof UPSTREAM_LOCALE_CODES)[number];
 type MessageLocaleCode = "en-US" | "zh-CN";
+export type MessageValues = Record<string, number | string>;
 
 export type MessageKey =
   | "app.menu.file"
@@ -100,15 +101,55 @@ export type MessageKey =
   | "app.chat.openProject"
   | "app.chat.agentsMd"
   | "app.chat.filesChanged"
+  | "app.chat.composePlaceholder"
+  | "app.chat.send"
+  | "app.chat.stop"
+  | "app.chat.commandExecution"
+  | "app.chat.fileChange"
+  | "app.chat.output"
+  | "app.chat.noOutput"
+  | "app.chat.exitCode"
+  | "app.chat.durationMs"
+  | "app.chat.movedTo"
+  | "app.chat.status.inProgress"
+  | "app.chat.status.completed"
+  | "app.chat.status.failed"
+  | "app.chat.status.declined"
+  | "app.chat.approval.commandTitle"
+  | "app.chat.approval.fileChangeTitle"
+  | "app.chat.approval.review"
+  | "app.chat.approval.reason"
+  | "app.chat.approval.command"
+  | "app.chat.approval.workingDirectory"
+  | "app.chat.approval.requestedWriteRoot"
+  | "app.chat.approval.changes"
+  | "app.chat.approval.noChanges"
+  | "app.chat.approval.accept"
+  | "app.chat.approval.acceptForSession"
+  | "app.chat.approval.decline"
+  | "app.chat.approval.cancel"
+  | "app.chat.approval.submitting"
   | "app.inspector.bullet.targetVersion"
   | "app.inspector.bullet.resourceFirst"
   | "app.inspector.bullet.currentWork"
   | "app.inspector.bullet.compareArtifacts"
   | "general.title"
   | "general.appearance"
+  | "general.languageDescription"
   | "general.usePointerCursors"
+  | "general.usePointerCursorsDescription"
   | "general.uiFontSize"
+  | "general.uiFontSizeDescription"
   | "general.codeFontSize"
+  | "general.codeFontSizeDescription"
+  | "general.followUpBehavior"
+  | "general.followUpBehaviorDescription"
+  | "general.followUpQueue"
+  | "general.followUpSteer"
+  | "general.reviewDelivery"
+  | "general.reviewDeliveryDescription"
+  | "general.reviewInline"
+  | "general.reviewDetached"
   | "general.loading"
   | "general.saving"
   | "general.loaded"
@@ -226,7 +267,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.shell.share": "Share",
     "app.chat.noRecentThreads": "No recent conversations",
     "app.chat.noMessages": "No messages",
-    "app.chat.changedFiles": "1 file changed",
+    "app.chat.changedFiles": "{fileCount} files changed",
     "app.chat.undo": "Undo",
     "app.chat.viewDiff": "View diff",
     "app.chat.commit": "Commit",
@@ -237,16 +278,57 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.openFiles": "OPEN FILES",
     "app.chat.openProject": "OPEN PROJECT",
     "app.chat.agentsMd": "AGENTS.MD",
-    "app.chat.filesChanged": "1 file changed",
+    "app.chat.filesChanged": "{fileCount} files changed",
+    "app.chat.composePlaceholder": "Ask Codex anything. Type @ to use plugins or mention files",
+    "app.chat.send": "Send",
+    "app.chat.stop": "Stop",
+    "app.chat.commandExecution": "Command",
+    "app.chat.fileChange": "File change",
+    "app.chat.output": "Output",
+    "app.chat.noOutput": "No output yet",
+    "app.chat.exitCode": "Exit code",
+    "app.chat.durationMs": "Duration (ms)",
+    "app.chat.movedTo": "Moved to",
+    "app.chat.status.inProgress": "In progress",
+    "app.chat.status.completed": "Completed",
+    "app.chat.status.failed": "Failed",
+    "app.chat.status.declined": "Declined",
+    "app.chat.approval.commandTitle": "Command approval",
+    "app.chat.approval.fileChangeTitle": "File change approval",
+    "app.chat.approval.review": "Review and respond to continue this turn.",
+    "app.chat.approval.reason": "Reason",
+    "app.chat.approval.command": "Command",
+    "app.chat.approval.workingDirectory": "Working directory",
+    "app.chat.approval.requestedWriteRoot": "Requested write root",
+    "app.chat.approval.changes": "Changes",
+    "app.chat.approval.noChanges": "No file changes were attached to this request.",
+    "app.chat.approval.accept": "Accept",
+    "app.chat.approval.acceptForSession": "Accept for session",
+    "app.chat.approval.decline": "Decline",
+    "app.chat.approval.cancel": "Cancel",
+    "app.chat.approval.submitting": "Submitting response...",
     "app.inspector.bullet.targetVersion": "Target app version fixed at 26.429.3425.0.",
     "app.inspector.bullet.resourceFirst": "Resource extraction stays ahead of approximation work.",
     "app.inspector.bullet.currentWork": "Current work stays focused on shell density and header structure.",
     "app.inspector.bullet.compareArtifacts": "All comparison artifacts continue to live under compare/.",
     "general.title": "General",
     "general.appearance": "Appearance",
+    "general.languageDescription": "Language for the app UI",
     "general.usePointerCursors": "Use pointer cursors",
+    "general.usePointerCursorsDescription": "Change the cursor to a pointer when hovering over interactive elements",
     "general.uiFontSize": "UI font size",
+    "general.uiFontSizeDescription": "Adjust the base size used for the Codex UI",
     "general.codeFontSize": "Code font size",
+    "general.codeFontSizeDescription": "Adjust the base size used for code across chats and diffs",
+    "general.followUpBehavior": "Follow-up behavior",
+    "general.followUpBehaviorDescription":
+      "Queue follow-ups while Codex runs or steer the current run. Press {invertFollowUpShortcutLabel} to do the opposite for one message",
+    "general.followUpQueue": "Queue",
+    "general.followUpSteer": "Steer",
+    "general.reviewDelivery": "Code review",
+    "general.reviewDeliveryDescription": "Start /review in the current chat when possible or launch a separate review chat",
+    "general.reviewInline": "Inline",
+    "general.reviewDetached": "Detached",
     "general.loading": "Loading",
     "general.saving": "Saving",
     "general.loaded": "Global settings loaded",
@@ -263,7 +345,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.agent.title": "Configuration",
     "settings.agent.subtitle": "Approval policy and sandbox settings",
     "settings.agent.customConfig": "Custom config.toml settings",
-    "settings.agent.openConfigToml": "Open config.toml",
+    "settings.agent.openConfigToml": "Open Config.toml",
     "settings.agent.approvalPolicy": "Approval policy",
     "settings.agent.approval.untrusted": "Untrusted",
     "settings.agent.approval.onFailure": "On failure",
@@ -318,7 +400,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.shell.share": "共享",
     "app.chat.noRecentThreads": "暂无最近会话",
     "app.chat.noMessages": "暂无消息",
-    "app.chat.changedFiles": "1 个文件已更改",
+    "app.chat.changedFiles": "{fileCount} 个文件已更改",
     "app.chat.undo": "撤销",
     "app.chat.viewDiff": "查看差异",
     "app.chat.commit": "提交",
@@ -329,16 +411,57 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.openFiles": "打开的文件",
     "app.chat.openProject": "打开项目",
     "app.chat.agentsMd": "AGENTS.MD",
-    "app.chat.filesChanged": "1 个文件已更改",
+    "app.chat.filesChanged": "{fileCount} 个文件已更改",
+    "app.chat.composePlaceholder": "可向 Codex 询问任何事。输入 @ 使用插件或提及文件",
+    "app.chat.send": "发送",
+    "app.chat.stop": "停止",
+    "app.chat.commandExecution": "命令",
+    "app.chat.fileChange": "文件修改",
+    "app.chat.output": "输出",
+    "app.chat.noOutput": "尚无输出",
+    "app.chat.exitCode": "退出码",
+    "app.chat.durationMs": "耗时（毫秒）",
+    "app.chat.movedTo": "移动到",
+    "app.chat.status.inProgress": "进行中",
+    "app.chat.status.completed": "已完成",
+    "app.chat.status.failed": "失败",
+    "app.chat.status.declined": "已拒绝",
+    "app.chat.approval.commandTitle": "命令审批",
+    "app.chat.approval.fileChangeTitle": "文件修改审批",
+    "app.chat.approval.review": "请先审查并响应，以继续当前回合。",
+    "app.chat.approval.reason": "原因",
+    "app.chat.approval.command": "命令",
+    "app.chat.approval.workingDirectory": "工作目录",
+    "app.chat.approval.requestedWriteRoot": "请求的写入根目录",
+    "app.chat.approval.changes": "变更",
+    "app.chat.approval.noChanges": "该请求未附带文件变更内容。",
+    "app.chat.approval.accept": "接受",
+    "app.chat.approval.acceptForSession": "本次会话接受",
+    "app.chat.approval.decline": "拒绝",
+    "app.chat.approval.cancel": "取消",
+    "app.chat.approval.submitting": "正在提交响应...",
     "app.inspector.bullet.targetVersion": "目标应用版本固定为 26.429.3425.0。",
     "app.inspector.bullet.resourceFirst": "资源提取优先于近似实现。",
     "app.inspector.bullet.currentWork": "当前工作聚焦 shell 密度、本地化和设置对齐。",
     "app.inspector.bullet.compareArtifacts": "所有比较产物继续保存在 compare/ 目录下。",
     "general.title": "通用",
     "general.appearance": "外观",
+    "general.languageDescription": "应用 UI 语言",
     "general.usePointerCursors": "使用指针光标",
-    "general.uiFontSize": "界面字体大小",
+    "general.usePointerCursorsDescription": "悬停交互元素时切换为指针光标",
+    "general.uiFontSize": "UI 字号",
+    "general.uiFontSizeDescription": "调整 Codex UI 使用的基准字号",
     "general.codeFontSize": "代码字体大小",
+    "general.codeFontSizeDescription": "调整聊天和差异视图中代码使用的基础字号",
+    "general.followUpBehavior": "跟进行为",
+    "general.followUpBehaviorDescription":
+      "在 Codex 运行时将后续操作加入队列，或引导当前运行。按 {invertFollowUpShortcutLabel} 可对单条消息执行相反操作",
+    "general.followUpQueue": "排队",
+    "general.followUpSteer": "引导",
+    "general.reviewDelivery": "代码审查",
+    "general.reviewDeliveryDescription": "尽可能在当前对话中启动 /review，或发起单独的审查对话",
+    "general.reviewInline": "行内视图",
+    "general.reviewDetached": "分离视图",
     "general.loading": "正在加载",
     "general.saving": "正在保存",
     "general.loaded": "全局设置已加载",
@@ -355,7 +478,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.agent.title": "配置",
     "settings.agent.subtitle": "审批策略和沙箱设置",
     "settings.agent.customConfig": "自定义 config.toml 设置",
-    "settings.agent.openConfigToml": "打开 config.toml",
+    "settings.agent.openConfigToml": "打开 Config.toml",
     "settings.agent.approvalPolicy": "审批策略",
     "settings.agent.approval.untrusted": "不受信任",
     "settings.agent.approval.onFailure": "失败时",
@@ -379,11 +502,11 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "auth.deviceCode": "设备代码",
     "auth.checking": "检查中",
     "auth.signingIn": "登录中",
-    "auth.signedOut": "已退出登录",
+    "auth.signedOut": "需要登录",
     "auth.ready": "就绪",
     "auth.chatGpt": "ChatGPT",
     "auth.openAiApiKey": "OpenAI API 密钥",
-    "auth.loginRequired": "需要登录",
+    "auth.loginRequired": "您当前未登录。",
     "auth.cancel": "取消",
     "auth.saveKey": "保存密钥",
     "auth.completeBrowserSignIn": "请在浏览器中完成登录。",

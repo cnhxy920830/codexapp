@@ -17,9 +17,15 @@ import {
   type LaunchContext,
 } from "./services/auth";
 import {
+  respondToApprovalRequest,
+  type ApprovalDecision,
   buildProjectGroups,
   getRecentThreads,
+  interruptTurn,
+  onThreadEvent,
   readThread,
+  startThread,
+  startTurn,
   type HistoryProjectGroup,
   type ThreadConversation,
 } from "./services/history";
@@ -34,6 +40,14 @@ import {
   type ConfigSnapshot,
 } from "./services/settings";
 import { GeneralSettings } from "./components/GeneralSettings";
+import { ChatConversationMainPane } from "./features/chat/ChatConversationMainPane";
+import {
+  approvalRequestKey,
+  buildThreadDiffSummary,
+  upsertConversationItem,
+  upsertPendingApproval,
+  type PendingApproval,
+} from "./features/chat/threadConversationState";
 import { useI18n } from "./i18n/i18n";
 import type { MessageKey } from "./i18n/messages";
 
@@ -41,11 +55,6 @@ const appWindow = getCurrentWindow();
 const threadPromptDefault = "AGENTS.md";
 
 const openFiles = ["AGENTS.md", "tracker.md"];
-
-const changeRows = [
-  { title: "codex-app-replica/compare/tracker.md", additions: "+3", deletions: "-0" },
-  { title: "codex-app-replica/src/App.tsx", additions: "+1", deletions: "-1" },
-];
 
 type SettingsSection = "general-settings" | "agent";
 
@@ -73,7 +82,15 @@ const sandboxModeOptions = [
   { value: "danger-full-access", labelKey: "settings.agent.sandbox.fullAccess" as const },
 ];
 
-function formatConfigScopeLabel(scope: ConfigScopeOption, t: (key: MessageKey) => string) {
+const settingsSectionLabelKeys: Record<SettingsSection, MessageKey> = {
+  "general-settings": "settings.general",
+  agent: "settings.configuration",
+};
+
+function formatConfigScopeLabel(
+  scope: ConfigScopeOption,
+  t: (key: MessageKey, values?: Record<string, number | string>) => string,
+) {
   if (scope.kind === "user") {
     return t("settings.agent.scope.userConfig");
   }
@@ -95,6 +112,12 @@ function App() {
   const [showApiKeyEntry, setShowApiKeyEntry] = useState(false);
   const [authActionError, setAuthActionError] = useState<string | null>(null);
   const [threadPrompt, setThreadPrompt] = useState(threadPromptDefault);
+  const [composerDraft, setComposerDraft] = useState("");
+  const [activeTurn, setActiveTurn] = useState<{ threadId: string; turnId: string } | null>(null);
+  const [turnError, setTurnError] = useState<string | null>(null);
+  const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
+  const [approvalActionErrors, setApprovalActionErrors] = useState<Record<string, string>>({});
+  const [respondingApprovalKeys, setRespondingApprovalKeys] = useState<string[]>([]);
   const [currentRoute, setCurrentRoute] = useState<"chat" | "settings">("chat");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general-settings");
   const [configSnapshot, setConfigSnapshot] = useState<ConfigSnapshot | null>(null);
@@ -118,6 +141,16 @@ function App() {
     t("app.inspector.bullet.currentWork"),
     t("app.inspector.bullet.compareArtifacts"),
   ];
+  const threadDiffSummary = buildThreadDiffSummary(threadConversation?.items ?? []);
+  const totalChangedFiles = threadDiffSummary.fileCount;
+  const totalAdditions = threadDiffSummary.linesAdded;
+  const totalDeletions = threadDiffSummary.linesDeleted;
+  const shellHeaderTitle =
+    currentRoute === "settings"
+      ? `${t("app.shell.settings")} / ${t(settingsSectionLabelKeys[settingsSection])}`
+      : threadConversation?.title || threadPrompt;
+  const isTurnInProgress = activeTurn !== null && activeTurn.threadId === selectedThreadId;
+  const currentThreadApprovals = pendingApprovals.filter((approval) => approval.threadId === selectedThreadId);
 
   useEffect(() => {
     let cancelled = false;
@@ -165,6 +198,81 @@ function App() {
   }, []);
 
   useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    void onThreadEvent((event) => {
+      if (event.type === "commandApprovalRequested" || event.type === "fileChangeApprovalRequested") {
+        const requestKey = approvalRequestKey(event.requestId);
+        setApprovalActionErrors((current) => {
+          if (!(requestKey in current)) {
+            return current;
+          }
+          const next = { ...current };
+          delete next[requestKey];
+          return next;
+        });
+        setPendingApprovals((current) => upsertPendingApproval(current, event));
+        return;
+      }
+      if (event.type === "serverRequestResolved") {
+        const requestKey = approvalRequestKey(event.requestId);
+        setPendingApprovals((current) =>
+          current.filter((approval) => approvalRequestKey(approval.requestId) !== requestKey),
+        );
+        setRespondingApprovalKeys((current) => current.filter((key) => key !== requestKey));
+        setApprovalActionErrors((current) => {
+          if (!(requestKey in current)) {
+            return current;
+          }
+          const next = { ...current };
+          delete next[requestKey];
+          return next;
+        });
+        return;
+      }
+      if (event.type === "turnCompleted") {
+        setActiveTurn((current) =>
+          current && current.threadId === event.threadId && current.turnId === event.turnId
+            ? null
+            : current,
+        );
+      }
+      if (event.threadId !== selectedThreadId) {
+        return;
+      }
+      if (event.type === "threadItemUpdated") {
+        setThreadConversation((current) =>
+          current && current.id === event.threadId
+            ? { ...current, items: upsertConversationItem(current.items, event.item) }
+            : current,
+        );
+        return;
+      }
+      if (event.type === "turnCompleted" && event.error) {
+        setTurnError(event.error);
+      }
+      void Promise.all([getRecentThreads(), readThread(event.threadId)])
+        .then(([threads, thread]) => {
+          setSelectedThreadId(event.threadId);
+          setProjectGroups(
+            buildProjectGroups(threads, {
+              activeThreadId: event.threadId,
+              locale,
+              noMessageLabel: t("history.noMessageYet"),
+            }),
+          );
+          setThreadConversation(thread);
+          setThreadPrompt(thread.title || threadPromptDefault);
+        })
+        .catch(() => undefined);
+    }).then((dispose) => {
+      unlisten = dispose;
+    });
+    return () => {
+      unlisten?.();
+    };
+  }, [locale, selectedThreadId, t]);
+
+  useEffect(() => {
     let cancelled = false;
 
     void getRecentThreads()
@@ -173,8 +281,7 @@ function App() {
           return;
         }
         const activeThreadId = threads[0]?.id ?? null;
-        setSelectedThreadId(activeThreadId);
-        setProjectGroups(buildProjectGroups(threads, { activeThreadId, locale, noMessageLabel: t("history.noMessageYet") }));
+        syncProjectGroups(activeThreadId, threads);
         if (activeThreadId) {
           void readThread(activeThreadId)
             .then((thread) => {
@@ -284,6 +391,28 @@ function App() {
     gridTemplateColumns: "minmax(0, 1fr) var(--app-shell-right-width)",
   } as const;
 
+  const syncProjectGroups = (activeThreadId: string | null, threads: Awaited<ReturnType<typeof getRecentThreads>>) => {
+    setSelectedThreadId(activeThreadId);
+    setProjectGroups(
+      buildProjectGroups(threads, {
+        activeThreadId,
+        locale,
+        noMessageLabel: t("history.noMessageYet"),
+      }),
+    );
+  };
+
+  const createAndSelectThread = async () => {
+    const cwd = threadConversation?.cwd ?? openProjectPath ?? null;
+    const threadId = await startThread(cwd);
+    const [threads, thread] = await Promise.all([getRecentThreads(), readThread(threadId)]);
+    syncProjectGroups(threadId, threads);
+    setThreadConversation(thread);
+    setThreadPrompt(thread.title || threadPromptDefault);
+    setCurrentRoute("chat");
+    return thread;
+  };
+
   const startChatGptLogin = async () => {
     setAuthActionError(null);
     try {
@@ -331,6 +460,7 @@ function App() {
 
   const selectThread = async (threadId: string) => {
     setSelectedThreadId(threadId);
+    setTurnError(null);
     setCurrentRoute("chat");
     try {
       const thread = await readThread(threadId);
@@ -339,6 +469,77 @@ function App() {
     } catch {
       setThreadConversation(null);
       setThreadPrompt(threadPromptDefault);
+    }
+  };
+
+  const startNewThread = async () => {
+    try {
+      setTurnError(null);
+      await createAndSelectThread();
+    } catch {
+      // Keep the current selection untouched when thread creation fails.
+    }
+  };
+
+  const submitTurn = async () => {
+    const text = composerDraft.trim();
+    if (text.length === 0 || isTurnInProgress) {
+      return;
+    }
+    setTurnError(null);
+    try {
+      let thread = threadConversation;
+      if (!thread) {
+        thread = await createAndSelectThread();
+      }
+      const threadId = thread.id;
+      const cwd = thread.cwd || openProjectPath || null;
+      const turnId = await startTurn({ threadId, text, cwd });
+      setActiveTurn({ threadId, turnId });
+      setComposerDraft("");
+    } catch (error) {
+      setActiveTurn(null);
+      setTurnError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const stopTurn = async () => {
+    if (!activeTurn) {
+      return;
+    }
+    setTurnError(null);
+    try {
+      await interruptTurn({
+        threadId: activeTurn.threadId,
+        turnId: activeTurn.turnId,
+      });
+    } catch (error) {
+      setTurnError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const handleApprovalDecision = async (approval: PendingApproval, decision: ApprovalDecision) => {
+    const requestKey = approvalRequestKey(approval.requestId);
+    setTurnError(null);
+    setApprovalActionErrors((current) => {
+      if (!(requestKey in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[requestKey];
+      return next;
+    });
+    setRespondingApprovalKeys((current) =>
+      current.includes(requestKey) ? current : [...current, requestKey],
+    );
+    try {
+      await respondToApprovalRequest({ requestId: approval.requestId, decision });
+    } catch (error) {
+      setRespondingApprovalKeys((current) => current.filter((key) => key !== requestKey));
+      setApprovalActionErrors((current) => ({
+        ...current,
+        [requestKey]: error instanceof Error ? error.message : String(error),
+      }));
     }
   };
 
@@ -766,6 +967,10 @@ function App() {
                         key={item.label}
                         type="button"
                         onClick={() => {
+                          if (item.icon === "⊕") {
+                            void startNewThread();
+                            return;
+                          }
                           if (item.route === "settings") {
                             setCurrentRoute("settings");
                           } else {
@@ -788,7 +993,11 @@ function App() {
 
                 <div className="mt-6 flex items-center justify-between px-1 text-[12px] font-medium tracking-[0.16em] text-[var(--app-shell-subtle)]">
                   <span>{t("app.chat.projects")}</span>
-                  <button type="button" className="text-[13px] tracking-normal text-[#7a7269]">
+                  <button
+                    type="button"
+                    onClick={() => void startNewThread()}
+                    className="text-[13px] tracking-normal text-[#7a7269]"
+                  >
                     +
                   </button>
                 </div>
@@ -903,14 +1112,12 @@ function App() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 rounded-[12px] border border-black/6 bg-white/88 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]">
                     <span className="truncate text-[14px] text-[#221f1b]">
-                      {currentRoute === "settings"
-                        ? `codex-app-replica / settings / ${settingsSection}`
-                        : "codex-app-replica / compare / tracker.md"}
+                      {shellHeaderTitle}
                     </span>
                     {currentRoute === "chat" ? (
                       <>
-                        <span className="ml-auto shrink-0 text-[12px] text-[#21a05b]">+3</span>
-                        <span className="shrink-0 text-[12px] text-[#c3564e]">-0</span>
+                        <span className="ml-auto shrink-0 text-[12px] text-[#21a05b]">+{totalAdditions}</span>
+                        <span className="shrink-0 text-[12px] text-[#c3564e]">-{totalDeletions}</span>
                       </>
                     ) : null}
                   </div>
@@ -935,90 +1142,22 @@ function App() {
 
               {currentRoute === "chat" ? (
                 <div className="grid min-h-0 flex-1" style={shellColumns}>
-                  <section className="min-h-0 min-w-0 overflow-y-auto px-5 py-5">
-                    <div className="mx-auto flex max-w-[820px] flex-col gap-4">
-                      {threadConversation ? (
-                        threadConversation.messages.length > 0 ? (
-                          threadConversation.messages.map((message) => (
-                            <div
-                              key={message.id}
-                              className={message.role === "user" ? "flex justify-end" : "rounded-[18px]"}
-                            >
-                              <div
-                                className={[
-                                  "max-w-[620px] rounded-[18px] px-4 py-3 text-[14px] leading-6 shadow-[0_1px_0_rgba(0,0,0,0.02)]",
-                                  message.role === "user"
-                                    ? "bg-[#ecebea] text-[#2d2924]"
-                                    : "border border-[var(--app-shell-border)] bg-white/92 text-[#302b26]",
-                                ].join(" ")}
-                              >
-                                {message.text}
-                              </div>
-                            </div>
-                          ))
-                        ) : (
-                          <div className="rounded-[18px] border border-[var(--app-shell-border)] bg-white/92 px-5 py-4 text-[14px] leading-6 text-[#302b26] shadow-[0_1px_0_rgba(0,0,0,0.03)]">
-                            {t("app.chat.noMessages")}
-                          </div>
-                        )
-                      ) : (
-                        <div className="rounded-[18px] border border-[var(--app-shell-border)] bg-white/92 px-5 py-4 text-[14px] leading-6 text-[#302b26] shadow-[0_1px_0_rgba(0,0,0,0.03)]">
-                          {threadPrompt}
-                        </div>
-                      )}
-
-                      <div className="rounded-[18px] border border-[var(--app-shell-border)] bg-white/92 shadow-[0_1px_0_rgba(0,0,0,0.03)]">
-                        <div className="flex items-center justify-between border-b border-[var(--app-shell-border)] px-4 py-3 text-[13px] text-[#5a544d]">
-                          <span>{t("app.chat.filesChanged")}</span>
-                          <div className="flex items-center gap-4">
-                            <button type="button">{t("app.chat.undo")}</button>
-                            <button type="button">{t("app.chat.viewDiff")}</button>
-                            <button type="button">{t("app.chat.commit")}</button>
-                          </div>
-                        </div>
-
-                        <div className="space-y-2 px-4 py-3">
-                          {changeRows.map((row) => (
-                            <div
-                              key={row.title}
-                              className="flex items-center gap-3 rounded-[14px] bg-[#f7f6f4] px-4 py-3 text-[13px] text-[#312d28]"
-                            >
-                              <span className="truncate">{row.title}</span>
-                              <span className="ml-auto shrink-0 text-[#21a05b]">{row.additions}</span>
-                              <span className="shrink-0 text-[#c3564e]">{row.deletions}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="rounded-[18px] border border-[var(--app-shell-border)] bg-white/92 px-4 py-4 shadow-[0_1px_0_rgba(0,0,0,0.03)]">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-11 w-11 items-center justify-center rounded-[12px] bg-[#efeeeb] text-[18px] text-[#645c52]">
-                            ⊞
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-[14px] font-medium text-[#29251f]">AGENTS.md</div>
-                            <div className="text-[12px] text-[#8e867c]">{t("app.chat.document")}</div>
-                          </div>
-                          <button
-                            type="button"
-                            className="rounded-[11px] border border-black/8 bg-white px-3 py-1.5 text-[13px] text-[#302b25]"
-                          >
-                            {t("app.chat.open")}
-                          </button>
-                        </div>
-                      </div>
-
-                      {openProjectPath ? (
-                        <div className="rounded-[18px] border border-[var(--app-shell-border)] bg-[#f7f6f4] px-4 py-4 shadow-[0_1px_0_rgba(0,0,0,0.03)]">
-                        <div className="text-[12px] font-medium tracking-[0.16em] text-[var(--app-shell-subtle)]">
-                            {t("app.chat.openProject")}
-                        </div>
-                          <div className="mt-2 text-[13px] leading-6 text-[#312d28]">{openProjectPath}</div>
-                        </div>
-                      ) : null}
-                    </div>
-                  </section>
+                  <ChatConversationMainPane
+                    composerDraft={composerDraft}
+                    currentThreadApprovals={currentThreadApprovals}
+                    isTurnInProgress={isTurnInProgress}
+                    onApprovalDecision={(approval, decision) => void handleApprovalDecision(approval, decision)}
+                    onComposerDraftChange={setComposerDraft}
+                    onStopTurn={() => void stopTurn()}
+                    onSubmitTurn={() => void submitTurn()}
+                    openProjectPath={openProjectPath}
+                    approvalActionErrors={approvalActionErrors}
+                    respondingApprovalKeys={respondingApprovalKeys}
+                    t={t}
+                    threadConversation={threadConversation}
+                    threadPrompt={threadPrompt}
+                    turnError={turnError}
+                  />
 
                   <aside className="min-h-0 min-w-0 border-l border-[var(--app-shell-border)] bg-[var(--app-shell-right)] px-4 py-4">
                     <div className="flex items-center justify-between text-[12px] tracking-[0.12em] text-[var(--app-shell-subtle)]">
