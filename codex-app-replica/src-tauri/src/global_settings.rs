@@ -31,8 +31,28 @@ pub fn set_global_state(app: AppHandle, key: String, value: Value) -> Result<(),
 
 fn ensure_supported_key(key: &str) -> Result<(), String> {
     match key {
-        "usePointerCursors" | "sansFontSize" | "codeFontSize" | "localeOverride"
-        | "followUpQueueMode" | "reviewDelivery" => Ok(()),
+        "usePointerCursors"
+        | "sansFontSize"
+        | "codeFontSize"
+        | "localeOverride"
+        | "appearanceTheme"
+        | "appearanceLightChromeTheme"
+        | "appearanceDarkChromeTheme"
+        | "appearanceLightCodeThemeId"
+        | "appearanceDarkCodeThemeId"
+        | "composerEnterBehavior"
+        | "followUpQueueMode"
+        | "reviewDelivery"
+        | "git-branch-prefix"
+        | "git-always-force-push"
+        | "git-create-pull-request-as-draft"
+        | "git-pull-request-merge-method"
+        | "git-show-sidebar-pr-icons"
+        | "git-commit-instructions"
+        | "git-pr-instructions"
+        | "worktree-auto-cleanup-enabled"
+        | "worktree-auto-cleanup-unpackaged-override-enabled"
+        | "worktree-keep-count" => Ok(()),
         _ => Err(format!("unsupported global setting key: {key}")),
     }
 }

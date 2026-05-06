@@ -7,6 +7,7 @@ export type ThreadHistoryEntry = {
   createdAt: number;
   updatedAt: number;
   cwd: string;
+  path: string | null;
   name: string | null;
 };
 
@@ -92,10 +93,26 @@ export type ThreadConversationFileChange = {
   changes: FileChangeSummary[];
 };
 
+export type ThreadConversationEnteredReviewMode = {
+  type: "enteredReviewMode";
+  id: string;
+  turnId: string;
+  review: string;
+};
+
+export type ThreadConversationExitedReviewMode = {
+  type: "exitedReviewMode";
+  id: string;
+  turnId: string;
+  review: string;
+};
+
 export type ThreadConversationItem =
   | ThreadConversationMessage
   | ThreadConversationCommandExecution
-  | ThreadConversationFileChange;
+  | ThreadConversationFileChange
+  | ThreadConversationEnteredReviewMode
+  | ThreadConversationExitedReviewMode;
 
 export type ThreadEvent =
   | {
@@ -138,16 +155,51 @@ export type ThreadEvent =
       threadId: string;
     };
 
+export type ReviewDelivery = "inline" | "detached";
+
+export type ReviewStartResponse = {
+  turnId: string;
+  reviewThreadId: string;
+};
+
 export async function getRecentThreads() {
   return invoke<ThreadHistoryEntry[]>("list_recent_threads");
+}
+
+export async function getArchivedThreads() {
+  return invoke<ThreadHistoryEntry[]>("list_archived_threads");
 }
 
 export async function startThread(cwd: string | null) {
   return invoke<string>("start_thread", { cwd });
 }
 
+export async function forkThread(threadId: string) {
+  return invoke<string>("fork_thread", { threadId });
+}
+
+export async function archiveThread(threadId: string) {
+  return invoke<void>("archive_thread", { threadId });
+}
+
+export async function unarchiveThread(threadId: string) {
+  return invoke<string>("unarchive_thread", { threadId });
+}
+
+export async function setThreadName(params: { threadId: string; name: string | null }) {
+  return invoke<void>("set_thread_name", params);
+}
+
 export async function startTurn(params: { threadId: string; text: string; cwd: string | null }) {
   return invoke<string>("start_turn", params);
+}
+
+export async function startReview(params: { threadId: string; delivery: ReviewDelivery }) {
+  return invoke<ReviewStartResponse>("start_review", { params });
+}
+
+export async function steerTurn(params: { threadId: string; turnId: string; text: string }) {
+  return invoke<string>("steer_turn", params);
 }
 
 export async function interruptTurn(params: { threadId: string; turnId: string }) {

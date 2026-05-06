@@ -1,0 +1,269 @@
+[
+  {
+    "id": "newThread",
+    "titleEn": "New chat",
+    "defaultKeybindings": ["CmdOrCtrl+N", "CmdOrCtrl+Shift+O"]
+  },
+  {
+    "id": "quickChat",
+    "titleEn": "New quick chat",
+    "defaultKeybindings": ["CmdOrCtrl+Alt+N"]
+  },
+  {
+    "id": "openThreadOverlay",
+    "titleEn": "Open in mini window",
+    "defaultKeybindings": []
+  },
+  {
+    "id": "archiveThread",
+    "titleEn": "Archive chat",
+    "defaultKeybindings": ["CmdOrCtrl+Shift+A"]
+  },
+  {
+    "id": "toggleThreadPin",
+    "titleEn": "Toggle pin",
+    "defaultKeybindings": ["CmdOrCtrl+Alt+P"]
+  },
+  {
+    "id": "openControlWindow",
+    "titleEn": "Open control window",
+    "defaultKeybindings": []
+  },
+  {
+    "id": "openAvatarOverlay",
+    "titleEn": "Wake Pet",
+    "defaultKeybindings": []
+  },
+  {
+    "id": "previousThread",
+    "titleEn": "Previous chat",
+    "defaultKeybindings": ["CmdOrCtrl+Shift+["]
+  },
+  {
+    "id": "nextThread",
+    "titleEn": "Next chat",
+    "defaultKeybindings": ["CmdOrCtrl+Shift+]"]
+  },
+  {
+    "id": "settings",
+    "titleEn": "Settings",
+    "defaultKeybindings": ["CmdOrCtrl+,"]
+  },
+  {
+    "id": "mcpSettings",
+    "titleEn": "MCP",
+    "defaultKeybindings": []
+  },
+  {
+    "id": "personalitySettings",
+    "titleEn": "Personality",
+    "defaultKeybindings": []
+  },
+  {
+    "id": "keyboardShortcuts",
+    "titleEn": "Keyboard shortcuts",
+    "defaultKeybindings": []
+  },
+  {
+    "id": "manageTasks",
+    "titleEn": "Manage automations",
+    "defaultKeybindings": []
+  },
+  {
+    "id": "forceReloadSkills",
+    "titleEn": "Force reload skills",
+    "defaultKeybindings": []
+  },
+  {
+    "id": "installPrimaryRuntime",
+    "titleEn": "Install Codex Workspace",
+    "defaultKeybindings": []
+  },
+  {
+    "id": "openSkills",
+    "titleEn": "Go to skills",
+    "defaultKeybindings": []
+  },
+  {
+    "id": "openFolder",
+    "titleEn": "Open folder",
+    "defaultKeybindings": ["CmdOrCtrl+O"]
+  },
+  {
+    "id": "toggleSidebar",
+    "titleEn": "Toggle sidebar",
+    "defaultKeybindings": ["CmdOrCtrl+B"]
+  },
+  {
+    "id": "toggleTerminal",
+    "titleEn": "Toggle terminal",
+    "defaultKeybindings": ["CmdOrCtrl+J"]
+  },
+  {
+    "id": "openBrowserTab",
+    "titleEn": "Open browser tab",
+    "defaultKeybindings": ["CmdOrCtrl+T"]
+  },
+  {
+    "id": "toggleBrowserPanel",
+    "titleEn": "Toggle browser panel",
+    "defaultKeybindings": ["CmdOrCtrl+Shift+B"]
+  },
+  {
+    "id": "toggleDiffPanel",
+    "titleEn": "Toggle diff panel",
+    "defaultKeybindings": ["CmdOrCtrl+Alt+B"]
+  },
+  {
+    "id": "findInThread",
+    "titleEn": "Find",
+    "defaultKeybindings": ["Ctrl+F"]
+  },
+  {
+    "id": "focusBrowserAddressBar",
+    "titleEn": "Focus browser address bar",
+    "defaultKeybindings": ["CmdOrCtrl+L"]
+  },
+  {
+    "id": "navigateBack",
+    "titleEn": "Back",
+    "titleZhCn": "返回",
+    "defaultKeybindings": ["CmdOrCtrl+["]
+  },
+  {
+    "id": "navigateForward",
+    "titleEn": "Forward",
+    "titleZhCn": "前进",
+    "defaultKeybindings": ["CmdOrCtrl+]"]
+  },
+  {
+    "id": "logOut",
+    "titleEn": "Log out",
+    "defaultKeybindings": []
+  },
+  {
+    "id": "feedback",
+    "titleEn": "Feedback",
+    "defaultKeybindings": []
+  },
+  {
+    "id": "thread1",
+    "titleEn": "Go to chat 1",
+    "defaultKeybindings": ["CmdOrCtrl+1"]
+  },
+  {
+    "id": "thread2",
+    "titleEn": "Go to chat 2",
+    "defaultKeybindings": ["CmdOrCtrl+2"]
+  },
+  {
+    "id": "thread3",
+    "titleEn": "Go to chat 3",
+    "defaultKeybindings": ["CmdOrCtrl+3"]
+  },
+  {
+    "id": "thread4",
+    "titleEn": "Go to chat 4",
+    "defaultKeybindings": ["CmdOrCtrl+4"]
+  },
+  {
+    "id": "thread5",
+    "titleEn": "Go to chat 5",
+    "defaultKeybindings": ["CmdOrCtrl+5"]
+  },
+  {
+    "id": "thread6",
+    "titleEn": "Go to chat 6",
+    "defaultKeybindings": ["CmdOrCtrl+6"]
+  },
+  {
+    "id": "thread7",
+    "titleEn": "Go to chat 7",
+    "defaultKeybindings": ["CmdOrCtrl+7"]
+  },
+  {
+    "id": "thread8",
+    "titleEn": "Go to chat 8",
+    "defaultKeybindings": ["CmdOrCtrl+8"]
+  },
+  {
+    "id": "thread9",
+    "titleEn": "Go to chat 9",
+    "defaultKeybindings": ["CmdOrCtrl+9"]
+  },
+  {
+    "id": "copyConversationPath",
+    "titleEn": "Copy conversation path",
+    "defaultKeybindings": ["CmdOrCtrl+Alt+Shift+C"]
+  },
+  {
+    "id": "copyDeeplink",
+    "titleEn": "Copy deeplink",
+    "defaultKeybindings": ["CmdOrCtrl+Alt+L"]
+  },
+  {
+    "id": "copySessionId",
+    "titleEn": "Copy session id",
+    "defaultKeybindings": ["CmdOrCtrl+Alt+C"]
+  },
+  {
+    "id": "copyWorkingDirectory",
+    "titleEn": "Copy working directory",
+    "defaultKeybindings": ["CmdOrCtrl+Shift+C"]
+  },
+  {
+    "id": "dictation",
+    "titleEn": "Dictation",
+    "defaultKeybindings": ["Ctrl+M"]
+  },
+  {
+    "id": "closeTabOrWindow",
+    "titleEn": "Close",
+    "defaultKeybindings": ["CmdOrCtrl+W"]
+  },
+  {
+    "id": "reloadBrowserPage",
+    "titleEn": "Reload Browser Page",
+    "defaultKeybindings": ["CmdOrCtrl+R"]
+  },
+  {
+    "id": "hardReloadBrowserPage",
+    "titleEn": "Hard Reload Browser Page",
+    "defaultKeybindings": ["CmdOrCtrl+Shift+R"]
+  },
+  {
+    "id": "newWindow",
+    "titleEn": "New Window",
+    "defaultKeybindings": ["CmdOrCtrl+Shift+N"]
+  },
+  {
+    "id": "openCommandMenu",
+    "titleEn": "Open command menu",
+    "defaultKeybindings": ["CmdOrCtrl+K", "CmdOrCtrl+Shift+P"]
+  },
+  {
+    "id": "searchChats",
+    "titleEn": "Search Chats…",
+    "defaultKeybindings": ["CmdOrCtrl+G"]
+  },
+  {
+    "id": "searchFiles",
+    "titleEn": "Search Files…",
+    "defaultKeybindings": ["CmdOrCtrl+P"]
+  },
+  {
+    "id": "renameThread",
+    "titleEn": "Rename chat",
+    "defaultKeybindings": ["CmdOrCtrl+Alt+R"]
+  },
+  {
+    "id": "toggleFileTreePanel",
+    "titleEn": "Toggle File Tree",
+    "defaultKeybindings": ["CmdOrCtrl+Shift+E"]
+  },
+  {
+    "id": "toggleTraceRecording",
+    "titleEn": "Start Trace Recording",
+    "defaultKeybindings": ["CmdOrCtrl+Shift+S"]
+  }
+]

@@ -4,11 +4,14 @@ import type {
   ThreadConversation,
   ThreadConversationItem,
 } from "../../services/history";
+import type { ComposerEnterBehavior } from "../../services/settings";
+import type { QueuedLocalFollowUp } from "./localFollowUpQueue";
 import {
   approvalRequestKey,
   resolveApprovalDecisions,
   type PendingApproval,
 } from "./threadConversationState";
+import { buildRenderableConversationItems } from "./renderableConversationItems";
 
 const approvalDecisionLabelKeys: Record<ApprovalDecision, MessageKey> = {
   accept: "app.chat.approval.accept",
@@ -26,53 +29,53 @@ const statusLabelKeys: Record<string, MessageKey> = {
 
 type ChatConversationMainPaneProps = {
   composerDraft: string;
+  composerEnterBehavior: ComposerEnterBehavior;
   currentThreadApprovals: PendingApproval[];
-  isTurnInProgress: boolean;
+  currentThreadQueuedFollowUps: QueuedLocalFollowUp[];
   onApprovalDecision: (approval: PendingApproval, decision: ApprovalDecision) => void;
   onComposerDraftChange: (value: string) => void;
+  onRemoveQueuedFollowUp: (queuedFollowUpId: string) => void;
   onStopTurn: () => void;
-  onSubmitTurn: () => void;
-  openProjectPath: string | null;
+  onSubmitTurn: (invertFollowUpAction?: boolean) => void;
   approvalActionErrors: Record<string, string>;
   respondingApprovalKeys: string[];
+  submitButtonMode: "send" | "stop";
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
   threadConversation: ThreadConversation | null;
-  threadPrompt: string;
   turnError: string | null;
 };
 
 export function ChatConversationMainPane({
   composerDraft,
+  composerEnterBehavior,
   currentThreadApprovals,
-  isTurnInProgress,
+  currentThreadQueuedFollowUps,
   onApprovalDecision,
   onComposerDraftChange,
+  onRemoveQueuedFollowUp,
   onStopTurn,
   onSubmitTurn,
-  openProjectPath,
   approvalActionErrors,
   respondingApprovalKeys,
+  submitButtonMode,
   t,
   threadConversation,
-  threadPrompt,
   turnError,
 }: ChatConversationMainPaneProps) {
+  const conversationItems = threadConversation ? buildRenderableConversationItems(threadConversation.items) : [];
+
   return (
     <section className="min-h-0 min-w-0 overflow-y-auto px-5 py-5">
       <div className="mx-auto flex max-w-[820px] flex-col gap-4">
         {threadConversation ? (
-          threadConversation.items.length > 0 ? (
-            threadConversation.items.map((item) => <ConversationItemCard key={item.id} item={item} t={t} />)
+          conversationItems.length > 0 ? (
+            conversationItems.map((item) => <ConversationItemCard key={item.id} item={item} t={t} />)
           ) : (
-            <div className="rounded-[18px] border border-[var(--app-shell-border)] bg-white/92 px-5 py-4 text-[14px] leading-6 text-[#302b26] shadow-[0_1px_0_rgba(0,0,0,0.03)]">
+            <div className="app-card rounded-[18px] px-5 py-4 text-[14px] leading-6">
               {t("app.chat.noMessages")}
             </div>
           )
-        ) : (
-          <div className="rounded-[18px] border border-[var(--app-shell-border)] bg-white/92 px-5 py-4 text-[14px] leading-6 text-[#302b26] shadow-[0_1px_0_rgba(0,0,0,0.03)]">
-            {threadPrompt}
-          </div>
-        )}
+        ) : null}
 
         {currentThreadApprovals.map((approval) => {
           const requestKey = approvalRequestKey(approval.requestId);
@@ -82,15 +85,15 @@ export function ChatConversationMainPane({
           return (
             <div
               key={requestKey}
-              className="rounded-[18px] border border-[#d5c2a0] bg-[#fff9ef] px-5 py-4 shadow-[0_1px_0_rgba(0,0,0,0.03)]"
+              className="app-card-warning rounded-[18px] px-5 py-4"
             >
               <div className="flex items-center justify-between gap-3">
-                <div className="text-[14px] font-medium text-[#4e3c22]">
+                <div className="text-[14px] font-medium">
                   {approval.type === "commandApprovalRequested"
                     ? t("app.chat.approval.commandTitle")
                     : t("app.chat.approval.fileChangeTitle")}
                 </div>
-                <div className="text-[12px] text-[#8b7554]">{t("app.chat.approval.review")}</div>
+                <div className="app-text-warning-muted text-[12px]">{t("app.chat.approval.review")}</div>
               </div>
 
               {approval.reason ? (
@@ -101,10 +104,10 @@ export function ChatConversationMainPane({
                 <>
                   {approval.command ? (
                     <div className="mt-3">
-                      <div className="text-[12px] font-medium tracking-[0.08em] text-[#8b7554]">
+                      <div className="app-text-warning-muted text-[12px] font-medium tracking-[0.08em]">
                         {t("app.chat.approval.command")}
                       </div>
-                      <pre className="mt-1 overflow-x-auto rounded-[14px] bg-[#f7f0e1] px-4 py-3 text-[12px] leading-6 whitespace-pre-wrap text-[#33281c]">
+                      <pre className="app-code-block-warning mt-1 overflow-x-auto rounded-[14px] px-4 py-3 text-[12px] leading-6 whitespace-pre-wrap">
                         {approval.command}
                       </pre>
                     </div>
@@ -127,7 +130,7 @@ export function ChatConversationMainPane({
                     />
                   ) : null}
                   <div className="mt-3">
-                    <div className="text-[12px] font-medium tracking-[0.08em] text-[#8b7554]">
+                    <div className="app-text-warning-muted text-[12px] font-medium tracking-[0.08em]">
                       {t("app.chat.approval.changes")}
                     </div>
                     {approval.changes.length > 0 ? (
@@ -141,7 +144,7 @@ export function ChatConversationMainPane({
                         ))}
                       </div>
                     ) : (
-                      <div className="mt-2 text-[13px] leading-6 text-[#6c5941]">
+                      <div className="app-text-warning-muted mt-2 text-[13px] leading-6">
                         {t("app.chat.approval.noChanges")}
                       </div>
                     )}
@@ -149,7 +152,7 @@ export function ChatConversationMainPane({
                 </>
               )}
 
-              {approvalError ? <div className="mt-3 text-[12px] text-[#a2483d]">{approvalError}</div> : null}
+              {approvalError ? <div className="app-text-error mt-3 text-[12px]">{approvalError}</div> : null}
 
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 {decisions.map((decision) => (
@@ -161,81 +164,91 @@ export function ChatConversationMainPane({
                     className={[
                       "rounded-full border px-3 py-1.5 text-[12px]",
                       decision === "accept"
-                        ? "border-[#1c8a4a]/20 bg-[#1c8a4a] text-white"
+                        ? "app-approval-button-primary"
                         : decision === "acceptForSession"
-                          ? "border-[#8b7554]/20 bg-white text-[#4e3c22]"
-                          : "border-[#c9b698] bg-white/80 text-[#5f4d37]",
-                      "disabled:cursor-not-allowed disabled:bg-[#ddd0b8] disabled:text-[#8c7a62]",
+                          ? "app-approval-button-secondary"
+                          : "app-approval-button-tertiary",
                     ].join(" ")}
                   >
                     {t(approvalDecisionLabelKeys[decision])}
                   </button>
                 ))}
                 {isResponding ? (
-                  <div className="text-[12px] text-[#8b7554]">{t("app.chat.approval.submitting")}</div>
+                  <div className="app-text-warning-muted text-[12px]">{t("app.chat.approval.submitting")}</div>
                 ) : null}
               </div>
             </div>
           );
         })}
 
-        <div className="rounded-[18px] border border-[var(--app-shell-border)] bg-white/92 px-4 py-4 shadow-[0_1px_0_rgba(0,0,0,0.03)]">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-[12px] bg-[#efeeeb] text-[18px] text-[#645c52]">
-              ⊞
+        <div className="app-card rounded-[18px] px-4 py-4">
+          {currentThreadQueuedFollowUps.length > 0 ? (
+            <div className="app-card-muted mb-3 rounded-[14px] px-3 py-3">
+              <div className="app-title text-[12px] font-medium tracking-[0.08em]">
+                {t("app.chat.queuedFollowUps", { count: currentThreadQueuedFollowUps.length })}
+              </div>
+              <div className="mt-2 space-y-2">
+                {currentThreadQueuedFollowUps.map((followUp) => (
+                  <div
+                    key={followUp.id}
+                    className="app-control flex items-start justify-between gap-3 rounded-[12px] px-3 py-2"
+                  >
+                    <div className="min-w-0 flex-1 break-words text-[13px] leading-6 whitespace-pre-wrap">
+                      {followUp.text}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveQueuedFollowUp(followUp.id)}
+                      className="app-control-weak shrink-0 rounded-full px-2.5 py-1 text-[11px]"
+                    >
+                      {t("app.chat.removeQueuedFollowUp")}
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[14px] font-medium text-[#29251f]">AGENTS.md</div>
-              <div className="text-[12px] text-[#8e867c]">{t("app.chat.document")}</div>
-            </div>
-            <button
-              type="button"
-              className="rounded-[11px] border border-black/8 bg-white px-3 py-1.5 text-[13px] text-[#302b25]"
-            >
-              {t("app.chat.open")}
-            </button>
-          </div>
-        </div>
-
-        {openProjectPath ? (
-          <div className="rounded-[18px] border border-[var(--app-shell-border)] bg-[#f7f6f4] px-4 py-4 shadow-[0_1px_0_rgba(0,0,0,0.03)]">
-            <div className="text-[12px] font-medium tracking-[0.16em] text-[var(--app-shell-subtle)]">
-              {t("app.chat.openProject")}
-            </div>
-            <div className="mt-2 text-[13px] leading-6 text-[#312d28]">{openProjectPath}</div>
-          </div>
-        ) : null}
-
-        <div className="rounded-[18px] border border-[var(--app-shell-border)] bg-white/92 px-4 py-4 shadow-[0_1px_0_rgba(0,0,0,0.03)]">
+          ) : null}
           <textarea
             value={composerDraft}
-            disabled={isTurnInProgress}
             onChange={(event) => onComposerDraftChange(event.target.value)}
             onKeyDown={(event) => {
-              if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+              if (event.key !== "Enter") {
+                return;
+              }
+              const hasModifier = event.ctrlKey || event.metaKey;
+              const hasMultilineContent = composerDraft.includes("\n");
+              if (hasModifier) {
+                event.preventDefault();
+                onSubmitTurn(true);
+                return;
+              }
+              if (event.shiftKey) {
+                return;
+              }
+              if (composerEnterBehavior === "enter" || !hasMultilineContent) {
                 event.preventDefault();
                 onSubmitTurn();
               }
             }}
             rows={4}
             placeholder={t("app.chat.composePlaceholder")}
-            className="min-h-[104px] w-full resize-none border-0 bg-transparent text-[14px] leading-6 text-[#2d2924] outline-none placeholder:text-[#8e867c] disabled:cursor-not-allowed"
+            className="app-text-input min-h-[104px] w-full resize-none border-0 bg-transparent text-[14px] leading-6 outline-none disabled:cursor-not-allowed"
           />
           <div className="mt-3 flex items-center justify-between gap-3">
-            <div className="min-h-[20px] text-[12px] text-[#a2483d]">{turnError ?? ""}</div>
+            <div className="app-text-error min-h-[20px] text-[12px]">{turnError ?? ""}</div>
             <button
               type="button"
-              disabled={!isTurnInProgress && composerDraft.trim().length === 0}
+              disabled={submitButtonMode === "send" && composerDraft.trim().length === 0}
               onClick={() => {
-                if (isTurnInProgress) {
+                if (submitButtonMode === "stop") {
                   onStopTurn();
                   return;
                 }
                 onSubmitTurn();
               }}
-              className="rounded-full border border-black/8 bg-[#2f2b26] px-4 py-1.5 text-[13px] text-white disabled:cursor-not-allowed disabled:bg-[#b9b2aa]"
+              className="app-button-primary rounded-full px-4 py-1.5 text-[13px]"
             >
-              {isTurnInProgress ? t("app.chat.stop") : t("app.chat.send")}
+              {submitButtonMode === "stop" ? t("app.chat.stop") : t("app.chat.send")}
             </button>
           </div>
         </div>
@@ -258,9 +271,7 @@ function ConversationItemCard({
         <div
           className={[
             "max-w-[620px] rounded-[18px] px-4 py-3 text-[14px] leading-6 shadow-[0_1px_0_rgba(0,0,0,0.02)]",
-            isUser
-              ? "bg-[#ecebea] text-[#2d2924]"
-              : "border border-[var(--app-shell-border)] bg-white/92 text-[#302b26]",
+            isUser ? "app-segmented-option-active" : "app-card",
           ].join(" ")}
         >
           {item.text}
@@ -271,9 +282,9 @@ function ConversationItemCard({
 
   if (item.type === "commandExecution") {
     return (
-      <div className="rounded-[18px] border border-[var(--app-shell-border)] bg-white/92 px-5 py-4 shadow-[0_1px_0_rgba(0,0,0,0.03)]">
+      <div className="app-card rounded-[18px] px-5 py-4">
         <div className="flex items-center justify-between gap-3">
-          <div className="text-[14px] font-medium text-[#2f2b26]">{t("app.chat.commandExecution")}</div>
+          <div className="app-title text-[14px] font-medium">{t("app.chat.commandExecution")}</div>
           <StatusBadge status={item.status} t={t} />
         </div>
         <LabeledValue label={t("app.chat.approval.command")} value={item.command} className="mt-3" mono />
@@ -281,9 +292,9 @@ function ConversationItemCard({
         {item.aggregatedOutput ? (
           <LabeledValue label={t("app.chat.output")} value={item.aggregatedOutput} className="mt-3" mono />
         ) : (
-          <div className="mt-3 text-[13px] text-[#8a8176]">{t("app.chat.noOutput")}</div>
+          <div className="app-text-subtle mt-3 text-[13px]">{t("app.chat.noOutput")}</div>
         )}
-        <div className="mt-3 flex flex-wrap gap-4 text-[12px] text-[#6b655f]">
+        <div className="app-text-muted mt-3 flex flex-wrap gap-4 text-[12px]">
           <span>
             {t("app.chat.exitCode")}: {item.exitCode ?? "—"}
           </span>
@@ -297,9 +308,9 @@ function ConversationItemCard({
 
   if (item.type === "fileChange") {
     return (
-      <div className="rounded-[18px] border border-[var(--app-shell-border)] bg-white/92 px-5 py-4 shadow-[0_1px_0_rgba(0,0,0,0.03)]">
+      <div className="app-card rounded-[18px] px-5 py-4">
         <div className="flex items-center justify-between gap-3">
-          <div className="text-[14px] font-medium text-[#2f2b26]">{t("app.chat.fileChange")}</div>
+          <div className="app-title text-[14px] font-medium">{t("app.chat.fileChange")}</div>
           <StatusBadge status={item.status} t={t} />
         </div>
         <div className="mt-3 space-y-2">
@@ -311,7 +322,32 @@ function ConversationItemCard({
     );
   }
 
+  if (item.type === "enteredReviewMode" || item.type === "exitedReviewMode") {
+    return (
+      <div className="app-card rounded-[18px] px-5 py-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="app-title text-[14px] font-medium">{t("composer.reviewMode.title")}</div>
+          <StatusBadge status={item.type === "enteredReviewMode" ? "inProgress" : "completed"} t={t} />
+        </div>
+        <div className="app-text-muted mt-3 whitespace-pre-wrap text-[13px] leading-6">
+          {item.type === "enteredReviewMode" ? formatReviewModeLabel(item.review, t) : item.review}
+        </div>
+      </div>
+    );
+  }
+
   return null;
+}
+
+function formatReviewModeLabel(
+  review: string,
+  t: (key: MessageKey, values?: Record<string, number | string>) => string,
+) {
+  const normalized = review.trim().toLowerCase();
+  if (normalized === "current changes" || normalized === "uncommitted changes") {
+    return t("composer.reviewMode.option.unstaged.simple");
+  }
+  return review;
 }
 
 function FileChangeCard({
@@ -322,20 +358,20 @@ function FileChangeCard({
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
 }) {
   return (
-    <div className="rounded-[14px] bg-[#f7f6f4] px-4 py-3">
-      <div className="flex items-center gap-3 text-[13px] text-[#312d28]">
-        <span className="rounded-full bg-white px-2 py-0.5 text-[11px] uppercase tracking-[0.08em] text-[#7d756c]">
+    <div className="app-card-muted rounded-[14px] px-4 py-3">
+      <div className="flex items-center gap-3 text-[13px]">
+        <span className="app-control rounded-full px-2 py-0.5 text-[11px] uppercase tracking-[0.08em]">
           {change.kind}
         </span>
         <span className="min-w-0 break-all">{change.path}</span>
       </div>
       {change.movePath ? (
-        <div className="mt-2 text-[12px] text-[#7d756c]">
+        <div className="app-text-muted mt-2 text-[12px]">
           {t("app.chat.movedTo")}: {change.movePath}
         </div>
       ) : null}
       {change.diff ? (
-        <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-[12px] leading-6 text-[#5b554f]">
+        <pre className="app-text-muted mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-[12px] leading-6">
           {change.diff}
         </pre>
       ) : null}
@@ -352,7 +388,7 @@ function StatusBadge({
 }) {
   const labelKey = statusLabelKeys[status] ?? "app.chat.status.inProgress";
   return (
-    <span className="rounded-full bg-[#f3f1ed] px-2.5 py-1 text-[11px] text-[#655d54]">
+    <span className="app-badge rounded-full px-2.5 py-1 text-[11px]">
       {t(labelKey)}
     </span>
   );
@@ -371,11 +407,11 @@ function LabeledValue({
 }) {
   return (
     <div className={className}>
-      <div className="text-[12px] font-medium tracking-[0.08em] text-[#8a8176]">{label}</div>
+      <div className="app-text-subtle text-[12px] font-medium tracking-[0.08em]">{label}</div>
       <div
         className={[
-          "mt-1 break-all text-[13px] leading-6 text-[#312d28]",
-          mono ? "whitespace-pre-wrap rounded-[14px] bg-[#f7f6f4] px-4 py-3 font-mono text-[12px]" : "",
+          "mt-1 break-all text-[13px] leading-6",
+          mono ? "app-code-block whitespace-pre-wrap rounded-[14px] px-4 py-3 font-mono text-[12px]" : "",
         ].join(" ")}
       >
         {value}

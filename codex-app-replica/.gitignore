@@ -12,3 +12,7 @@ src-tauri/gen/
 
 # Reverse-engineering artifacts can grow without bound; keep only tracker/docs placeholders.
 compare/*
+!compare/tracker.md
+!compare/protocol/
+!compare/protocol/**/
+!compare/protocol/**/*.md

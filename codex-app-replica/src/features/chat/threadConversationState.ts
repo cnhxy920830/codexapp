@@ -84,7 +84,7 @@ export function buildThreadDiffSummary(items: ThreadConversationItem[]): ThreadD
   let linesAdded = 0;
   let linesDeleted = 0;
   for (const file of files) {
-    const counts = countDiffLines(file.diff);
+    const counts = countFileChangeDiffLines(file.diff);
     linesAdded += counts.linesAdded;
     linesDeleted += counts.linesDeleted;
   }
@@ -107,7 +107,7 @@ function emptyThreadDiffSummary(): ThreadDiffSummary {
   };
 }
 
-function countDiffLines(diff: string | null) {
+export function countFileChangeDiffLines(diff: string | null) {
   if (!diff) {
     return { linesAdded: 0, linesDeleted: 0 };
   }

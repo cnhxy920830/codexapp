@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-shell";
 import {
@@ -17,30 +17,66 @@ import {
   type LaunchContext,
 } from "./services/auth";
 import {
+  archiveThread,
   respondToApprovalRequest,
+  forkThread,
+  setThreadName,
   type ApprovalDecision,
   buildProjectGroups,
   getRecentThreads,
   interruptTurn,
   onThreadEvent,
   readThread,
+  startReview,
   startThread,
+  steerTurn,
   startTurn,
   type HistoryProjectGroup,
   type ThreadConversation,
 } from "./services/history";
 import {
-  applyGeneralSettingsSnapshot,
+  applyAppearanceSettingsSnapshot,
   buildConfigScopeOptions,
   chooseDefaultConfigScopeKey,
-  readGeneralSettingsSnapshot,
+  type ComposerEnterBehavior,
+  type FollowUpQueueMode,
+  type ReviewDelivery,
+  readAppearanceSettingsSnapshot,
   readConfig,
   writeConfigValue,
   type ConfigScopeOption,
   type ConfigSnapshot,
 } from "./services/settings";
+import { AppearanceSettings } from "./components/AppearanceSettings";
+import { NewChatIcon, SearchIcon, SettingsCogIcon } from "./components/AppShellIcons";
+import { AppToastRegion, type AppToast } from "./components/AppToastRegion";
+import { ConfigScopeMenu } from "./components/ConfigScopeMenu";
+import { DataControlsSettings } from "./components/DataControlsSettings";
+import { GitSettings } from "./components/GitSettings";
 import { GeneralSettings } from "./components/GeneralSettings";
+import { KeyboardShortcutsSettings } from "./components/KeyboardShortcutsSettings";
+import { BrowserUseSettings } from "./components/BrowserUseSettings";
+import { LocalEnvironmentsSettings } from "./components/LocalEnvironmentsSettings";
+import { McpSettings } from "./components/McpSettings";
+import { ComputerUseSettings } from "./components/ComputerUseSettings";
+import { PersonalizationSettings } from "./components/PersonalizationSettings";
+import { PluginsSettings } from "./components/PluginsSettings";
+import { SkillsSettings } from "./components/SkillsSettings";
+import { WorktreesSettings } from "./components/WorktreesSettings";
+import { SettingsChoiceMenu } from "./components/SettingsChoiceMenu";
+import { ToggleSwitch } from "./components/ToggleSwitch";
 import { ChatConversationMainPane } from "./features/chat/ChatConversationMainPane";
+import { ChatSidePanel, type ChatSidePanelTab } from "./features/chat/ChatSidePanel";
+import { WorkspaceFileSearchDialog } from "./features/chat/WorkspaceFileSearchDialog";
+import { renderConversationMarkdown } from "./features/chat/conversationMarkdown";
+import {
+  enqueueQueuedLocalFollowUp,
+  prependQueuedLocalFollowUp,
+  queuedLocalFollowUpsForThread,
+  removeQueuedLocalFollowUp,
+  takeNextQueuedLocalFollowUp,
+  type QueuedLocalFollowUp,
+} from "./features/chat/localFollowUpQueue";
 import {
   approvalRequestKey,
   buildThreadDiffSummary,
@@ -50,54 +86,178 @@ import {
 } from "./features/chat/threadConversationState";
 import { useI18n } from "./i18n/i18n";
 import type { MessageKey } from "./i18n/messages";
+import type { WorkspaceFileDocument } from "./services/workspaceFiles";
 
 const appWindow = getCurrentWindow();
-const threadPromptDefault = "AGENTS.md";
+const AGENT_SETTINGS_DOCS_URL = "https://developers.openai.com/codex/app/local-environments";
+const CONFIG_TOML_DOCS_URL = "https://developers.openai.com/codex/config-basic";
 
-const openFiles = ["AGENTS.md", "tracker.md"];
-
-type SettingsSection = "general-settings" | "agent";
+type SettingsSection =
+  | "general-settings"
+  | "appearance"
+  | "git-settings"
+  | "agent"
+  | "personalization"
+  | "browser-use"
+  | "computer-use"
+  | "plugins-settings"
+  | "skills-settings"
+  | "keyboard-shortcuts"
+  | "mcp-settings"
+  | "local-environments"
+  | "worktrees"
+  | "data-controls";
+type AgentConfigControlErrors = Partial<Record<"approval" | "sandbox" | "network", string>>;
 
 const settingsGroups = [
   {
     headingKey: "settings.sectionApp" as const,
-    items: [{ id: "general-settings" as const, labelKey: "settings.general" as const, disabled: false }],
+    items: [
+      { id: "general-settings" as const, labelKey: "settings.nav.general-settings" as const, disabled: false },
+      { id: "appearance" as const, labelKey: "settings.nav.appearance" as const, disabled: false },
+      { id: "git-settings" as const, labelKey: "settings.nav.git-settings" as const, disabled: false },
+    ],
   },
   {
     headingKey: "settings.sectionHost" as const,
-    items: [{ id: "agent" as const, labelKey: "settings.configuration" as const, disabled: false }],
+    items: [
+      { id: "agent" as const, labelKey: "settings.nav.agent" as const, disabled: false },
+      { id: "personalization" as const, labelKey: "settings.nav.personalization" as const, disabled: false },
+      { id: "browser-use" as const, labelKey: "settings.nav.browser-use" as const, disabled: false },
+      { id: "computer-use" as const, labelKey: "settings.nav.computer-use" as const, disabled: false },
+      { id: "mcp-settings" as const, labelKey: "settings.nav.mcp-settings" as const, disabled: false },
+      { id: "plugins-settings" as const, labelKey: "settings.nav.plugins-settings" as const, disabled: false },
+      { id: "skills-settings" as const, labelKey: "skills.page.heading" as const, disabled: false },
+      { id: "keyboard-shortcuts" as const, labelKey: "settings.nav.keyboard-shortcuts" as const, disabled: false },
+      { id: "local-environments" as const, labelKey: "settings.nav.local-environments" as const, disabled: false },
+      { id: "worktrees" as const, labelKey: "settings.nav.worktrees" as const, disabled: false },
+      { id: "data-controls" as const, labelKey: "settings.nav.data-controls" as const, disabled: false },
+    ],
   },
 ];
 
+type NavItem = {
+  icon: ReactNode;
+  label: string;
+  route: "chat" | "settings";
+  action?: "new-thread";
+  section?: SettingsSection;
+};
+
 const approvalPolicyOptions = [
-  { value: "untrusted", labelKey: "settings.agent.approval.untrusted" as const },
-  { value: "on-failure", labelKey: "settings.agent.approval.onFailure" as const },
-  { value: "on-request", labelKey: "settings.agent.approval.onRequest" as const },
-  { value: "never", labelKey: "settings.agent.approval.never" as const },
+  { value: "untrusted", label: "Untrusted", description: "Always ask before taking action" },
+  { value: "on-failure", label: "On failure", description: "Ask only when a command fails" },
+  { value: "on-request", label: "On request", description: "Ask when escalation is requested" },
+  { value: "never", label: "Never", description: "Run without asking for approval" },
 ];
 
 const sandboxModeOptions = [
-  { value: "read-only", labelKey: "settings.agent.sandbox.readOnly" as const },
-  { value: "workspace-write", labelKey: "settings.agent.sandbox.workspaceWrite" as const },
-  { value: "danger-full-access", labelKey: "settings.agent.sandbox.fullAccess" as const },
+  { value: "read-only", label: "Read only", description: "Can read files, but cannot edit them" },
+  { value: "workspace-write", label: "Workspace write", description: "Can edit files, but only in this workspace" },
+  { value: "danger-full-access", label: "Full access", description: "Can edit files outside this workspace" },
 ];
 
 const settingsSectionLabelKeys: Record<SettingsSection, MessageKey> = {
-  "general-settings": "settings.general",
-  agent: "settings.configuration",
+  "general-settings": "settings.nav.general-settings",
+  appearance: "settings.nav.appearance",
+  "git-settings": "settings.section.git-settings",
+  agent: "settings.nav.agent",
+  personalization: "settings.nav.personalization",
+  "browser-use": "settings.section.browser-use",
+  "computer-use": "settings.nav.computer-use",
+  "plugins-settings": "settings.section.plugins-settings",
+  "skills-settings": "skills.page.heading",
+  "keyboard-shortcuts": "settings.nav.keyboard-shortcuts",
+  "mcp-settings": "settings.section.mcp-settings",
+  "local-environments": "settings.nav.local-environments",
+  worktrees: "settings.nav.worktrees",
+  "data-controls": "settings.nav.data-controls",
 };
 
-function formatConfigScopeLabel(
+function getConfigScopeLabel(
   scope: ConfigScopeOption,
   t: (key: MessageKey, values?: Record<string, number | string>) => string,
 ) {
   if (scope.kind === "user") {
-    return t("settings.agent.scope.userConfig");
+    return t("settings.agent.configuration.scope.user");
   }
   if (scope.kind === "managed") {
-    return t("settings.agent.scope.adminConfig");
+    return t("settings.agent.configuration.scope.managed");
   }
   return scope.label;
+}
+
+function getConfigScopeTitle(
+  scope: ConfigScopeOption,
+  t: (key: MessageKey, values?: Record<string, number | string>) => string,
+) {
+  if (scope.kind === "managed") {
+    return t("settings.agent.configuration.scope.managedDescription");
+  }
+  return scope.filePath;
+}
+
+function renderInlineLinkMessage(template: string, href: string) {
+  const startTag = "<a>";
+  const endTag = "</a>";
+  const startIndex = template.indexOf(startTag);
+  const endIndex = template.indexOf(endTag);
+
+  if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
+    return template;
+  }
+
+  const prefix = template.slice(0, startIndex);
+  const linkLabel = template.slice(startIndex + startTag.length, endIndex);
+  const suffix = template.slice(endIndex + endTag.length);
+
+  return (
+    <>
+      {prefix}
+      <a
+        className="text-[var(--app-shell-accent)] underline underline-offset-2"
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {linkLabel}
+      </a>
+      {suffix}
+    </>
+  );
+}
+
+function getAgentConfigControlLockReason(
+  scope: ConfigScopeOption | null,
+  t: (key: MessageKey, values?: Record<string, number | string>) => string,
+) {
+  if (!scope) {
+    return t("settings.agent.configuration.scope.unavailable");
+  }
+  if (!scope.filePath) {
+    return t("settings.agent.configuration.scope.readOnly");
+  }
+  if (scope.kind === "managed") {
+    return t("settings.agent.configuration.control.managed");
+  }
+  return null;
+}
+
+function renderConfigTomlDescription(t: (key: MessageKey, values?: Record<string, number | string>) => string) {
+  return (
+    <>
+      {t("settings.agent.configuration.configToml.description")}{" "}
+      {t("settings.agent.configuration.configToml.restartNote")}{" "}
+      <a
+        className="text-[var(--app-shell-accent)] underline underline-offset-2"
+        href={CONFIG_TOML_DOCS_URL}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {t("settings.agent.configuration.configToml.docs")}
+      </a>
+    </>
+  );
 }
 
 function App() {
@@ -111,46 +271,61 @@ function App() {
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [showApiKeyEntry, setShowApiKeyEntry] = useState(false);
   const [authActionError, setAuthActionError] = useState<string | null>(null);
-  const [threadPrompt, setThreadPrompt] = useState(threadPromptDefault);
   const [composerDraft, setComposerDraft] = useState("");
+  const [composerEnterBehavior, setComposerEnterBehavior] = useState<ComposerEnterBehavior>("enter");
+  const [followUpQueueMode, setFollowUpQueueMode] = useState<FollowUpQueueMode>("queue");
+  const [reviewDelivery, setReviewDelivery] = useState<ReviewDelivery>("inline");
   const [activeTurn, setActiveTurn] = useState<{ threadId: string; turnId: string } | null>(null);
   const [turnError, setTurnError] = useState<string | null>(null);
+  const [queuedFollowUps, setQueuedFollowUps] = useState<QueuedLocalFollowUp[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [approvalActionErrors, setApprovalActionErrors] = useState<Record<string, string>>({});
   const [respondingApprovalKeys, setRespondingApprovalKeys] = useState<string[]>([]);
+  const [isSidePanelOpen, setIsSidePanelOpen] = useState(true);
+  const [activeSidePanelTab, setActiveSidePanelTab] = useState<ChatSidePanelTab>("review");
+  const [selectedSidePanelFile, setSelectedSidePanelFile] = useState<WorkspaceFileDocument | null>(null);
+  const [isWorkspaceFileSearchOpen, setIsWorkspaceFileSearchOpen] = useState(false);
+  const [isSidePanelTabMenuOpen, setIsSidePanelTabMenuOpen] = useState(false);
+  const [isThreadActionsMenuOpen, setIsThreadActionsMenuOpen] = useState(false);
+  const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false);
+  const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [threadActionFeedback, setThreadActionFeedback] = useState<{
+    tone: "success" | "error";
+    message: string;
+  } | null>(null);
+  const [appToast, setAppToast] = useState<AppToast | null>(null);
   const [currentRoute, setCurrentRoute] = useState<"chat" | "settings">("chat");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general-settings");
   const [configSnapshot, setConfigSnapshot] = useState<ConfigSnapshot | null>(null);
   const [configScopeOptions, setConfigScopeOptions] = useState<ConfigScopeOption[]>([]);
   const [selectedConfigScopeKey, setSelectedConfigScopeKey] = useState<string>("user");
-  const [configVersion, setConfigVersion] = useState<string | null>(null);
+  const [agentConfigControlErrors, setAgentConfigControlErrors] = useState<AgentConfigControlErrors>({});
   const [configError, setConfigError] = useState<string | null>(null);
+  const queuedFollowUpsRef = useRef<QueuedLocalFollowUp[]>([]);
+  const drainingQueuedThreadIdsRef = useRef(new Set<string>());
+  const sidePanelTabMenuRef = useRef<HTMLDivElement | null>(null);
+  const threadActionsMenuRef = useRef<HTMLDivElement | null>(null);
   const openProjectPath = launchContext?.openProjectPath ?? null;
+  const chatWorkspaceRoot = threadConversation?.cwd ?? openProjectPath ?? null;
+  const settingsWorkspaceRoot = chatWorkspaceRoot;
   const menuItems = [t("app.menu.file"), t("app.menu.edit"), t("app.menu.view"), t("app.menu.window"), t("app.menu.help")];
-  const navItems = [
-    { icon: "⊕", label: t("app.nav.newChat"), active: true, route: "chat" as const },
-    { icon: "⌕", label: t("app.nav.search"), route: "chat" as const },
-    { icon: "⬡", label: t("app.nav.skills"), route: "chat" as const },
-    { icon: "◫", label: t("app.nav.plugins"), route: "chat" as const },
-    { icon: "◔", label: t("app.nav.automation"), route: "chat" as const },
-    { icon: "⚙", label: t("app.nav.settings"), route: "settings" as const },
-  ];
-  const inspectorBullets = [
-    t("app.inspector.bullet.targetVersion"),
-    t("app.inspector.bullet.resourceFirst"),
-    t("app.inspector.bullet.currentWork"),
-    t("app.inspector.bullet.compareArtifacts"),
+  const navItems: NavItem[] = [
+    { action: "new-thread", icon: <NewChatIcon className="h-4 w-4" />, label: t("app.nav.newChat"), route: "chat" },
+    { icon: <SearchIcon className="h-4 w-4" />, label: t("app.nav.search"), route: "chat" },
+    { icon: <SettingsCogIcon className="h-4 w-4" />, label: t("app.nav.settings"), route: "settings" },
   ];
   const threadDiffSummary = buildThreadDiffSummary(threadConversation?.items ?? []);
-  const totalChangedFiles = threadDiffSummary.fileCount;
   const totalAdditions = threadDiffSummary.linesAdded;
   const totalDeletions = threadDiffSummary.linesDeleted;
   const shellHeaderTitle =
     currentRoute === "settings"
       ? `${t("app.shell.settings")} / ${t(settingsSectionLabelKeys[settingsSection])}`
-      : threadConversation?.title || threadPrompt;
+      : threadConversation?.title || t("app.nav.newChat");
   const isTurnInProgress = activeTurn !== null && activeTurn.threadId === selectedThreadId;
+  const submitButtonMode = isTurnInProgress && composerDraft.trim().length === 0 ? "stop" : "send";
   const currentThreadApprovals = pendingApprovals.filter((approval) => approval.threadId === selectedThreadId);
+  const currentThreadQueuedFollowUps = queuedLocalFollowUpsForThread(queuedFollowUps, selectedThreadId);
 
   useEffect(() => {
     let cancelled = false;
@@ -194,11 +369,118 @@ function App() {
   }, []);
 
   useEffect(() => {
-    void readGeneralSettingsSnapshot().then(applyGeneralSettingsSnapshot).catch(() => undefined);
+    void readAppearanceSettingsSnapshot()
+      .then((settings) => {
+        applyAppearanceSettingsSnapshot(settings);
+        setComposerEnterBehavior(settings.composerEnterBehavior);
+        setFollowUpQueueMode(settings.followUpQueueMode);
+        setReviewDelivery(settings.reviewDelivery);
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
+    if (!isSidePanelTabMenuOpen) {
+      return;
+    }
+    const handlePointerDown = (event: PointerEvent) => {
+      if (sidePanelTabMenuRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setIsSidePanelTabMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [isSidePanelTabMenuOpen]);
+
+  useEffect(() => {
+    if (!isThreadActionsMenuOpen) {
+      return;
+    }
+    const handlePointerDown = (event: PointerEvent) => {
+      if (threadActionsMenuRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setIsThreadActionsMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [isThreadActionsMenuOpen]);
+
+  useEffect(() => {
+    if (!threadActionFeedback) {
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      setThreadActionFeedback(null);
+    }, 2400);
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [threadActionFeedback]);
+
+  useEffect(() => {
+    if (!appToast) {
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      setAppToast(null);
+    }, 5000);
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [appToast]);
+
+  useEffect(() => {
+    setSelectedSidePanelFile(null);
+    setIsWorkspaceFileSearchOpen(false);
+    setActiveSidePanelTab((current) => (current === "file" ? "review" : current));
+  }, [selectedThreadId]);
+
+  useEffect(() => {
+    queuedFollowUpsRef.current = queuedFollowUps;
+  }, [queuedFollowUps]);
+
+  useEffect(() => {
     let unlisten: (() => void) | undefined;
+    const drainQueuedFollowUp = async (threadId: string) => {
+      if (drainingQueuedThreadIdsRef.current.has(threadId)) {
+        return;
+      }
+      const nextQueuedFollowUp = takeNextQueuedLocalFollowUp(queuedFollowUpsRef.current, threadId);
+      if (!nextQueuedFollowUp.followUp) {
+        return;
+      }
+      drainingQueuedThreadIdsRef.current.add(threadId);
+      queuedFollowUpsRef.current = nextQueuedFollowUp.remaining;
+      setQueuedFollowUps(nextQueuedFollowUp.remaining);
+      if (selectedThreadId === threadId) {
+        setTurnError(null);
+      }
+      try {
+        const turnId = await startTurn({
+          threadId,
+          text: nextQueuedFollowUp.followUp.text,
+          cwd: nextQueuedFollowUp.followUp.cwd,
+        });
+        setActiveTurn({ threadId, turnId });
+      } catch (error) {
+        queuedFollowUpsRef.current = prependQueuedLocalFollowUp(
+          queuedFollowUpsRef.current,
+          nextQueuedFollowUp.followUp,
+        );
+        setQueuedFollowUps(queuedFollowUpsRef.current);
+        if (selectedThreadId === threadId) {
+          setTurnError(error instanceof Error ? error.message : String(error));
+        }
+      } finally {
+        drainingQueuedThreadIdsRef.current.delete(threadId);
+      }
+    };
     void onThreadEvent((event) => {
       if (event.type === "commandApprovalRequested" || event.type === "fileChangeApprovalRequested") {
         const requestKey = approvalRequestKey(event.requestId);
@@ -235,6 +517,7 @@ function App() {
             ? null
             : current,
         );
+        void drainQueuedFollowUp(event.threadId);
       }
       if (event.threadId !== selectedThreadId) {
         return;
@@ -261,7 +544,6 @@ function App() {
             }),
           );
           setThreadConversation(thread);
-          setThreadPrompt(thread.title || threadPromptDefault);
         })
         .catch(() => undefined);
     }).then((dispose) => {
@@ -287,26 +569,22 @@ function App() {
             .then((thread) => {
               if (!cancelled) {
                 setThreadConversation(thread);
-                setThreadPrompt(thread.title || threadPromptDefault);
               }
             })
             .catch(() => {
               if (!cancelled) {
                 setThreadConversation(null);
-                setThreadPrompt(threadPromptDefault);
               }
             });
           return;
         }
         setThreadConversation(null);
-        setThreadPrompt(threadPromptDefault);
       })
       .catch(() => {
         if (!cancelled) {
           setProjectGroups([]);
           setSelectedThreadId(null);
           setThreadConversation(null);
-          setThreadPrompt(threadPromptDefault);
         }
       });
 
@@ -332,8 +610,7 @@ function App() {
       return;
     }
     let cancelled = false;
-    const settingsCwd = threadConversation?.cwd ?? openProjectPath ?? null;
-    void readConfig(settingsCwd)
+    void readConfig(settingsWorkspaceRoot)
       .then((response) => {
         if (cancelled) {
           return;
@@ -347,7 +624,7 @@ function App() {
           }
           return chooseDefaultConfigScopeKey(scopeOptions);
         });
-        setConfigVersion(response.layers?.[0]?.version ?? null);
+        setAgentConfigControlErrors({});
         setConfigError(null);
       })
       .catch((error) => {
@@ -355,14 +632,14 @@ function App() {
           setConfigSnapshot(null);
           setConfigScopeOptions([]);
           setSelectedConfigScopeKey("user");
-          setConfigVersion(null);
+          setAgentConfigControlErrors({});
           setConfigError(error instanceof Error ? error.message : String(error));
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [currentRoute, openProjectPath, threadConversation?.cwd]);
+  }, [currentRoute, settingsWorkspaceRoot]);
 
   const startDragging = async () => {
     await appWindow.startDragging();
@@ -388,8 +665,30 @@ function App() {
   };
 
   const shellColumns = {
-    gridTemplateColumns: "minmax(0, 1fr) var(--app-shell-right-width)",
+    gridTemplateColumns: isSidePanelOpen ? "minmax(0, 1fr) var(--app-shell-right-width)" : "minmax(0, 1fr)",
   } as const;
+
+  const openSidePanelTab = (tab: ChatSidePanelTab) => {
+    setActiveSidePanelTab(tab);
+    setIsSidePanelOpen(true);
+    setIsSidePanelTabMenuOpen(false);
+  };
+
+  const openWorkspaceFileSearch = () => {
+    if (!chatWorkspaceRoot) {
+      return;
+    }
+    setIsThreadActionsMenuOpen(false);
+    setIsSidePanelTabMenuOpen(false);
+    setIsWorkspaceFileSearchOpen(true);
+  };
+
+  const handleWorkspaceFileSelected = (file: WorkspaceFileDocument) => {
+    setSelectedSidePanelFile(file);
+    setActiveSidePanelTab("file");
+    setIsSidePanelOpen(true);
+    setIsWorkspaceFileSearchOpen(false);
+  };
 
   const syncProjectGroups = (activeThreadId: string | null, threads: Awaited<ReturnType<typeof getRecentThreads>>) => {
     setSelectedThreadId(activeThreadId);
@@ -402,13 +701,50 @@ function App() {
     );
   };
 
+  const openArchivedChatsSettings = () => {
+    setAppToast(null);
+    setSettingsSection("data-controls");
+    setCurrentRoute("settings");
+  };
+
+  const refreshRecentThreadsAfterUnarchive = async () => {
+    try {
+      const threads = await getRecentThreads();
+      syncProjectGroups(selectedThreadId ?? threads[0]?.id ?? null, threads);
+    } catch {
+      // Keep the current sidebar state when refresh fails.
+    }
+  };
+
+  const viewUnarchivedThread = async (threadId: string) => {
+    try {
+      const [threads, thread] = await Promise.all([getRecentThreads(), readThread(threadId)]);
+      syncProjectGroups(threadId, threads);
+      setThreadConversation(thread);
+      setTurnError(null);
+      setCurrentRoute("chat");
+    } catch (error) {
+      setAppToast({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  const mutateQueuedFollowUps = (update: (current: QueuedLocalFollowUp[]) => QueuedLocalFollowUp[]) => {
+    setQueuedFollowUps((current) => {
+      const next = update(current);
+      queuedFollowUpsRef.current = next;
+      return next;
+    });
+  };
+
   const createAndSelectThread = async () => {
     const cwd = threadConversation?.cwd ?? openProjectPath ?? null;
     const threadId = await startThread(cwd);
     const [threads, thread] = await Promise.all([getRecentThreads(), readThread(threadId)]);
     syncProjectGroups(threadId, threads);
     setThreadConversation(thread);
-    setThreadPrompt(thread.title || threadPromptDefault);
     setCurrentRoute("chat");
     return thread;
   };
@@ -465,10 +801,8 @@ function App() {
     try {
       const thread = await readThread(threadId);
       setThreadConversation(thread);
-      setThreadPrompt(thread.title || threadPromptDefault);
     } catch {
       setThreadConversation(null);
-      setThreadPrompt(threadPromptDefault);
     }
   };
 
@@ -481,9 +815,180 @@ function App() {
     }
   };
 
-  const submitTurn = async () => {
+  const removeQueuedFollowUp = (queuedFollowUpId: string) => {
+    mutateQueuedFollowUps((current) => removeQueuedLocalFollowUp(current, queuedFollowUpId));
+  };
+
+  const copyWorkingDirectory = async () => {
+    const cwd = threadConversation?.cwd ?? null;
+    if (!cwd) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(cwd);
+      setThreadActionFeedback({
+        tone: "success",
+        message: t("threadHeader.copyWorkingDirectorySuccess"),
+      });
+      setIsThreadActionsMenuOpen(false);
+    } catch {
+      setThreadActionFeedback({
+        tone: "error",
+        message: t("threadHeader.copyWorkingDirectoryError"),
+      });
+    }
+  };
+
+  const copySessionId = async () => {
+    if (!selectedThreadId) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(selectedThreadId);
+      setThreadActionFeedback(null);
+      setIsThreadActionsMenuOpen(false);
+    } catch (error) {
+      setThreadActionFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  const copyAppLink = async () => {
+    if (!selectedThreadId) {
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(`codex://threads/${selectedThreadId}`);
+      setThreadActionFeedback(null);
+      setIsThreadActionsMenuOpen(false);
+    } catch (error) {
+      setThreadActionFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  const copyConversationMarkdown = async () => {
+    if (!threadConversation) {
+      return;
+    }
+    try {
+      const markdown = renderConversationMarkdown(threadConversation, t);
+      await navigator.clipboard.writeText(markdown);
+      setThreadActionFeedback({
+        tone: "success",
+        message: t("threadHeader.copyConversationMarkdownSuccess"),
+      });
+      setIsThreadActionsMenuOpen(false);
+    } catch {
+      setThreadActionFeedback({
+        tone: "error",
+        message: t("threadHeader.copyConversationMarkdownError"),
+      });
+    }
+  };
+
+  const forkSelectedThread = async () => {
+    if (!selectedThreadId || isTurnInProgress) {
+      return;
+    }
+    try {
+      const forkedThreadId = await forkThread(selectedThreadId);
+      const [threads, thread] = await Promise.all([getRecentThreads(), readThread(forkedThreadId)]);
+      syncProjectGroups(forkedThreadId, threads);
+      setThreadConversation(thread);
+      setTurnError(null);
+      setIsThreadActionsMenuOpen(false);
+      setThreadActionFeedback(null);
+    } catch {
+      setThreadActionFeedback({
+        tone: "error",
+        message: t("threadHeader.forkThreadError"),
+      });
+    }
+  };
+
+  const archiveSelectedThread = async () => {
+    if (!selectedThreadId) {
+      return;
+    }
+    try {
+      await archiveThread(selectedThreadId);
+      const threads = await getRecentThreads();
+      const nextThreadId = threads[0]?.id ?? null;
+      syncProjectGroups(nextThreadId, threads);
+      if (nextThreadId) {
+        const nextThread = await readThread(nextThreadId);
+        setThreadConversation(nextThread);
+      } else {
+        setThreadConversation(null);
+      }
+      setTurnError(null);
+      setIsArchiveDialogOpen(false);
+      setIsThreadActionsMenuOpen(false);
+      setThreadActionFeedback(null);
+      const settingsLinkLabel = t("codex.archiveInfo.settingsLink");
+      const archiveInfoTemplate = t("codex.archiveInfo.electron", { settingsLink: "__SETTINGS_LINK__" });
+      const [archiveInfoPrefix, archiveInfoSuffix = ""] = archiveInfoTemplate.split("__SETTINGS_LINK__");
+      setAppToast({
+        tone: "info",
+        message: (
+          <span>
+            {archiveInfoPrefix}
+            <button
+              type="button"
+              onClick={openArchivedChatsSettings}
+              className="cursor-interaction text-[var(--app-shell-accent)] underline underline-offset-2 hover:opacity-80"
+            >
+              {settingsLinkLabel}
+            </button>
+            {archiveInfoSuffix}
+          </span>
+        ),
+      });
+    } catch (error) {
+      setThreadActionFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      setIsArchiveDialogOpen(false);
+    }
+  };
+
+  const openRenameDialog = () => {
+    setRenameDraft(threadConversation?.title ?? "");
+    setIsRenameDialogOpen(true);
+    setIsThreadActionsMenuOpen(false);
+  };
+
+  const saveThreadNameChange = async () => {
+    if (!selectedThreadId) {
+      return;
+    }
+    try {
+      await setThreadName({
+        threadId: selectedThreadId,
+        name: renameDraft.trim().length > 0 ? renameDraft.trim() : null,
+      });
+      const [threads, thread] = await Promise.all([getRecentThreads(), readThread(selectedThreadId)]);
+      syncProjectGroups(selectedThreadId, threads);
+      setThreadConversation(thread);
+      setIsRenameDialogOpen(false);
+      setThreadActionFeedback(null);
+    } catch {
+      setThreadActionFeedback({
+        tone: "error",
+        message: t("sidebarElectron.renameThreadError"),
+      });
+    }
+  };
+
+  const submitTurn = async (invertFollowUpAction = false) => {
     const text = composerDraft.trim();
-    if (text.length === 0 || isTurnInProgress) {
+    if (text.length === 0) {
       return;
     }
     setTurnError(null);
@@ -494,11 +999,48 @@ function App() {
       }
       const threadId = thread.id;
       const cwd = thread.cwd || openProjectPath || null;
+      if (activeTurn && activeTurn.threadId === threadId) {
+        const effectiveFollowUpAction = invertFollowUpAction
+          ? followUpQueueMode === "queue"
+            ? "steer"
+            : "queue"
+          : followUpQueueMode;
+        if (effectiveFollowUpAction === "queue") {
+          mutateQueuedFollowUps((current) =>
+            enqueueQueuedLocalFollowUp(current, {
+              threadId,
+              cwd,
+              text,
+            }),
+          );
+          setComposerDraft("");
+          return;
+        }
+        const turnId = await steerTurn({
+          threadId,
+          turnId: activeTurn.turnId,
+          text,
+        });
+        setActiveTurn({ threadId, turnId });
+        setComposerDraft("");
+        return;
+      }
+      if (text === "/review") {
+        const review = await startReview({ threadId, delivery: reviewDelivery });
+        const [threads, reviewThread] = await Promise.all([
+          getRecentThreads(),
+          readThread(review.reviewThreadId),
+        ]);
+        syncProjectGroups(review.reviewThreadId, threads);
+        setThreadConversation(reviewThread);
+        setActiveTurn({ threadId: review.reviewThreadId, turnId: review.turnId });
+        setComposerDraft("");
+        return;
+      }
       const turnId = await startTurn({ threadId, text, cwd });
       setActiveTurn({ threadId, turnId });
       setComposerDraft("");
     } catch (error) {
-      setActiveTurn(null);
       setTurnError(error instanceof Error ? error.message : String(error));
     }
   };
@@ -621,10 +1163,28 @@ function App() {
   };
 
   const updateConfigValue = async (keyPath: string, value: string | boolean) => {
+    const controlErrorKey =
+      keyPath === "approval_policy"
+        ? "approval"
+        : keyPath === "sandbox_mode"
+          ? "sandbox"
+          : keyPath === "sandbox_workspace_write.network_access"
+            ? "network"
+            : null;
     setConfigError(null);
+    if (controlErrorKey) {
+      setAgentConfigControlErrors((current) => {
+        if (!(controlErrorKey in current)) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[controlErrorKey];
+        return next;
+      });
+    }
+    const selectedScope = configScopeOptions.find((scope) => scope.key === selectedConfigScopeKey) ?? null;
+    const settingsCwd = threadConversation?.cwd ?? openProjectPath ?? null;
     try {
-      const selectedScope = configScopeOptions.find((scope) => scope.key === selectedConfigScopeKey) ?? null;
-      const settingsCwd = threadConversation?.cwd ?? openProjectPath ?? null;
       await writeConfigValue({
         keyPath,
         value,
@@ -632,6 +1192,18 @@ function App() {
         filePath: selectedScope?.kind === "project" ? selectedScope.filePath : null,
         expectedVersion: selectedScope?.expectedVersion ?? null,
       });
+    } catch (error) {
+      if (controlErrorKey) {
+        setAgentConfigControlErrors((current) => ({
+          ...current,
+          [controlErrorKey]: error instanceof Error ? error.message : String(error),
+        }));
+        return;
+      }
+      setConfigError(error instanceof Error ? error.message : String(error));
+      return;
+    }
+    try {
       const response = await readConfig(settingsCwd);
       setConfigSnapshot(response.config);
       const scopeOptions = buildConfigScopeOptions(response);
@@ -642,7 +1214,7 @@ function App() {
         }
         return chooseDefaultConfigScopeKey(scopeOptions);
       });
-      setConfigVersion(response.layers?.[0]?.version ?? null);
+      setAgentConfigControlErrors({});
     } catch (error) {
       setConfigError(error instanceof Error ? error.message : String(error));
     }
@@ -650,127 +1222,254 @@ function App() {
 
   const renderSettings = () => {
     if (settingsSection === "general-settings") {
-      return <GeneralSettings />;
+      return (
+        <GeneralSettings
+          onComposerEnterBehaviorChange={setComposerEnterBehavior}
+          onFollowUpQueueModeChange={setFollowUpQueueMode}
+          onReviewDeliveryChange={setReviewDelivery}
+        />
+      );
+    }
+
+    if (settingsSection === "appearance") {
+      return <AppearanceSettings onShowToast={(toast) => setAppToast(toast)} />;
+    }
+
+    if (settingsSection === "personalization") {
+      return (
+        <PersonalizationSettings
+          workspaceRoot={settingsWorkspaceRoot}
+          onShowToast={(toast) => setAppToast(toast)}
+        />
+      );
+    }
+
+    if (settingsSection === "browser-use") {
+      return <BrowserUseSettings workspaceRoot={settingsWorkspaceRoot} onShowToast={(toast) => setAppToast(toast)} />;
+    }
+
+    if (settingsSection === "computer-use") {
+      return <ComputerUseSettings workspaceRoot={settingsWorkspaceRoot} />;
+    }
+
+    if (settingsSection === "plugins-settings") {
+      return <PluginsSettings workspaceRoot={settingsWorkspaceRoot} />;
+    }
+
+    if (settingsSection === "skills-settings") {
+      return <SkillsSettings workspaceRoot={settingsWorkspaceRoot} />;
+    }
+
+    if (settingsSection === "mcp-settings") {
+      return <McpSettings workspaceRoot={settingsWorkspaceRoot} />;
+    }
+
+    if (settingsSection === "local-environments") {
+      return (
+        <LocalEnvironmentsSettings
+          workspaceRoot={settingsWorkspaceRoot}
+          onShowToast={(toast) => setAppToast(toast)}
+        />
+      );
+    }
+
+    if (settingsSection === "data-controls") {
+      return (
+        <DataControlsSettings
+          onDismissToast={() => setAppToast(null)}
+          onShowToast={(toast) => setAppToast(toast)}
+          onThreadUnarchived={() => void refreshRecentThreadsAfterUnarchive()}
+          onViewThread={(threadId) => void viewUnarchivedThread(threadId)}
+        />
+      );
+    }
+
+    if (settingsSection === "keyboard-shortcuts") {
+      return <KeyboardShortcutsSettings />;
+    }
+
+    if (settingsSection === "git-settings") {
+      return <GitSettings />;
+    }
+
+    if (settingsSection === "worktrees") {
+      return <WorktreesSettings />;
     }
 
     if (settingsSection === "agent") {
       const selectedScope = configScopeOptions.find((scope) => scope.key === selectedConfigScopeKey) ?? null;
       const scopedConfig = selectedScope?.config;
+      const scopeMenuOptions = configScopeOptions.map((scope) => ({
+        group: scope.kind === "project" ? "project" as const : "global" as const,
+        key: scope.key,
+        label: getConfigScopeLabel(scope, t),
+        title: getConfigScopeTitle(scope, t),
+      }));
       const approvalPolicy = scopedConfig?.approvalPolicy ?? configSnapshot?.approvalPolicy ?? "on-request";
       const sandboxMode = scopedConfig?.sandboxMode ?? configSnapshot?.sandboxMode ?? "read-only";
+      const controlLockReason = getAgentConfigControlLockReason(selectedScope, t);
+      const showNetworkAccess = sandboxMode === "workspace-write";
       const networkAccess =
         scopedConfig?.sandboxWorkspaceWrite?.networkAccess ??
         configSnapshot?.sandboxWorkspaceWrite?.networkAccess ??
         false;
-      const isScopeReadOnly = selectedScope?.kind === "managed" || selectedScope?.disabledReason !== null;
+      const isScopeReadOnly = controlLockReason !== null || selectedScope?.disabledReason !== null;
       return (
         <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-5 py-5">
-          <div className="rounded-[18px] border border-[var(--app-shell-border)] bg-white/92 px-5 py-4">
-            <div className="text-[14px] font-medium text-[#29251f]">{t("settings.agent.title")}</div>
-            <div className="mt-1 text-[13px] text-[#7f766d]">{t("settings.agent.subtitle")}</div>
+          <div className="app-card rounded-[18px] px-5 py-4">
+            <div className="app-title text-[14px] font-medium">{t("settings.agent.title")}</div>
+            <div className="app-text-muted mt-1 text-[13px] leading-6">
+              {renderInlineLinkMessage(t("settings.agent.configuration.subtitle.summary"), AGENT_SETTINGS_DOCS_URL)}
+            </div>
           </div>
-          <div className="rounded-[18px] border border-[var(--app-shell-border)] bg-white/92 px-5 py-4">
+          <div className="app-card rounded-[18px] px-5 py-4">
             <div className="flex items-center justify-between gap-4">
               <div className="text-[12px] uppercase tracking-[0.16em] text-[var(--app-shell-subtle)]">
                 {t("settings.agent.customConfig")}
               </div>
-              <select
-                value={selectedConfigScopeKey}
-                onChange={(event) => setSelectedConfigScopeKey(event.target.value)}
-                className="rounded-[10px] border border-black/8 bg-white px-3 py-2 text-[13px]"
-              >
-                {configScopeOptions.map((scope) => (
-                  <option key={scope.key} value={scope.key}>
-                    {formatConfigScopeLabel(scope, t)}
-                  </option>
-                ))}
-              </select>
+              <ConfigScopeMenu
+                selectedKey={selectedScope?.key ?? null}
+                options={scopeMenuOptions}
+                loadingLabel={t("settings.agent.configuration.scope.loading")}
+                projectGroupLabel={t("settings.agent.configuration.scope.projectGroup")}
+                globalGroupLabel={t("settings.agent.configuration.scope.globalGroup")}
+                onSelect={(key) => {
+                  setSelectedConfigScopeKey(key);
+                  setAgentConfigControlErrors({});
+                }}
+              />
             </div>
             <div className="mt-3 flex items-center justify-between gap-4">
-              <div className="truncate text-[12px] text-[#7f766d]">
-                {selectedScope?.filePath ?? "~/.codex/config.toml"}
+              <div className="min-w-0 flex-1">
+                <div className="text-[14px] leading-6">{t("settings.agent.configuration.configToml")}</div>
+                <div className="app-text-muted mt-1 text-[12px] leading-5">
+                  {renderConfigTomlDescription(t)}
+                </div>
               </div>
               <button
                 type="button"
                 disabled={!selectedScope?.filePath}
                 onClick={() => void openConfigToml()}
-                className="rounded-[11px] border border-black/8 bg-white px-3 py-1.5 text-[12px] text-[#302b25] disabled:cursor-not-allowed disabled:text-[#a29a91]"
+                className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
               >
-                {t("settings.agent.openConfigToml")}
+                {t("settings.agent.configuration.scope.open")}
               </button>
             </div>
             {selectedScope?.disabledReason ? (
-              <div className="mt-3 rounded-[12px] bg-[#f7f6f4] px-3 py-2 text-[12px] text-[#7f766d]">
+              <div className="app-card-muted app-text-muted mt-3 rounded-[12px] px-3 py-2 text-[12px]">
                 {selectedScope.disabledReason}
               </div>
             ) : null}
-            <div className="mt-4 space-y-4 text-[14px]">
-              <label className="flex items-center justify-between gap-4">
-                <span>{t("settings.agent.approvalPolicy")}</span>
-                <select
-                  value={approvalPolicy}
-                  onChange={(event) => void updateConfigValue("approval_policy", event.target.value)}
-                  disabled={isScopeReadOnly}
-                  className="rounded-[10px] border border-black/8 bg-white px-3 py-2 text-[13px]"
-                >
-                  {approvalPolicyOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {t(option.labelKey)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex items-center justify-between gap-4">
-                <span>{t("settings.agent.sandboxMode")}</span>
-                <select
-                  value={sandboxMode}
-                  onChange={(event) => void updateConfigValue("sandbox_mode", event.target.value)}
-                  disabled={isScopeReadOnly}
-                  className="rounded-[10px] border border-black/8 bg-white px-3 py-2 text-[13px]"
-                >
-                  {sandboxModeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {t(option.labelKey)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex items-center justify-between gap-4">
-                <span>{t("settings.agent.allowNetworkAccess")}</span>
-                <input
-                  type="checkbox"
-                  checked={networkAccess}
-                  disabled={isScopeReadOnly || sandboxMode !== "workspace-write"}
-                  onChange={(event) =>
-                    void updateConfigValue("sandbox_workspace_write.network_access", event.target.checked)
-                  }
-                />
-              </label>
-            </div>
-          </div>
-          <div className="rounded-[18px] border border-[var(--app-shell-border)] bg-white/92 px-5 py-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="min-w-0">
-                <div className="text-[14px] text-[#29251f]">{t("settings.agent.openSourceLicenses")}</div>
-                <div className="mt-1 text-[12px] text-[#7f766d]">{t("settings.agent.thirdPartyNotices")}</div>
+              <div className="mt-4 space-y-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[14px] leading-6">
+                      {t("settings.agent.configuration.approval.label")}
+                    </div>
+                    <div className="app-text-muted mt-1 text-[12px] leading-5">
+                      {t("settings.agent.configuration.approval.definition")}
+                    </div>
+                    {controlLockReason ? (
+                      <div className="mt-1 text-[12px] leading-5 text-[var(--app-shell-warning-text)]">
+                        {controlLockReason}
+                      </div>
+                    ) : null}
+                    {agentConfigControlErrors.approval ? (
+                      <div className="mt-1 text-[12px] leading-5 text-[var(--app-shell-error-text)]">
+                        {agentConfigControlErrors.approval}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="shrink-0">
+                    <SettingsChoiceMenu
+                      value={approvalPolicy}
+                      options={approvalPolicyOptions}
+                      disabled={isScopeReadOnly}
+                      onChange={(value) => void updateConfigValue("approval_policy", value)}
+                    />
+                  </div>
+                </div>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[14px] leading-6">
+                      {t("settings.agent.configuration.sandbox.label")}
+                    </div>
+                    <div className="app-text-muted mt-1 text-[12px] leading-5">
+                      {t("settings.agent.configuration.sandbox.definition")}
+                    </div>
+                    {controlLockReason ? (
+                      <div className="mt-1 text-[12px] leading-5 text-[var(--app-shell-warning-text)]">
+                        {controlLockReason}
+                      </div>
+                    ) : null}
+                    {agentConfigControlErrors.sandbox ? (
+                      <div className="mt-1 text-[12px] leading-5 text-[var(--app-shell-error-text)]">
+                        {agentConfigControlErrors.sandbox}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="shrink-0">
+                    <SettingsChoiceMenu
+                      value={sandboxMode}
+                      options={sandboxModeOptions}
+                      disabled={isScopeReadOnly}
+                      onChange={(value) => void updateConfigValue("sandbox_mode", value)}
+                    />
+                  </div>
+                </div>
+                {showNetworkAccess ? (
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[14px] leading-6">
+                        {t("settings.agent.configuration.network.label")}
+                      </div>
+                      <div className="app-text-muted mt-1 text-[12px] leading-5">
+                        {t("settings.agent.configuration.network.definition")}
+                      </div>
+                      {controlLockReason ? (
+                        <div className="mt-1 text-[12px] leading-5 text-[var(--app-shell-warning-text)]">
+                          {controlLockReason}
+                        </div>
+                      ) : null}
+                      {agentConfigControlErrors.network ? (
+                        <div className="mt-1 text-[12px] leading-5 text-[var(--app-shell-error-text)]">
+                          {agentConfigControlErrors.network}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="shrink-0">
+                      <ToggleSwitch
+                        checked={networkAccess}
+                        disabled={isScopeReadOnly}
+                        ariaLabel={t("settings.agent.configuration.network.label")}
+                        onChange={(checked) => void updateConfigValue("sandbox_workspace_write.network_access", checked)}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+                <div className="h-px bg-[var(--app-shell-border)]" />
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="text-[14px] leading-6">{t("settings.openSourceLicenses.rowLabel")}</div>
+                    <div className="app-text-muted mt-1 text-[12px] leading-5">
+                      {t("settings.openSourceLicenses.rowDescription")}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void openSourceLicenses()}
+                    className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
+                  >
+                    {t("settings.openSourceLicenses.view")}
+                  </button>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={() => void openSourceLicenses()}
-                className="rounded-[11px] border border-black/8 bg-white px-3 py-1.5 text-[12px] text-[#302b25]"
-              >
-                {t("settings.agent.view")}
-              </button>
             </div>
-          </div>
           {configError ? (
-            <div className="rounded-[18px] border border-[#d5b6b0] bg-[#fff3f1] px-5 py-4 text-[13px] text-[#9e5348]">
+            <div className="app-card-error rounded-[18px] px-5 py-4 text-[13px]">
               {configError}
             </div>
           ) : null}
-          <div className="rounded-[18px] border border-[var(--app-shell-border)] bg-white/92 px-5 py-4 text-[12px] text-[#7f766d]">
-            {configVersion ? `${t("settings.agent.version")} ${configVersion}` : t("settings.agent.loaded")}
-          </div>
         </div>
       );
     }
@@ -786,7 +1485,7 @@ function App() {
             <button
               type="button"
               aria-label={t("app.shell.appMenu")}
-              className="flex h-6 w-6 items-center justify-center rounded-[8px] border border-black/8 bg-white/85 text-[10px] text-black/70 shadow-[0_1px_0_rgba(0,0,0,0.03)]"
+              className="app-control-weak flex h-6 w-6 items-center justify-center rounded-[8px] text-[10px] shadow-[0_1px_0_rgba(0,0,0,0.03)]"
             >
               □
             </button>
@@ -795,7 +1494,7 @@ function App() {
                 <button
                   key={item}
                   type="button"
-                  className="rounded-[7px] px-2.5 py-1 text-[14px] text-[#4e4841] transition hover:bg-black/5"
+                  className="app-topbar-button rounded-[7px] px-2.5 py-1 text-[14px] transition"
                 >
                   {item}
                 </button>
@@ -810,7 +1509,7 @@ function App() {
           />
 
           <div className="flex items-center gap-3 pr-1.5">
-            <div className="rounded-full bg-white/60 px-3 py-1 text-left text-[11px] leading-4 text-[var(--app-shell-muted)]">
+            <div className="app-badge rounded-full px-3 py-1 text-left text-[11px] leading-4">
               <div className="tracking-[0.08em]">{formatAuthLabel(authSnapshot, t)}</div>
               <div className="truncate text-[10px] tracking-normal text-[var(--app-shell-subtle)]">
                 {formatAuthDetail(authSnapshot, t) ?? "\u00a0"}
@@ -821,7 +1520,7 @@ function App() {
                 <button
                   type="button"
                   onClick={() => void signOut()}
-                  className="rounded-full border border-black/8 bg-white/85 px-3 py-1.5 text-[12px] text-[#433e37]"
+                  className="app-control-weak rounded-full px-3 py-1.5 text-[12px]"
                 >
                   {t("auth.signOut")}
                 </button>
@@ -830,9 +1529,9 @@ function App() {
                   <button
                     type="button"
                     onClick={() => void startChatGptLogin()}
-                    className="rounded-full border border-black/8 bg-white/85 px-3 py-1.5 text-[12px] text-[#433e37]"
+                    className="app-control-weak rounded-full px-3 py-1.5 text-[12px]"
                   >
-                    {t("auth.signIn")}
+                    {t("auth.signInWithChatGpt")}
                   </button>
                   <button
                     type="button"
@@ -840,16 +1539,16 @@ function App() {
                       setAuthActionError(null);
                       setShowApiKeyEntry((value) => !value);
                     }}
-                    className="rounded-full border border-black/8 bg-white/85 px-3 py-1.5 text-[12px] text-[#433e37]"
+                    className="app-control-weak rounded-full px-3 py-1.5 text-[12px]"
                   >
-                    {t("auth.apiKey")}
+                    {t("auth.useApiKey")}
                   </button>
                   <button
                     type="button"
                     onClick={() => void startDeviceCodeLogin()}
-                    className="rounded-full border border-black/8 bg-white/85 px-3 py-1.5 text-[12px] text-[#433e37]"
+                    className="app-control-weak rounded-full px-3 py-1.5 text-[12px]"
                   >
-                    {t("auth.deviceCode")}
+                    {t("auth.useDeviceCode")}
                   </button>
                 </>
               )}
@@ -857,9 +1556,9 @@ function App() {
                 <button
                   type="button"
                   onClick={() => void cancelActiveLogin()}
-                  className="rounded-full border border-[#d5b6b0] bg-[#fff3f1] px-3 py-1.5 text-[12px] text-[#9e5348]"
+                  className="app-card-error rounded-full px-3 py-1.5 text-[12px]"
                 >
-                  {t("auth.cancel")}
+                  {t("auth.cancelSignIn")}
                 </button>
               ) : null}
             </div>
@@ -867,21 +1566,21 @@ function App() {
               <button
                 type="button"
                 onClick={() => void minimizeWindow()}
-                className="flex h-[35px] w-11 items-center justify-center text-[12px] text-black/65 hover:bg-black/5"
+                className="app-topbar-button flex h-[35px] w-11 items-center justify-center text-[12px]"
               >
                 _
               </button>
               <button
                 type="button"
                 onClick={() => void toggleMaximize()}
-                className="flex h-[35px] w-11 items-center justify-center text-[11px] text-black/65 hover:bg-black/5"
+                className="app-topbar-button flex h-[35px] w-11 items-center justify-center text-[11px]"
               >
                 {isMaximized ? "❐" : "□"}
               </button>
               <button
                 type="button"
                 onClick={() => void closeWindow()}
-                className="flex h-[35px] w-11 items-center justify-center text-[14px] text-black/65 hover:bg-[#d84c3f] hover:text-white"
+                className="app-topbar-button flex h-[35px] w-11 items-center justify-center text-[14px] hover:bg-[#d84c3f] hover:text-white"
               >
                 ✕
               </button>
@@ -890,68 +1589,68 @@ function App() {
         </header>
 
         {shouldShowAuthPanel ? (
-          <div className="flex flex-wrap items-center gap-3 border-b border-[var(--app-shell-border)] bg-white/65 px-4 py-2 text-[12px] text-[#564f47]">
+          <div className="app-badge flex flex-wrap items-center gap-3 border-b border-[var(--app-shell-border)] px-4 py-2 text-[12px]">
             {showApiKeyEntry ? (
               <div className="flex flex-wrap items-center gap-3">
                 <input
                   value={apiKeyDraft}
                   onChange={(event) => setApiKeyDraft(event.target.value)}
-                  placeholder="sk-..."
-                  className="min-w-[220px] rounded-[10px] border border-black/8 bg-white px-3 py-1.5 text-[12px] text-[#2c2823] outline-none"
+                  placeholder={t("auth.apiKeyPlaceholder")}
+                  className="app-control app-text-input min-w-[220px] rounded-[10px] px-3 py-1.5 text-[12px] outline-none"
                 />
                 <button
                   type="button"
                   onClick={() => void submitApiKey()}
-                  className="rounded-full border border-black/8 bg-white px-3 py-1.5 text-[12px] text-[#302b25]"
+                  className="app-control rounded-full px-3 py-1.5 text-[12px]"
                 >
-                  {t("auth.saveKey")}
+                  {t("auth.apiKeyConfirm")}
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowApiKeyEntry(false)}
-                  className="rounded-full border border-black/8 bg-white/70 px-3 py-1.5 text-[12px] text-[#6a6259]"
+                  className="app-control-weak rounded-full px-3 py-1.5 text-[12px]"
                 >
                   {t("auth.cancel")}
                 </button>
               </div>
             ) : null}
             {isBrowserLoginPending ? (
-              <div className="flex flex-wrap items-center gap-3 rounded-[12px] bg-[#f7f6f4] px-3 py-2 text-[#4e4740]">
+              <div className="app-card-muted flex flex-wrap items-center gap-3 rounded-[12px] px-3 py-2">
                 <span>{t("auth.completeBrowserSignIn")}</span>
                 <button
                   type="button"
                   onClick={() => void reopenBrowserLogin()}
-                  className="rounded-full border border-black/8 bg-white px-3 py-1 text-[12px] text-[#302b25]"
+                  className="app-control rounded-full px-3 py-1 text-[12px]"
                 >
                   {t("auth.openBrowser")}
                 </button>
               </div>
             ) : null}
             {isDeviceCodePending ? (
-              <div className="flex flex-wrap items-center gap-3 rounded-[12px] bg-[#f7f6f4] px-3 py-2 text-[#4e4740]">
+              <div className="app-card-muted flex flex-wrap items-center gap-3 rounded-[12px] px-3 py-2">
                 <span className="text-[11px] uppercase tracking-[0.16em] text-[var(--app-shell-subtle)]">
                   {t("auth.deviceCode")}
                 </span>
-                <span className="font-mono text-[14px] tracking-[0.18em] text-[#2b2722]">
+                <span className="font-mono text-[14px] tracking-[0.18em]">
                   {deviceCode.userCode}
                 </span>
                 <button
                   type="button"
                   onClick={() => void copyDeviceCode()}
-                  className="rounded-full border border-black/8 bg-white px-3 py-1 text-[12px] text-[#302b25]"
+                  className="app-control rounded-full px-3 py-1 text-[12px]"
                 >
                   {t("auth.copy")}
                 </button>
                 <button
                   type="button"
                   onClick={() => void openDeviceCodeBrowser()}
-                  className="rounded-full border border-black/8 bg-white px-3 py-1 text-[12px] text-[#302b25]"
+                  className="app-control rounded-full px-3 py-1 text-[12px]"
                 >
                   {t("auth.openBrowser")}
                 </button>
               </div>
             ) : null}
-            {loginError ? <div className="truncate text-[#a2483d]">{loginError}</div> : null}
+            {loginError ? <div className="app-text-error truncate">{loginError}</div> : null}
           </div>
         ) : null}
 
@@ -961,17 +1660,20 @@ function App() {
               <>
                 <div className="space-y-1.5">
                   {navItems.map((item) => {
-                    const isActive = item.route === "settings" ? false : item.active;
+                    const isActive = item.action === "new-thread";
                     return (
                       <button
                         key={item.label}
                         type="button"
                         onClick={() => {
-                          if (item.icon === "⊕") {
+                          if (item.action === "new-thread") {
                             void startNewThread();
                             return;
                           }
-                          if (item.route === "settings") {
+                          if (item.section) {
+                            setSettingsSection(item.section);
+                            setCurrentRoute("settings");
+                          } else if (item.route === "settings") {
                             setCurrentRoute("settings");
                           } else {
                             setCurrentRoute("chat");
@@ -979,12 +1681,10 @@ function App() {
                         }}
                         className={[
                           "flex h-10 w-full items-center gap-3 rounded-[12px] px-3.5 text-left text-[14px]",
-                          isActive
-                            ? "bg-white text-[#26221d] shadow-[0_1px_0_rgba(0,0,0,0.03)] ring-1 ring-black/4"
-                            : "text-[#4c463f] hover:bg-white/55",
+                          isActive ? "app-nav-item-active" : "app-nav-item-idle",
                         ].join(" ")}
                       >
-                        <span className="w-4 text-center text-[13px] text-[#665f57]">{item.icon}</span>
+                        <span className="app-text-muted flex h-4 w-4 items-center justify-center">{item.icon}</span>
                         <span>{item.label}</span>
                       </button>
                     );
@@ -996,7 +1696,7 @@ function App() {
                   <button
                     type="button"
                     onClick={() => void startNewThread()}
-                    className="text-[13px] tracking-normal text-[#7a7269]"
+                    className="app-text-muted text-[13px] tracking-normal"
                   >
                     +
                   </button>
@@ -1006,7 +1706,7 @@ function App() {
                   {projectGroups.length > 0 ? (
                     projectGroups.map((group) => (
                       <section key={group.name} className="space-y-1.5">
-                        <div className="flex items-center justify-between px-1 text-[14px] text-[#423d37]">
+                        <div className="app-title flex items-center justify-between px-1 text-[14px]">
                           <span className="truncate">{group.name}</span>
                           <span className="text-[12px] text-[var(--app-shell-subtle)]">⋯</span>
                         </div>
@@ -1020,12 +1720,12 @@ function App() {
                               className={[
                                 "flex w-full items-start gap-2 rounded-[12px] px-3.5 py-2.5 text-left transition",
                                 thread.active || selectedThreadId === thread.id
-                                  ? "bg-white shadow-[0_1px_0_rgba(0,0,0,0.03)] ring-1 ring-black/4"
-                                  : "hover:bg-white/45",
+                                  ? "app-nav-item-active"
+                                  : "app-nav-item-idle",
                               ].join(" ")}
                             >
                               <div className="min-w-0 flex-1">
-                                <div className="truncate text-[13px] leading-5 text-[#28241f]">{thread.title}</div>
+                                <div className="app-title truncate text-[13px] leading-5">{thread.title}</div>
                               </div>
                               <div className="pt-[1px] text-[12px] text-[var(--app-shell-subtle)]">{thread.age}</div>
                             </button>
@@ -1034,7 +1734,7 @@ function App() {
                       </section>
                     ))
                   ) : (
-                    <div className="rounded-[14px] bg-white/55 px-3.5 py-3 text-[13px] leading-6 text-[#6a6259]">
+                    <div className="app-badge rounded-[14px] px-3.5 py-3 text-[13px] leading-6">
                       {t("app.chat.noRecentThreads")}
                     </div>
                   )}
@@ -1045,9 +1745,9 @@ function App() {
                 <button
                   type="button"
                   onClick={() => setCurrentRoute("chat")}
-                  className="flex h-10 items-center gap-3 rounded-[12px] px-3.5 text-left text-[14px] text-[#4c463f] hover:bg-white/55"
+                  className="app-nav-item-idle flex h-10 items-center gap-3 rounded-[12px] px-3.5 text-left text-[14px]"
                 >
-                  <span className="w-4 text-center text-[13px] text-[#665f57]">←</span>
+                  <span className="app-text-muted w-4 text-center text-[13px]">←</span>
                   <span>{t("settings.backToApp")}</span>
                 </button>
 
@@ -1071,10 +1771,10 @@ function App() {
                             className={[
                               "flex h-10 w-full items-center rounded-[12px] px-3.5 text-left text-[14px]",
                               settingsSection === item.id
-                                ? "bg-white text-[#26221d] shadow-[0_1px_0_rgba(0,0,0,0.03)] ring-1 ring-black/4"
+                                ? "app-nav-item-active"
                                 : item.disabled
-                                  ? "cursor-not-allowed text-[#9a9388]"
-                                  : "text-[#4c463f] hover:bg-white/55",
+                                  ? "app-nav-item-disabled"
+                                  : "app-nav-item-idle",
                             ].join(" ")}
                           >
                             {t(item.labelKey)}
@@ -1096,22 +1796,22 @@ function App() {
                     type="button"
                     aria-label={t("app.shell.back")}
                     onClick={() => setCurrentRoute("chat")}
-                    className="flex h-8 w-8 items-center justify-center rounded-[10px] text-[13px] text-[#59534c] hover:bg-black/4"
+                    className="app-topbar-button flex h-8 w-8 items-center justify-center rounded-[10px] text-[13px]"
                   >
                     ←
                   </button>
                   <button
                     type="button"
                     aria-label={t("app.shell.forward")}
-                    className="flex h-8 w-8 items-center justify-center rounded-[10px] text-[13px] text-[#59534c] hover:bg-black/4"
+                    className="app-topbar-button flex h-8 w-8 items-center justify-center rounded-[10px] text-[13px]"
                   >
                     →
                   </button>
                 </div>
 
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 rounded-[12px] border border-black/6 bg-white/88 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]">
-                    <span className="truncate text-[14px] text-[#221f1b]">
+                  <div className="app-control flex items-center gap-2 rounded-[12px] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]">
+                    <span className="truncate text-[14px]">
                       {shellHeaderTitle}
                     </span>
                     {currentRoute === "chat" ? (
@@ -1124,19 +1824,164 @@ function App() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {currentRoute === "chat" ? (
+                    <div className="relative flex items-center gap-2">
+                      <div ref={sidePanelTabMenuRef}>
+                        <button
+                          type="button"
+                          title={t("thread.sidePanel.openTab")}
+                          aria-label={t("thread.sidePanel.openTab")}
+                          aria-expanded={isSidePanelTabMenuOpen}
+                          onClick={() => {
+                            setIsThreadActionsMenuOpen(false);
+                            setIsSidePanelTabMenuOpen((value) => !value);
+                          }}
+                          className="app-control-weak flex h-8 w-8 items-center justify-center rounded-[10px] text-[12px]"
+                        >
+                          ⋯
+                        </button>
+                        {isSidePanelTabMenuOpen ? (
+                          <div className="app-card absolute top-10 right-[52px] z-10 min-w-[168px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+                            <button
+                              type="button"
+                              disabled={!chatWorkspaceRoot}
+                              onClick={openWorkspaceFileSearch}
+                              className="app-nav-item-idle flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
+                            >
+                              {t("thread.sidePanel.openFile")}
+                            </button>
+                            <div className="my-1 h-px bg-[var(--app-shell-border)]" />
+                            <button
+                              type="button"
+                              onClick={() => openSidePanelTab("review")}
+                              className={[
+                                "flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px]",
+                                activeSidePanelTab === "review" && isSidePanelOpen
+                                  ? "app-nav-item-active"
+                                  : "app-nav-item-idle",
+                              ].join(" ")}
+                            >
+                              {t("thread.sidePanel.openReviewTab")}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openSidePanelTab("browser")}
+                              className={[
+                                "mt-1 flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px]",
+                                activeSidePanelTab === "browser" && isSidePanelOpen
+                                  ? "app-nav-item-active"
+                                  : "app-nav-item-idle",
+                              ].join(" ")}
+                            >
+                              {t("thread.sidePanel.openBrowserTab")}
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        title={t("thread.sidePanel.toggle")}
+                        aria-label={t("thread.sidePanel.toggle")}
+                        aria-pressed={isSidePanelOpen}
+                        onClick={() => setIsSidePanelOpen((value) => !value)}
+                        className={[
+                          "flex h-8 w-8 items-center justify-center rounded-[10px] text-[12px]",
+                          isSidePanelOpen ? "app-control" : "app-control-weak",
+                        ].join(" ")}
+                      >
+                        {isSidePanelOpen ? "◂" : "▸"}
+                      </button>
+                    </div>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => setCurrentRoute("settings")}
-                    className="rounded-full border border-black/8 bg-white/85 px-3 py-1.5 text-[13px] text-[#433e37]"
+                    className="app-control-weak rounded-full px-3 py-1.5 text-[13px]"
                   >
                     {t("app.shell.settings")}
                   </button>
-                  <button
-                    type="button"
-                    className="rounded-full border border-black/8 bg-white/85 px-3 py-1.5 text-[13px] text-[#433e37]"
-                  >
-                    {t("app.shell.share")}
-                  </button>
+                  {currentRoute === "chat" ? (
+                    <div className="relative" ref={threadActionsMenuRef}>
+                      <button
+                        type="button"
+                        title={t("threadHeader.moreActions")}
+                        aria-label={t("threadHeader.moreActions")}
+                        aria-expanded={isThreadActionsMenuOpen}
+                        onClick={() => {
+                          setIsSidePanelTabMenuOpen(false);
+                          setIsThreadActionsMenuOpen((value) => !value);
+                        }}
+                        className="app-control-weak rounded-full px-3 py-1.5 text-[13px]"
+                      >
+                        ⋯
+                      </button>
+                      {isThreadActionsMenuOpen ? (
+                        <div className="app-card absolute top-10 right-0 z-10 min-w-[220px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+                          <button
+                            type="button"
+                            disabled={!selectedThreadId}
+                            onClick={openRenameDialog}
+                            className="app-nav-item-idle flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
+                          >
+                            {t("sidebarElectron.renameThread")}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!selectedThreadId}
+                            onClick={() => {
+                              setIsArchiveDialogOpen(true);
+                              setIsThreadActionsMenuOpen(false);
+                            }}
+                            className="app-nav-item-idle mt-1 flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
+                          >
+                            {t("sidebarElectron.archiveThread")}
+                          </button>
+                          <div className="my-1 h-px bg-[var(--app-shell-border)]" />
+                          <button
+                            type="button"
+                            disabled={!threadConversation?.cwd}
+                            onClick={() => void copyWorkingDirectory()}
+                            className="app-nav-item-idle flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
+                          >
+                            {t("threadHeader.copyWorkingDirectory")}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!selectedThreadId}
+                            onClick={() => void copySessionId()}
+                            className="app-nav-item-idle mt-1 flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
+                          >
+                            {t("threadHeader.copySessionId")}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!selectedThreadId}
+                            onClick={() => void copyAppLink()}
+                            className="app-nav-item-idle mt-1 flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
+                          >
+                            {t("threadHeader.copyAppLink")}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!threadConversation}
+                            onClick={() => void copyConversationMarkdown()}
+                            className="app-nav-item-idle mt-1 flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
+                          >
+                            {t("threadHeader.copyConversationMarkdown")}
+                          </button>
+                          <div className="my-1 h-px bg-[var(--app-shell-border)]" />
+                          <button
+                            type="button"
+                            disabled={!selectedThreadId || isTurnInProgress}
+                            onClick={() => void forkSelectedThread()}
+                            className="app-nav-item-idle flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
+                          >
+                            {t("threadHeader.forkIntoLocal")}
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -1144,84 +1989,120 @@ function App() {
                 <div className="grid min-h-0 flex-1" style={shellColumns}>
                   <ChatConversationMainPane
                     composerDraft={composerDraft}
+                    composerEnterBehavior={composerEnterBehavior}
                     currentThreadApprovals={currentThreadApprovals}
-                    isTurnInProgress={isTurnInProgress}
+                    currentThreadQueuedFollowUps={currentThreadQueuedFollowUps}
                     onApprovalDecision={(approval, decision) => void handleApprovalDecision(approval, decision)}
                     onComposerDraftChange={setComposerDraft}
+                    onRemoveQueuedFollowUp={removeQueuedFollowUp}
                     onStopTurn={() => void stopTurn()}
-                    onSubmitTurn={() => void submitTurn()}
-                    openProjectPath={openProjectPath}
+                    onSubmitTurn={(invertFollowUpAction) => void submitTurn(invertFollowUpAction)}
                     approvalActionErrors={approvalActionErrors}
                     respondingApprovalKeys={respondingApprovalKeys}
+                    submitButtonMode={submitButtonMode}
                     t={t}
                     threadConversation={threadConversation}
-                    threadPrompt={threadPrompt}
                     turnError={turnError}
                   />
 
-                  <aside className="min-h-0 min-w-0 border-l border-[var(--app-shell-border)] bg-[var(--app-shell-right)] px-4 py-4">
-                    <div className="flex items-center justify-between text-[12px] tracking-[0.12em] text-[var(--app-shell-subtle)]">
-                      <span>{t("app.chat.inspector")}</span>
-                      <span className="tracking-normal text-[#867f74]">codex-app-replica</span>
-                    </div>
-
-                    <div className="mt-3 flex items-center gap-2">
-                      {openFiles.map((file, index) => (
-                        <button
-                          key={file}
-                          type="button"
-                          className={[
-                            "rounded-full px-3 py-1.5 text-[13px]",
-                            index === 0
-                              ? "border border-black/8 bg-white text-[#2f2b26] shadow-[0_1px_0_rgba(0,0,0,0.03)]"
-                              : "text-[#867f74] hover:bg-white/50",
-                          ].join(" ")}
-                        >
-                          {file}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="mt-5 rounded-[18px] border border-[var(--app-shell-border)] bg-white/92 px-4 py-4 shadow-[0_1px_0_rgba(0,0,0,0.03)]">
-                      <div className="mb-3 text-[12px] font-medium tracking-[0.16em] text-[var(--app-shell-subtle)]">
-                        {t("app.chat.agentsMd")}
-                      </div>
-
-                      <div className="space-y-3">
-                        {inspectorBullets.map((item) => (
-                          <div key={item} className="flex gap-3 text-[13px] leading-6 text-[#3c3731]">
-                            <span className="pt-[10px] text-[8px] text-[#8a8176]">●</span>
-                            <p>{item}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="mt-4 rounded-[18px] border border-[var(--app-shell-border)] bg-white/92 px-4 py-4 shadow-[0_1px_0_rgba(0,0,0,0.03)]">
-                      <div className="mb-3 text-[12px] font-medium tracking-[0.16em] text-[var(--app-shell-subtle)]">
-                        {t("app.chat.openFiles")}
-                      </div>
-
-                      <div className="space-y-2">
-                        {openFiles.map((entry) => (
-                          <div
-                            key={entry}
-                            className="rounded-[13px] bg-[#f7f6f4] px-3.5 py-3 text-[13px] text-[#332f29]"
-                          >
-                            {entry}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </aside>
+                  {isSidePanelOpen ? (
+                    <ChatSidePanel
+                      activeTab={activeSidePanelTab}
+                      onTabChange={setActiveSidePanelTab}
+                      selectedFile={selectedSidePanelFile}
+                      t={t}
+                      threadDiffSummary={threadDiffSummary}
+                    />
+                  ) : null}
                 </div>
               ) : (
                 <div className="min-h-0 flex-1 overflow-y-auto">{renderSettings()}</div>
               )}
+              {threadActionFeedback ? (
+                <div
+                  className={[
+                    threadActionFeedback.tone === "error" ? "app-card-error" : "app-card app-text-muted",
+                    "border-t border-[var(--app-shell-border)] px-4 py-2 text-[12px]",
+                  ].join(" ")}
+                >
+                  {threadActionFeedback.message}
+                </div>
+              ) : null}
             </div>
           </section>
         </div>
       </div>
+      {isArchiveDialogOpen ? (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
+          <div className="app-card w-full max-w-[420px] rounded-[18px] px-5 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
+            <div className="app-title text-[15px] font-medium">{t("threadHeader.archiveConfirmTitle")}</div>
+            <div className="app-text-muted mt-2 text-[13px] leading-6">
+              {t("threadHeader.archiveConfirmSubtitle")}
+            </div>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsArchiveDialogOpen(false)}
+                className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
+              >
+                {t("threadHeader.archiveConfirmCancel")}
+              </button>
+              <button
+                type="button"
+                onClick={() => void archiveSelectedThread()}
+                className="app-card-error rounded-[11px] px-3 py-1.5 text-[12px]"
+              >
+                {t("threadHeader.archiveConfirmConfirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      <WorkspaceFileSearchDialog
+        isOpen={isWorkspaceFileSearchOpen}
+        workspaceRoot={chatWorkspaceRoot}
+        onClose={() => setIsWorkspaceFileSearchOpen(false)}
+        onSelectFile={handleWorkspaceFileSelected}
+        onError={(message) => {
+          setIsWorkspaceFileSearchOpen(false);
+          setThreadActionFeedback({ tone: "error", message });
+        }}
+        t={t}
+      />
+      {isRenameDialogOpen ? (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
+          <div className="app-card w-full max-w-[420px] rounded-[18px] px-5 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
+            <div className="app-title text-[15px] font-medium">{t("sidebarElectron.renameThreadDialogTitle")}</div>
+            <div className="app-text-muted mt-2 text-[13px] leading-6">
+              {t("sidebarElectron.renameThreadDialogSubtitle")}
+            </div>
+            <input
+              aria-label={t("sidebarElectron.renameThreadDialogAriaLabel")}
+              value={renameDraft}
+              onChange={(event) => setRenameDraft(event.target.value)}
+              placeholder={t("sidebarElectron.renameThreadDialogPlaceholder")}
+              className="app-control app-text-input mt-4 w-full rounded-[12px] px-3 py-2 text-[13px] outline-none"
+            />
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsRenameDialogOpen(false)}
+                className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
+              >
+                {t("sidebarElectron.renameThreadDialogCancel")}
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveThreadNameChange()}
+                className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
+              >
+                {t("sidebarElectron.renameThreadDialogSave")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      <AppToastRegion toast={appToast} onDismiss={() => setAppToast(null)} />
     </main>
   );
 }

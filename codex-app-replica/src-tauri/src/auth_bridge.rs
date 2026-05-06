@@ -20,6 +20,7 @@ use crate::thread_history::ThreadConversationItem;
 
 const AUTH_EVENT: &str = "auth-state-changed";
 const THREAD_EVENT: &str = "thread-event";
+const MCP_OAUTH_EVENT: &str = "mcp-oauth-login-completed";
 const CLIENT_NAME: &str = "codex-app-replica";
 const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -61,6 +62,7 @@ pub struct ThreadHistoryEntry {
     pub created_at: i64,
     pub updated_at: i64,
     pub cwd: String,
+    pub path: Option<String>,
     pub name: Option<String>,
 }
 
@@ -85,12 +87,24 @@ pub struct ConfigSnapshot {
     pub approval_policy: Option<String>,
     pub sandbox_mode: Option<String>,
     pub sandbox_workspace_write: Option<SandboxWorkspaceWrite>,
+    pub personality: Option<String>,
+    pub model_personality: Option<String>,
+    pub memories: Option<MemoriesConfigSnapshot>,
+    pub mcp_servers: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SandboxWorkspaceWrite {
     pub network_access: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoriesConfigSnapshot {
+    pub generate_memories: bool,
+    pub use_memories: bool,
+    pub disable_on_external_context: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -133,6 +147,24 @@ pub struct ConfigValueWriteParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct ConfigEditParams {
+    pub key_path: String,
+    pub value: serde_json::Value,
+    pub merge_strategy: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigBatchWriteParams {
+    pub edits: Vec<ConfigEditParams>,
+    pub file_path: Option<String>,
+    pub expected_version: Option<String>,
+    #[serde(default)]
+    pub reload_user_config: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct ApiKeyLoginParams {
     pub api_key: String,
 }
@@ -166,6 +198,7 @@ struct ThreadListItem {
     created_at: i64,
     updated_at: i64,
     cwd: String,
+    path: Option<String>,
     name: Option<String>,
 }
 
@@ -173,6 +206,263 @@ struct ThreadListItem {
 #[serde(rename_all = "camelCase")]
 struct ThreadReadResponse {
     thread: ThreadReadThread,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExperimentalFeatureListResponse {
+    data: Vec<ExperimentalFeature>,
+    next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillsListParams {
+    pub cwd: Option<String>,
+    #[serde(default)]
+    pub force_reload: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillsListResponse {
+    pub data: Vec<SkillsListEntry>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillsListEntry {
+    pub cwd: String,
+    pub skills: Vec<SkillMetadata>,
+    pub errors: Vec<SkillErrorInfo>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillMetadata {
+    pub name: String,
+    pub description: String,
+    #[serde(default)]
+    pub short_description: Option<String>,
+    #[serde(default)]
+    pub interface: Option<SkillInterface>,
+    pub path: String,
+    pub scope: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillInterface {
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub short_description: Option<String>,
+    #[serde(default)]
+    pub icon_small: Option<String>,
+    #[serde(default)]
+    pub icon_large: Option<String>,
+    #[serde(default)]
+    pub brand_color: Option<String>,
+    #[serde(default)]
+    pub default_prompt: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillErrorInfo {
+    pub path: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginListParams {
+    pub cwd: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginListResponse {
+    pub marketplaces: Vec<PluginMarketplaceEntry>,
+    #[serde(default)]
+    pub marketplace_load_errors: Vec<MarketplaceLoadErrorInfo>,
+    #[serde(default)]
+    pub featured_plugin_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginReadParams {
+    pub marketplace_path: Option<String>,
+    pub remote_marketplace_name: Option<String>,
+    pub plugin_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginReadResponse {
+    pub plugin: PluginDetail,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginDetail {
+    pub marketplace_name: String,
+    pub marketplace_path: Option<String>,
+    pub summary: PluginSummary,
+    pub description: Option<String>,
+    pub skills: Vec<PluginSkillSummary>,
+    pub apps: Vec<PluginAppSummary>,
+    pub mcp_servers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginSkillSummary {
+    pub name: String,
+    pub description: String,
+    #[serde(default)]
+    pub short_description: Option<String>,
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginAppSummary {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub install_url: Option<String>,
+    #[serde(default)]
+    pub needs_auth: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginInstallParams {
+    pub marketplace_path: Option<String>,
+    pub remote_marketplace_name: Option<String>,
+    pub plugin_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginInstallResponse {
+    pub auth_policy: String,
+    pub apps_needing_auth: Vec<PluginAppSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginUninstallParams {
+    pub plugin_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginUninstallResponse {}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginMarketplaceEntry {
+    pub name: String,
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub interface: Option<MarketplaceInterface>,
+    pub plugins: Vec<PluginSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketplaceInterface {
+    #[serde(default)]
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketplaceLoadErrorInfo {
+    pub marketplace_path: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginSummary {
+    pub id: String,
+    pub name: String,
+    pub installed: bool,
+    pub enabled: bool,
+    #[serde(default)]
+    pub interface: Option<PluginInterface>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginInterface {
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub short_description: Option<String>,
+    #[serde(default)]
+    pub long_description: Option<String>,
+    #[serde(default)]
+    pub developer_name: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub capabilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExperimentalFeature {
+    pub name: String,
+    pub stage: String,
+    pub display_name: Option<String>,
+    pub description: Option<String>,
+    pub announcement: Option<String>,
+    pub enabled: bool,
+    pub default_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerStatusListParams {
+    pub cursor: Option<String>,
+    pub limit: Option<u32>,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerStatusListResponse {
+    pub data: Vec<McpServerStatusEntry>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerStatusEntry {
+    pub name: String,
+    pub auth_status: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerOauthLoginParams {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerOauthLoginResponse {
+    pub authorization_url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -189,8 +479,34 @@ struct TurnStartResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct ReviewStartResponse {
+    turn: TurnStartTurn,
+    review_thread_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TurnSteerResponse {
+    turn_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct TurnStartTurn {
     id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewStartResult {
+    pub turn_id: String,
+    pub review_thread_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExperimentalFeatureEnablementSetParams {
+    pub enablement: HashMap<String, bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -320,6 +636,14 @@ struct LoginCompletedNotification {
     error: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct McpOauthLoginCompletedNotification {
+    name: String,
+    success: bool,
+    error: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 enum LoginStartResult {
@@ -373,10 +697,28 @@ enum AppServerRequestKind {
     Logout,
     ConfigRead,
     ConfigValueWrite,
+    ConfigBatchWrite,
+    ExperimentalFeatureList,
+    ExperimentalFeatureEnablementSet,
+    MemoryReset,
+    McpServerOauthLogin,
+    McpServerStatusList,
+    ReloadMcpServerConfig,
+    SkillsList,
+    PluginList,
+    PluginRead,
+    PluginInstall,
+    PluginUninstall,
     ThreadList,
     ThreadStart,
+    ThreadFork,
+    ThreadArchive,
+    ThreadUnarchive,
+    ThreadNameSet,
     ThreadRead,
+    ReviewStart,
     TurnStart,
+    TurnSteer,
     TurnInterrupt,
 }
 
@@ -600,14 +942,267 @@ pub async fn write_config_value(
 }
 
 #[tauri::command]
+pub async fn batch_write_config_values(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: ConfigBatchWriteParams,
+) -> Result<(), String> {
+    let edits = params
+        .edits
+        .into_iter()
+        .map(|edit| {
+            serde_json::json!({
+                "keyPath": edit.key_path,
+                "value": edit.value,
+                "mergeStrategy": edit.merge_strategy,
+            })
+        })
+        .collect::<Vec<_>>();
+    send_request(
+        state.inner(),
+        AppServerRequestKind::ConfigBatchWrite,
+        serde_json::json!({
+            "edits": edits,
+            "filePath": params.file_path,
+            "expectedVersion": params.expected_version,
+            "reloadUserConfig": params.reload_user_config,
+        }),
+    )
+    .await
+    .map(|_| ())
+}
+
+#[tauri::command]
+pub async fn list_experimental_features(
+    state: State<'_, Arc<AuthBridgeState>>,
+) -> Result<Vec<ExperimentalFeature>, String> {
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::ExperimentalFeatureList,
+        serde_json::json!({
+            "limit": 100,
+        }),
+    )
+    .await?;
+    let response = serde_json::from_value::<ExperimentalFeatureListResponse>(value)
+        .map_err(|err| format!("failed to decode experimental feature list response: {err}"))?;
+    let _ = response.next_cursor;
+    Ok(response.data)
+}
+
+#[tauri::command]
+pub async fn set_experimental_feature_enablement(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: ExperimentalFeatureEnablementSetParams,
+) -> Result<(), String> {
+    send_request(
+        state.inner(),
+        AppServerRequestKind::ExperimentalFeatureEnablementSet,
+        serde_json::json!({
+            "enablement": params.enablement,
+        }),
+    )
+    .await
+    .map(|_| ())
+}
+
+#[tauri::command]
+pub async fn reset_memories(state: State<'_, Arc<AuthBridgeState>>) -> Result<(), String> {
+    send_request(
+        state.inner(),
+        AppServerRequestKind::MemoryReset,
+        serde_json::json!({}),
+    )
+    .await
+    .map(|_| ())
+}
+
+#[tauri::command]
+pub async fn list_skills(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: SkillsListParams,
+) -> Result<SkillsListResponse, String> {
+    let mut cwds = Vec::new();
+    if let Some(cwd) = params.cwd {
+        cwds.push(cwd);
+    }
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::SkillsList,
+        serde_json::json!({
+            "cwds": cwds,
+            "forceReload": params.force_reload,
+        }),
+    )
+    .await?;
+    serde_json::from_value::<SkillsListResponse>(value)
+        .map_err(|err| format!("failed to decode skills list response: {err}"))
+}
+
+#[tauri::command]
+pub async fn list_plugins(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: PluginListParams,
+) -> Result<PluginListResponse, String> {
+    let cwds = params.cwd.map(|cwd| vec![cwd]);
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::PluginList,
+        serde_json::json!({
+            "cwds": cwds,
+        }),
+    )
+    .await?;
+    serde_json::from_value::<PluginListResponse>(value)
+        .map_err(|err| format!("failed to decode plugin list response: {err}"))
+}
+
+#[tauri::command]
+pub async fn read_plugin(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: PluginReadParams,
+) -> Result<PluginReadResponse, String> {
+    let PluginReadParams {
+        marketplace_path,
+        remote_marketplace_name,
+        plugin_name,
+    } = params;
+    if marketplace_path.is_some() == remote_marketplace_name.is_some() {
+        return Err(
+            "plugin/read requires exactly one of marketplacePath or remoteMarketplaceName".into(),
+        );
+    }
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::PluginRead,
+        serde_json::json!({
+            "marketplacePath": marketplace_path,
+            "remoteMarketplaceName": remote_marketplace_name,
+            "pluginName": plugin_name,
+        }),
+    )
+    .await?;
+    serde_json::from_value::<PluginReadResponse>(value)
+        .map_err(|err| format!("failed to decode plugin read response: {err}"))
+}
+
+#[tauri::command]
+pub async fn install_plugin(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: PluginInstallParams,
+) -> Result<PluginInstallResponse, String> {
+    let PluginInstallParams {
+        marketplace_path,
+        remote_marketplace_name,
+        plugin_name,
+    } = params;
+    if marketplace_path.is_some() == remote_marketplace_name.is_some() {
+        return Err(
+            "plugin/install requires exactly one of marketplacePath or remoteMarketplaceName"
+                .into(),
+        );
+    }
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::PluginInstall,
+        serde_json::json!({
+            "marketplacePath": marketplace_path,
+            "remoteMarketplaceName": remote_marketplace_name,
+            "pluginName": plugin_name,
+        }),
+    )
+    .await?;
+    serde_json::from_value::<PluginInstallResponse>(value)
+        .map_err(|err| format!("failed to decode plugin install response: {err}"))
+}
+
+#[tauri::command]
+pub async fn uninstall_plugin(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: PluginUninstallParams,
+) -> Result<PluginUninstallResponse, String> {
+    send_request(
+        state.inner(),
+        AppServerRequestKind::PluginUninstall,
+        serde_json::json!({
+            "pluginId": params.plugin_id,
+        }),
+    )
+    .await
+    .map(|_| PluginUninstallResponse {})
+}
+
+#[tauri::command]
+pub async fn list_mcp_server_status(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: McpServerStatusListParams,
+) -> Result<McpServerStatusListResponse, String> {
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::McpServerStatusList,
+        serde_json::json!({
+            "cursor": params.cursor,
+            "detail": params.detail,
+            "limit": params.limit,
+        }),
+    )
+    .await?;
+    serde_json::from_value::<McpServerStatusListResponse>(value)
+        .map_err(|err| format!("failed to decode MCP server status list response: {err}"))
+}
+
+#[tauri::command]
+pub async fn login_mcp_server(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: McpServerOauthLoginParams,
+) -> Result<McpServerOauthLoginResponse, String> {
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::McpServerOauthLogin,
+        serde_json::json!({
+            "name": params.name,
+        }),
+    )
+    .await?;
+    serde_json::from_value::<McpServerOauthLoginResponse>(value)
+        .map_err(|err| format!("failed to decode MCP server oauth login response: {err}"))
+}
+
+#[tauri::command]
+pub async fn reload_mcp_server_config(
+    state: State<'_, Arc<AuthBridgeState>>,
+) -> Result<(), String> {
+    send_request(
+        state.inner(),
+        AppServerRequestKind::ReloadMcpServerConfig,
+        serde_json::json!({}),
+    )
+    .await
+    .map(|_| ())
+}
+
+#[tauri::command]
 pub async fn list_recent_threads(
     state: State<'_, Arc<AuthBridgeState>>,
 ) -> Result<Vec<ThreadHistoryEntry>, String> {
+    list_threads(state.inner(), false).await
+}
+
+#[tauri::command]
+pub async fn list_archived_threads(
+    state: State<'_, Arc<AuthBridgeState>>,
+) -> Result<Vec<ThreadHistoryEntry>, String> {
+    list_threads(state.inner(), true).await
+}
+
+async fn list_threads(
+    state: &Arc<AuthBridgeState>,
+    archived: bool,
+) -> Result<Vec<ThreadHistoryEntry>, String> {
     let value = send_request(
-        state.inner(),
+        state,
         AppServerRequestKind::ThreadList,
         serde_json::json!({
-            "archived": false,
+            "archived": archived,
             "limit": 100,
             "sortKey": "updated_at",
         }),
@@ -624,6 +1219,7 @@ pub async fn list_recent_threads(
             created_at: thread.created_at,
             updated_at: thread.updated_at,
             cwd: thread.cwd,
+            path: thread.path,
             name: thread.name,
         })
         .collect::<Vec<_>>();
@@ -652,6 +1248,76 @@ pub async fn start_thread(
 }
 
 #[tauri::command]
+pub async fn fork_thread(
+    state: State<'_, Arc<AuthBridgeState>>,
+    thread_id: String,
+) -> Result<String, String> {
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::ThreadFork,
+        serde_json::json!({
+            "threadId": thread_id,
+        }),
+    )
+    .await?;
+    let response = serde_json::from_value::<ThreadStartResponse>(value)
+        .map_err(|err| format!("failed to decode thread fork response: {err}"))?;
+    Ok(response.thread.id)
+}
+
+#[tauri::command]
+pub async fn archive_thread(
+    state: State<'_, Arc<AuthBridgeState>>,
+    thread_id: String,
+) -> Result<(), String> {
+    send_request(
+        state.inner(),
+        AppServerRequestKind::ThreadArchive,
+        serde_json::json!({
+            "threadId": thread_id,
+        }),
+    )
+    .await
+    .map(|_| ())
+}
+
+#[tauri::command]
+pub async fn unarchive_thread(
+    state: State<'_, Arc<AuthBridgeState>>,
+    thread_id: String,
+) -> Result<String, String> {
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::ThreadUnarchive,
+        serde_json::json!({
+            "threadId": thread_id,
+        }),
+    )
+    .await?;
+    let response = serde_json::from_value::<ThreadStartResponse>(value)
+        .map_err(|err| format!("failed to decode thread unarchive response: {err}"))?;
+    Ok(response.thread.id)
+}
+
+#[tauri::command]
+pub async fn set_thread_name(
+    state: State<'_, Arc<AuthBridgeState>>,
+    thread_id: String,
+    name: Option<String>,
+) -> Result<(), String> {
+    send_request(
+        state.inner(),
+        AppServerRequestKind::ThreadNameSet,
+        serde_json::json!({
+            "threadId": thread_id,
+            "name": name,
+        }),
+    )
+    .await
+    .map(|_| ())
+}
+
+#[tauri::command]
 pub async fn start_turn(
     state: State<'_, Arc<AuthBridgeState>>,
     thread_id: String,
@@ -677,6 +1343,62 @@ pub async fn start_turn(
     let response = serde_json::from_value::<TurnStartResponse>(value)
         .map_err(|err| format!("failed to decode turn start response: {err}"))?;
     Ok(response.turn.id)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StartReviewParams {
+    pub thread_id: String,
+    pub delivery: String,
+}
+
+#[tauri::command]
+pub async fn start_review(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: StartReviewParams,
+) -> Result<ReviewStartResult, String> {
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::ReviewStart,
+        serde_json::json!({
+            "threadId": params.thread_id,
+            "delivery": params.delivery,
+            "target": {
+                "type": "uncommittedChanges",
+            },
+        }),
+    )
+    .await?;
+    let response = serde_json::from_value::<ReviewStartResponse>(value)
+        .map_err(|err| format!("failed to decode review start response: {err}"))?;
+    Ok(ReviewStartResult {
+        turn_id: response.turn.id,
+        review_thread_id: response.review_thread_id,
+    })
+}
+
+#[tauri::command]
+pub async fn steer_turn(
+    state: State<'_, Arc<AuthBridgeState>>,
+    thread_id: String,
+    turn_id: String,
+    text: String,
+) -> Result<String, String> {
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::TurnSteer,
+        serde_json::json!({
+            "threadId": thread_id,
+            "input": [
+                { "type": "text", "text": text }
+            ],
+            "expectedTurnId": turn_id,
+        }),
+    )
+    .await?;
+    let response = serde_json::from_value::<TurnSteerResponse>(value)
+        .map_err(|err| format!("failed to decode turn steer response: {err}"))?;
+    Ok(response.turn_id)
 }
 
 #[tauri::command]
@@ -729,17 +1451,23 @@ pub async fn read_thread(
     .await?;
     let response = serde_json::from_value::<ThreadReadResponse>(value)
         .map_err(|err| format!("failed to decode thread read response: {err}"))?;
-    let items = response
-        .thread
-        .turns
-        .into_iter()
-        .flat_map(|turn| {
-            let turn_id = turn.id;
-            turn.items
-                .into_iter()
-                .filter_map(move |item| map_thread_item(&turn_id, &item))
-        })
-        .collect::<Vec<_>>();
+    let mut items = Vec::<ThreadConversationItem>::new();
+    for turn in response.thread.turns.iter() {
+        for item in turn
+            .items
+            .iter()
+            .filter_map(|item| map_thread_item(&turn.id, item))
+        {
+            if let Some(index) = items
+                .iter()
+                .position(|existing| thread_item_id(existing) == thread_item_id(&item))
+            {
+                items[index] = item;
+            } else {
+                items.push(item);
+            }
+        }
+    }
     Ok(ThreadConversation {
         id: response.thread.id,
         title: response
@@ -951,6 +1679,10 @@ async fn run_client(
                                 handle_login_completed(&app, &state, params);
                                 queue_account_read(&mut stdin, &mut next_request_id, &mut pending).await;
                             }
+                            "mcpServer/oauthLogin/completed" => {
+                                handle_mcp_oauth_login_completed(&app, params);
+                            }
+                            "mcpServer/startupStatus/updated" => {}
                             "item/started" => {
                                 handle_item_started(&app, params, &mut pending_thread_items);
                             }
@@ -1028,6 +1760,14 @@ fn handle_login_completed(
     update_snapshot(app, state, snapshot);
 }
 
+fn handle_mcp_oauth_login_completed(app: &AppHandle, params: serde_json::Value) {
+    let Ok(notification) = serde_json::from_value::<McpOauthLoginCompletedNotification>(params)
+    else {
+        return;
+    };
+    let _ = app.emit(MCP_OAUTH_EVENT, notification);
+}
+
 fn request_method(kind: &AppServerRequestKind) -> &'static str {
     match kind {
         AppServerRequestKind::AccountRead => "account/read",
@@ -1038,10 +1778,30 @@ fn request_method(kind: &AppServerRequestKind) -> &'static str {
         AppServerRequestKind::Logout => "account/logout",
         AppServerRequestKind::ConfigRead => "config/read",
         AppServerRequestKind::ConfigValueWrite => "config/value/write",
+        AppServerRequestKind::ConfigBatchWrite => "config/batchWrite",
+        AppServerRequestKind::ExperimentalFeatureList => "experimentalFeature/list",
+        AppServerRequestKind::ExperimentalFeatureEnablementSet => {
+            "experimentalFeature/enablement/set"
+        }
+        AppServerRequestKind::MemoryReset => "memory/reset",
+        AppServerRequestKind::McpServerOauthLogin => "mcpServer/oauth/login",
+        AppServerRequestKind::McpServerStatusList => "mcpServerStatus/list",
+        AppServerRequestKind::ReloadMcpServerConfig => "config/mcpServer/reload",
+        AppServerRequestKind::SkillsList => "skills/list",
+        AppServerRequestKind::PluginList => "plugin/list",
+        AppServerRequestKind::PluginRead => "plugin/read",
+        AppServerRequestKind::PluginInstall => "plugin/install",
+        AppServerRequestKind::PluginUninstall => "plugin/uninstall",
         AppServerRequestKind::ThreadList => "thread/list",
         AppServerRequestKind::ThreadStart => "thread/start",
+        AppServerRequestKind::ThreadFork => "thread/fork",
+        AppServerRequestKind::ThreadArchive => "thread/archive",
+        AppServerRequestKind::ThreadUnarchive => "thread/unarchive",
+        AppServerRequestKind::ThreadNameSet => "thread/name/set",
         AppServerRequestKind::ThreadRead => "thread/read",
+        AppServerRequestKind::ReviewStart => "review/start",
         AppServerRequestKind::TurnStart => "turn/start",
+        AppServerRequestKind::TurnSteer => "turn/steer",
         AppServerRequestKind::TurnInterrupt => "turn/interrupt",
     }
 }

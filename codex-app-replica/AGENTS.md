@@ -67,12 +67,13 @@ This directory is for building a Windows Codex App replica with Tauri + React.
 - Track entries must use stable fields: `ID`, `Status`, `Priority`, `Blocked Reason`, `Evidence`, and `Notes`.
 - The tracker is organized in two layers: module entries at the top level, then page / flow entries nested under the module they belong to.
 - The tracker must include foundation, scaffolding, build, and packaging work, not only user-facing product features.
-- Every implementation task must map to an item in the tracker before work starts.
-- Do not start work that is not represented in the tracker.
+- Every implementation, reverse-engineering, and parity-validation task must map to an item in the tracker before work starts.
+- Do not start implementation, reverse-engineering, or parity-validation work that is not represented in the tracker.
 
 ## Tracker Maintenance
 
-- Update `compare/tracker.md` before starting work, when status changes, when new evidence is captured, and when work is blocked or verified.
+- Do not create tracker entries for AGENTS-only governance, policy, or working-contract edits unless the user explicitly requests it.
+- For tracker-scoped work, update `compare/tracker.md` before starting work, when status changes, when new evidence is captured, and when work is blocked or verified.
 - Create new tracker entries as soon as reverse-engineering reveals a new module, page, flow, system behavior, or foundation task that matters for parity.
 - Keep module IDs stable as `M-###`.
 - Keep page / flow IDs stable under their owning module, using a consistent suffix scheme.
@@ -92,7 +93,7 @@ This directory is for building a Windows Codex App replica with Tauri + React.
 ## Delivery Path
 
 - The overall replica path is to complete full shell parity and visual parity before feature replication begins.
-- Detailed development instructions must come from `codex-app-replica/compare/tracker.md`, not from this phase statement.
+- Detailed development instructions for implementation work must come from `codex-app-replica/compare/tracker.md`, not from this phase statement.
 
 ## Diagnostics
 
@@ -116,6 +117,52 @@ This directory is for building a Windows Codex App replica with Tauri + React.
 - Use Tauri + React for the desktop shell and frontend.
 - Keep focus on the Windows target and avoid cross-platform abstractions unless they are required for parity or explicitly requested.
 - Do not add fallback-compatible shims, approximation layers, or alternative mainline behavior when the original behavior can be measured.
+
+## UI And Settings Fidelity Rules
+
+These rules are mandatory for every visual surface, menu, settings page, toolbar action, button, form control, and shell region.
+
+- Do not invent, substitute, or approximate icons. Every menu icon, toolbar icon, button icon, row icon, status icon, chevron, overflow icon, and state icon must come from extracted original-app asset/component evidence.
+- Do not replace an original icon with a semantically similar icon from another icon set. Matching meaning is not sufficient; the visual asset itself must match.
+- If the original icon asset or component cannot be identified, leave the item incomplete or blocked instead of using a similar icon temporarily.
+- Do not change page or panel layout order for convenience. Preserve the original order of sections, rows, action groups, sidebars, columns, headers, footers, tabs, empty states, and inline action placement exactly as evidenced from the original app.
+- Do not reorder settings rows, menu items, or action buttons based on perceived importance or implementation convenience.
+- Do not change the original menu hierarchy. Do not add grouping headers, nested menus, tabs, sidebar groups, separators, accordions, collapsible groups, subpanes, or extra levels unless the original app has the same hierarchy.
+- If the original app presents items as a flat list, keep them as a flat list. Do not introduce grouping simply because it looks cleaner.
+- Do not replace one control type with another. If the original uses a dropdown/select, implement a dropdown/select; if it uses a checkbox, segmented control, radio group, text field, toggle, combobox, command menu, confirmation dialog, or inline action row, match that control type and interaction model.
+- Matching the underlying data model is not enough. The visible control family, trigger style, expanded surface, selection affordance, and confirmation behavior must also match.
+- Do not split, merge, rename, relocate, or re-group settings sections unless extracted original-app evidence shows that split, merge, name, location, and grouping.
+- Do not add explanatory copy, subtitles, helper text, badges, placeholder cards, empty-state prose, tooltip text, menu labels, group labels, or convenience hints that are not present in the original app.
+- Do not translate, rewrite, or simplify visible copy by hand when an upstream locale/message key exists. Reuse extracted locale keys and wording.
+- Do not keep replica-only placeholder content after the corresponding original-backed surface is known. Remove placeholder content instead of making it look polished.
+- Do not infer UI from backend capability names alone. UI structure must come from extracted frontend resources or directly observed original behavior through the allowed comparison methods.
+- If original evidence is incomplete for icon, layout, control type, menu hierarchy, config source, or visible copy, mark the affected implementation path incomplete or blocked instead of filling the gap creatively.
+
+### UI Evidence Checklist
+
+Before implementing or changing any UI surface, identify the original-app evidence for all applicable items:
+
+- Icon source or explicit proof that the original item has no icon.
+- Exact menu/action hierarchy and item order.
+- Exact page section order and row order.
+- Exact control type and interaction model.
+- Exact visible copy and locale/message key.
+- Exact config key, config layer, config file, app-server method, or global-state source used by the original app.
+- Exact visibility condition, feature gate, platform gate, auth gate, or experimental gate when present.
+
+If any required evidence is missing, continue resource extraction first. Use network packet capture or protocol observation only when resource extraction is insufficient for that specific question.
+
+### Configuration Source Fidelity
+
+- Do not guess which config file or state store a setting uses.
+- Do not load `AGENTS.md`, `config.toml`, global-state files, workspace files, or project files unless original-app evidence shows that exact source for the feature being implemented.
+- Do not swap in a nearby or similarly named config source just because it already exists in the replica codebase.
+- For every setting or persisted preference, identify the exact original source before implementation: file, app-server method, config key, config layer, scope, and reload path.
+- Do not substitute a replica-local config file for an original app-server config path unless the feature is explicitly replica-local and cannot exist in upstream.
+- Settings reads and writes must use the same app-server method, config key, config layer, file path behavior, and reload behavior as the original app.
+- When original behavior uses global desktop app state rather than app-server config, keep it in the replica global-state path and do not mirror it into backend config.
+- When original behavior uses workspace-scoped files, resolve the workspace from the same source as the original app. Do not fall back to process cwd, repository root, or selected thread cwd unless original evidence supports that fallback.
+- If the original source cannot be proven, block the implementation path instead of binding the UI to the wrong file or store.
 
 ## Architecture Defaults
 

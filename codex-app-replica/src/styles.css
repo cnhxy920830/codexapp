@@ -1,16 +1,38 @@
 @import "tailwindcss";
 
 :root {
-  --app-shell-surface: #e9e7e3;
-  --app-shell-topbar: #e6e3df;
-  --app-shell-sidebar: #e4e1dc;
-  --app-shell-main-surface: #f9f8f6;
-  --app-shell-right: #f3f1ed;
-  --app-shell-border: color-mix(in srgb, #181818 8%, transparent);
-  --app-shell-border-heavy: color-mix(in srgb, #181818 12%, transparent);
-  --app-shell-text: #201d19;
-  --app-shell-muted: #6b635a;
-  --app-shell-subtle: #8e877d;
+  --app-shell-surface: var(--color-background-panel, #e9e7e3);
+  --app-shell-topbar: var(--color-background-panel, #e6e3df);
+  --app-shell-sidebar: var(--color-background-panel, #e4e1dc);
+  --app-shell-main-surface: var(--color-background-surface, #f9f8f6);
+  --app-shell-right: var(--color-background-panel, #f3f1ed);
+  --app-shell-border: var(--color-border, color-mix(in srgb, #181818 8%, transparent));
+  --app-shell-border-heavy: var(--color-border-heavy, color-mix(in srgb, #181818 12%, transparent));
+  --app-shell-text: var(--color-text-foreground, #201d19);
+  --app-shell-muted: var(--color-text-foreground-secondary, #6b635a);
+  --app-shell-subtle: var(--color-text-foreground-tertiary, #8e877d);
+  --app-shell-title: var(--color-text-foreground, #29251f);
+  --app-shell-card-bg: var(--color-background-elevated-primary, rgba(255, 255, 255, 0.92));
+  --app-shell-card-bg-weak: var(--color-background-elevated-secondary, rgba(255, 255, 255, 0.65));
+  --app-shell-card-bg-muted: var(--color-background-control, #f7f6f4);
+  --app-shell-card-bg-selected: var(--color-background-button-secondary, #ecebea);
+  --app-shell-card-shadow: 0 1px 0 rgba(0, 0, 0, 0.03);
+  --app-shell-control-bg: var(--color-background-control, #ffffff);
+  --app-shell-control-bg-weak: var(--color-background-elevated-secondary, rgba(255, 255, 255, 0.85));
+  --app-shell-control-border: var(--color-border, color-mix(in srgb, #181818 8%, transparent));
+  --app-shell-control-ring: var(--color-border-focus, color-mix(in srgb, #181818 12%, transparent));
+  --app-shell-control-text: var(--color-text-foreground, #302b25);
+  --app-shell-control-text-muted: var(--color-text-foreground-secondary, #6a6259);
+  --app-shell-control-disabled: var(--color-text-foreground-tertiary, #a29a91);
+  --app-shell-control-hover: var(--color-background-button-secondary-hover, #f5f3f0);
+  --app-shell-accent: var(--color-accent-blue, #0285ff);
+  --app-shell-warning-bg: #fff9ef;
+  --app-shell-warning-border: #d5c2a0;
+  --app-shell-warning-text: #4e3c22;
+  --app-shell-warning-muted: #8b7554;
+  --app-shell-error-bg: #fff3f1;
+  --app-shell-error-border: #d5b6b0;
+  --app-shell-error-text: #9e5348;
   --app-shell-toolbar: 46px;
   --app-shell-toolbar-sm: 36px;
   --app-shell-toolbar-pane: 40px;
@@ -19,6 +41,25 @@
   --app-shell-panel-gap: 12px;
   --app-shell-ui-font-size: 14px;
   --app-shell-code-font-size: 12px;
+  --app-shell-ui-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --app-shell-code-font-family: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+}
+
+html.electron-light {
+  color-scheme: light;
+}
+
+html.electron-dark {
+  color-scheme: dark;
+  --app-shell-card-shadow: 0 1px 0 rgba(255, 255, 255, 0.02);
+  --app-shell-warning-bg: rgba(146, 59, 15, 0.18);
+  --app-shell-warning-border: color-mix(in srgb, #fa994c 30%, transparent);
+  --app-shell-warning-text: #fa994c;
+  --app-shell-warning-muted: #d8ae7f;
+  --app-shell-error-bg: rgba(186, 38, 35, 0.18);
+  --app-shell-error-border: color-mix(in srgb, #f67576 28%, transparent);
+  --app-shell-error-text: #f67576;
 }
 
 html,
@@ -29,6 +70,7 @@ body,
 
 html {
   background: var(--app-shell-surface);
+  color-scheme: light;
 }
 
 body {
@@ -36,7 +78,7 @@ body {
   overflow: hidden;
   background: var(--app-shell-surface);
   color: var(--app-shell-text);
-  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--app-shell-ui-font-family);
   font-size: var(--app-shell-ui-font-size);
   line-height: 1.5;
   text-rendering: optimizeLegibility;
@@ -74,6 +116,7 @@ select {
 code,
 pre,
 .font-mono {
+  font-family: var(--app-shell-code-font-family);
   font-size: var(--app-shell-code-font-size);
 }
 
@@ -85,4 +128,331 @@ pre,
 
 ::selection {
   background: color-mix(in srgb, #0285ff 22%, white);
+}
+
+.app-card {
+  border: 1px solid var(--app-shell-border);
+  background: var(--app-shell-card-bg);
+  color: var(--app-shell-text);
+  box-shadow: var(--app-shell-card-shadow);
+}
+
+.app-card-muted {
+  border: 1px solid var(--app-shell-border);
+  background: var(--app-shell-card-bg-muted);
+  color: var(--app-shell-text);
+  box-shadow: var(--app-shell-card-shadow);
+}
+
+.app-card-warning {
+  border: 1px solid var(--app-shell-warning-border);
+  background: var(--app-shell-warning-bg);
+  color: var(--app-shell-warning-text);
+  box-shadow: var(--app-shell-card-shadow);
+}
+
+.app-card-error {
+  border: 1px solid var(--app-shell-error-border);
+  background: var(--app-shell-error-bg);
+  color: var(--app-shell-error-text);
+}
+
+.app-title {
+  color: var(--app-shell-title);
+}
+
+.app-text-muted {
+  color: var(--app-shell-muted);
+}
+
+.app-text-subtle {
+  color: var(--app-shell-subtle);
+}
+
+.app-text-warning-muted {
+  color: var(--app-shell-warning-muted);
+}
+
+.app-text-error {
+  color: var(--app-shell-error-text);
+}
+
+.app-control,
+.app-control-weak {
+  border: 1px solid var(--app-shell-control-border);
+  color: var(--app-shell-control-text);
+}
+
+.app-control {
+  background: var(--app-shell-control-bg);
+}
+
+.app-control-weak {
+  background: var(--app-shell-control-bg-weak);
+}
+
+.app-control:disabled,
+.app-control-weak:disabled {
+  color: var(--app-shell-control-disabled);
+  cursor: not-allowed;
+}
+
+.app-text-input {
+  color: var(--app-shell-text);
+}
+
+.app-text-input::placeholder {
+  color: var(--app-shell-subtle);
+}
+
+.app-segmented {
+  border: 1px solid var(--app-shell-control-border);
+  background: var(--app-shell-control-bg);
+}
+
+.app-segmented-option-active {
+  background: var(--app-shell-card-bg-selected);
+  color: var(--app-shell-control-text);
+}
+
+.app-segmented-option-idle {
+  color: var(--app-shell-control-text-muted);
+}
+
+.app-segmented-option-idle:hover {
+  background: var(--app-shell-control-hover);
+}
+
+.app-segmented button:disabled {
+  color: var(--app-shell-control-disabled);
+  cursor: not-allowed;
+}
+
+.app-toggle {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.app-toggle:focus-visible {
+  outline: 2px solid var(--app-shell-control-ring);
+  outline-offset: 2px;
+  border-radius: 999px;
+}
+
+.app-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.app-toggle-track {
+  position: relative;
+  display: inline-flex;
+  height: 20px;
+  width: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--app-shell-text) 10%, transparent);
+  transition: background-color 200ms ease-out;
+}
+
+.app-toggle-track[data-state="checked"] {
+  background: var(--app-shell-accent);
+}
+
+.app-toggle-thumb {
+  height: 16px;
+  width: 16px;
+  border: 1px solid #ffffff;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16);
+  transform: translateX(2px);
+  transition: transform 200ms ease-out;
+}
+
+.app-toggle-thumb[data-state="checked"] {
+  transform: translateX(14px);
+}
+
+.app-nav-item-active {
+  background: var(--app-shell-control-bg);
+  color: var(--app-shell-title);
+  box-shadow: var(--app-shell-card-shadow), 0 0 0 1px var(--app-shell-control-ring);
+}
+
+.app-nav-item-idle {
+  color: var(--app-shell-muted);
+}
+
+.app-nav-item-idle:hover {
+  background: var(--app-shell-card-bg-weak);
+}
+
+.app-nav-item-disabled {
+  color: var(--app-shell-control-disabled);
+  cursor: not-allowed;
+}
+
+.app-topbar-button {
+  color: var(--app-shell-muted);
+}
+
+.app-topbar-button:hover {
+  background: var(--app-shell-control-hover);
+}
+
+.app-command-tab-active {
+  border: 1px solid var(--app-shell-control-border);
+  background: var(--app-shell-control-bg);
+  color: var(--app-shell-control-text);
+  box-shadow: var(--app-shell-card-shadow);
+}
+
+.app-command-tab-idle {
+  color: var(--app-shell-subtle);
+}
+
+.app-command-tab-idle:hover {
+  background: var(--app-shell-card-bg-weak);
+}
+
+.app-badge {
+  background: var(--app-shell-card-bg-weak);
+  color: var(--app-shell-muted);
+}
+
+.app-code-block {
+  background: var(--app-shell-card-bg-muted);
+  color: var(--app-shell-text);
+}
+
+.app-code-block-warning {
+  background: color-mix(in srgb, var(--app-shell-warning-bg) 78%, var(--app-shell-control-bg));
+  color: var(--app-shell-warning-text);
+}
+
+.app-button-primary {
+  border: 1px solid var(--app-shell-control-border);
+  background: var(--app-shell-control-text);
+  color: var(--app-shell-control-bg);
+}
+
+.app-button-primary:disabled {
+  background: color-mix(in srgb, var(--app-shell-control-text) 35%, transparent);
+  color: var(--app-shell-control-disabled);
+  cursor: not-allowed;
+}
+
+.app-approval-button-primary {
+  border: 1px solid color-mix(in srgb, #1c8a4a 20%, transparent);
+  background: #1c8a4a;
+  color: #ffffff;
+}
+
+.app-approval-button-secondary {
+  border: 1px solid color-mix(in srgb, var(--app-shell-warning-muted) 20%, transparent);
+  background: var(--app-shell-control-bg);
+  color: var(--app-shell-warning-text);
+}
+
+.app-approval-button-tertiary {
+  border: 1px solid color-mix(in srgb, var(--app-shell-warning-muted) 35%, transparent);
+  background: color-mix(in srgb, var(--app-shell-control-bg) 82%, transparent);
+  color: var(--app-shell-warning-text);
+}
+
+.app-approval-button-primary:disabled,
+.app-approval-button-secondary:disabled,
+.app-approval-button-tertiary:disabled {
+  background: color-mix(in srgb, var(--app-shell-warning-bg) 72%, var(--app-shell-control-bg));
+  color: color-mix(in srgb, var(--app-shell-warning-text) 60%, transparent);
+  cursor: not-allowed;
+}
+
+html.electron-dark :where(
+  [class~="bg-white"],
+  [class~="bg-white/92"],
+  [class~="bg-white/88"],
+  [class~="bg-white/85"],
+  [class~="bg-white/80"]
+) {
+  background-color: rgba(24, 24, 24, 0.92);
+}
+
+html.electron-dark :where(
+  [class~="bg-white/70"],
+  [class~="bg-white/65"],
+  [class~="bg-white/60"],
+  [class~="bg-white/55"],
+  [class~="bg-white/50"],
+  [class~="bg-white/45"]
+) {
+  background-color: rgba(24, 24, 24, 0.72);
+}
+
+html.electron-dark :where(
+  [class~="bg-[#f7f6f4]"],
+  [class~="bg-[#f3f1ed]"],
+  [class~="bg-[#efeeeb]"],
+  [class~="bg-[#ecebea]"]
+) {
+  background-color: #1a1a1a;
+}
+
+html.electron-dark :where(
+  [class~="text-[#29251f]"],
+  [class~="text-[#302b26]"],
+  [class~="text-[#302b25]"],
+  [class~="text-[#2f2b26]"],
+  [class~="text-[#2d2924]"],
+  [class~="text-[#312d28]"],
+  [class~="text-[#332f29]"],
+  [class~="text-[#28241f]"],
+  [class~="text-[#221f1b]"],
+  [class~="text-[#2c2823]"],
+  [class~="text-[#2b2722]"],
+  [class~="text-black/65"],
+  [class~="text-black/70"]
+) {
+  color: #fcfcfc;
+}
+
+html.electron-dark :where(
+  [class~="text-[#4c463f]"],
+  [class~="text-[#423d37]"],
+  [class~="text-[#4e4841]"],
+  [class~="text-[#4e4740]"],
+  [class~="text-[#433e37]"],
+  [class~="text-[#645c52]"],
+  [class~="text-[#665f57]"],
+  [class~="text-[#655d54]"],
+  [class~="text-[#6a6259]"],
+  [class~="text-[#6b655f]"],
+  [class~="text-[#7a7269]"],
+  [class~="text-[#7d756c]"],
+  [class~="text-[#7f766d]"],
+  [class~="text-[#867f74]"],
+  [class~="text-[#8a8176]"],
+  [class~="text-[#8b7554]"],
+  [class~="text-[#8e867c]"]
+) {
+  color: #999999;
+}
+
+html.electron-dark :where([class~="border-black/8"], [class~="border-black/6"]) {
+  border-color: color-mix(in srgb, #fcfcfc 12%, transparent);
+}
+
+html.electron-dark :where([class~="ring-black/4"]) {
+  --tw-ring-color: color-mix(in srgb, #fcfcfc 12%, transparent);
+}
+
+html.electron-dark [class~="hover:bg-black/4"]:hover,
+html.electron-dark [class~="hover:bg-black/5"]:hover {
+  background-color: rgba(255, 255, 255, 0.08);
 }

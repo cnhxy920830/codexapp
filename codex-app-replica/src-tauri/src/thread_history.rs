@@ -41,6 +41,16 @@ pub enum ThreadConversationItem {
         status: String,
         changes: Vec<FileChangeSummary>,
     },
+    EnteredReviewMode {
+        id: String,
+        turn_id: String,
+        review: String,
+    },
+    ExitedReviewMode {
+        id: String,
+        turn_id: String,
+        review: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -150,6 +160,16 @@ pub fn map_thread_item(turn_id: &str, value: &serde_json::Value) -> Option<Threa
                 })
                 .unwrap_or_default(),
         }),
+        "enteredReviewMode" => Some(ThreadConversationItem::EnteredReviewMode {
+            id: format!("reviewMode:{}", value.get("id")?.as_str()?),
+            turn_id: turn_id.to_string(),
+            review: value.get("review")?.as_str()?.trim().to_string(),
+        }),
+        "exitedReviewMode" => Some(ThreadConversationItem::ExitedReviewMode {
+            id: format!("reviewMode:{}", value.get("id")?.as_str()?),
+            turn_id: turn_id.to_string(),
+            review: value.get("review")?.as_str()?.trim().to_string(),
+        }),
         _ => None,
     }
 }
@@ -159,7 +179,9 @@ pub fn thread_item_id(item: &ThreadConversationItem) -> &str {
         ThreadConversationItem::UserMessage { id, .. }
         | ThreadConversationItem::AgentMessage { id, .. }
         | ThreadConversationItem::CommandExecution { id, .. }
-        | ThreadConversationItem::FileChange { id, .. } => id,
+        | ThreadConversationItem::FileChange { id, .. }
+        | ThreadConversationItem::EnteredReviewMode { id, .. }
+        | ThreadConversationItem::ExitedReviewMode { id, .. } => id,
     }
 }
 
