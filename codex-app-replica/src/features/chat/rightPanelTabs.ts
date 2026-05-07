@@ -1,4 +1,4 @@
-import type { WorkspaceFileDocument } from "../../services/workspaceFiles";
+import type { WorkspaceFilePreviewTarget } from "../../services/workspaceFiles";
 
 export type StaticRightPanelTabId = "review" | "browser";
 
@@ -9,7 +9,7 @@ type StaticRightPanelTab = {
 
 export type WorkspaceFileRightPanelTab = {
   kind: "workspaceFile";
-  file: WorkspaceFileDocument;
+  file: WorkspaceFilePreviewTarget;
   id: string;
   title: string;
 };
@@ -20,7 +20,7 @@ export function createStaticRightPanelTab(id: StaticRightPanelTabId): StaticRigh
   return { kind: id, id };
 }
 
-export function createWorkspaceFileRightPanelTab(file: WorkspaceFileDocument): WorkspaceFileRightPanelTab {
+export function createWorkspaceFileRightPanelTab(file: WorkspaceFilePreviewTarget): WorkspaceFileRightPanelTab {
   const relativePath = normalizeWorkspaceFileRelativePath(file.relativePath);
 
   return {

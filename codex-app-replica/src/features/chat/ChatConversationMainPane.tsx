@@ -20,6 +20,7 @@ import type { QueuedLocalFollowUp } from "./localFollowUpQueue";
 import {
   approvalRequestKey,
   resolveApprovalDecisions,
+  keepLatestTurnScopedPendingRequests,
   type PlanImplementationItem,
   type PendingApproval,
   type PendingImplementPlanRequest,
@@ -28,6 +29,8 @@ import {
   type PendingToolRequestUserInput,
 } from "./threadConversationState";
 import { renderMessageContent } from "./messageContent";
+import { LatestTurnPreview } from "./LatestTurnPreview";
+import { MultiAgentGroupSummary } from "./MultiAgentGroupSummary";
 import { PlanSummaryItemCard } from "./PlanSummaryItemCard";
 import {
   attachTurnScopedItemsToRenderableConversationGroups,
@@ -35,10 +38,10 @@ import {
 } from "./renderableConversationGroups";
 import type {
   ExplorationGroupItem,
-  MultiAgentGroupItem,
   RenderableConversationItem,
   WebSearchGroupItem,
 } from "./renderableConversationItems";
+import { isMultiAgentInProgressStatus, toSingleMultiAgentGroupItem } from "./multiAgentAction";
 import { ThreadComposer } from "./ThreadComposer";
 
 const approvalDecisionLabelKeys: Record<ApprovalDecision, MessageKey> = {
@@ -174,13 +177,14 @@ export function ChatConversationMainPane({
     footerPendingRequest,
   );
   const groupedConversation = attachTurnScopedItemsToRenderableConversationGroups(baseConversationGroups, {
-    approvalItems: bodyApprovals,
+    approvalItems: keepLatestTurnScopedPendingRequests(bodyApprovals),
     mcpServerElicitationItems: bodyMcpRequests,
     permissionRequestItems: bodyPermissionsRequests,
     planImplementationItems: currentThreadPlanImplementationItems,
-    userInputItems: bodyUserInputRequests,
+    userInputItems: keepLatestTurnScopedPendingRequests(bodyUserInputRequests),
   });
   const conversationGroups = groupedConversation.groups;
+  const latestConversationGroup = conversationGroups.at(-1) ?? null;
   const latestConversationGroupTurnId = conversationGroups.at(-1)?.turnId ?? null;
   const hasTurnContent = threadConversation !== null && conversationGroups.length > 0;
   const hasUnmatchedBodyContent =
@@ -223,9 +227,35 @@ export function ChatConversationMainPane({
                         ))}
                       </div>
                     ) : null}
+                    {group.modelChangedItems.length > 0 ? (
+                      <div className="space-y-3">
+                        {group.modelChangedItems.map((item) => (
+                          <ConversationItemCard
+                            key={item.id}
+                            item={item}
+                            onOpenRemoteTask={onOpenRemoteTask}
+                            onSelectThread={onSelectThread}
+                            t={t}
+                          />
+                        ))}
+                      </div>
+                    ) : null}
                     {group.userItems.length > 0 ? (
                       <div className="space-y-3">
                         {group.userItems.map((item) => (
+                          <ConversationItemCard
+                            key={item.id}
+                            item={item}
+                            onOpenRemoteTask={onOpenRemoteTask}
+                            onSelectThread={onSelectThread}
+                            t={t}
+                          />
+                        ))}
+                      </div>
+                    ) : null}
+                    {group.modelReroutedItems.length > 0 ? (
+                      <div className="space-y-3">
+                        {group.modelReroutedItems.map((item) => (
                           <ConversationItemCard
                             key={item.id}
                             item={item}
@@ -338,32 +368,6 @@ export function ChatConversationMainPane({
                         ))}
                       </div>
                     ) : null}
-                    {group.modelChangedItems.length > 0 ? (
-                      <div className="space-y-3">
-                        {group.modelChangedItems.map((item) => (
-                          <ConversationItemCard
-                            key={item.id}
-                            item={item}
-                            onOpenRemoteTask={onOpenRemoteTask}
-                            onSelectThread={onSelectThread}
-                            t={t}
-                          />
-                        ))}
-                      </div>
-                    ) : null}
-                    {group.modelReroutedItems.length > 0 ? (
-                      <div className="space-y-3">
-                        {group.modelReroutedItems.map((item) => (
-                          <ConversationItemCard
-                            key={item.id}
-                            item={item}
-                            onOpenRemoteTask={onOpenRemoteTask}
-                            onSelectThread={onSelectThread}
-                            t={t}
-                          />
-                        ))}
-                      </div>
-                    ) : null}
                     {group.todoListItem ? (
                       <ConversationItemCard
                         item={group.todoListItem}
@@ -372,25 +376,24 @@ export function ChatConversationMainPane({
                         t={t}
                       />
                     ) : null}
-                    {group.proposedPlanItems.length > 0 ? (
-                      <div className="space-y-3">
-                        {group.proposedPlanItems.map((item) => (
-                          <ConversationItemCard
-                            key={item.id}
-                            item={item}
-                            planSummaryIsWriting={
-                              submitButtonMode === "stop" &&
-                              latestConversationGroupTurnId === group.turnId &&
-                              group.assistantMessage === null
-                            }
-                            onOpenRemoteTask={onOpenRemoteTask}
-                            onSelectThread={onSelectThread}
-                            t={t}
-                          />
-                        ))}
-                      </div>
+                    {group.proposedPlanItem ? (
+                      <ConversationItemCard
+                        key={group.proposedPlanItem.id}
+                        item={group.proposedPlanItem}
+                        planSummaryIsWriting={
+                          submitButtonMode === "stop" &&
+                          latestConversationGroupTurnId === group.turnId &&
+                          group.assistantMessage === null
+                        }
+                        onOpenRemoteTask={onOpenRemoteTask}
+                        onSelectThread={onSelectThread}
+                        t={t}
+                      />
                     ) : null}
-                    <ConversationTurnPlanImplementationItems items={group.planImplementationItems} t={t} />
+                    <ConversationTurnPlanImplementationItems
+                      items={group.planImplementationItem ? [group.planImplementationItem] : []}
+                      t={t}
+                    />
                     <ConversationTurnMcpRequests
                       mcpRequests={group.mcpServerElicitationItems}
                       approvalActionErrors={approvalActionErrors}
@@ -406,14 +409,14 @@ export function ChatConversationMainPane({
                       t={t}
                     />
                     <ConversationTurnApprovalRequests
-                      approvals={group.approvalItems}
+                      approvals={group.approvalItem ? [group.approvalItem] : []}
                       approvalActionErrors={approvalActionErrors}
                       respondingApprovalKeys={respondingApprovalKeys}
                       onApprovalDecision={onApprovalDecision}
                       t={t}
                     />
                     <ConversationTurnUserInputRequests
-                      userInputRequests={group.userInputItems}
+                      userInputRequests={group.userInputItem ? [group.userInputItem] : []}
                       approvalActionErrors={approvalActionErrors}
                       respondingApprovalKeys={respondingApprovalKeys}
                       onToolRequestUserInputSubmit={onToolRequestUserInputSubmit}
@@ -481,12 +484,22 @@ export function ChatConversationMainPane({
                 </div>
               </div>
             ) : null}
+
           </div>
         </div>
       )}
 
       <div className={showBlankConversationBody ? "px-5 pb-5" : "px-5 pt-2 pb-5"}>
         <div className="mx-auto w-full max-w-3xl">
+          {latestConversationGroup ? (
+            <div className="mb-2">
+              <LatestTurnPreview
+                group={latestConversationGroup}
+                isTurnInProgress={submitButtonMode === "stop"}
+                t={t}
+              />
+            </div>
+          ) : null}
           {footerPendingRequest ? (
             <ComposerFooterPendingRequest
               pendingRequest={footerPendingRequest}
@@ -1309,27 +1322,13 @@ function ConversationItemCard({
     );
   }
 
-  if (item.type === "collabAgentToolCall") {
+  if (item.type === "multiAgentAction") {
     return (
-      <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="app-title text-[14px] font-medium">{t("app.chat.collabAgentToolCall")}</div>
-          <StatusBadge status={item.status} t={t} />
-        </div>
-        <LabeledValue label={t("app.chat.agentTool")} value={item.tool} className="mt-3" />
-        <LabeledValue label={t("app.chat.senderThread")} value={item.senderThreadId} className="mt-3" />
-        {item.receiverThreadIds.length > 0 ? (
-          <LabeledValue label={t("app.chat.receiverThreads")} value={item.receiverThreadIds.join(", ")} className="mt-3" />
-        ) : null}
-        {item.prompt ? <LabeledValue label={t("app.chat.prompt")} value={item.prompt} className="mt-3" /> : null}
-        {item.model ? <LabeledValue label={t("app.chat.model")} value={item.model} className="mt-3" /> : null}
-        {item.reasoningEffort ? (
-          <LabeledValue label={t("app.chat.reasoningEffort")} value={item.reasoningEffort} className="mt-3" />
-        ) : null}
-        {item.receiverSummary ? (
-          <LabeledValue label={t("app.chat.agentStatus")} value={item.receiverSummary} className="mt-3" />
-        ) : null}
-      </div>
+      <MultiAgentGroupSummary
+        item={toSingleMultiAgentGroupItem(item)}
+        defaultExpanded={isMultiAgentInProgressStatus(item.status)}
+        t={t}
+      />
     );
   }
 
@@ -1353,7 +1352,7 @@ function ConversationItemCard({
   }
 
   if (item.type === "dynamicToolCall") {
-    return <DynamicToolCallInlineStatus item={item} />;
+    return <DynamicToolCallInlineStatus item={item} t={t} />;
   }
 
   if (item.type === "automaticApprovalReview") {
@@ -1632,17 +1631,20 @@ function WebSearchSummaryRow({
 
 function DynamicToolCallInlineStatus({
   item,
+  t,
 }: {
   item: Extract<ThreadConversationItem, { type: "dynamicToolCall" }>;
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
 }) {
   const isCompleted = item.status !== "inProgress";
   const label = resolveDynamicToolCallLabel(item.tool, isCompleted);
+  const message = t("localConversation.dynamicToolCall", { toolName: label });
 
   return (
     <InlineConversationStatusRow
       message={
         <span className={isCompleted ? undefined : "loading-shimmer-pure-text"}>
-          {label}
+          {message}
         </span>
       }
     />
@@ -1836,7 +1838,7 @@ function buildExplorationCommandSummaries(
   t: (key: MessageKey, values?: Record<string, number | string>) => string,
 ) {
   const isInProgress = isCommandExecutionStillRunning(item);
-  return item.commandActions
+  return getThreadCommandActions(item)
     .map((action) => {
       if (action.type === "read") {
         const fileName = getCommandActionDisplayName(action.path || action.name);
@@ -1902,6 +1904,10 @@ function isCommandExecutionStillRunning(item: Extract<ThreadConversationItem, { 
   return item.exitCode === null && normalizedStatus !== "completed" && normalizedStatus !== "interrupted";
 }
 
+function getThreadCommandActions(item: Extract<ThreadConversationItem, { type: "commandExecution" }>) {
+  return Array.isArray(item.commandActions) ? item.commandActions : [];
+}
+
 function resolveAutomaticApprovalReviewTitle(
   item: Extract<ThreadConversationItem, { type: "automaticApprovalReview" }>,
   t: (key: MessageKey, values?: Record<string, number | string>) => string,
@@ -1951,20 +1957,19 @@ function renderModelReroutedWarningLine2(template: string) {
   }
 
   const [, prefix, linkText, suffix] = match;
-  return (
-    <>
-      {prefix}
-      <a
-        href="https://chatgpt.com/cyber"
-        target="_blank"
-        rel="noreferrer"
-        className="underline underline-offset-2 hover:no-underline"
-      >
-        {linkText}
-      </a>
-      {suffix}
-    </>
-  );
+  return [
+    prefix,
+    <a
+      key="cyber-link"
+      href="https://chatgpt.com/cyber"
+      target="_blank"
+      rel="noreferrer"
+      className="underline underline-offset-2 hover:no-underline"
+    >
+      {linkText}
+    </a>,
+    suffix,
+  ];
 }
 
 function resolveWebSearchSummaryDetails(item: Extract<ThreadConversationItem, { type: "webSearch" }>) {
@@ -2024,207 +2029,7 @@ function resolveDynamicToolCallLabel(toolName: string, isCompleted: boolean) {
     .replaceAll(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replaceAll(/[_-]+/g, " ")
     .trim();
-  if (normalizedToolName.length === 0) {
-    return "Tool call";
-  }
-
   return normalizedToolName.replaceAll(/\b\w/g, (character) => character.toUpperCase());
-}
-
-const multiAgentHeaderLabelKeys: Partial<
-  Record<
-    Extract<MultiAgentGroupItem["tool"], "closeAgent" | "resumeAgent" | "sendInput" | "spawnAgent">,
-    Partial<Record<Extract<MultiAgentGroupItem["status"], "completed" | "failed" | "inProgress">, MessageKey>>
-  >
-> = {
-  closeAgent: {
-    completed: "localConversation.multiAgentAction.header.close.completed",
-    failed: "localConversation.multiAgentAction.header.close.failed",
-    inProgress: "localConversation.multiAgentAction.header.close.inProgress",
-  },
-  resumeAgent: {
-    completed: "localConversation.multiAgentAction.header.resume.completed",
-    failed: "localConversation.multiAgentAction.header.resume.failed",
-    inProgress: "localConversation.multiAgentAction.header.resume.inProgress",
-  },
-  sendInput: {
-    completed: "localConversation.multiAgentAction.header.sendInput.completed",
-    failed: "localConversation.multiAgentAction.header.sendInput.failed",
-    inProgress: "localConversation.multiAgentAction.header.sendInput.inProgress",
-  },
-  spawnAgent: {
-    completed: "localConversation.multiAgentAction.header.spawn.completed",
-    failed: "localConversation.multiAgentAction.header.spawn.failed",
-    inProgress: "localConversation.multiAgentAction.header.spawn.inProgress",
-  },
-};
-
-const multiAgentRowLabelKeys: Partial<
-  Record<
-    Extract<MultiAgentGroupItem["tool"], "closeAgent" | "resumeAgent" | "sendInput" | "spawnAgent">,
-    Partial<Record<Extract<MultiAgentGroupItem["status"], "completed" | "failed" | "inProgress">, MessageKey>>
-  >
-> = {
-  closeAgent: {
-    completed: "localConversation.multiAgentAction.rowAction.close.completed",
-    failed: "localConversation.multiAgentAction.rowAction.close.failed",
-    inProgress: "localConversation.multiAgentAction.rowAction.close.inProgress",
-  },
-  resumeAgent: {
-    completed: "localConversation.multiAgentAction.rowAction.resume.completed",
-    failed: "localConversation.multiAgentAction.rowAction.resume.failed",
-    inProgress: "localConversation.multiAgentAction.rowAction.resume.inProgress",
-  },
-  sendInput: {
-    completed: "localConversation.multiAgentAction.rowAction.sendInput.completed",
-    failed: "localConversation.multiAgentAction.rowAction.sendInput.failed",
-    inProgress: "localConversation.multiAgentAction.rowAction.sendInput.inProgress",
-  },
-  spawnAgent: {
-    completed: "localConversation.multiAgentAction.rowAction.spawn.completed",
-    failed: "localConversation.multiAgentAction.rowAction.spawn.failed",
-    inProgress: "localConversation.multiAgentAction.rowAction.spawn.inProgress",
-  },
-};
-
-function MultiAgentGroupSummary({
-  item,
-  t,
-}: {
-  item: MultiAgentGroupItem;
-  t: (key: MessageKey, values?: Record<string, number | string>) => string;
-}) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const actionLabel = resolveMultiAgentActionLabel(item.tool, item.status, t, "header");
-  const count = resolveMultiAgentReceiverCount(item.items);
-  const countLabel =
-    count > 0 ? t("localConversation.multiAgentAction.header.count", { count }) : "";
-  const prompt = resolveMultiAgentGroupPrompt(item.items);
-  const rows = buildMultiAgentGroupRows(item.items, t);
-
-  return (
-    <div className="app-card-muted rounded-[16px] px-4 py-3">
-      <button
-        type="button"
-        onClick={() => setIsExpanded((value) => !value)}
-        className="flex w-full items-start justify-between gap-3 text-left"
-      >
-        <div className="min-w-0 flex-1">
-          <div className="app-title text-[13px] font-medium">
-            {t("localConversation.multiAgentAction.header", {
-              action: actionLabel,
-              countLabel,
-            })}
-          </div>
-          {prompt ? (
-            <div className="app-text-muted mt-1 line-clamp-2 text-[12px] leading-5">
-              {t("localConversation.multiAgentAction.meta.prompt", {
-                prompt,
-              })}
-            </div>
-          ) : null}
-        </div>
-        <ForwardNavigationIcon
-          className={[
-            "mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--app-shell-subtle)] transition-transform",
-            isExpanded ? "rotate-90" : "",
-          ].join(" ")}
-        />
-      </button>
-
-      {isExpanded ? (
-        <div className="mt-3 space-y-1.5">
-          {rows.map((row, index) => (
-            <div
-              key={`${item.id}:row:${index}`}
-              className="app-text-muted break-words rounded-[12px] bg-[var(--app-shell-right)] px-3 py-2 text-[12px] leading-5"
-            >
-              {row}
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function buildMultiAgentGroupRows(
-  items: MultiAgentGroupItem["items"],
-  t: (key: MessageKey, values?: Record<string, number | string>) => string,
-) {
-  const rows: string[] = [];
-
-  for (const item of items) {
-    const action = resolveMultiAgentActionLabel(item.tool, item.status, t, "row");
-    if (item.receiverThreadIds.length === 0) {
-      rows.push(t("localConversation.multiAgentAction.row.generic", { action }));
-      continue;
-    }
-
-    for (const receiverThreadId of item.receiverThreadIds) {
-      rows.push(
-        t("localConversation.multiAgentAction.row.agent", {
-          action,
-          agent: receiverThreadId,
-        }),
-      );
-    }
-  }
-
-  return rows;
-}
-
-function resolveMultiAgentGroupPrompt(items: MultiAgentGroupItem["items"]) {
-  for (const item of items) {
-    const prompt = item.prompt?.trim();
-    if (prompt) {
-      return prompt;
-    }
-  }
-  return null;
-}
-
-function resolveMultiAgentReceiverCount(items: MultiAgentGroupItem["items"]) {
-  const receiverThreadIds = new Set(items.flatMap((item) => item.receiverThreadIds));
-  if (receiverThreadIds.size > 0) {
-    return receiverThreadIds.size;
-  }
-  return items.length;
-}
-
-function resolveMultiAgentActionLabel(
-  tool: MultiAgentGroupItem["tool"],
-  status: MultiAgentGroupItem["status"],
-  t: (key: MessageKey, values?: Record<string, number | string>) => string,
-  context: "header" | "row",
-) {
-  const resolvedStatus = normalizeMultiAgentStatus(status);
-  const labelKey =
-    context === "header"
-      ? multiAgentHeaderLabelKeys[tool]?.[resolvedStatus]
-      : multiAgentRowLabelKeys[tool]?.[resolvedStatus];
-
-  if (labelKey) {
-    return t(labelKey);
-  }
-
-  const normalizedTool = tool
-    .replaceAll(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .trim()
-    .toLowerCase();
-  if (normalizedTool.length === 0) {
-    return resolvedStatus === "failed" ? t("app.chat.status.failed") : t("app.chat.status.completed");
-  }
-
-  const verb = normalizedTool.replaceAll(/\b\w/g, (character) => character.toUpperCase());
-  return resolvedStatus === "failed" ? `${t("app.chat.status.failed")} ${verb}` : verb;
-}
-
-function normalizeMultiAgentStatus(status: MultiAgentGroupItem["status"]) {
-  if (status === "completed" || status === "failed" || status === "inProgress") {
-    return status;
-  }
-  return status.trim().toLowerCase() === "inprogress" ? "inProgress" : "completed";
 }
 
 function formatReviewModeLabel(
@@ -2278,11 +2083,13 @@ function CommandActionCard({
   action: CommandAction;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
 }) {
+  const label = resolveCommandActionBadgeLabel(action, t);
+
   return (
     <div className="app-card-muted rounded-[14px] px-4 py-3">
       <div className="flex items-center gap-3 text-[13px]">
         <span className="app-control rounded-full px-2 py-0.5 text-[11px] uppercase tracking-[0.08em]">
-          {action.type}
+          {label}
         </span>
         <span className="min-w-0 break-all">{action.command}</span>
       </div>
@@ -2303,6 +2110,30 @@ function CommandActionCard({
       ) : null}
     </div>
   );
+}
+
+function resolveCommandActionBadgeLabel(
+  action: CommandAction,
+  t: (key: MessageKey, values?: Record<string, number | string>) => string,
+) {
+  switch (action.type) {
+    case "read": {
+      const fileName = getCommandActionDisplayName(action.path || action.name);
+      return fileName.length > 0
+        ? t("avatarOverlay.session.readingFile", { fileName })
+        : action.type;
+    }
+    case "listFiles":
+      return t("avatarOverlay.session.listingFiles");
+    case "search": {
+      const query = action.query?.trim() ?? "";
+      return query.length > 0
+        ? t("avatarOverlay.session.searchingQuery", { query })
+        : t("avatarOverlay.session.searchingFiles");
+    }
+    case "unknown":
+      return action.type;
+  }
 }
 
 function StatusBadge({

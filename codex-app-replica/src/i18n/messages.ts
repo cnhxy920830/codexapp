@@ -185,6 +185,7 @@ export type MessageKey =
   | "app.chat.userInput.submit"
   | "app.chat.userInput.otherHint"
   | "app.chat.userInput.secretHint"
+  | "app.chat.latestTurnPreview.items"
   | "app.chat.permissions.title"
   | "app.chat.permissions.network"
   | "app.chat.permissions.networkEnabled"
@@ -235,9 +236,53 @@ export type MessageKey =
   | "thread.browser.emptyState.description"
   | "localConversation.remoteTaskCreated"
   | "localConversation.remoteTaskCreated.task"
+  | "localConversation.dynamicToolCall"
+  | "localConversation.multiAgentAction.header"
+  | "localConversation.multiAgentAction.header.count"
+  | "localConversation.multiAgentAction.header.close.completed"
+  | "localConversation.multiAgentAction.header.close.failed"
+  | "localConversation.multiAgentAction.header.close.inProgress"
+  | "localConversation.multiAgentAction.header.resume.completed"
+  | "localConversation.multiAgentAction.header.resume.failed"
+  | "localConversation.multiAgentAction.header.resume.inProgress"
+  | "localConversation.multiAgentAction.header.sendInput.completed"
+  | "localConversation.multiAgentAction.header.sendInput.failed"
+  | "localConversation.multiAgentAction.header.sendInput.inProgress"
+  | "localConversation.multiAgentAction.header.spawn.completed"
+  | "localConversation.multiAgentAction.header.spawn.failed"
+  | "localConversation.multiAgentAction.header.spawn.inProgress"
+  | "localConversation.multiAgentAction.row.generic"
+  | "localConversation.multiAgentAction.row.agent"
+  | "localConversation.multiAgentAction.row.spawn.createdWithInstructions"
+  | "localConversation.multiAgentAction.row.sendInput.messagedWithPrompt"
+  | "localConversation.multiAgentAction.rowAction.close.completed"
+  | "localConversation.multiAgentAction.rowAction.close.failed"
+  | "localConversation.multiAgentAction.rowAction.close.inProgress"
+  | "localConversation.multiAgentAction.rowAction.resume.completed"
+  | "localConversation.multiAgentAction.rowAction.resume.failed"
+  | "localConversation.multiAgentAction.rowAction.resume.inProgress"
+  | "localConversation.multiAgentAction.rowAction.sendInput.completed"
+  | "localConversation.multiAgentAction.rowAction.sendInput.failed"
+  | "localConversation.multiAgentAction.rowAction.sendInput.inProgress"
+  | "localConversation.multiAgentAction.rowAction.sendInput.messaged.completed"
+  | "localConversation.multiAgentAction.rowAction.sendInput.messaged.failed"
+  | "localConversation.multiAgentAction.rowAction.sendInput.messaged.inProgress"
+  | "localConversation.multiAgentAction.rowAction.spawn.completed"
+  | "localConversation.multiAgentAction.rowAction.spawn.failed"
+  | "localConversation.multiAgentAction.rowAction.spawn.inProgress"
+  | "localConversation.multiAgentAction.meta.prompt"
+  | "localConversation.multiAgentAction.agentState.pendingInit"
+  | "localConversation.multiAgentAction.agentState.running"
+  | "localConversation.multiAgentAction.agentState.interrupted"
+  | "localConversation.multiAgentAction.agentState.shutdown"
+  | "localConversation.multiAgentAction.agentState.completed"
+  | "localConversation.multiAgentAction.agentState.errored"
+  | "localConversation.multiAgentAction.agentState.notFound"
   | "localConversation.personalityChanged"
   | "localConversation.autoReviewInterruptionWarning"
   | "localConversation.autoReviewInterruptionWarning.nextSteps"
+  | "composer.latestTurn"
+  | "composer.latestTurn.working"
   | "localConversation.automaticApprovalReview.summary.inProgress"
   | "localConversation.automaticApprovalReview.summary.aborted"
   | "localConversation.automaticApprovalReview.summary.timedOut"
@@ -276,10 +321,33 @@ export type MessageKey =
   | "review.fileSource.breadcrumb.openInEditor.tooltip"
   | "review.fileSource.options"
   | "review.fileSource.copyPath"
+  | "review.fileSource.error"
+  | "review.fileSource.loading"
+  | "review.fileSource.tooLarge"
+  | "review.fileSource.tooLargeDetail"
+  | "review.fileSource.unsupported.archive"
+  | "review.fileSource.unsupported.audio"
+  | "review.fileSource.unsupported.excelSpreadsheet"
+  | "review.fileSource.unsupported.keynoteDeck"
+  | "review.fileSource.unsupported.numbersSpreadsheet"
+  | "review.fileSource.unsupported.opendocumentPresentation"
+  | "review.fileSource.unsupported.opendocumentSpreadsheet"
+  | "review.fileSource.unsupported.opendocumentText"
+  | "review.fileSource.unsupported.pagesDocument"
+  | "review.fileSource.unsupported.powerpointDeck"
+  | "review.fileSource.unsupported.richTextDocument"
+  | "review.fileSource.unsupported.video"
+  | "review.fileSource.unsupported.wordDocument"
+  | "review.fileSource.unsupportedDetail"
   | "review.fileSource.richPreview.enable"
   | "review.fileSource.richPreview.disable"
   | "review.fileSource.wrap.enable"
   | "review.fileSource.wrap.disable"
+  | "artifactTab.sourceOptions"
+  | "codex.diffView.richPreviewEnable"
+  | "codex.diffView.richPreviewDisable"
+  | "wham.diff.contextMenu.copyPath"
+  | "wham.diff.contextMenu.toggleWrap"
   | "wham.diff.binaryFile"
   | "threadHeader.archiveConfirmCancel"
   | "threadHeader.archiveConfirmConfirm"
@@ -310,6 +378,14 @@ export type MessageKey =
   | "sidebarElectron.skillsRouteNavLink"
   | "sidebarElectron.pluginsRouteNavLink"
   | "sidebarElectron.pluginsDisabledTooltip"
+  | "sidebarElectron.scratchpadNavLink"
+  | "scratchpadPage.headerTitle"
+  | "scratchpadPage.headerSubtitle"
+  | "scratchpadPage.clearButton"
+  | "scratchpadPage.inputPlaceholder.initial"
+  | "scratchpadPage.inputPlaceholder.followUp"
+  | "scratchpadPage.inputPlaceholder.followUpHint"
+  | "scratchpadPage.summaryLoading"
   | "general.title"
   | "general.theme"
   | "general.themeDescription"
@@ -927,6 +1003,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.userInput.submit": "Submit answers",
     "app.chat.userInput.otherHint": "Other answers may be entered manually if needed.",
     "app.chat.userInput.secretHint": "This answer may contain sensitive input.",
+    "app.chat.latestTurnPreview.items": "{count, plural, one {# item} other {# items}}",
     "app.chat.permissions.title": "Permissions request",
     "app.chat.permissions.network": "Network",
     "app.chat.permissions.networkEnabled": "This request asks for network access.",
@@ -947,6 +1024,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.mcpElicitation.required": "Required",
     "app.chat.mcpElicitation.booleanEnabled": "Enable this option",
     "app.chat.mcpElicitation.unsupportedField": "This field type is not fully supported yet. The raw schema is shown for review.",
+    "composer.latestTurn": "Latest turn",
+    "composer.latestTurn.working": "Working",
     "composer.reviewMode.title": "Code review",
     "composer.reviewMode.option.unstaged.simple": "Review uncommitted changes",
     "thinkingShimmer.default": "Thinking",
@@ -977,6 +1056,51 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "thread.browser.emptyState.description": "Enter a URL to open a page",
     "localConversation.remoteTaskCreated": "Created {taskLink} in Codex Cloud",
     "localConversation.remoteTaskCreated.task": "task",
+    "localConversation.dynamicToolCall": "{toolName}",
+    "localConversation.multiAgentAction.header": "{action}{countLabel}",
+    "localConversation.multiAgentAction.header.count":
+      " {count, plural, one {# agent} other {# agents}}",
+    "localConversation.multiAgentAction.header.close.completed": "Closed",
+    "localConversation.multiAgentAction.header.close.failed": "Failed to close",
+    "localConversation.multiAgentAction.header.close.inProgress": "Closing",
+    "localConversation.multiAgentAction.header.resume.completed": "Resumed",
+    "localConversation.multiAgentAction.header.resume.failed": "Failed to resume",
+    "localConversation.multiAgentAction.header.resume.inProgress": "Resuming",
+    "localConversation.multiAgentAction.header.sendInput.completed": "Messaged",
+    "localConversation.multiAgentAction.header.sendInput.failed": "Failed to message",
+    "localConversation.multiAgentAction.header.sendInput.inProgress": "Messaging",
+    "localConversation.multiAgentAction.header.spawn.completed": "Spawned",
+    "localConversation.multiAgentAction.header.spawn.failed": "Failed to spawn",
+    "localConversation.multiAgentAction.header.spawn.inProgress": "Spawning",
+    "localConversation.multiAgentAction.row.generic": "{action}",
+    "localConversation.multiAgentAction.row.agent": "{action} {agent}{stateSuffix}",
+    "localConversation.multiAgentAction.row.spawn.createdWithInstructions":
+      "Created {agent} with the instructions: {instructions}",
+    "localConversation.multiAgentAction.row.sendInput.messagedWithPrompt":
+      "{action} {agent}: {prompt}",
+    "localConversation.multiAgentAction.rowAction.close.completed": "Closed",
+    "localConversation.multiAgentAction.rowAction.close.failed": "Failed closing",
+    "localConversation.multiAgentAction.rowAction.close.inProgress": "Closing",
+    "localConversation.multiAgentAction.rowAction.resume.completed": "Resumed",
+    "localConversation.multiAgentAction.rowAction.resume.failed": "Failed resuming",
+    "localConversation.multiAgentAction.rowAction.resume.inProgress": "Resuming",
+    "localConversation.multiAgentAction.rowAction.sendInput.completed": "Messaged",
+    "localConversation.multiAgentAction.rowAction.sendInput.failed": "Failed messaging",
+    "localConversation.multiAgentAction.rowAction.sendInput.inProgress": "Messaging",
+    "localConversation.multiAgentAction.rowAction.sendInput.messaged.completed": "Messaged",
+    "localConversation.multiAgentAction.rowAction.sendInput.messaged.failed": "Failed to message",
+    "localConversation.multiAgentAction.rowAction.sendInput.messaged.inProgress": "Messaging",
+    "localConversation.multiAgentAction.rowAction.spawn.completed": "Spawned",
+    "localConversation.multiAgentAction.rowAction.spawn.failed": "Failed spawning",
+    "localConversation.multiAgentAction.rowAction.spawn.inProgress": "Spawning",
+    "localConversation.multiAgentAction.meta.prompt": "Input: {prompt}",
+    "localConversation.multiAgentAction.agentState.pendingInit": "pending init",
+    "localConversation.multiAgentAction.agentState.running": "running",
+    "localConversation.multiAgentAction.agentState.interrupted": "interrupted",
+    "localConversation.multiAgentAction.agentState.shutdown": "shutdown",
+    "localConversation.multiAgentAction.agentState.completed": "completed",
+    "localConversation.multiAgentAction.agentState.errored": "errored",
+    "localConversation.multiAgentAction.agentState.notFound": "not found",
     "localConversation.personalityChanged": "Switched to {personality} personality",
     "localConversation.autoReviewInterruptionWarning": "Turn ended by Auto-review",
     "localConversation.autoReviewInterruptionWarning.nextSteps":
@@ -1027,10 +1151,33 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "review.fileSource.breadcrumb.openInEditor.tooltip": "Open in editor",
     "review.fileSource.options": "File viewer options",
     "review.fileSource.copyPath": "Copy path",
+    "review.fileSource.error": "Unable to load file",
+    "review.fileSource.loading": "Loading file…",
+    "review.fileSource.tooLarge": "File is too large to preview",
+    "review.fileSource.tooLargeDetail": "{size} exceeds the {limit} preview limit",
+    "review.fileSource.unsupported.archive": "Archive previews aren't supported yet",
+    "review.fileSource.unsupported.audio": "Audio previews aren't supported yet",
+    "review.fileSource.unsupported.excelSpreadsheet": "Excel spreadsheet previews aren't supported yet",
+    "review.fileSource.unsupported.keynoteDeck": "Keynote deck previews aren't supported yet",
+    "review.fileSource.unsupported.numbersSpreadsheet": "Numbers spreadsheet previews aren't supported yet",
+    "review.fileSource.unsupported.opendocumentPresentation": "OpenDocument presentation previews aren't supported yet",
+    "review.fileSource.unsupported.opendocumentSpreadsheet": "OpenDocument spreadsheet previews aren't supported yet",
+    "review.fileSource.unsupported.opendocumentText": "OpenDocument text previews aren't supported yet",
+    "review.fileSource.unsupported.pagesDocument": "Pages document previews aren't supported yet",
+    "review.fileSource.unsupported.powerpointDeck": "PowerPoint deck previews aren't supported yet",
+    "review.fileSource.unsupported.richTextDocument": "Rich Text document previews aren't supported yet",
+    "review.fileSource.unsupported.video": "Video previews aren't supported yet",
+    "review.fileSource.unsupported.wordDocument": "Word document previews aren't supported yet",
+    "review.fileSource.unsupportedDetail": "Open this file outside Codex to view it",
     "review.fileSource.richPreview.enable": "Enable rich view",
     "review.fileSource.richPreview.disable": "Disable rich view",
     "review.fileSource.wrap.enable": "Enable word wrap",
     "review.fileSource.wrap.disable": "Disable word wrap",
+    "artifactTab.sourceOptions": "Artifact viewer options",
+    "codex.diffView.richPreviewEnable": "Enable rich preview",
+    "codex.diffView.richPreviewDisable": "Disable rich preview",
+    "wham.diff.contextMenu.copyPath": "Copy path",
+    "wham.diff.contextMenu.toggleWrap": "Toggle word wrap",
     "wham.diff.binaryFile": "Binary file not shown",
     "threadHeader.archiveConfirmCancel": "Cancel",
     "threadHeader.archiveConfirmConfirm": "Archive",
@@ -1061,6 +1208,14 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "sidebarElectron.skillsRouteNavLink": "Skills",
     "sidebarElectron.pluginsRouteNavLink": "Plugins",
     "sidebarElectron.pluginsDisabledTooltip": "Please sign in with ChatGPT to use plugins",
+    "sidebarElectron.scratchpadNavLink": "Scratchpad",
+    "scratchpadPage.headerTitle": "Scratchpad",
+    "scratchpadPage.headerSubtitle": "Experiment",
+    "scratchpadPage.clearButton": "Clear",
+    "scratchpadPage.inputPlaceholder.initial": "Add a task",
+    "scratchpadPage.inputPlaceholder.followUp": "Add a follow up",
+    "scratchpadPage.inputPlaceholder.followUpHint": "Add a task, or tab for a follow up",
+    "scratchpadPage.summaryLoading": "Summarizing final assistant response",
     "general.title": "General",
     "general.theme": "Theme",
     "general.themeDescription": "Use light, dark, or match your system",
@@ -1639,6 +1794,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.userInput.submit": "提交答案",
     "app.chat.userInput.otherHint": "如有需要，可手动输入其他答案。",
     "app.chat.userInput.secretHint": "该答案可能包含敏感输入。",
+    "app.chat.latestTurnPreview.items": "{count, plural, one {# 个项目} other {# 个项目}}",
     "app.chat.permissions.title": "权限请求",
     "app.chat.permissions.network": "网络",
     "app.chat.permissions.networkEnabled": "该请求需要网络访问权限。",
@@ -1659,6 +1815,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.mcpElicitation.required": "必填",
     "app.chat.mcpElicitation.booleanEnabled": "启用此选项",
     "app.chat.mcpElicitation.unsupportedField": "该字段类型尚未完整支持，当前展示原始 schema 供审查。",
+    "composer.latestTurn": "最新一轮",
+    "composer.latestTurn.working": "处理中",
     "composer.reviewMode.title": "代码审查",
     "composer.reviewMode.option.unstaged.simple": "审查未提交的更改",
     "thinkingShimmer.default": "正在思考",
@@ -1689,6 +1847,51 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "thread.browser.emptyState.description": "输入 URL 以打开页面",
     "localConversation.remoteTaskCreated": "已在 Codex Cloud 中创建{taskLink}",
     "localConversation.remoteTaskCreated.task": "任务",
+    "localConversation.dynamicToolCall": "{toolName}",
+    "localConversation.multiAgentAction.header": "{action}{countLabel}",
+    "localConversation.multiAgentAction.header.count":
+      " {count, plural, one {# 个智能体} other {# 个智能体}}",
+    "localConversation.multiAgentAction.header.close.completed": "已关闭",
+    "localConversation.multiAgentAction.header.close.failed": "关闭失败",
+    "localConversation.multiAgentAction.header.close.inProgress": "正在关闭",
+    "localConversation.multiAgentAction.header.resume.completed": "已恢复",
+    "localConversation.multiAgentAction.header.resume.failed": "恢复失败",
+    "localConversation.multiAgentAction.header.resume.inProgress": "正在恢复",
+    "localConversation.multiAgentAction.header.sendInput.completed": "已发送消息",
+    "localConversation.multiAgentAction.header.sendInput.failed": "发送消息失败",
+    "localConversation.multiAgentAction.header.sendInput.inProgress": "正在发送消息",
+    "localConversation.multiAgentAction.header.spawn.completed": "已创建",
+    "localConversation.multiAgentAction.header.spawn.failed": "创建失败",
+    "localConversation.multiAgentAction.header.spawn.inProgress": "正在创建",
+    "localConversation.multiAgentAction.row.generic": "{action}",
+    "localConversation.multiAgentAction.row.agent": "{action} {agent}{stateSuffix}",
+    "localConversation.multiAgentAction.row.spawn.createdWithInstructions":
+      "已根据以下指令创建 {agent}：{instructions}",
+    "localConversation.multiAgentAction.row.sendInput.messagedWithPrompt":
+      "{action} {agent}：{prompt}",
+    "localConversation.multiAgentAction.rowAction.close.completed": "已关闭",
+    "localConversation.multiAgentAction.rowAction.close.failed": "关闭失败",
+    "localConversation.multiAgentAction.rowAction.close.inProgress": "正在关闭",
+    "localConversation.multiAgentAction.rowAction.resume.completed": "已恢复",
+    "localConversation.multiAgentAction.rowAction.resume.failed": "恢复失败",
+    "localConversation.multiAgentAction.rowAction.resume.inProgress": "正在恢复",
+    "localConversation.multiAgentAction.rowAction.sendInput.completed": "已发送消息",
+    "localConversation.multiAgentAction.rowAction.sendInput.failed": "发送消息失败",
+    "localConversation.multiAgentAction.rowAction.sendInput.inProgress": "正在发送消息",
+    "localConversation.multiAgentAction.rowAction.sendInput.messaged.completed": "已发送消息",
+    "localConversation.multiAgentAction.rowAction.sendInput.messaged.failed": "无法发送消息",
+    "localConversation.multiAgentAction.rowAction.sendInput.messaged.inProgress": "正在发送消息",
+    "localConversation.multiAgentAction.rowAction.spawn.completed": "已创建",
+    "localConversation.multiAgentAction.rowAction.spawn.failed": "创建失败",
+    "localConversation.multiAgentAction.rowAction.spawn.inProgress": "正在创建",
+    "localConversation.multiAgentAction.meta.prompt": "输入：{prompt}",
+    "localConversation.multiAgentAction.agentState.pendingInit": "待定初始化",
+    "localConversation.multiAgentAction.agentState.running": "正在运行",
+    "localConversation.multiAgentAction.agentState.interrupted": "已中断",
+    "localConversation.multiAgentAction.agentState.shutdown": "关闭",
+    "localConversation.multiAgentAction.agentState.completed": "已完成",
+    "localConversation.multiAgentAction.agentState.errored": "出错",
+    "localConversation.multiAgentAction.agentState.notFound": "找不到",
     "localConversation.personalityChanged": "已切换为 {personality} 个性",
     "localConversation.autoReviewInterruptionWarning": "回合已由自动审核结束",
     "localConversation.autoReviewInterruptionWarning.nextSteps":
@@ -1735,12 +1938,35 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "review.fileSource.breadcrumb.ariaLabel": "文件路径",
     "review.fileSource.breadcrumb.openInEditor.ariaLabel": "在编辑器中打开",
     "review.fileSource.breadcrumb.openInEditor.tooltip": "在编辑器中打开",
-    "review.fileSource.options": "文件查看器选项",
+    "review.fileSource.options": "文件预览选项",
     "review.fileSource.copyPath": "复制路径",
-    "review.fileSource.richPreview.enable": "启用富预览",
-    "review.fileSource.richPreview.disable": "禁用富预览",
+    "review.fileSource.error": "无法加载文件",
+    "review.fileSource.loading": "正在加载文件…",
+    "review.fileSource.tooLarge": "文件过大，无法预览",
+    "review.fileSource.tooLargeDetail": "{size} 已超出 {limit} 的预览上限",
+    "review.fileSource.unsupported.archive": "暂不支持预览压缩包",
+    "review.fileSource.unsupported.audio": "暂不支持预览音频",
+    "review.fileSource.unsupported.excelSpreadsheet": "暂不支持预览 Excel 电子表格",
+    "review.fileSource.unsupported.keynoteDeck": "暂不支持预览 Keynote 演示文稿",
+    "review.fileSource.unsupported.numbersSpreadsheet": "暂不支持预览 Numbers 表格",
+    "review.fileSource.unsupported.opendocumentPresentation": "暂不支持预览 OpenDocument 演示文稿",
+    "review.fileSource.unsupported.opendocumentSpreadsheet": "暂不支持预览 OpenDocument 电子表格",
+    "review.fileSource.unsupported.opendocumentText": "暂不支持预览 OpenDocument 文本",
+    "review.fileSource.unsupported.pagesDocument": "暂不支持预览 Pages 文档",
+    "review.fileSource.unsupported.powerpointDeck": "暂不支持预览 PowerPoint 演示文稿",
+    "review.fileSource.unsupported.richTextDocument": "暂不支持预览富文本文档",
+    "review.fileSource.unsupported.video": "暂不支持预览视频",
+    "review.fileSource.unsupported.wordDocument": "暂不支持预览 Word 文档",
+    "review.fileSource.unsupportedDetail": "请在 Codex 外部打开该文件查看",
+    "review.fileSource.richPreview.enable": "启用增强视图",
+    "review.fileSource.richPreview.disable": "禁用增强视图",
     "review.fileSource.wrap.enable": "启用自动换行",
     "review.fileSource.wrap.disable": "禁用自动换行",
+    "artifactTab.sourceOptions": "制品查看器选项",
+    "codex.diffView.richPreviewEnable": "启用富文本预览",
+    "codex.diffView.richPreviewDisable": "禁用富文本预览",
+    "wham.diff.contextMenu.copyPath": "复制路径",
+    "wham.diff.contextMenu.toggleWrap": "切换自动换行",
     "wham.diff.binaryFile": "未显示二进制文件",
     "threadHeader.archiveConfirmCancel": "取消",
     "threadHeader.archiveConfirmConfirm": "归档",
@@ -1771,6 +1997,14 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "sidebarElectron.skillsRouteNavLink": "技能",
     "sidebarElectron.pluginsRouteNavLink": "插件",
     "sidebarElectron.pluginsDisabledTooltip": "请登录 ChatGPT 以使用插件",
+    "sidebarElectron.scratchpadNavLink": "草稿区",
+    "scratchpadPage.headerTitle": "草稿区",
+    "scratchpadPage.headerSubtitle": "实验性功能",
+    "scratchpadPage.clearButton": "清除",
+    "scratchpadPage.inputPlaceholder.initial": "添加任务",
+    "scratchpadPage.inputPlaceholder.followUp": "添加后续跟进",
+    "scratchpadPage.inputPlaceholder.followUpHint": "添加任务，或按 Tab 键添加后续跟进",
+    "scratchpadPage.summaryLoading": "正在总结助手的最终回复",
     "general.title": "通用",
     "general.theme": "主题",
     "general.themeDescription": "使用浅色、深色，或匹配你的系统",

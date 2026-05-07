@@ -72,6 +72,7 @@ use std::sync::{Arc, Mutex};
 use workspace_agents::read_workspace_agents_md;
 use workspace_agents::write_workspace_agents_md;
 use workspace_files::read_workspace_file;
+use workspace_files::read_workspace_file_metadata;
 use workspace_files::search_workspace_files;
 
 #[derive(Default)]
@@ -153,6 +154,7 @@ pub fn run() {
             read_workspace_agents_md,
             write_workspace_agents_md,
             search_workspace_files,
+            read_workspace_file_metadata,
             read_workspace_file,
             list_local_environments,
             read_local_environment_config,

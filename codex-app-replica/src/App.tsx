@@ -63,6 +63,7 @@ import {
   ReviewTabIcon,
   SearchIcon,
   SettingsCogIcon,
+  WorkspaceFileIcon,
 } from "./components/AppShellIcons";
 import { AppToastRegion, type AppToast } from "./components/AppToastRegion";
 import { ConfigScopeMenu } from "./components/ConfigScopeMenu";
@@ -87,6 +88,7 @@ import { ChatSidePanel } from "./features/chat/ChatSidePanel";
 import { RightPanelOpenTabMenu, RightPanelTabStrip } from "./features/chat/RightPanelTabStrip";
 import { WorkspaceFileSearchDialog } from "./features/chat/WorkspaceFileSearchDialog";
 import { renderConversationMarkdown } from "./features/chat/conversationMarkdown";
+import { ScratchpadPage } from "./features/scratchpad/ScratchpadPage";
 import { SkillsRoutePage } from "./features/skills/SkillsRoutePage";
 import { usePluginsRouteEnabled } from "./features/skills/usePluginsRouteEnabled";
 import {
@@ -134,15 +136,28 @@ import {
 } from "./features/chat/threadConversationState";
 import { useI18n } from "./i18n/i18n";
 import type { MessageKey } from "./i18n/messages";
+import {
+  buildAcceleratorFromKeyboardEvent,
+  getCommandKeymapState,
+  getCommandShortcutAccelerators,
+  type CommandKeymapState,
+} from "./services/keyboardShortcuts";
 import { readComputerUseApprovalsVisibility } from "./services/computerUseSettings";
 import { getCodexHomePath, isWithinCodexWorktrees } from "./services/codexHome";
-import { readWorkspaceFile, type WorkspaceFileDocument } from "./services/workspaceFiles";
+import type { WorkspaceFilePreviewTarget } from "./services/workspaceFiles";
 
 const appWindow = getCurrentWindow();
 const AGENT_SETTINGS_DOCS_URL = "https://developers.openai.com/codex/app/local-environments";
 const CONFIG_TOML_DOCS_URL = "https://developers.openai.com/codex/config-basic";
 const IMPLEMENT_PLAN_PROMPT_PREFIX = "PLEASE IMPLEMENT THIS PLAN:";
 type WorkspaceFileRightPanelTabState = Extract<RightPanelTab, { kind: "workspaceFile" }>;
+type PersistedWorkspaceFileRightPanelTabState = {
+  workspaceFileTabsByThreadId: Array<[string, WorkspaceFileRightPanelTabState[]]>;
+  activeWorkspaceFileTabIdByThreadId: Array<[string, string]>;
+};
+
+const WORKSPACE_FILE_RIGHT_PANEL_TAB_STATE_STORAGE_KEY =
+  "codex-app-replica.workspace-file-right-panel-tabs.v1";
 
 type SettingsSection =
   | "general-settings"
@@ -161,7 +176,7 @@ type SettingsSection =
   | "worktrees"
   | "data-controls";
 type AgentConfigControlErrors = Partial<Record<"approval" | "sandbox" | "network", string>>;
-type AppRoute = "chat" | "settings" | "skills";
+type AppRoute = "chat" | "settings" | "skills" | "scratchpad";
 
 const settingsGroups = [
   {
@@ -195,7 +210,7 @@ type NavItem = {
   icon: ReactNode;
   label: string;
   route: AppRoute;
-  action?: "new-thread";
+  action?: "new-thread" | "search-files";
   disabled?: boolean;
   tooltipKey?: MessageKey;
 };
@@ -231,16 +246,26 @@ const settingsSectionLabelKeys: Record<SettingsSection, MessageKey> = {
   "data-controls": "settings.section.data-controls",
 };
 
-const rightPanelTabLabelKeys: Record<StaticRightPanelTabId, MessageKey> = {
-  review: "thread.sidePanel.diffTab",
-  browser: "thread.sidePanel.browserTab",
-};
-
-function renderRightPanelTabIcon(tabId: StaticRightPanelTabId, className?: string) {
-  if (tabId === "review") {
-    return <ReviewTabIcon className={className} />;
+function getRightPanelTabLabel(tab: RightPanelTab, t: (key: MessageKey) => string) {
+  switch (tab.kind) {
+    case "review":
+      return t("thread.sidePanel.diffTab");
+    case "browser":
+      return t("thread.sidePanel.browserTab");
+    case "workspaceFile":
+      return tab.title;
   }
-  return <BrowserTabIcon className={className} />;
+}
+
+function renderRightPanelTabIcon(tab: RightPanelTab, className?: string) {
+  switch (tab.kind) {
+    case "review":
+      return <ReviewTabIcon className={className} />;
+    case "browser":
+      return <BrowserTabIcon className={className} />;
+    case "workspaceFile":
+      return <WorkspaceFileIcon className={className} />;
+  }
 }
 
 function getConfigScopeLabel(
@@ -329,6 +354,38 @@ function renderConfigTomlDescription(t: (key: MessageKey, values?: Record<string
   );
 }
 
+function readPersistedWorkspaceFileRightPanelTabState(storageKey: string) {
+  try {
+    const rawValue = window.localStorage.getItem(storageKey);
+    if (!rawValue) {
+      return null;
+    }
+
+    const parsed = JSON.parse(rawValue) as PersistedWorkspaceFileRightPanelTabState;
+    if (
+      !Array.isArray(parsed.workspaceFileTabsByThreadId) ||
+      !Array.isArray(parsed.activeWorkspaceFileTabIdByThreadId)
+    ) {
+      return null;
+    }
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedWorkspaceFileRightPanelTabState(
+  storageKey: string,
+  state: PersistedWorkspaceFileRightPanelTabState,
+) {
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(state));
+  } catch {
+    // Ignore persistence failures; the in-memory thread cache still works for this session.
+  }
+}
+
 function App() {
   const { locale, t } = useI18n();
   const [isMaximized, setIsMaximized] = useState(false);
@@ -381,6 +438,7 @@ function App() {
   const [selectedConfigScopeKey, setSelectedConfigScopeKey] = useState<string>("user");
   const [agentConfigControlErrors, setAgentConfigControlErrors] = useState<AgentConfigControlErrors>({});
   const [configError, setConfigError] = useState<string | null>(null);
+  const [commandKeymapState, setCommandKeymapState] = useState<CommandKeymapState | null>(null);
   const isPluginsRouteEnabled = usePluginsRouteEnabled();
   const queuedFollowUpsRef = useRef<QueuedLocalFollowUp[]>([]);
   const drainingQueuedThreadIdsRef = useRef(new Set<string>());
@@ -420,7 +478,12 @@ function App() {
   const menuItems = [t("app.menu.file"), t("app.menu.edit"), t("app.menu.view"), t("app.menu.window"), t("app.menu.help")];
   const navItems: NavItem[] = [
     { action: "new-thread", icon: <NewChatIcon className="h-4 w-4" />, label: t("app.nav.newChat"), route: "chat" },
-    { icon: <SearchIcon className="h-4 w-4" />, label: t("app.nav.search"), route: "chat" },
+    {
+      action: "search-files",
+      icon: <SearchIcon className="h-4 w-4" />,
+      label: t("app.nav.search"),
+      route: "chat",
+    },
     {
       icon: <SettingsSectionIcon className="h-4 w-4" section="skills-settings" />,
       label: t(primarySkillsRouteLabelKey),
@@ -445,6 +508,8 @@ function App() {
   const shellHeaderTitle =
     currentRoute === "settings"
       ? `${t("app.shell.settings")} / ${t(settingsSectionLabelKeys[settingsSection])}`
+      : currentRoute === "scratchpad"
+        ? t("sidebarElectron.scratchpadNavLink")
       : currentRoute === "skills"
         ? t(primarySkillsRouteLabelKey)
       : threadConversation?.title || t("app.nav.newChat");
@@ -532,6 +597,26 @@ function App() {
       .catch(() => {
         if (!cancelled) {
           setCodexHome(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void getCommandKeymapState()
+      .then((state) => {
+        if (!cancelled) {
+          setCommandKeymapState(state);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCommandKeymapState(null);
         }
       });
 
@@ -636,6 +721,45 @@ function App() {
     setIsWorkspaceFileSearchOpen(false);
     previousSelectedThreadIdRef.current = selectedThreadId;
   }, [selectedThreadId]);
+
+  useEffect(() => {
+    const persistedWorkspaceFileRightPanelTabState =
+      readPersistedWorkspaceFileRightPanelTabState(WORKSPACE_FILE_RIGHT_PANEL_TAB_STATE_STORAGE_KEY);
+    if (!persistedWorkspaceFileRightPanelTabState) {
+      return;
+    }
+
+    workspaceFileTabsByThreadIdRef.current = new Map(
+      persistedWorkspaceFileRightPanelTabState.workspaceFileTabsByThreadId,
+    );
+    activeWorkspaceFileTabIdByThreadIdRef.current = new Map(
+      persistedWorkspaceFileRightPanelTabState.activeWorkspaceFileTabIdByThreadId,
+    );
+  }, []);
+
+  useEffect(() => {
+    if (selectedThreadId === null) {
+      return;
+    }
+
+    const currentWorkspaceFileTabs = openRightPanelTabs.filter(isWorkspaceFileRightPanelTab);
+    if (currentWorkspaceFileTabs.length > 0) {
+      workspaceFileTabsByThreadIdRef.current.set(selectedThreadId, currentWorkspaceFileTabs);
+    } else {
+      workspaceFileTabsByThreadIdRef.current.delete(selectedThreadId);
+    }
+
+    if (activeRightPanelTabId !== null && isWorkspaceFileRightPanelTabId(activeRightPanelTabId)) {
+      activeWorkspaceFileTabIdByThreadIdRef.current.set(selectedThreadId, activeRightPanelTabId);
+    } else {
+      activeWorkspaceFileTabIdByThreadIdRef.current.delete(selectedThreadId);
+    }
+
+    writePersistedWorkspaceFileRightPanelTabState(WORKSPACE_FILE_RIGHT_PANEL_TAB_STATE_STORAGE_KEY, {
+      activeWorkspaceFileTabIdByThreadId: [...activeWorkspaceFileTabIdByThreadIdRef.current.entries()],
+      workspaceFileTabsByThreadId: [...workspaceFileTabsByThreadIdRef.current.entries()],
+    });
+  }, [activeRightPanelTabId, openRightPanelTabs, selectedThreadId]);
 
   useEffect(() => {
     if (currentRoute !== "settings") {
@@ -961,7 +1085,7 @@ function App() {
     gridTemplateColumns: isRightPanelOpen ? "minmax(0, 1fr) var(--app-shell-right-width)" : "minmax(0, 1fr)",
   } as const;
   const activeRightPanelTab = openRightPanelTabs.find((tab) => tab.id === activeRightPanelTabId) ?? null;
-  const collapsedRightPanelTabs = !isRightPanelOpen ? openRightPanelTabs.filter(isStaticRightPanelTab).slice(0, 3) : [];
+  const collapsedRightPanelTabs = !isRightPanelOpen ? openRightPanelTabs.slice(0, 3) : [];
   const canOfferReviewRightPanelTab = !openRightPanelTabs.some((tab) => tab.kind === "review");
   const canOfferBrowserRightPanelTab = !openRightPanelTabs.some((tab) => tab.kind === "browser");
   const openRightPanelTab = (tabId: StaticRightPanelTabId) => {
@@ -1008,18 +1132,64 @@ function App() {
     setIsWorkspaceFileSearchOpen(true);
   };
 
-  const handleWorkspaceFileSelected = (file: WorkspaceFileDocument) => {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const accelerator = buildAcceleratorFromKeyboardEvent(event);
+      if (!accelerator) {
+        return;
+      }
+
+      const isMac = typeof navigator !== "undefined" && (navigator.platform ?? "").startsWith("Mac");
+      const matchingCommandId = ["searchFiles", "openCommandMenu"].find((commandId) =>
+        getCommandShortcutAccelerators(commandId, commandKeymapState).some((binding) =>
+          binding
+            .replaceAll("CmdOrCtrl", isMac ? "Command" : "Ctrl")
+            .replaceAll("Cmd", "Command")
+            .replaceAll("Control", "Ctrl") === accelerator,
+        ),
+      );
+
+      if (!matchingCommandId) {
+        return;
+      }
+
+      if (chatWorkspaceRoot === null) {
+        return;
+      }
+
+      event.preventDefault();
+      openWorkspaceFileSearch();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [commandKeymapState, chatWorkspaceRoot]);
+
+  const handleWorkspaceFileSelected = (file: WorkspaceFilePreviewTarget) => {
     const workspaceFileTab = createWorkspaceFileRightPanelTab(file);
-    setOpenRightPanelTabs((current) => [
-      ...current.filter((tab) => !isWorkspaceFileRightPanelTab(tab)),
-      workspaceFileTab,
-    ]);
+    setOpenRightPanelTabs((current) => {
+      const existingTabIndex = current.findIndex((tab) => tab.id === workspaceFileTab.id);
+      if (existingTabIndex === -1) {
+        return [...current, workspaceFileTab];
+      }
+
+      const existingTab = current[existingTabIndex];
+      if (!isWorkspaceFileRightPanelTab(existingTab)) {
+        return current;
+      }
+
+      const nextTabs = [...current];
+      nextTabs[existingTabIndex] = workspaceFileTab;
+      return nextTabs;
+    });
     setActiveRightPanelTabId(workspaceFileTab.id);
     setIsRightPanelOpen(true);
     setIsWorkspaceFileSearchOpen(false);
   };
 
-  const handleReviewFileSelected = async (change: FileChangeSummary) => {
+  const handleReviewFileSelected = (change: FileChangeSummary) => {
     if (!chatWorkspaceRoot) {
       return;
     }
@@ -1050,19 +1220,13 @@ function App() {
       return;
     }
 
-    try {
-      const file = await readWorkspaceFile({
-        workspaceRoot: chatWorkspaceRoot,
-        relativePath,
-      });
-      handleWorkspaceFileSelected(file);
-      setThreadActionFeedback(null);
-    } catch (error) {
-      setThreadActionFeedback({
-        tone: "error",
-        message: error instanceof Error ? error.message : String(error),
-      });
-    }
+    handleWorkspaceFileSelected({
+      name: relativePath.split("/").at(-1) ?? relativePath,
+      path: `${normalizedWorkspaceRoot}/${relativePath}`,
+      relativePath,
+      workspaceRoot: chatWorkspaceRoot,
+    });
+    setThreadActionFeedback(null);
   };
 
   const syncProjectGroups = (activeThreadId: string | null, threads: Awaited<ReturnType<typeof getRecentThreads>>) => {
@@ -2225,7 +2389,12 @@ function App() {
               <>
                 <div className="space-y-1.5">
                   {navItems.map((item) => {
-                    const isActive = item.action === "new-thread" || (!item.disabled && item.route === currentRoute);
+                    const isActive =
+                      item.action === "new-thread"
+                        ? true
+                        : item.action === "search-files"
+                          ? false
+                          : !item.disabled && item.route === currentRoute;
                     const buttonClassName = [
                       "flex h-10 w-full items-center gap-3 rounded-[12px] px-3.5 text-left text-[14px]",
                       isActive ? "app-nav-item-active" : item.disabled ? "app-nav-item-disabled" : "app-nav-item-idle",
@@ -2240,6 +2409,10 @@ function App() {
                             if (item.action === "new-thread") {
                               setCurrentRoute("chat");
                               void startNewThread();
+                              return;
+                            }
+                            if (item.action === "search-files") {
+                              openWorkspaceFileSearch();
                               return;
                             }
                             if (item.disabled) {
@@ -2429,13 +2602,13 @@ function App() {
                               <button
                                 key={tab.id}
                                 type="button"
-                                title={t(rightPanelTabLabelKeys[tab.id])}
-                                aria-label={t(rightPanelTabLabelKeys[tab.id])}
-                                onClick={() => openRightPanelTab(tab.id)}
+                                title={getRightPanelTabLabel(tab, t)}
+                                aria-label={getRightPanelTabLabel(tab, t)}
+                                onClick={() => activateRightPanelTab(tab.id)}
                                 className="app-control-weak !h-6 !w-6 rounded-[8px]"
                               >
                                 <span className="icon-sm flex items-center justify-center [&>*]:!h-full [&>*]:!w-full">
-                                  {renderRightPanelTabIcon(tab.id)}
+                                  {renderRightPanelTabIcon(tab)}
                                 </span>
                               </button>
                             ))}
@@ -2616,6 +2789,10 @@ function App() {
                       />
                     </div>
                   ) : null}
+                </div>
+              ) : currentRoute === "scratchpad" ? (
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  <ScratchpadPage />
                 </div>
               ) : currentRoute === "skills" ? (
                 <div className="min-h-0 flex-1 overflow-y-auto">

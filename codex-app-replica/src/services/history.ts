@@ -336,6 +336,11 @@ export type ThreadConversationDynamicToolCall = {
   success: boolean | null;
 };
 
+export type ThreadConversationCollabAgentState = {
+  status: "pendingInit" | "running" | "interrupted" | "completed" | "errored" | "shutdown" | "notFound" | string;
+  message: string | null;
+};
+
 export type ThreadConversationCollabAgentToolCall = {
   type: "collabAgentToolCall";
   id: string;
@@ -347,7 +352,25 @@ export type ThreadConversationCollabAgentToolCall = {
   prompt: string | null;
   model: string | null;
   reasoningEffort: string | null;
-  receiverSummary: string | null;
+  agentsStates: Record<string, ThreadConversationCollabAgentState>;
+};
+
+export type ThreadConversationReceiverThread = {
+  threadId: string;
+  thread: { id: string } | null;
+};
+
+export type ThreadConversationMultiAgentAction = {
+  type: "multiAgentAction";
+  id: string;
+  turnId: string;
+  action: Exclude<ThreadConversationCollabAgentToolCall["tool"], "wait">;
+  status: string;
+  senderThreadId: string;
+  receiverThreads: ThreadConversationReceiverThread[];
+  prompt: string | null;
+  model: string | null;
+  agentsStates: Record<string, ThreadConversationCollabAgentState>;
 };
 
 export type ThreadConversationWebSearchAction =
@@ -436,6 +459,7 @@ export type ThreadConversationItem =
   | ThreadConversationFileChange
   | ThreadConversationMcpToolCall
   | ThreadConversationDynamicToolCall
+  | ThreadConversationMultiAgentAction
   | ThreadConversationCollabAgentToolCall
   | ThreadConversationWebSearch
   | ThreadConversationImageView
@@ -593,12 +617,15 @@ export async function respondToMcpServerElicitationRequest(params: {
 }
 
 export async function readThread(threadId: string) {
-  return invoke<ThreadConversation>("read_thread", { threadId });
+  return invoke<ThreadConversation>("read_thread", { threadId }).then(normalizeThreadConversation);
 }
 
 export function onThreadEvent(handler: (event: ThreadEvent) => void) {
   return listen<ThreadEvent>("thread-event", (event) => {
-    handler(event.payload);
+    const normalizedEvent = normalizeThreadEvent(event.payload);
+    if (normalizedEvent !== null) {
+      handler(normalizedEvent);
+    }
   });
 }
 
@@ -649,4 +676,80 @@ function formatRelativeTime(unixSeconds: number, now: Date, locale: string) {
     return formatter.format(-Math.floor(diffMs / hour), "hour");
   }
   return formatter.format(-Math.floor(diffMs / day), "day");
+}
+
+export function normalizeThreadConversation(thread: ThreadConversation): ThreadConversation {
+  const items: ThreadConversationItem[] = [];
+  for (const item of thread.items) {
+    const normalizedItem = normalizeThreadConversationItem(item);
+    if (normalizedItem !== null) {
+      items.push(normalizedItem);
+    }
+  }
+
+  return {
+    ...thread,
+    items,
+  };
+}
+
+export function normalizeThreadConversationItem(item: ThreadConversationItem): ThreadConversationItem | null {
+  if (item.type === "commandExecution") {
+    return {
+      ...item,
+      commandActions: Array.isArray(item.commandActions) ? item.commandActions : [],
+    };
+  }
+
+  if (item.type === "collabAgentToolCall") {
+    return normalizeCollabAgentToolCall(item);
+  }
+
+  return item;
+}
+
+export function normalizeThreadEvent(event: ThreadEvent): ThreadEvent | null {
+  if (event.type !== "threadItemUpdated") {
+    return event;
+  }
+
+  const normalizedItem = normalizeThreadConversationItem(event.item);
+  if (normalizedItem === null) {
+    return null;
+  }
+
+  return {
+    ...event,
+    item: normalizedItem,
+  };
+}
+
+function normalizeCollabAgentToolCall(
+  item: ThreadConversationCollabAgentToolCall,
+): ThreadConversationMultiAgentAction | null {
+  if (item.tool === "wait") {
+    return null;
+  }
+
+  const receiverThreadIds = Array.isArray(item.receiverThreadIds) ? item.receiverThreadIds : [];
+  const agentsStates =
+    item.agentsStates && typeof item.agentsStates === "object" && !Array.isArray(item.agentsStates)
+      ? item.agentsStates
+      : {};
+
+  return {
+    type: "multiAgentAction",
+    id: item.id,
+    turnId: item.turnId,
+    action: item.tool,
+    status: item.status,
+    senderThreadId: item.senderThreadId,
+    receiverThreads: receiverThreadIds.map((threadId) => ({
+      threadId,
+      thread: null,
+    })),
+    prompt: item.prompt,
+    model: item.model,
+    agentsStates,
+  };
 }

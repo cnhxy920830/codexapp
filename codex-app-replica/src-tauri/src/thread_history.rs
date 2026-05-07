@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -147,7 +149,7 @@ pub enum ThreadConversationItem {
         prompt: Option<String>,
         model: Option<String>,
         reasoning_effort: Option<String>,
-        receiver_summary: Option<String>,
+        agents_states: BTreeMap<String, ThreadCollabAgentState>,
     },
     WebSearch {
         id: String,
@@ -215,6 +217,13 @@ pub struct FileChangeSummary {
     pub kind: String,
     pub diff: Option<String>,
     pub move_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadCollabAgentState {
+    pub status: String,
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -580,7 +589,7 @@ pub fn map_thread_item(
                 .map(str::trim)
                 .filter(|effort| !effort.is_empty())
                 .map(str::to_string);
-            let receiver_summary = summarize_collab_agent_states(value.get("agentsStates"));
+            let agents_states = extract_collab_agent_states(value.get("agentsStates"));
             if tool.is_empty()
                 && status.is_empty()
                 && sender_thread_id.is_empty()
@@ -588,7 +597,7 @@ pub fn map_thread_item(
                 && prompt.is_none()
                 && model.is_none()
                 && reasoning_effort.is_none()
-                && receiver_summary.is_none()
+                && agents_states.is_empty()
             {
                 return None;
             }
@@ -602,7 +611,7 @@ pub fn map_thread_item(
                 prompt,
                 model,
                 reasoning_effort,
-                receiver_summary,
+                agents_states,
             })
         }
         "webSearch" => {
@@ -1152,31 +1161,33 @@ fn extract_string_array(value: Option<&serde_json::Value>) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn summarize_collab_agent_states(value: Option<&serde_json::Value>) -> Option<String> {
-    let states = value?.as_object()?;
-    let mut parts = states
-        .iter()
-        .filter_map(|(thread_id, state)| {
-            let status = state.get("status")?.as_str()?.trim();
-            if status.is_empty() {
-                return None;
-            }
-            let message = state
-                .get("message")
-                .and_then(serde_json::Value::as_str)
-                .map(str::trim)
-                .filter(|message| !message.is_empty());
-            Some(match message {
-                Some(message) => format!("{thread_id}: {status} ({message})"),
-                None => format!("{thread_id}: {status}"),
-            })
+fn extract_collab_agent_states(
+    value: Option<&serde_json::Value>,
+) -> BTreeMap<String, ThreadCollabAgentState> {
+    value
+        .and_then(serde_json::Value::as_object)
+        .map(|states| {
+            states
+                .iter()
+                .filter_map(|(thread_id, state)| {
+                    let status = state.get("status")?.as_str()?.trim().to_string();
+                    if status.is_empty() {
+                        return None;
+                    }
+                    let message = state
+                        .get("message")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::trim)
+                        .filter(|message| !message.is_empty())
+                        .map(str::to_string);
+                    Some((
+                        thread_id.clone(),
+                        ThreadCollabAgentState { status, message },
+                    ))
+                })
+                .collect()
         })
-        .collect::<Vec<_>>();
-    if parts.is_empty() {
-        return None;
-    }
-    parts.sort();
-    Some(parts.join(", "))
+        .unwrap_or_default()
 }
 
 fn summarize_mcp_tool_result(value: Option<&serde_json::Value>) -> Option<String> {

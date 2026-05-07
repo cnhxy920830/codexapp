@@ -1,6 +1,5 @@
 import type { MessageKey } from "../../i18n/messages";
 import type {
-  ThreadConversationCollabAgentToolCall,
   FileChangeSummary,
   ThreadConversation,
   ThreadConversationCommandExecution,
@@ -23,6 +22,7 @@ import type {
   ThreadConversationTurnDiff,
   ThreadConversationWebSearch,
 } from "../../services/history";
+import { keepLatestTurnScopedPendingRequests } from "./threadConversationState";
 import type {
   PendingApproval,
   PendingMcpServerElicitationRequest,
@@ -39,6 +39,13 @@ import {
   type MultiAgentGroupItem,
   type WebSearchGroupItem,
 } from "./renderableConversationItems";
+import {
+  buildMultiAgentGroupRows,
+  isMultiAgentInProgressStatus,
+  resolveMultiAgentActionLabel,
+  resolveMultiAgentCountLabel,
+  toSingleMultiAgentGroupItem,
+} from "./multiAgentAction";
 
 type Translate = (key: MessageKey, values?: Record<string, number | string>) => string;
 type MarkdownConversationItem =
@@ -85,43 +92,47 @@ function buildMarkdownConversationItems(
 ) {
   const groups = buildRenderableConversationGroups(items);
   const groupedConversation = attachTurnScopedItemsToRenderableConversationGroups(groups, {
-    approvalItems: pendingRequests.approvals ?? [],
+    approvalItems: keepLatestTurnScopedPendingRequests(pendingRequests.approvals ?? []),
     mcpServerElicitationItems: pendingRequests.mcpRequests ?? [],
     permissionRequestItems: pendingRequests.permissionsRequests ?? [],
     planImplementationItems,
-    userInputItems: pendingRequests.userInputRequests ?? [],
+    userInputItems: keepLatestTurnScopedPendingRequests(pendingRequests.userInputRequests ?? []),
   });
 
   const mergedItems: MarkdownConversationItem[] = [];
   for (const group of groupedConversation.groups) {
-    mergedItems.push(...group.preUserItems);
+    mergedItems.push(...group.modelChangedItems);
     mergedItems.push(...group.userItems);
+    mergedItems.push(...group.modelReroutedItems);
     mergedItems.push(...group.activityItems);
-    if (group.assistantMessage) {
-      mergedItems.push(group.assistantMessage);
-    }
-    mergedItems.push(...group.toolOutputItems);
-    mergedItems.push(...group.postAssistantItems);
     if (group.systemEventItem) {
       mergedItems.push(group.systemEventItem);
     }
-    if (group.unifiedDiffItem) {
-      mergedItems.push(group.unifiedDiffItem);
+    mergedItems.push(...group.toolOutputItems);
+    mergedItems.push(...group.postAssistantItems);
+    if (group.todoListItem) {
+      mergedItems.push(group.todoListItem);
+    }
+    if (group.proposedPlanItem) {
+      mergedItems.push(group.proposedPlanItem);
+    }
+    if (group.planImplementationItem) {
+      mergedItems.push(group.planImplementationItem);
+    }
+    mergedItems.push(...group.mcpServerElicitationItems);
+    mergedItems.push(...group.permissionRequestItems);
+    if (group.approvalItem) {
+      mergedItems.push(group.approvalItem);
+    }
+    if (group.userInputItem) {
+      mergedItems.push(group.userInputItem);
+    }
+    if (group.assistantMessage) {
+      mergedItems.push(group.assistantMessage);
     }
     mergedItems.push(...group.remoteTaskCreatedItems);
     mergedItems.push(...group.personalityChangedItems);
     mergedItems.push(...group.forkedFromConversationItems);
-    mergedItems.push(...group.modelChangedItems);
-    mergedItems.push(...group.modelReroutedItems);
-    if (group.todoListItem) {
-      mergedItems.push(group.todoListItem);
-    }
-    mergedItems.push(...group.proposedPlanItems);
-    mergedItems.push(...group.planImplementationItems);
-    mergedItems.push(...group.mcpServerElicitationItems);
-    mergedItems.push(...group.permissionRequestItems);
-    mergedItems.push(...group.approvalItems);
-    mergedItems.push(...group.userInputItems);
   }
 
   mergedItems.push(...groupedConversation.unmatchedPlanImplementationItems);
@@ -203,8 +214,8 @@ function renderConversationItem(item: MarkdownConversationItem, t: Translate): s
       return renderImageView(item);
     case "imageGeneration":
       return renderImageGeneration(item, t);
-    case "collabAgentToolCall":
-      return renderCollabAgentToolCall(item, t);
+    case "multiAgentAction":
+      return renderMultiAgentGroup(toSingleMultiAgentGroupItem(item), t);
     case "contextCompaction":
       return renderContextCompaction(item, t);
     case "enteredReviewMode":
@@ -429,7 +440,7 @@ function renderExplorationGroup(item: ExplorationGroupItem, t: Translate) {
     }
 
     const isInProgress = isCommandExecutionStillRunning(groupedItem);
-    for (const action of groupedItem.commandActions) {
+    for (const action of getThreadCommandActions(groupedItem)) {
       if (action.type === "read") {
         const fileName = getCommandActionDisplayName(action.path || action.name);
         if (fileName.length > 0) {
@@ -475,6 +486,10 @@ function renderExplorationGroup(item: ExplorationGroupItem, t: Translate) {
   }
 
   return renderDetails("Exploration", sections.join("\n\n"));
+}
+
+function getThreadCommandActions(item: Extract<ThreadConversationItem, { type: "commandExecution" }>) {
+  return Array.isArray(item.commandActions) ? item.commandActions : [];
 }
 
 function renderFileChange(item: ThreadConversationFileChange) {
@@ -524,44 +539,17 @@ function renderImageView(item: ThreadConversationImageView) {
   return `![Image](${path})`;
 }
 
-function renderCollabAgentToolCall(item: ThreadConversationCollabAgentToolCall, t: Translate) {
-  const sections = [`${t("app.chat.agentTool")}: ${item.tool}`, `${t("app.chat.senderThread")}: ${item.senderThreadId}`];
-  if (item.receiverThreadIds.length > 0) {
-    sections.push(`${t("app.chat.receiverThreads")}: ${item.receiverThreadIds.join(", ")}`);
-  }
-  if (item.prompt) {
-    sections.push(`${t("app.chat.prompt")}: ${normalizeText(item.prompt).trim()}`);
-  }
-  if (item.model) {
-    sections.push(`${t("app.chat.model")}: ${item.model}`);
-  }
-  if (item.reasoningEffort) {
-    sections.push(`${t("app.chat.reasoningEffort")}: ${item.reasoningEffort}`);
-  }
-  if (item.receiverSummary) {
-    sections.push(`${t("app.chat.agentStatus")}: ${item.receiverSummary}`);
-  }
-  return renderDetails(t("app.chat.collabAgentToolCall"), sections.join("\n\n"));
-}
-
 function renderMultiAgentGroup(item: MultiAgentGroupItem, t: Translate) {
-  const action = resolveMultiAgentActionLabel(item.tool, item.status, t, "header");
-  const count = resolveMultiAgentReceiverCount(item.items);
-  const countLabel =
-    count > 0 ? t("localConversation.multiAgentAction.header.count", { count }) : "";
+  const action = resolveMultiAgentActionLabel(item.action, item.status, t, "header");
+  const countLabel = resolveMultiAgentCountLabel(item.items, t);
   const rows = buildMultiAgentGroupRows(item.items, t);
-  const prompt = resolveMultiAgentGroupPrompt(item.items);
   const sections: string[] = [];
 
   if (rows.length > 0) {
     sections.push(rows.map((row) => `- ${row}`).join("\n"));
   }
-  if (prompt) {
-    sections.push(
-      t("localConversation.multiAgentAction.meta.prompt", {
-        prompt: normalizeText(prompt).trim(),
-      }),
-    );
+  if (isMultiAgentInProgressStatus(item.status) && sections.length === 0) {
+    sections.push(t("app.chat.status.inProgress"));
   }
 
   return renderDetails(
@@ -592,138 +580,6 @@ function renderDynamicToolCall(item: ThreadConversationDynamicToolCall, t: Trans
 
   const status = item.status === "inProgress" ? "running" : "completed";
   return renderDetails("Tool call", [`Tool: ${tool}`, `Status: ${status}`].join("\n\n"));
-}
-
-const multiAgentHeaderLabelKeys: Partial<
-  Record<
-    Extract<MultiAgentGroupItem["tool"], "closeAgent" | "resumeAgent" | "sendInput" | "spawnAgent">,
-    Partial<Record<Extract<MultiAgentGroupItem["status"], "completed" | "failed" | "inProgress">, MessageKey>>
-  >
-> = {
-  closeAgent: {
-    completed: "localConversation.multiAgentAction.header.close.completed",
-    failed: "localConversation.multiAgentAction.header.close.failed",
-    inProgress: "localConversation.multiAgentAction.header.close.inProgress",
-  },
-  resumeAgent: {
-    completed: "localConversation.multiAgentAction.header.resume.completed",
-    failed: "localConversation.multiAgentAction.header.resume.failed",
-    inProgress: "localConversation.multiAgentAction.header.resume.inProgress",
-  },
-  sendInput: {
-    completed: "localConversation.multiAgentAction.header.sendInput.completed",
-    failed: "localConversation.multiAgentAction.header.sendInput.failed",
-    inProgress: "localConversation.multiAgentAction.header.sendInput.inProgress",
-  },
-  spawnAgent: {
-    completed: "localConversation.multiAgentAction.header.spawn.completed",
-    failed: "localConversation.multiAgentAction.header.spawn.failed",
-    inProgress: "localConversation.multiAgentAction.header.spawn.inProgress",
-  },
-};
-
-const multiAgentRowLabelKeys: Partial<
-  Record<
-    Extract<MultiAgentGroupItem["tool"], "closeAgent" | "resumeAgent" | "sendInput" | "spawnAgent">,
-    Partial<Record<Extract<MultiAgentGroupItem["status"], "completed" | "failed" | "inProgress">, MessageKey>>
-  >
-> = {
-  closeAgent: {
-    completed: "localConversation.multiAgentAction.rowAction.close.completed",
-    failed: "localConversation.multiAgentAction.rowAction.close.failed",
-    inProgress: "localConversation.multiAgentAction.rowAction.close.inProgress",
-  },
-  resumeAgent: {
-    completed: "localConversation.multiAgentAction.rowAction.resume.completed",
-    failed: "localConversation.multiAgentAction.rowAction.resume.failed",
-    inProgress: "localConversation.multiAgentAction.rowAction.resume.inProgress",
-  },
-  sendInput: {
-    completed: "localConversation.multiAgentAction.rowAction.sendInput.completed",
-    failed: "localConversation.multiAgentAction.rowAction.sendInput.failed",
-    inProgress: "localConversation.multiAgentAction.rowAction.sendInput.inProgress",
-  },
-  spawnAgent: {
-    completed: "localConversation.multiAgentAction.rowAction.spawn.completed",
-    failed: "localConversation.multiAgentAction.rowAction.spawn.failed",
-    inProgress: "localConversation.multiAgentAction.rowAction.spawn.inProgress",
-  },
-};
-
-function buildMultiAgentGroupRows(items: MultiAgentGroupItem["items"], t: Translate) {
-  const rows: string[] = [];
-
-  for (const item of items) {
-    const action = resolveMultiAgentActionLabel(item.tool, item.status, t, "row");
-    if (item.receiverThreadIds.length === 0) {
-      rows.push(t("localConversation.multiAgentAction.row.generic", { action }));
-      continue;
-    }
-
-    for (const receiverThreadId of item.receiverThreadIds) {
-      rows.push(
-        t("localConversation.multiAgentAction.row.agent", {
-          action,
-          agent: receiverThreadId,
-        }),
-      );
-    }
-  }
-
-  return rows;
-}
-
-function resolveMultiAgentGroupPrompt(items: MultiAgentGroupItem["items"]) {
-  for (const item of items) {
-    const prompt = item.prompt?.trim();
-    if (prompt) {
-      return prompt;
-    }
-  }
-  return null;
-}
-
-function resolveMultiAgentReceiverCount(items: MultiAgentGroupItem["items"]) {
-  const receiverThreadIds = new Set(items.flatMap((item) => item.receiverThreadIds));
-  if (receiverThreadIds.size > 0) {
-    return receiverThreadIds.size;
-  }
-  return items.length;
-}
-
-function resolveMultiAgentActionLabel(
-  tool: MultiAgentGroupItem["tool"],
-  status: MultiAgentGroupItem["status"],
-  t: Translate,
-  context: "header" | "row",
-) {
-  const resolvedStatus = normalizeMultiAgentStatus(status);
-  const labelKey =
-    context === "header"
-      ? multiAgentHeaderLabelKeys[tool]?.[resolvedStatus]
-      : multiAgentRowLabelKeys[tool]?.[resolvedStatus];
-
-  if (labelKey) {
-    return t(labelKey);
-  }
-
-  const normalizedTool = tool
-    .replaceAll(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .trim()
-    .toLowerCase();
-  if (normalizedTool.length === 0) {
-    return resolvedStatus === "failed" ? t("app.chat.status.failed") : t("app.chat.status.completed");
-  }
-
-  const verb = normalizedTool.replaceAll(/\b\w/g, (character) => character.toUpperCase());
-  return resolvedStatus === "failed" ? `${t("app.chat.status.failed")} ${verb}` : verb;
-}
-
-function normalizeMultiAgentStatus(status: MultiAgentGroupItem["status"]) {
-  if (status === "completed" || status === "failed" || status === "inProgress") {
-    return status;
-  }
-  return status.trim().toLowerCase() === "inprogress" ? "inProgress" : "completed";
 }
 
 function renderAutomaticApprovalReview(

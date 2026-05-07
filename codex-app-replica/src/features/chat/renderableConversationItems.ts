@@ -1,7 +1,7 @@
 import type {
-  ThreadConversationCollabAgentToolCall,
   ThreadConversationCommandExecution,
   ThreadConversationItem,
+  ThreadConversationMultiAgentAction,
   ThreadConversationReasoning,
   ThreadConversationWebSearch,
 } from "../../services/history";
@@ -25,9 +25,9 @@ export type MultiAgentGroupItem = {
   type: "multiAgentGroup";
   id: string;
   turnId: string;
-  tool: ThreadConversationCollabAgentToolCall["tool"];
-  status: ThreadConversationCollabAgentToolCall["status"];
-  items: ThreadConversationCollabAgentToolCall[];
+  action: ThreadConversationMultiAgentAction["action"];
+  status: ThreadConversationMultiAgentAction["status"];
+  items: ThreadConversationMultiAgentAction[];
 };
 
 export type RenderableConversationItem =
@@ -99,12 +99,12 @@ export function buildRenderableConversationItems(items: ThreadConversationItem[]
       continue;
     }
 
-    if (isCollabAgentToolCallGroupable(item)) {
-      const groupItems: ThreadConversationCollabAgentToolCall[] = [item];
+    if (isMultiAgentActionGroupable(item)) {
+      const groupItems: ThreadConversationMultiAgentAction[] = [item];
       let nextIndex = index + 1;
       while (nextIndex < filteredItems.length) {
         const nextItem = filteredItems[nextIndex];
-        if (!isMatchingCollabAgentToolCallGroupItem(nextItem, item)) {
+        if (!isMatchingMultiAgentActionGroupItem(nextItem, item)) {
           break;
         }
         groupItems.push(nextItem);
@@ -113,9 +113,9 @@ export function buildRenderableConversationItems(items: ThreadConversationItem[]
 
       renderableItems.push({
         type: "multiAgentGroup",
-        id: `multiAgentGroup:${item.turnId}:${item.tool}:${item.status}:${item.id}`,
+        id: `multi-agent-group:${item.action}:${item.status}:${item.id}`,
         turnId: item.turnId,
-        tool: item.tool,
+        action: item.action,
         status: item.status,
         items: groupItems,
       });
@@ -152,10 +152,14 @@ function filterExitedReviewDuplicateAssistantMessages(items: ThreadConversationI
 function isExplorationCommandExecution(
   item: ThreadConversationItem,
 ): item is ThreadConversationCommandExecution {
-  if (item.type !== "commandExecution" || item.commandActions.length === 0) {
+  if (item.type !== "commandExecution") {
     return false;
   }
-  return item.commandActions.every(
+  const commandActions = getCommandActions(item);
+  if (commandActions.length === 0) {
+    return false;
+  }
+  return commandActions.every(
     (action) =>
       action.type === "read" || action.type === "listFiles" || action.type === "search",
   );
@@ -175,20 +179,20 @@ function isCommandExecutionInProgress(item: ThreadConversationCommandExecution) 
   return item.exitCode === null && normalizedStatus !== "completed" && normalizedStatus !== "interrupted";
 }
 
-function isCollabAgentToolCallGroupable(
+function isMultiAgentActionGroupable(
   item: ThreadConversationItem,
-): item is ThreadConversationCollabAgentToolCall {
-  return item.type === "collabAgentToolCall" && normalizeStatus(item.status) !== "inProgress";
+): item is ThreadConversationMultiAgentAction {
+  return item.type === "multiAgentAction" && normalizeStatus(item.status) !== "inProgress";
 }
 
-function isMatchingCollabAgentToolCallGroupItem(
+function isMatchingMultiAgentActionGroupItem(
   item: ThreadConversationItem | undefined,
-  referenceItem: ThreadConversationCollabAgentToolCall,
-): item is ThreadConversationCollabAgentToolCall {
+  referenceItem: ThreadConversationMultiAgentAction,
+): item is ThreadConversationMultiAgentAction {
   return (
-    item?.type === "collabAgentToolCall" &&
+    item?.type === "multiAgentAction" &&
     item.turnId === referenceItem.turnId &&
-    item.tool === referenceItem.tool &&
+    item.action === referenceItem.action &&
     normalizeStatus(item.status) === normalizeStatus(referenceItem.status) &&
     normalizeStatus(item.status) !== "inProgress"
   );
@@ -200,4 +204,8 @@ function normalizeStatus(status: string) {
     return normalizedStatus;
   }
   return normalizedStatus.toLowerCase() === "inprogress" ? "inProgress" : normalizedStatus;
+}
+
+function getCommandActions(item: ThreadConversationCommandExecution) {
+  return Array.isArray(item.commandActions) ? item.commandActions : [];
 }

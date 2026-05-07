@@ -44,14 +44,14 @@ export type RenderableConversationGroup = {
   systemEventItem: SystemEventItem | null;
   unifiedDiffItem: TurnDiffItem | null;
   todoListItem: TodoListItem | null;
-  proposedPlanItems: PlanItem[];
-  planImplementationItems: PlanImplementationItem[];
+  proposedPlanItem: PlanItem | null;
+  planImplementationItem: PlanImplementationItem | null;
   mcpServerElicitationItems: PendingMcpServerElicitationRequest[];
   permissionRequestItems: PendingPermissionsRequestApproval[];
-  approvalItems: PendingApproval[];
-  userInputItems: PendingToolRequestUserInput[];
+  approvalItem: PendingApproval | null;
+  userInputItem: PendingToolRequestUserInput | null;
   remoteTaskCreatedItems: RemoteTaskCreatedItem[];
-  personalityChangedItems: PersonalityChangedItem[]; 
+  personalityChangedItems: PersonalityChangedItem[];
   forkedFromConversationItems: ForkedFromConversationItem[];
   modelChangedItems: ModelChangedItem[];
   modelReroutedItems: ModelReroutedItem[];
@@ -112,11 +112,11 @@ export function attachTurnScopedItemsToRenderableConversationGroups(
   return {
     groups: groups.map((group) => ({
       ...group,
-      planImplementationItems: planImplementationItems.grouped.get(group.turnId) ?? [],
+      planImplementationItem: takeLatestTurnScopedItem(planImplementationItems.grouped.get(group.turnId) ?? []),
       mcpServerElicitationItems: mcpServerElicitationItems.grouped.get(group.turnId) ?? [],
       permissionRequestItems: permissionRequestItems.grouped.get(group.turnId) ?? [],
-      approvalItems: approvalItems.grouped.get(group.turnId) ?? [],
-      userInputItems: userInputItems.grouped.get(group.turnId) ?? [],
+      approvalItem: takeLatestTurnScopedItem(approvalItems.grouped.get(group.turnId) ?? []),
+      userInputItem: takeLatestTurnScopedItem(userInputItems.grouped.get(group.turnId) ?? []),
     })),
     unmatchedPlanImplementationItems: planImplementationItems.unmatched,
     unmatchedMcpServerElicitationItems: mcpServerElicitationItems.unmatched,
@@ -131,7 +131,7 @@ function createConversationGroup(
   items: RenderableConversationItem[],
 ): RenderableConversationGroup {
   const preUserItems: HookPromptItem[] = [];
-  const proposedPlanItems: PlanItem[] = [];
+  let proposedPlanItem: PlanItem | null = null;
   const userItems: UserMessage[] = [];
   const personalityChangedItems: PersonalityChangedItem[] = [];
   const modelChangedItems: ModelChangedItem[] = [];
@@ -176,7 +176,7 @@ function createConversationGroup(
       continue;
     }
     if (item.type === "plan") {
-      proposedPlanItems.push(item);
+      proposedPlanItem = item;
       continue;
     }
     if (item.type === "remoteTaskCreated") {
@@ -234,12 +234,12 @@ function createConversationGroup(
     systemEventItem,
     unifiedDiffItem,
     todoListItem,
-    proposedPlanItems,
-    planImplementationItems: [],
+    proposedPlanItem,
+    planImplementationItem: null,
     mcpServerElicitationItems: [],
     permissionRequestItems: [],
-    approvalItems: [],
-    userInputItems: [],
+    approvalItem: null,
+    userInputItem: null,
     remoteTaskCreatedItems,
     personalityChangedItems,
     forkedFromConversationItems,
@@ -251,7 +251,11 @@ function createConversationGroup(
 function findLastAssistantMessageIndex(items: RenderableConversationItem[]) {
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index];
-    if (item?.type === "agentMessage" && item.role === "assistant") {
+    if (
+      item?.type === "agentMessage" &&
+      item.role === "assistant" &&
+      item.text.trim().length > 0
+    ) {
       return index;
     }
   }
@@ -294,4 +298,8 @@ function partitionTurnScopedItems<T extends { turnId: string | null }>(items: T[
   }
 
   return { grouped, unmatched };
+}
+
+function takeLatestTurnScopedItem<T>(items: T[]) {
+  return items.at(-1) ?? null;
 }

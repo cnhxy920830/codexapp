@@ -133,6 +133,28 @@ export function upsertPendingMcpServerElicitationRequest(
   return requests.map((entry, entryIndex) => (entryIndex === index ? request : entry));
 }
 
+export function keepLatestTurnScopedPendingRequests<T extends { turnId: string | null | undefined }>(
+  requests: T[],
+) {
+  const seenTurnIds = new Set<string>();
+  const filteredRequests: T[] = [];
+
+  for (let index = requests.length - 1; index >= 0; index -= 1) {
+    const request = requests[index];
+    if (!request.turnId) {
+      filteredRequests.unshift(request);
+      continue;
+    }
+    if (seenTurnIds.has(request.turnId)) {
+      continue;
+    }
+    seenTurnIds.add(request.turnId);
+    filteredRequests.unshift(request);
+  }
+
+  return filteredRequests;
+}
+
 export function upsertPendingImplementPlanRequest(
   requests: PendingImplementPlanRequest[],
   request: PendingImplementPlanRequest,

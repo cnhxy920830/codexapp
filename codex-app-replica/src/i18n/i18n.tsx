@@ -14,7 +14,24 @@ function formatMessage(template: string, values?: MessageValues) {
   if (!values) {
     return template;
   }
-  return template.replace(/\{(\w+)\}/g, (match, token) => {
+
+  // Support the narrow ICU plural form used by extracted upstream locale keys.
+  const formattedPluralTemplate = template.replace(
+    /\{(\w+),\s*plural,\s*one\s*\{([^{}]*)\}\s*other\s*\{([^{}]*)\}\s*\}/g,
+    (match, token, oneVariant, otherVariant) => {
+      const rawValue = values[token];
+      const numericValue =
+        typeof rawValue === "number" ? rawValue : typeof rawValue === "string" ? Number(rawValue) : Number.NaN;
+      if (!Number.isFinite(numericValue)) {
+        return match;
+      }
+
+      const variant = numericValue === 1 ? oneVariant : otherVariant;
+      return variant.replaceAll("#", String(numericValue));
+    },
+  );
+
+  return formattedPluralTemplate.replace(/\{(\w+)\}/g, (match, token) => {
     const value = values[token];
     return value === undefined ? match : String(value);
   });

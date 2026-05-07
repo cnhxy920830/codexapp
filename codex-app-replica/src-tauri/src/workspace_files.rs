@@ -41,6 +41,14 @@ pub struct WorkspaceFileDocumentResponse {
     pub is_binary: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceFileMetadataResponse {
+    pub is_file: bool,
+    pub size_bytes: Option<u64>,
+    pub mime_type: Option<String>,
+}
+
 #[tauri::command]
 pub fn search_workspace_files(
     params: SearchWorkspaceFilesParams,
@@ -59,41 +67,43 @@ pub fn search_workspace_files(
 }
 
 #[tauri::command]
+pub fn read_workspace_file_metadata(
+    params: ReadWorkspaceFileParams,
+) -> Result<WorkspaceFileMetadataResponse, String> {
+    let resolved = resolve_workspace_file(&params)?;
+    let metadata = fs::metadata(&resolved.canonical_target)
+        .map_err(|err| format!("failed to inspect workspace file: {err}"))?;
+    let is_file = metadata.is_file();
+
+    Ok(WorkspaceFileMetadataResponse {
+        is_file,
+        size_bytes: is_file.then_some(metadata.len()),
+        mime_type: infer_mime_type(&resolved.canonical_target),
+    })
+}
+
+#[tauri::command]
 pub fn read_workspace_file(
     params: ReadWorkspaceFileParams,
 ) -> Result<WorkspaceFileDocumentResponse, String> {
-    let workspace_root = resolve_workspace_root(&params.workspace_root)?;
-    let relative_path = normalize_relative_path(&params.relative_path)?;
-    let target_path = workspace_root.join(&relative_path);
-    if !target_path.is_file() {
+    let resolved = resolve_workspace_file(&params)?;
+    if !resolved.canonical_target.is_file() {
         return Err(format!(
             "workspace file does not exist: {}",
-            target_path.display()
+            resolved.canonical_target.display()
         ));
     }
 
-    let canonical_root = workspace_root
-        .canonicalize()
-        .map_err(|err| format!("failed to resolve workspace root: {err}"))?;
-    let canonical_target = target_path
-        .canonicalize()
-        .map_err(|err| format!("failed to resolve workspace file: {err}"))?;
-    if canonical_target.strip_prefix(&canonical_root).is_err() {
-        return Err(format!(
-            "workspace file is outside workspace root: {}",
-            canonical_target.display()
-        ));
-    }
-
-    let bytes = fs::read(&canonical_target)
+    let bytes = fs::read(&resolved.canonical_target)
         .map_err(|err| format!("failed to read workspace file: {err}"))?;
     let contents = String::from_utf8(bytes.clone()).ok();
-    let mime_type = infer_mime_type(&canonical_target);
+    let mime_type = infer_mime_type(&resolved.canonical_target);
     let is_binary = contents.is_none() || mime_type.as_deref() == Some("application/pdf");
+
     Ok(WorkspaceFileDocumentResponse {
-        name: file_name_label(&canonical_target),
-        path: canonical_target.display().to_string(),
-        relative_path,
+        name: file_name_label(&resolved.canonical_target),
+        path: resolved.canonical_target.display().to_string(),
+        relative_path: resolved.relative_path,
         contents,
         mime_type,
         is_binary,
@@ -174,6 +184,44 @@ fn resolve_workspace_root(workspace_root: &str) -> Result<PathBuf, String> {
     }
 
     Ok(path.to_path_buf())
+}
+
+#[derive(Debug)]
+struct ResolvedWorkspaceFile {
+    canonical_target: PathBuf,
+    relative_path: String,
+}
+
+fn resolve_workspace_file(
+    params: &ReadWorkspaceFileParams,
+) -> Result<ResolvedWorkspaceFile, String> {
+    let workspace_root = resolve_workspace_root(&params.workspace_root)?;
+    let relative_path = normalize_relative_path(&params.relative_path)?;
+    let target_path = workspace_root.join(&relative_path);
+    if !target_path.exists() {
+        return Err(format!(
+            "workspace file does not exist: {}",
+            target_path.display()
+        ));
+    }
+
+    let canonical_root = workspace_root
+        .canonicalize()
+        .map_err(|err| format!("failed to resolve workspace root: {err}"))?;
+    let canonical_target = target_path
+        .canonicalize()
+        .map_err(|err| format!("failed to resolve workspace file: {err}"))?;
+    if canonical_target.strip_prefix(&canonical_root).is_err() {
+        return Err(format!(
+            "workspace file is outside workspace root: {}",
+            canonical_target.display()
+        ));
+    }
+
+    Ok(ResolvedWorkspaceFile {
+        canonical_target,
+        relative_path,
+    })
 }
 
 fn normalize_relative_path(relative_path: &str) -> Result<String, String> {

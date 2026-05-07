@@ -13,7 +13,13 @@ import {
   WrapEnabledIcon,
 } from "../../components/AppShellIcons";
 import { renderMessageContent } from "./messageContent";
-import { openWorkspaceFileInEditor, type WorkspaceFileDocument } from "../../services/workspaceFiles";
+import {
+  openWorkspaceFileInEditor,
+  readWorkspaceFile,
+  readWorkspaceFileMetadata,
+  type WorkspaceFileDocument,
+  type WorkspaceFilePreviewTarget,
+} from "../../services/workspaceFiles";
 import { isWorkspaceFileRightPanelTab, type RightPanelTab } from "./rightPanelTabs";
 import { countFileChangeDiffLines, type ThreadDiffSummary } from "./threadConversationState";
 
@@ -23,6 +29,47 @@ type ChatSidePanelProps = {
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
   threadDiffSummary: ThreadDiffSummary;
 };
+
+type WorkspaceFilePreviewDescriptor = Pick<WorkspaceFileDocument, "name" | "path" | "relativePath"> & {
+  mimeType: string | null;
+};
+
+type WorkspaceFileUnsupportedPreviewKind =
+  | "archive"
+  | "audio"
+  | "excelSpreadsheet"
+  | "keynoteDeck"
+  | "numbersSpreadsheet"
+  | "opendocumentPresentation"
+  | "opendocumentSpreadsheet"
+  | "opendocumentText"
+  | "pagesDocument"
+  | "powerpointDeck"
+  | "richTextDocument"
+  | "video"
+  | "wordDocument";
+
+type WorkspaceFilePreviewState =
+  | {
+      kind: "loading";
+    }
+  | {
+      kind: "unsupported";
+      unsupportedKind: WorkspaceFileUnsupportedPreviewKind;
+    }
+  | {
+      kind: "ready";
+      file: WorkspaceFileDocument;
+    }
+  | {
+      kind: "tooLarge";
+      sizeBytes: number;
+    }
+  | {
+      kind: "error";
+    };
+
+const WORKSPACE_FILE_PREVIEW_LIMIT_BYTES = 10 * 1024 * 1024;
 
 export function ChatSidePanel({
   activeTab,
@@ -34,7 +81,7 @@ export function ChatSidePanel({
     <aside className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-[var(--app-shell-border)] bg-[var(--app-shell-right)] px-4 py-4">
       <div className="min-h-0 flex-1 overflow-y-auto">
         {activeTab && isWorkspaceFileRightPanelTab(activeTab) ? (
-          <FilePanel selectedFile={activeTab.file} t={t} />
+          <FilePanel selectedFileTarget={activeTab.file} t={t} />
         ) : activeTab?.kind === "review" ? (
           <ReviewPanel onOpenReviewFile={onOpenReviewFile} threadDiffSummary={threadDiffSummary} t={t} />
         ) : activeTab?.kind === "browser" ? (
@@ -180,31 +227,102 @@ function EmptyPanel({
 }
 
 function FilePanel({
-  selectedFile,
+  selectedFileTarget,
   t,
 }: {
-  selectedFile: WorkspaceFileDocument;
+  selectedFileTarget: WorkspaceFilePreviewTarget;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
 }) {
-  const breadcrumbPath = selectedFile.relativePath || selectedFile.path;
+  const breadcrumbPath = selectedFileTarget.relativePath || selectedFileTarget.path;
+  const [previewState, setPreviewState] = useState<WorkspaceFilePreviewState>({ kind: "loading" });
   const [isWordWrapEnabled, setIsWordWrapEnabled] = useState(true);
   const [isRichPreviewEnabled, setIsRichPreviewEnabled] = useState(false);
-  const richPreviewControlMode = getWorkspaceFileRichPreviewControlMode(selectedFile);
-  const richPreviewKind = getWorkspaceFileRichPreviewKind(selectedFile);
-  const canToggleRichPreview = richPreviewControlMode === "toggle" && richPreviewKind !== null;
-  const shouldRenderRichPreview =
-    richPreviewKind !== null &&
-    (richPreviewControlMode === "always" ||
-      (richPreviewControlMode === "toggle" && canToggleRichPreview && isRichPreviewEnabled));
 
   useEffect(() => {
     setIsWordWrapEnabled(true);
     setIsRichPreviewEnabled(false);
-  }, [selectedFile.path, selectedFile.relativePath]);
+    setPreviewState({ kind: "loading" });
+
+    let cancelled = false;
+    void readWorkspaceFileMetadata({
+      workspaceRoot: selectedFileTarget.workspaceRoot,
+      relativePath: selectedFileTarget.relativePath,
+    })
+      .then((metadata) => {
+        if (!cancelled) {
+          if (!metadata.isFile) {
+            setPreviewState({ kind: "error" });
+            return;
+          }
+          const previewSource = {
+            ...selectedFileTarget,
+            mimeType: metadata.mimeType,
+          };
+          const unsupportedKind = getWorkspaceFileUnsupportedPreviewKind(previewSource);
+          if (unsupportedKind !== null) {
+            setPreviewState({ kind: "unsupported", unsupportedKind });
+            return;
+          }
+          if (metadata.sizeBytes !== null && metadata.sizeBytes > WORKSPACE_FILE_PREVIEW_LIMIT_BYTES) {
+            setPreviewState({ kind: "tooLarge", sizeBytes: metadata.sizeBytes });
+            return;
+          }
+
+          void readWorkspaceFile({
+            workspaceRoot: selectedFileTarget.workspaceRoot,
+            relativePath: selectedFileTarget.relativePath,
+          })
+            .then((file) => {
+              if (!cancelled) {
+                setPreviewState({ kind: "ready", file });
+              }
+            })
+            .catch(() => {
+              if (!cancelled) {
+                setPreviewState({ kind: "error" });
+              }
+            });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPreviewState({ kind: "error" });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedFileTarget.relativePath, selectedFileTarget.workspaceRoot]);
+
+  const previewDescriptor: WorkspaceFilePreviewDescriptor =
+    previewState.kind === "ready"
+      ? {
+          name: previewState.file.name,
+          path: previewState.file.path,
+          relativePath: previewState.file.relativePath,
+          mimeType: previewState.file.mimeType,
+        }
+      : {
+          name: selectedFileTarget.name,
+          path: selectedFileTarget.path,
+          relativePath: selectedFileTarget.relativePath,
+          mimeType: null,
+        };
+  const richPreviewControlMode = getWorkspaceFileRichPreviewControlMode(previewDescriptor);
+  const richPreviewKind = getWorkspaceFileRichPreviewKind(previewDescriptor);
+  const canToggleRichPreview = previewState.kind === "ready" && richPreviewControlMode === "toggle" && richPreviewKind !== null;
+  const shouldRenderRichPreview =
+    previewState.kind === "ready" &&
+    richPreviewKind !== null &&
+    (richPreviewControlMode === "always" ||
+      (richPreviewControlMode === "toggle" && canToggleRichPreview && isRichPreviewEnabled));
+  const canToggleWrap = !shouldRenderRichPreview;
+  const showOptionsMenu = true;
 
   const handleOpenInEditor = async () => {
     try {
-      await openWorkspaceFileInEditor(selectedFile.path);
+      await openWorkspaceFileInEditor(previewState.kind === "ready" ? previewState.file.path : selectedFileTarget.path);
     } catch {
       // Preserve the current preview state when the host cannot open the file path.
     }
@@ -217,19 +335,51 @@ function FilePanel({
     }
   };
 
+  if (previewState.kind === "loading") {
+    return <CenteredFileState message={t("review.fileSource.loading")} />;
+  }
+
+  if (previewState.kind === "unsupported") {
+    return (
+      <CenteredFileState
+        message={t(getWorkspaceFileUnsupportedMessageKey(previewState.unsupportedKind))}
+        detail={t("review.fileSource.unsupportedDetail")}
+      />
+    );
+  }
+
+  if (previewState.kind === "tooLarge") {
+    return (
+      <CenteredFileState
+        message={t("review.fileSource.tooLarge")}
+        detail={t("review.fileSource.tooLargeDetail", {
+          limit: formatWorkspaceFileSize(WORKSPACE_FILE_PREVIEW_LIMIT_BYTES),
+          size: formatWorkspaceFileSize(previewState.sizeBytes),
+        })}
+      />
+    );
+  }
+
+  if (previewState.kind === "error") {
+    return <CenteredFileState message={t("review.fileSource.error")} />;
+  }
+
+  const selectedFile = previewState.file;
+
   if (selectedFile.isBinary && !shouldRenderRichPreview) {
     return (
       <div className="-mx-4 -my-4 flex h-[calc(100%+2rem)] min-h-full flex-col">
         <FileBreadcrumb
-          canToggleWrap={false}
-          canToggleRichPreview={false}
-          isRichPreviewEnabled={false}
+          canToggleWrap={canToggleWrap}
+          canToggleRichPreview={canToggleRichPreview}
+          isRichPreviewEnabled={isRichPreviewEnabled}
           isWordWrapEnabled={isWordWrapEnabled}
           onCopyPath={handleCopyPath}
           onOpenInEditor={handleOpenInEditor}
           onToggleRichPreview={() => setIsRichPreviewEnabled((value) => !value)}
           onToggleWordWrap={() => setIsWordWrapEnabled((value) => !value)}
           path={breadcrumbPath}
+          showOptionsMenu={showOptionsMenu}
           t={t}
         />
         <div className="flex min-h-0 flex-1 items-center justify-center px-4">
@@ -243,7 +393,6 @@ function FilePanel({
   const svgPreviewDataUri =
     shouldRenderRichPreview && richPreviewKind === "image" ? getSvgPreviewDataUri(selectedFile) : null;
   const pdfPreviewSrc = shouldRenderRichPreview && richPreviewKind === "pdf" ? getPdfPreviewSrc(selectedFile) : null;
-  const canToggleWrap = !shouldRenderRichPreview;
 
   return (
     <div className="-mx-4 -my-4 flex h-[calc(100%+2rem)] min-h-full flex-col">
@@ -257,6 +406,7 @@ function FilePanel({
         onToggleRichPreview={() => setIsRichPreviewEnabled((value) => !value)}
         onToggleWordWrap={() => setIsWordWrapEnabled((value) => !value)}
         path={breadcrumbPath}
+        showOptionsMenu={showOptionsMenu}
         t={t}
       />
       <div className="min-h-0 flex-1 overflow-auto">
@@ -301,6 +451,7 @@ function FileBreadcrumb({
   onToggleRichPreview,
   onToggleWordWrap,
   path,
+  showOptionsMenu,
   t,
 }: {
   canToggleWrap: boolean;
@@ -312,15 +463,12 @@ function FileBreadcrumb({
   onToggleRichPreview: () => void;
   onToggleWordWrap: () => void;
   path: string;
+  showOptionsMenu: boolean;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
 }) {
   const segments = getBreadcrumbSegments(path);
   const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState(false);
   const optionsMenuRef = useRef<HTMLDivElement | null>(null);
-
-  if (segments.length === 0) {
-    return null;
-  }
 
   useEffect(() => {
     if (!isOptionsMenuOpen) {
@@ -339,9 +487,13 @@ function FileBreadcrumb({
 
     document.addEventListener("mousedown", handlePointerDown);
     return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
+    document.removeEventListener("mousedown", handlePointerDown);
     };
   }, [isOptionsMenuOpen]);
+
+  if (segments.length === 0) {
+    return null;
+  }
 
   return (
     <nav
@@ -373,77 +525,88 @@ function FileBreadcrumb({
       >
         <OpenInEditorIcon className="h-4 w-4" />
       </button>
-      <div className="relative mr-1" ref={optionsMenuRef}>
-        <button
-          type="button"
-          aria-label={t("review.fileSource.options")}
-          aria-expanded={isOptionsMenuOpen}
-          onClick={() => setIsOptionsMenuOpen((value) => !value)}
-          className="app-control-weak flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px]"
-        >
-          <MoreActionsIcon className="h-4 w-4" />
-        </button>
-        {isOptionsMenuOpen ? (
-          <div className="app-card absolute top-9 right-0 z-10 min-w-[176px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
-            <button
-              type="button"
-              onClick={() => {
-                setIsOptionsMenuOpen(false);
-                void onCopyPath();
-              }}
-              className="app-nav-item-idle flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
-            >
-              <CopyPathIcon className="h-4 w-4 shrink-0" />
-              <span>{t("review.fileSource.copyPath")}</span>
-            </button>
-            {canToggleRichPreview ? (
+      {showOptionsMenu ? (
+        <div className="relative mr-1" ref={optionsMenuRef}>
+          <button
+            type="button"
+            aria-label={t("artifactTab.sourceOptions")}
+            aria-expanded={isOptionsMenuOpen}
+            onClick={() => setIsOptionsMenuOpen((value) => !value)}
+            className="app-control-weak flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px]"
+          >
+            <MoreActionsIcon className="h-4 w-4" />
+          </button>
+          {isOptionsMenuOpen ? (
+            <div className="app-card absolute top-9 right-0 z-10 min-w-[176px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
               <button
                 type="button"
                 onClick={() => {
                   setIsOptionsMenuOpen(false);
-                  onToggleRichPreview();
+                  void onCopyPath();
                 }}
-                className="app-nav-item-idle mt-1 flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
+                className="app-nav-item-idle flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
               >
-                {isRichPreviewEnabled ? (
-                  <RichPreviewDisabledIcon className="h-4 w-4 shrink-0" />
-                ) : (
-                  <RichPreviewEnabledIcon className="h-4 w-4 shrink-0" />
-                )}
-                <span>
-                  {t(
-                    isRichPreviewEnabled
-                      ? "review.fileSource.richPreview.disable"
-                      : "review.fileSource.richPreview.enable",
-                  )}
-                </span>
+                <CopyPathIcon className="h-4 w-4 shrink-0" />
+                <span>{t("wham.diff.contextMenu.copyPath")}</span>
               </button>
-            ) : null}
-            {canToggleWrap ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setIsOptionsMenuOpen(false);
-                  onToggleWordWrap();
-                }}
-                className="app-nav-item-idle mt-1 flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
-              >
-                {isWordWrapEnabled ? (
-                  <WrapEnabledIcon className="h-4 w-4 shrink-0" />
-                ) : (
-                  <WrapDisabledIcon className="h-4 w-4 shrink-0" />
-                )}
-                <span>
-                  {t(
-                    isWordWrapEnabled ? "review.fileSource.wrap.disable" : "review.fileSource.wrap.enable",
+              {canToggleRichPreview ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOptionsMenuOpen(false);
+                    onToggleRichPreview();
+                  }}
+                  className="app-nav-item-idle mt-1 flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
+                >
+                  {isRichPreviewEnabled ? (
+                    <RichPreviewDisabledIcon className="h-4 w-4 shrink-0" />
+                  ) : (
+                    <RichPreviewEnabledIcon className="h-4 w-4 shrink-0" />
                   )}
-                </span>
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+                  <span>
+                    {t(isRichPreviewEnabled ? "codex.diffView.richPreviewDisable" : "codex.diffView.richPreviewEnable")}
+                  </span>
+                </button>
+              ) : null}
+              {canToggleWrap ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOptionsMenuOpen(false);
+                    onToggleWordWrap();
+                  }}
+                  className="app-nav-item-idle mt-1 flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
+                >
+                  {isWordWrapEnabled ? (
+                    <WrapEnabledIcon className="h-4 w-4 shrink-0" />
+                  ) : (
+                    <WrapDisabledIcon className="h-4 w-4 shrink-0" />
+                  )}
+                  <span>{t("wham.diff.contextMenu.toggleWrap")}</span>
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </nav>
+  );
+}
+
+function CenteredFileState({
+  detail,
+  message,
+}: {
+  detail?: string;
+  message: string;
+}) {
+  return (
+    <div className="flex h-full items-center justify-center px-4">
+      <div className="text-center text-sm text-[var(--app-shell-muted)]">
+        <div>{message}</div>
+        {detail ? <div className="mt-1 text-[12px]">{detail}</div> : null}
+      </div>
+    </div>
   );
 }
 
@@ -492,7 +655,7 @@ const ALWAYS_RICH_IMAGE_EXTENSIONS = new Set([
 
 const MARKDOWN_EXTENSIONS = new Set(["markdown", "md", "mdown", "mdx", "mkd"]);
 
-function getWorkspaceFileRichPreviewMode(file: WorkspaceFileDocument) {
+function getWorkspaceFileRichPreviewMode(file: WorkspaceFilePreviewDescriptor) {
   const extension = getWorkspaceFileExtension(file);
   if (extension === null) {
     return "none";
@@ -506,7 +669,138 @@ function getWorkspaceFileRichPreviewMode(file: WorkspaceFileDocument) {
   return "none";
 }
 
-function getWorkspaceFileRichPreviewKind(file: WorkspaceFileDocument) {
+function formatWorkspaceFileSize(bytes: number) {
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${bytes} B`;
+}
+
+const ARCHIVE_EXTENSIONS = new Set(["7z", "bz2", "gz", "rar", "tar", "tgz", "xz", "zip"]);
+const AUDIO_EXTENSIONS = new Set(["aac", "aif", "aiff", "alac", "flac", "m4a", "mid", "midi", "mp3", "oga", "ogg", "opus", "wav", "wma"]);
+const EXCEL_EXTENSIONS = new Set(["xls", "xlsm", "xlsx"]);
+const KEYNOTE_EXTENSIONS = new Set(["key"]);
+const NUMBERS_EXTENSIONS = new Set(["numbers"]);
+const OPEN_DOCUMENT_PRESENTATION_EXTENSIONS = new Set(["odp"]);
+const OPEN_DOCUMENT_SPREADSHEET_EXTENSIONS = new Set(["ods"]);
+const OPEN_DOCUMENT_TEXT_EXTENSIONS = new Set(["odt"]);
+const PAGES_EXTENSIONS = new Set(["pages"]);
+const POWERPOINT_EXTENSIONS = new Set(["ppt", "pptm", "pptx"]);
+const RICH_TEXT_EXTENSIONS = new Set(["rtf"]);
+const VIDEO_EXTENSIONS = new Set(["3g2", "3gp", "avi", "flv", "m4v", "mkv", "mov", "mp4", "mpeg", "mpg", "webm", "wmv"]);
+const WORD_EXTENSIONS = new Set(["doc", "docm", "docx"]);
+
+function getWorkspaceFileUnsupportedMessageKey(kind: WorkspaceFileUnsupportedPreviewKind): MessageKey {
+  switch (kind) {
+    case "archive":
+      return "review.fileSource.unsupported.archive";
+    case "audio":
+      return "review.fileSource.unsupported.audio";
+    case "excelSpreadsheet":
+      return "review.fileSource.unsupported.excelSpreadsheet";
+    case "keynoteDeck":
+      return "review.fileSource.unsupported.keynoteDeck";
+    case "numbersSpreadsheet":
+      return "review.fileSource.unsupported.numbersSpreadsheet";
+    case "opendocumentPresentation":
+      return "review.fileSource.unsupported.opendocumentPresentation";
+    case "opendocumentSpreadsheet":
+      return "review.fileSource.unsupported.opendocumentSpreadsheet";
+    case "opendocumentText":
+      return "review.fileSource.unsupported.opendocumentText";
+    case "pagesDocument":
+      return "review.fileSource.unsupported.pagesDocument";
+    case "powerpointDeck":
+      return "review.fileSource.unsupported.powerpointDeck";
+    case "richTextDocument":
+      return "review.fileSource.unsupported.richTextDocument";
+    case "video":
+      return "review.fileSource.unsupported.video";
+    case "wordDocument":
+      return "review.fileSource.unsupported.wordDocument";
+  }
+}
+
+function getWorkspaceFileUnsupportedPreviewKind(file: WorkspaceFilePreviewDescriptor) {
+  const extension = getWorkspaceFileExtension(file);
+  const mimeType = file.mimeType?.toLowerCase() ?? null;
+
+  if (
+    ARCHIVE_EXTENSIONS.has(extension ?? "") ||
+    mimeType === "application/zip" ||
+    mimeType === "application/x-7z-compressed" ||
+    mimeType === "application/x-rar-compressed" ||
+    mimeType === "application/x-tar" ||
+    mimeType === "application/gzip" ||
+    mimeType === "application/x-bzip" ||
+    mimeType === "application/x-bzip2" ||
+    mimeType === "application/x-xz"
+  ) {
+    return "archive";
+  }
+  if (AUDIO_EXTENSIONS.has(extension ?? "") || (mimeType?.startsWith("audio/") ?? false)) {
+    return "audio";
+  }
+  if (
+    EXCEL_EXTENSIONS.has(extension ?? "") ||
+    mimeType === "application/vnd.ms-excel" ||
+    mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    mimeType === "application/vnd.ms-excel.sheet.macroenabled.12"
+  ) {
+    return "excelSpreadsheet";
+  }
+  if (KEYNOTE_EXTENSIONS.has(extension ?? "") || mimeType === "application/vnd.apple.keynote") {
+    return "keynoteDeck";
+  }
+  if (NUMBERS_EXTENSIONS.has(extension ?? "") || mimeType === "application/vnd.apple.numbers") {
+    return "numbersSpreadsheet";
+  }
+  if (
+    OPEN_DOCUMENT_PRESENTATION_EXTENSIONS.has(extension ?? "") ||
+    mimeType === "application/vnd.oasis.opendocument.presentation"
+  ) {
+    return "opendocumentPresentation";
+  }
+  if (
+    OPEN_DOCUMENT_SPREADSHEET_EXTENSIONS.has(extension ?? "") ||
+    mimeType === "application/vnd.oasis.opendocument.spreadsheet"
+  ) {
+    return "opendocumentSpreadsheet";
+  }
+  if (OPEN_DOCUMENT_TEXT_EXTENSIONS.has(extension ?? "") || mimeType === "application/vnd.oasis.opendocument.text") {
+    return "opendocumentText";
+  }
+  if (PAGES_EXTENSIONS.has(extension ?? "") || mimeType === "application/vnd.apple.pages") {
+    return "pagesDocument";
+  }
+  if (
+    POWERPOINT_EXTENSIONS.has(extension ?? "") ||
+    mimeType === "application/vnd.ms-powerpoint" ||
+    mimeType === "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  ) {
+    return "powerpointDeck";
+  }
+  if (RICH_TEXT_EXTENSIONS.has(extension ?? "") || mimeType === "application/rtf" || mimeType === "text/rtf") {
+    return "richTextDocument";
+  }
+  if (VIDEO_EXTENSIONS.has(extension ?? "") || (mimeType?.startsWith("video/") ?? false)) {
+    return "video";
+  }
+  if (
+    WORD_EXTENSIONS.has(extension ?? "") ||
+    mimeType === "application/msword" ||
+    mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ) {
+    return "wordDocument";
+  }
+
+  return null;
+}
+
+function getWorkspaceFileRichPreviewKind(file: WorkspaceFilePreviewDescriptor) {
   const extension = getWorkspaceFileExtension(file);
   const richPreviewMode = getWorkspaceFileRichPreviewMode(file);
   if (richPreviewMode !== "none") {
@@ -521,7 +815,7 @@ function getWorkspaceFileRichPreviewKind(file: WorkspaceFileDocument) {
   return null;
 }
 
-function getWorkspaceFileRichPreviewControlMode(file: WorkspaceFileDocument) {
+function getWorkspaceFileRichPreviewControlMode(file: WorkspaceFilePreviewDescriptor) {
   const extension = getWorkspaceFileExtension(file);
   const richPreviewMode = getWorkspaceFileRichPreviewMode(file);
   if (richPreviewMode === "always") {
@@ -536,7 +830,7 @@ function getWorkspaceFileRichPreviewControlMode(file: WorkspaceFileDocument) {
   return "none";
 }
 
-function getWorkspaceFileExtension(file: WorkspaceFileDocument) {
+function getWorkspaceFileExtension(file: WorkspaceFilePreviewDescriptor) {
   const normalizedPath = (file.relativePath || file.name || file.path).toLowerCase();
   const extensionStartIndex = normalizedPath.lastIndexOf(".");
   if (extensionStartIndex <= -1 || extensionStartIndex === normalizedPath.length - 1) {

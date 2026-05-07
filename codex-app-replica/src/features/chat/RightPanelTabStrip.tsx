@@ -5,6 +5,7 @@ import {
   PlusIcon,
   ReviewTabIcon,
   SearchIcon,
+  WorkspaceFileIcon,
 } from "../../components/AppShellIcons";
 import type { MessageKey } from "../../i18n/messages";
 import type { RightPanelTab } from "./rightPanelTabs";
@@ -305,7 +306,7 @@ function renderRightPanelTabIcon(tab: RightPanelTab) {
   if (tab.kind === "browser") {
     return <BrowserTabIcon className="h-4 w-4 shrink-0" />;
   }
-  return null;
+  return <WorkspaceFileIcon className="h-4 w-4 shrink-0" />;
 }
 
 function getRightPanelContextMenuLeft(clientX: number) {
