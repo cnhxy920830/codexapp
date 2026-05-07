@@ -8,6 +8,7 @@ import {
   type AppearanceVariant,
 } from "../../services/appearanceThemes";
 import { useI18n } from "../../i18n/i18n";
+import { CheckIcon, ChevronDownIcon } from "../AppShellIcons";
 
 type ThemePreview = {
   accent: string;
@@ -106,7 +107,7 @@ export function CodeThemePicker({
           <span className="sr-only">{t("settings.general.appearance.codeTheme.previewGlyph")}</span>
           <span className="truncate text-[13px] leading-none">{selectedOption?.label ?? value}</span>
         </div>
-        <span className="app-text-muted text-[11px]">▾</span>
+        <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
       </button>
       {isOpen ? (
         <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-[280px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
@@ -130,7 +131,7 @@ export function CodeThemePicker({
                 >
                   <CodeThemeSwatch preview={preview} />
                   <span className="truncate text-[13px]">{option.label}</span>
-                  {isSelected ? <span className="ml-auto shrink-0 text-[13px]">✓</span> : null}
+                  {isSelected ? <CheckIcon className="ml-auto h-3.5 w-3.5 shrink-0 text-token-text-secondary" /> : null}
                 </button>
               );
             })}

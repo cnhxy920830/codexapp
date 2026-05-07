@@ -12,6 +12,7 @@ import {
 } from "../services/settings";
 import { useI18n } from "../i18n/i18n";
 import { SUPPORTED_LOCALES, getLocaleLabel, type LocaleCode } from "../i18n/messages";
+import { CheckIcon, ChevronDownIcon } from "./AppShellIcons";
 import { ToggleSwitch } from "./ToggleSwitch";
 
 const INVERT_FOLLOW_UP_SHORTCUT_LABEL = "Ctrl+Enter";
@@ -154,7 +155,7 @@ export function GeneralSettings({
   return (
     <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-5 py-5">
       <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="app-title text-[14px] font-medium">{t("settings.general.groupTitle")}</div>
+        <div className="app-title text-[14px] font-medium">{t("settings.section.general-settings")}</div>
       </div>
       <div className="app-card rounded-[18px] px-5 py-4">
         <div className="space-y-4 text-[14px]">
@@ -167,7 +168,7 @@ export function GeneralSettings({
                 className="app-control flex w-full items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-[13px]"
               >
                 <span className="truncate text-left">{selectedLocaleLabel}</span>
-                <span className="app-text-muted shrink-0">▾</span>
+                <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
               </button>
               {isLanguageMenuOpen ? (
                 <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-full rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
@@ -194,7 +195,9 @@ export function GeneralSettings({
                     ].join(" ")}
                   >
                     <span>{t("settings.ide.language.autoOption")}</span>
-                    {state.localeOverride == null ? <span className="shrink-0">✓</span> : null}
+                    {state.localeOverride == null ? (
+                      <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
+                    ) : null}
                   </button>
                   <div className="mt-1 max-h-80 overflow-y-auto">
                     {filteredLocaleEntries.map((entry) => {
@@ -217,7 +220,9 @@ export function GeneralSettings({
                             {entry.nativeLabel}
                             {entry.localizedLabel === entry.nativeLabel ? "" : ` • ${entry.localizedLabel}`}
                           </span>
-                          {isSelected ? <span className="shrink-0">✓</span> : null}
+                          {isSelected ? (
+                            <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
+                          ) : null}
                         </button>
                       );
                     })}

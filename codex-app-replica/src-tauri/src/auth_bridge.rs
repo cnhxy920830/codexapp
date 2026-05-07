@@ -10,8 +10,21 @@ use tokio::time::{sleep, Duration};
 
 use crate::thread_history::append_agent_message_delta;
 use crate::thread_history::append_command_execution_output_delta;
+use crate::thread_history::append_plan_delta;
+use crate::thread_history::append_reasoning_content_delta;
+use crate::thread_history::append_reasoning_summary_delta;
+use crate::thread_history::build_auto_review_interruption_warning_item;
+use crate::thread_history::build_automatic_approval_review_item;
+use crate::thread_history::build_forked_from_conversation_item;
+use crate::thread_history::build_model_rerouted_item;
+use crate::thread_history::build_stream_error_item;
+use crate::thread_history::build_system_error_item;
+use crate::thread_history::build_todo_list_item;
+use crate::thread_history::build_turn_diff_item;
+use crate::thread_history::ensure_reasoning_summary_part;
 use crate::thread_history::map_file_change_summary;
 use crate::thread_history::map_thread_item;
+use crate::thread_history::map_todo_list_step;
 use crate::thread_history::replace_file_change_changes;
 use crate::thread_history::thread_item_id;
 use crate::thread_history::FileChangeSummary;
@@ -21,8 +34,11 @@ use crate::thread_history::ThreadConversationItem;
 const AUTH_EVENT: &str = "auth-state-changed";
 const THREAD_EVENT: &str = "thread-event";
 const MCP_OAUTH_EVENT: &str = "mcp-oauth-login-completed";
+const APPS_LIST_UPDATED_EVENT: &str = "apps-list-updated";
 const CLIENT_NAME: &str = "codex-app-replica";
 const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+const AUTO_REVIEW_INTERRUPTION_WARNING_MESSAGE_PREFIX: &str =
+    "Automatic approval review rejected too many approval requests for this turn";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -52,6 +68,18 @@ pub struct DeviceCodeInfo {
     pub login_id: String,
     pub verification_url: String,
     pub user_code: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SendAddCreditsNudgeEmailParams {
+    pub credit_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SendAddCreditsNudgeEmailResponse {
+    pub status: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -273,6 +301,39 @@ pub struct SkillInterface {
 pub struct SkillErrorInfo {
     pub path: String,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AppsListParams {
+    pub cursor: Option<String>,
+    pub limit: Option<u32>,
+    pub thread_id: Option<String>,
+    pub force_refetch: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AppsListResponse {
+    pub data: Vec<AppInfo>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AppInfo {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub install_url: Option<String>,
+    #[serde(default)]
+    pub is_accessible: bool,
+    #[serde(default)]
+    pub is_enabled: bool,
+    #[serde(default)]
+    pub plugin_display_names: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -529,7 +590,17 @@ struct ThreadReadThread {
 #[serde(rename_all = "camelCase")]
 struct ThreadReadTurn {
     id: String,
+    status: Option<String>,
     items: Vec<serde_json::Value>,
+}
+
+fn resolved_thread_title(thread: &ThreadReadThread) -> String {
+    thread
+        .name
+        .clone()
+        .unwrap_or_else(|| thread.preview.clone())
+        .trim()
+        .to_string()
 }
 
 impl Default for AuthState {
@@ -561,6 +632,51 @@ pub struct AuthBridgeState {
     snapshot: Mutex<AuthSnapshot>,
     is_ready: Mutex<bool>,
     request_tx: Mutex<Option<mpsc::UnboundedSender<AppServerMessage>>>,
+    current_personality: Mutex<Option<String>>,
+    turn_diffs: Mutex<HashMap<String, String>>,
+    model_reroutes: Mutex<HashMap<String, Vec<ModelReroutedCacheEntry>>>,
+    automatic_approval_reviews: Mutex<HashMap<String, Vec<AutomaticApprovalReviewCacheEntry>>>,
+    auto_review_interruption_warnings:
+        Mutex<HashMap<String, Vec<AutoReviewInterruptionWarningCacheEntry>>>,
+    latest_turn_ids: Mutex<HashMap<String, String>>,
+    turn_errors: Mutex<HashMap<String, Vec<TurnErrorCacheEntry>>>,
+    forked_from_conversations: Mutex<HashMap<String, ForkedFromConversationCacheEntry>>,
+}
+
+#[derive(Debug, Clone)]
+struct ModelReroutedCacheEntry {
+    id: String,
+    from_model: String,
+    to_model: String,
+    reason: String,
+}
+
+#[derive(Debug, Clone)]
+struct ForkedFromConversationCacheEntry {
+    turn_id: String,
+    source_conversation_id: String,
+    source_conversation_title: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct AutomaticApprovalReviewCacheEntry {
+    id: String,
+    status: String,
+    risk_level: Option<String>,
+    rationale: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct AutoReviewInterruptionWarningCacheEntry {
+    id: String,
+}
+
+#[derive(Debug, Clone)]
+struct TurnErrorCacheEntry {
+    id: String,
+    content: String,
+    additional_details: Option<String>,
+    will_retry: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -583,8 +699,13 @@ pub enum ThreadEventPayload {
         turn_id: String,
         item_id: String,
         reason: Option<String>,
+        network_approval_context: Option<NetworkApprovalContextPayload>,
         command: Option<String>,
         cwd: Option<String>,
+        command_actions: Option<Vec<CommandActionPayload>>,
+        additional_permissions: Option<PermissionProfilePayload>,
+        proposed_execpolicy_amendment: Option<Vec<String>>,
+        proposed_network_policy_amendments: Option<Vec<NetworkPolicyAmendmentPayload>>,
         available_decisions: Option<Vec<String>>,
     },
     FileChangeApprovalRequested {
@@ -596,9 +717,130 @@ pub enum ThreadEventPayload {
         grant_root: Option<String>,
         changes: Vec<FileChangeSummary>,
     },
+    PermissionsRequestApprovalRequested {
+        request_id: JsonRpcId,
+        thread_id: String,
+        turn_id: String,
+        item_id: String,
+        cwd: String,
+        reason: Option<String>,
+        permissions: PermissionProfilePayload,
+    },
+    McpServerElicitationRequested {
+        request_id: JsonRpcId,
+        thread_id: String,
+        turn_id: Option<String>,
+        server_name: String,
+        request: McpServerElicitationRequestPayload,
+    },
+    ToolRequestUserInputRequested {
+        request_id: JsonRpcId,
+        thread_id: String,
+        turn_id: String,
+        item_id: String,
+        questions: Vec<ToolRequestUserInputQuestionPayload>,
+    },
     ServerRequestResolved {
         request_id: JsonRpcId,
         thread_id: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolRequestUserInputQuestionPayload {
+    id: String,
+    header: String,
+    question: String,
+    is_other: bool,
+    is_secret: bool,
+    options: Option<Vec<ToolRequestUserInputOptionPayload>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolRequestUserInputOptionPayload {
+    label: String,
+    description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionProfilePayload {
+    pub network: Option<NetworkPermissionPayload>,
+    pub file_system: Option<FileSystemPermissionPayload>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkPermissionPayload {
+    pub enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FileSystemPermissionPayload {
+    pub read: Option<Vec<String>>,
+    pub write: Option<Vec<String>>,
+    pub entries: Option<Vec<FileSystemEntryPayload>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FileSystemEntryPayload {
+    pub path: String,
+    pub access: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkApprovalContextPayload {
+    host: String,
+    protocol: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkPolicyAmendmentPayload {
+    host: String,
+    action: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum CommandActionPayload {
+    Read {
+        command: String,
+        name: String,
+        path: String,
+    },
+    ListFiles {
+        command: String,
+        path: Option<String>,
+    },
+    Search {
+        command: String,
+        query: Option<String>,
+        path: Option<String>,
+    },
+    Unknown {
+        command: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "mode", rename_all = "camelCase")]
+pub enum McpServerElicitationRequestPayload {
+    Form {
+        message: String,
+        meta: Option<serde_json::Value>,
+        requested_schema: serde_json::Value,
+    },
+    Url {
+        message: String,
+        meta: Option<serde_json::Value>,
+        url: String,
+        elicitation_id: String,
     },
 }
 
@@ -608,7 +850,23 @@ impl Default for AuthBridgeState {
             snapshot: Mutex::new(AuthSnapshot::default()),
             is_ready: Mutex::new(false),
             request_tx: Mutex::new(None),
+            current_personality: Mutex::new(None),
+            turn_diffs: Mutex::new(HashMap::new()),
+            model_reroutes: Mutex::new(HashMap::new()),
+            automatic_approval_reviews: Mutex::new(HashMap::new()),
+            auto_review_interruption_warnings: Mutex::new(HashMap::new()),
+            latest_turn_ids: Mutex::new(HashMap::new()),
+            turn_errors: Mutex::new(HashMap::new()),
+            forked_from_conversations: Mutex::new(HashMap::new()),
         }
+    }
+}
+
+fn normalize_runtime_personality(personality: Option<&str>) -> Result<Option<String>, String> {
+    match personality {
+        None => Ok(None),
+        Some(value @ ("friendly" | "pragmatic" | "none")) => Ok(Some(value.to_string())),
+        Some(other) => Err(format!("unsupported personality value: {other}")),
     }
 }
 
@@ -626,6 +884,41 @@ struct Account {
 struct AccountReadResponse {
     account: Option<Account>,
     requires_openai_auth: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GetAccountRateLimitsResponse {
+    pub rate_limits: RateLimitSnapshot,
+    pub rate_limits_by_limit_id: Option<HashMap<String, RateLimitSnapshot>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RateLimitSnapshot {
+    pub limit_id: Option<String>,
+    pub limit_name: Option<String>,
+    pub primary: Option<RateLimitWindow>,
+    pub secondary: Option<RateLimitWindow>,
+    pub credits: Option<CreditsSnapshot>,
+    pub plan_type: Option<String>,
+    pub rate_limit_reached_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RateLimitWindow {
+    pub used_percent: i32,
+    pub window_duration_mins: Option<i64>,
+    pub resets_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CreditsSnapshot {
+    pub has_credits: bool,
+    pub unlimited: bool,
+    pub balance: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -690,6 +983,9 @@ struct JsonRpcError {
 
 enum AppServerRequestKind {
     AccountRead,
+    AccountRateLimitsRead,
+    AccountSendAddCreditsNudgeEmail,
+    AppsList,
     LoginApiKey,
     LoginChatGpt,
     LoginChatGptDeviceCode,
@@ -746,6 +1042,37 @@ pub fn get_auth_state(state: State<'_, Arc<AuthBridgeState>>) -> AuthSnapshot {
         .lock()
         .expect("auth snapshot mutex poisoned")
         .clone()
+}
+
+#[tauri::command]
+pub async fn read_account_rate_limits(
+    state: State<'_, Arc<AuthBridgeState>>,
+) -> Result<GetAccountRateLimitsResponse, String> {
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::AccountRateLimitsRead,
+        serde_json::json!({}),
+    )
+    .await?;
+    serde_json::from_value::<GetAccountRateLimitsResponse>(value)
+        .map_err(|err| format!("failed to decode account rate limits response: {err}"))
+}
+
+#[tauri::command]
+pub async fn send_add_credits_nudge_email(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: SendAddCreditsNudgeEmailParams,
+) -> Result<SendAddCreditsNudgeEmailResponse, String> {
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::AccountSendAddCreditsNudgeEmail,
+        serde_json::json!({
+            "creditType": params.credit_type,
+        }),
+    )
+    .await?;
+    serde_json::from_value::<SendAddCreditsNudgeEmailResponse>(value)
+        .map_err(|err| format!("failed to decode add credits nudge response: {err}"))
 }
 
 #[tauri::command]
@@ -972,6 +1299,19 @@ pub async fn batch_write_config_values(
 }
 
 #[tauri::command]
+pub async fn set_personality(
+    state: State<'_, Arc<AuthBridgeState>>,
+    personality: Option<String>,
+) -> Result<(), String> {
+    let personality = normalize_runtime_personality(personality.as_deref())?;
+    *state
+        .current_personality
+        .lock()
+        .expect("current personality mutex poisoned") = personality;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn list_experimental_features(
     state: State<'_, Arc<AuthBridgeState>>,
 ) -> Result<Vec<ExperimentalFeature>, String> {
@@ -1036,6 +1376,26 @@ pub async fn list_skills(
     .await?;
     serde_json::from_value::<SkillsListResponse>(value)
         .map_err(|err| format!("failed to decode skills list response: {err}"))
+}
+
+#[tauri::command]
+pub async fn list_apps(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: AppsListParams,
+) -> Result<AppsListResponse, String> {
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::AppsList,
+        serde_json::json!({
+            "cursor": params.cursor,
+            "limit": params.limit,
+            "threadId": params.thread_id,
+            "forceRefetch": params.force_refetch,
+        }),
+    )
+    .await?;
+    serde_json::from_value::<AppsListResponse>(value)
+        .map_err(|err| format!("failed to decode apps list response: {err}"))
 }
 
 #[tauri::command]
@@ -1237,11 +1597,27 @@ pub async fn start_thread(
     state: State<'_, Arc<AuthBridgeState>>,
     cwd: Option<String>,
 ) -> Result<String, String> {
-    let payload = match cwd {
-        Some(cwd) => serde_json::json!({ "cwd": cwd }),
-        None => serde_json::json!({}),
-    };
-    let value = send_request(state.inner(), AppServerRequestKind::ThreadStart, payload).await?;
+    let current_personality = state
+        .current_personality
+        .lock()
+        .expect("current personality mutex poisoned")
+        .clone();
+    let mut payload = serde_json::Map::new();
+    if let Some(cwd) = cwd {
+        payload.insert("cwd".to_string(), serde_json::Value::String(cwd));
+    }
+    if let Some(personality) = current_personality {
+        payload.insert(
+            "personality".to_string(),
+            serde_json::Value::String(personality),
+        );
+    }
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::ThreadStart,
+        serde_json::Value::Object(payload),
+    )
+    .await?;
     let response = serde_json::from_value::<ThreadStartResponse>(value)
         .map_err(|err| format!("failed to decode thread start response: {err}"))?;
     Ok(response.thread.id)
@@ -1249,20 +1625,73 @@ pub async fn start_thread(
 
 #[tauri::command]
 pub async fn fork_thread(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     thread_id: String,
 ) -> Result<String, String> {
+    let source_thread_title = send_request(
+        state.inner(),
+        AppServerRequestKind::ThreadRead,
+        serde_json::json!({
+            "threadId": thread_id.clone(),
+            "includeTurns": true,
+        }),
+    )
+    .await
+    .ok()
+    .and_then(|value| serde_json::from_value::<ThreadReadResponse>(value).ok())
+    .map(|response| resolved_thread_title(&response.thread))
+    .filter(|value| !value.is_empty());
     let value = send_request(
         state.inner(),
         AppServerRequestKind::ThreadFork,
         serde_json::json!({
-            "threadId": thread_id,
+            "threadId": thread_id.clone(),
         }),
     )
     .await?;
     let response = serde_json::from_value::<ThreadStartResponse>(value)
         .map_err(|err| format!("failed to decode thread fork response: {err}"))?;
-    Ok(response.thread.id)
+    let forked_thread_id = response.thread.id;
+    let forked_turn_id = send_request(
+        state.inner(),
+        AppServerRequestKind::ThreadRead,
+        serde_json::json!({
+            "threadId": forked_thread_id.clone(),
+            "includeTurns": true,
+        }),
+    )
+    .await
+    .ok()
+    .and_then(|value| serde_json::from_value::<ThreadReadResponse>(value).ok())
+    .and_then(|response| response.thread.turns.last().map(|turn| turn.id.clone()))
+    .unwrap_or_else(|| format!("forked-from-conversation:{forked_thread_id}"));
+    if let Ok(mut forked_from_conversations) = state.forked_from_conversations.lock() {
+        forked_from_conversations.insert(
+            forked_thread_id.clone(),
+            ForkedFromConversationCacheEntry {
+                turn_id: forked_turn_id.clone(),
+                source_conversation_id: thread_id.clone(),
+                source_conversation_title: source_thread_title.clone(),
+            },
+        );
+    }
+    if let Some(item) = build_forked_from_conversation_item(
+        &forked_turn_id,
+        format!("forked-from-conversation:{forked_thread_id}"),
+        thread_id,
+        source_thread_title,
+    ) {
+        let _ = app.emit(
+            THREAD_EVENT,
+            ThreadEventPayload::ThreadItemUpdated {
+                thread_id: forked_thread_id.clone(),
+                turn_id: forked_turn_id,
+                item,
+            },
+        );
+    }
+    Ok(forked_thread_id)
 }
 
 #[tauri::command]
@@ -1324,22 +1753,32 @@ pub async fn start_turn(
     text: String,
     cwd: Option<String>,
 ) -> Result<String, String> {
-    let payload = match cwd {
-        Some(cwd) => serde_json::json!({
-            "threadId": thread_id,
-            "input": [
-                { "type": "text", "text": text }
-            ],
-            "cwd": cwd,
-        }),
-        None => serde_json::json!({
-            "threadId": thread_id,
-            "input": [
-                { "type": "text", "text": text }
-            ],
-        }),
-    };
-    let value = send_request(state.inner(), AppServerRequestKind::TurnStart, payload).await?;
+    let current_personality = state
+        .current_personality
+        .lock()
+        .expect("current personality mutex poisoned")
+        .clone();
+    let mut payload = serde_json::Map::new();
+    payload.insert("threadId".to_string(), serde_json::Value::String(thread_id));
+    payload.insert(
+        "input".to_string(),
+        serde_json::json!([{ "type": "text", "text": text }]),
+    );
+    if let Some(cwd) = cwd {
+        payload.insert("cwd".to_string(), serde_json::Value::String(cwd));
+    }
+    if let Some(personality) = current_personality {
+        payload.insert(
+            "personality".to_string(),
+            serde_json::Value::String(personality),
+        );
+    }
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::TurnStart,
+        serde_json::Value::Object(payload),
+    )
+    .await?;
     let response = serde_json::from_value::<TurnStartResponse>(value)
         .map_err(|err| format!("failed to decode turn start response: {err}"))?;
     Ok(response.turn.id)
@@ -1435,6 +1874,70 @@ pub async fn respond_to_approval_request(
     .await
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolRequestUserInputAnswerPayload {
+    pub answers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolRequestUserInputResponsePayload {
+    pub answers: HashMap<String, ToolRequestUserInputAnswerPayload>,
+}
+
+#[tauri::command]
+pub async fn respond_to_tool_request_user_input(
+    state: State<'_, Arc<AuthBridgeState>>,
+    request_id: JsonRpcId,
+    response: ToolRequestUserInputResponsePayload,
+) -> Result<(), String> {
+    let result = serde_json::to_value(response)
+        .map_err(|err| format!("failed to encode request_user_input response: {err}"))?;
+    send_response(state.inner(), request_id, result).await
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionsRequestApprovalResponsePayload {
+    pub permissions: PermissionProfilePayload,
+    pub scope: String,
+    pub strict_auto_review: Option<bool>,
+}
+
+#[tauri::command]
+pub async fn respond_to_permissions_request_approval(
+    state: State<'_, Arc<AuthBridgeState>>,
+    request_id: JsonRpcId,
+    response: PermissionsRequestApprovalResponsePayload,
+) -> Result<(), String> {
+    let result = serde_json::to_value(response)
+        .map_err(|err| format!("failed to encode permissions approval response: {err}"))?;
+    send_response(state.inner(), request_id, result).await
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpServerElicitationRequestResponsePayload {
+    pub action: String,
+    pub content: Option<serde_json::Value>,
+    pub meta: Option<serde_json::Value>,
+}
+
+#[tauri::command]
+pub async fn respond_to_mcp_server_elicitation_request(
+    state: State<'_, Arc<AuthBridgeState>>,
+    request_id: JsonRpcId,
+    response: McpServerElicitationRequestResponsePayload,
+) -> Result<(), String> {
+    let result = serde_json::json!({
+        "action": response.action,
+        "content": response.content,
+        "_meta": response.meta,
+    });
+    send_response(state.inner(), request_id, result).await
+}
+
 #[tauri::command]
 pub async fn read_thread(
     state: State<'_, Arc<AuthBridgeState>>,
@@ -1451,12 +1954,43 @@ pub async fn read_thread(
     .await?;
     let response = serde_json::from_value::<ThreadReadResponse>(value)
         .map_err(|err| format!("failed to decode thread read response: {err}"))?;
+    if let Some(latest_turn_id) = response.thread.turns.last().map(|turn| turn.id.clone()) {
+        remember_latest_turn_id(state.inner(), &response.thread.id, &latest_turn_id);
+    }
     let mut items = Vec::<ThreadConversationItem>::new();
+    let turn_diffs = state
+        .turn_diffs
+        .lock()
+        .map_err(|_| "failed to lock turn diff cache".to_string())?;
+    let model_reroutes = state
+        .model_reroutes
+        .lock()
+        .map_err(|_| "failed to lock model reroute cache".to_string())?;
+    let automatic_approval_reviews = state
+        .automatic_approval_reviews
+        .lock()
+        .map_err(|_| "failed to lock automatic approval review cache".to_string())?;
+    let auto_review_interruption_warnings = state
+        .auto_review_interruption_warnings
+        .lock()
+        .map_err(|_| "failed to lock auto-review interruption warning cache".to_string())?;
+    let turn_errors = state
+        .turn_errors
+        .lock()
+        .map_err(|_| "failed to lock turn error cache".to_string())?;
+    let forked_from_conversations = state
+        .forked_from_conversations
+        .lock()
+        .map_err(|_| "failed to lock forked conversation cache".to_string())?;
     for turn in response.thread.turns.iter() {
+        let context_compaction_completed = !matches!(
+            turn.status.as_deref(),
+            Some("inProgress") | Some("in_progress")
+        );
         for item in turn
             .items
             .iter()
-            .filter_map(|item| map_thread_item(&turn.id, item))
+            .filter_map(|item| map_thread_item(&turn.id, item, Some(context_compaction_completed)))
         {
             if let Some(index) = items
                 .iter()
@@ -1467,16 +2001,137 @@ pub async fn read_thread(
                 items.push(item);
             }
         }
+        if let Some(diff) = turn_diffs
+            .get(&thread_turn_cache_key(&response.thread.id, &turn.id))
+            .cloned()
+        {
+            let item = build_turn_diff_item(&turn.id, diff);
+            if let Some(index) = items
+                .iter()
+                .position(|existing| thread_item_id(existing) == thread_item_id(&item))
+            {
+                items[index] = item;
+            } else {
+                items.push(item);
+            }
+        }
+        if let Some(reroutes) = model_reroutes
+            .get(&thread_turn_cache_key(&response.thread.id, &turn.id))
+            .cloned()
+        {
+            for reroute in reroutes {
+                let Some(item) = build_model_rerouted_item(
+                    &turn.id,
+                    reroute.id,
+                    reroute.from_model,
+                    reroute.to_model,
+                    reroute.reason,
+                ) else {
+                    continue;
+                };
+                if let Some(index) = items
+                    .iter()
+                    .position(|existing| thread_item_id(existing) == thread_item_id(&item))
+                {
+                    items[index] = item;
+                } else {
+                    items.push(item);
+                }
+            }
+        }
+        if let Some(review_entries) = automatic_approval_reviews
+            .get(&thread_turn_cache_key(&response.thread.id, &turn.id))
+            .cloned()
+        {
+            for review_entry in review_entries {
+                let Some(item) = build_automatic_approval_review_item(
+                    &turn.id,
+                    review_entry.id,
+                    review_entry.status,
+                    review_entry.risk_level,
+                    review_entry.rationale,
+                ) else {
+                    continue;
+                };
+                if let Some(index) = items
+                    .iter()
+                    .position(|existing| thread_item_id(existing) == thread_item_id(&item))
+                {
+                    items[index] = item;
+                } else {
+                    items.push(item);
+                }
+            }
+        }
+        if let Some(warning_entries) = auto_review_interruption_warnings
+            .get(&thread_turn_cache_key(&response.thread.id, &turn.id))
+            .cloned()
+        {
+            for warning_entry in warning_entries {
+                let item = build_auto_review_interruption_warning_item(&turn.id, warning_entry.id);
+                if let Some(index) = items
+                    .iter()
+                    .position(|existing| thread_item_id(existing) == thread_item_id(&item))
+                {
+                    items[index] = item;
+                } else {
+                    items.push(item);
+                }
+            }
+        }
+        if let Some(error_entries) = turn_errors
+            .get(&thread_turn_cache_key(&response.thread.id, &turn.id))
+            .cloned()
+        {
+            for error_entry in error_entries {
+                let item = if error_entry.will_retry {
+                    build_stream_error_item(
+                        &turn.id,
+                        error_entry.id,
+                        error_entry.content,
+                        error_entry.additional_details,
+                    )
+                } else {
+                    build_system_error_item(&turn.id, error_entry.id, error_entry.content)
+                };
+                let Some(item) = item else {
+                    continue;
+                };
+                if let Some(index) = items
+                    .iter()
+                    .position(|existing| thread_item_id(existing) == thread_item_id(&item))
+                {
+                    items[index] = item;
+                } else {
+                    items.push(item);
+                }
+            }
+        }
     }
+    if let Some(forked_from_conversation) = forked_from_conversations.get(&response.thread.id) {
+        if let Some(item) = build_forked_from_conversation_item(
+            &forked_from_conversation.turn_id,
+            format!("forked-from-conversation:{}", response.thread.id),
+            forked_from_conversation.source_conversation_id.clone(),
+            forked_from_conversation.source_conversation_title.clone(),
+        ) {
+            if let Some(index) = items
+                .iter()
+                .position(|existing| thread_item_id(existing) == thread_item_id(&item))
+            {
+                items[index] = item;
+            } else {
+                items.push(item);
+            }
+        }
+    }
+    let title = resolved_thread_title(&response.thread);
+    let id = response.thread.id;
+    let cwd = response.thread.cwd;
     Ok(ThreadConversation {
-        id: response.thread.id,
-        title: response
-            .thread
-            .name
-            .unwrap_or(response.thread.preview)
-            .trim()
-            .to_string(),
-        cwd: response.thread.cwd,
+        id,
+        title,
+        cwd,
         items,
     })
 }
@@ -1541,6 +2196,9 @@ async fn run_client(
                     "name": CLIENT_NAME,
                     "title": "Codex App Replica",
                     "version": CLIENT_VERSION
+                },
+                "capabilities": {
+                    "experimentalApi": true
                 }
             }
         }),
@@ -1667,6 +2325,15 @@ async fn run_client(
                                     &pending_thread_items,
                                 );
                             }
+                            "item/permissions/requestApproval" => {
+                                handle_permissions_request_approval_request(&app, id, params);
+                            }
+                            "mcpServer/elicitation/request" => {
+                                handle_mcp_server_elicitation_request(&app, id, params);
+                            }
+                            "item/tool/requestUserInput" => {
+                                handle_tool_request_user_input_request(&app, id, params);
+                            }
                             _ => {}
                         }
                     }
@@ -1682,27 +2349,87 @@ async fn run_client(
                             "mcpServer/oauthLogin/completed" => {
                                 handle_mcp_oauth_login_completed(&app, params);
                             }
+                            "app/list/updated" => {
+                                handle_apps_list_updated(&app, params);
+                            }
                             "mcpServer/startupStatus/updated" => {}
+                            "turn/started" => {
+                                remember_latest_turn_from_notification(&state, &params);
+                            }
                             "item/started" => {
+                                remember_latest_turn_from_notification(&state, &params);
                                 handle_item_started(&app, params, &mut pending_thread_items);
                             }
                             "item/completed" => {
+                                remember_latest_turn_from_notification(&state, &params);
                                 handle_item_completed(&app, params, &mut pending_thread_items);
                             }
                             "item/agentMessage/delta" => {
+                                remember_latest_turn_from_notification(&state, &params);
                                 handle_agent_message_delta(&app, params, &mut pending_thread_items);
                             }
+                            "item/plan/delta" => {
+                                remember_latest_turn_from_notification(&state, &params);
+                                handle_plan_delta(&app, params, &mut pending_thread_items);
+                            }
+                            "item/reasoning/summaryPartAdded" => {
+                                remember_latest_turn_from_notification(&state, &params);
+                                handle_reasoning_summary_part_added(
+                                    &app,
+                                    params,
+                                    &mut pending_thread_items,
+                                );
+                            }
+                            "item/reasoning/summaryTextDelta" => {
+                                remember_latest_turn_from_notification(&state, &params);
+                                handle_reasoning_summary_text_delta(
+                                    &app,
+                                    params,
+                                    &mut pending_thread_items,
+                                );
+                            }
+                            "item/reasoning/textDelta" => {
+                                remember_latest_turn_from_notification(&state, &params);
+                                handle_reasoning_text_delta(&app, params, &mut pending_thread_items);
+                            }
                             "item/commandExecution/outputDelta" => {
+                                remember_latest_turn_from_notification(&state, &params);
                                 handle_command_execution_output_delta(&app, params, &mut pending_thread_items);
                             }
                             "item/fileChange/patchUpdated" => {
+                                remember_latest_turn_from_notification(&state, &params);
                                 handle_file_change_patch_updated(&app, params, &mut pending_thread_items);
                             }
                             "serverRequest/resolved" => {
                                 handle_server_request_resolved(&app, params);
                             }
+                            "turn/plan/updated" => {
+                                remember_latest_turn_from_notification(&state, &params);
+                                handle_turn_plan_updated(&app, params);
+                            }
+                            "turn/diff/updated" => {
+                                remember_latest_turn_from_notification(&state, &params);
+                                handle_turn_diff_updated(&app, &state, params);
+                            }
+                            "model/rerouted" => {
+                                remember_latest_turn_from_notification(&state, &params);
+                                handle_model_rerouted(&app, &state, params);
+                            }
                             "turn/completed" => {
+                                remember_latest_turn_from_notification(&state, &params);
                                 handle_turn_completed(&app, params);
+                            }
+                            "item/autoApprovalReview/started"
+                            | "item/autoApprovalReview/completed" => {
+                                remember_latest_turn_from_notification(&state, &params);
+                                handle_automatic_approval_review_notification(&app, &state, params);
+                            }
+                            "guardianWarning" => {
+                                handle_guardian_warning_notification(&app, &state, params);
+                            }
+                            "error" => {
+                                remember_latest_turn_from_notification(&state, &params);
+                                handle_error_notification(&app, &state, params);
                             }
                             _ => {}
                         }
@@ -1768,9 +2495,21 @@ fn handle_mcp_oauth_login_completed(app: &AppHandle, params: serde_json::Value) 
     let _ = app.emit(MCP_OAUTH_EVENT, notification);
 }
 
+fn handle_apps_list_updated(app: &AppHandle, params: serde_json::Value) {
+    if let Ok(notification) = serde_json::from_value::<AppsListResponse>(serde_json::json!({
+        "data": params.get("data").cloned().unwrap_or(serde_json::Value::Array(vec![])),
+        "nextCursor": serde_json::Value::Null,
+    })) {
+        let _ = app.emit(APPS_LIST_UPDATED_EVENT, notification);
+    }
+}
+
 fn request_method(kind: &AppServerRequestKind) -> &'static str {
     match kind {
         AppServerRequestKind::AccountRead => "account/read",
+        AppServerRequestKind::AccountRateLimitsRead => "account/rateLimits/read",
+        AppServerRequestKind::AccountSendAddCreditsNudgeEmail => "account/sendAddCreditsNudgeEmail",
+        AppServerRequestKind::AppsList => "app/list",
         AppServerRequestKind::LoginApiKey => "account/login/start",
         AppServerRequestKind::LoginChatGpt => "account/login/start",
         AppServerRequestKind::LoginChatGptDeviceCode => "account/login/start",
@@ -1820,7 +2559,7 @@ fn handle_item_started(
     let Some(item) = params.get("item").cloned() else {
         return;
     };
-    let Some(thread_item) = map_thread_item(turn_id, &item) else {
+    let Some(thread_item) = map_thread_item(turn_id, &item, Some(false)) else {
         return;
     };
     if matches!(
@@ -1859,12 +2598,15 @@ fn handle_item_completed(
     let Some(item) = params.get("item").cloned() else {
         return;
     };
-    let Some(thread_item) = map_thread_item(turn_id, &item) else {
+    let Some(thread_item) = map_thread_item(turn_id, &item, Some(true)) else {
         return;
     };
     if matches!(
         thread_item,
-        ThreadConversationItem::CommandExecution { .. } | ThreadConversationItem::FileChange { .. }
+        ThreadConversationItem::CommandExecution { .. }
+            | ThreadConversationItem::FileChange { .. }
+            | ThreadConversationItem::Plan { .. }
+            | ThreadConversationItem::Reasoning { .. }
     ) {
         pending_thread_items.remove(thread_item_id(&thread_item));
     }
@@ -1919,6 +2661,175 @@ fn handle_agent_message_delta(
     );
 }
 
+fn handle_reasoning_summary_part_added(
+    app: &AppHandle,
+    params: serde_json::Value,
+    pending_thread_items: &mut HashMap<String, ThreadConversationItem>,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(item_id) = params.get("itemId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(summary_index) = params
+        .get("summaryIndex")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return;
+    };
+    let item = pending_thread_items
+        .entry(item_id.to_string())
+        .or_insert_with(|| ThreadConversationItem::Reasoning {
+            id: item_id.to_string(),
+            turn_id: turn_id.to_string(),
+            summary: Vec::new(),
+            content: Vec::new(),
+        });
+    let Some(updated_item) = ensure_reasoning_summary_part(item, summary_index) else {
+        return;
+    };
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ThreadItemUpdated {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            item: updated_item,
+        },
+    );
+}
+
+fn handle_plan_delta(
+    app: &AppHandle,
+    params: serde_json::Value,
+    pending_thread_items: &mut HashMap<String, ThreadConversationItem>,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(item_id) = params.get("itemId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(delta) = params.get("delta").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let item = pending_thread_items
+        .entry(item_id.to_string())
+        .or_insert_with(|| ThreadConversationItem::Plan {
+            id: item_id.to_string(),
+            turn_id: turn_id.to_string(),
+            text: String::new(),
+        });
+    let Some(updated_item) = append_plan_delta(item, delta) else {
+        return;
+    };
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ThreadItemUpdated {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            item: updated_item,
+        },
+    );
+}
+
+fn handle_reasoning_summary_text_delta(
+    app: &AppHandle,
+    params: serde_json::Value,
+    pending_thread_items: &mut HashMap<String, ThreadConversationItem>,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(item_id) = params.get("itemId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(delta) = params.get("delta").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(summary_index) = params
+        .get("summaryIndex")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return;
+    };
+    let item = pending_thread_items
+        .entry(item_id.to_string())
+        .or_insert_with(|| ThreadConversationItem::Reasoning {
+            id: item_id.to_string(),
+            turn_id: turn_id.to_string(),
+            summary: Vec::new(),
+            content: Vec::new(),
+        });
+    let Some(updated_item) = append_reasoning_summary_delta(item, summary_index, delta) else {
+        return;
+    };
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ThreadItemUpdated {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            item: updated_item,
+        },
+    );
+}
+
+fn handle_reasoning_text_delta(
+    app: &AppHandle,
+    params: serde_json::Value,
+    pending_thread_items: &mut HashMap<String, ThreadConversationItem>,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(item_id) = params.get("itemId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(delta) = params.get("delta").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(content_index) = params
+        .get("contentIndex")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return;
+    };
+    let item = pending_thread_items
+        .entry(item_id.to_string())
+        .or_insert_with(|| ThreadConversationItem::Reasoning {
+            id: item_id.to_string(),
+            turn_id: turn_id.to_string(),
+            summary: Vec::new(),
+            content: Vec::new(),
+        });
+    let Some(updated_item) = append_reasoning_content_delta(item, content_index, delta) else {
+        return;
+    };
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ThreadItemUpdated {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            item: updated_item,
+        },
+    );
+}
+
 fn handle_turn_completed(app: &AppHandle, params: serde_json::Value) {
     let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
         return;
@@ -1944,6 +2855,342 @@ fn handle_turn_completed(app: &AppHandle, params: serde_json::Value) {
             turn_id: turn_id.to_string(),
             status: status.to_string(),
             error,
+        },
+    );
+}
+
+fn remember_latest_turn_from_notification(
+    state: &Arc<AuthBridgeState>,
+    params: &serde_json::Value,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let turn_id = params
+        .get("turnId")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            params
+                .get("turn")
+                .and_then(|turn| turn.get("id"))
+                .and_then(serde_json::Value::as_str)
+        });
+    let Some(turn_id) = turn_id else {
+        return;
+    };
+    remember_latest_turn_id(state, thread_id, turn_id);
+}
+
+fn remember_latest_turn_id(state: &Arc<AuthBridgeState>, thread_id: &str, turn_id: &str) {
+    if let Ok(mut latest_turn_ids) = state.latest_turn_ids.lock() {
+        latest_turn_ids.insert(thread_id.to_string(), turn_id.to_string());
+    }
+}
+
+fn handle_automatic_approval_review_notification(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    params: serde_json::Value,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(review_id) = params.get("reviewId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(review) = params.get("review") else {
+        return;
+    };
+    let Some(status) = review.get("status").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let item_id = format!("automatic-approval-review:{review_id}");
+    let risk_level = review
+        .get("riskLevel")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let rationale = review
+        .get("rationale")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    if let Ok(mut automatic_approval_reviews) = state.automatic_approval_reviews.lock() {
+        let review_entries = automatic_approval_reviews
+            .entry(thread_turn_cache_key(thread_id, turn_id))
+            .or_default();
+        if let Some(existing) = review_entries.iter_mut().find(|entry| entry.id == item_id) {
+            existing.status = status.to_string();
+            existing.risk_level = risk_level.clone();
+            existing.rationale = rationale.clone();
+        } else {
+            review_entries.push(AutomaticApprovalReviewCacheEntry {
+                id: item_id.clone(),
+                status: status.to_string(),
+                risk_level: risk_level.clone(),
+                rationale: rationale.clone(),
+            });
+        }
+    }
+    let Some(item) = build_automatic_approval_review_item(
+        turn_id,
+        item_id,
+        status.to_string(),
+        risk_level,
+        rationale,
+    ) else {
+        return;
+    };
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ThreadItemUpdated {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            item,
+        },
+    );
+}
+
+fn handle_guardian_warning_notification(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    params: serde_json::Value,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let message = params
+        .get("message")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    let warning_kind = params.get("kind").and_then(serde_json::Value::as_str);
+    if warning_kind != Some("tooManyDenials")
+        && !message.starts_with(AUTO_REVIEW_INTERRUPTION_WARNING_MESSAGE_PREFIX)
+    {
+        return;
+    }
+    let turn_id = state
+        .latest_turn_ids
+        .lock()
+        .ok()
+        .and_then(|latest_turn_ids| latest_turn_ids.get(thread_id).cloned());
+    let Some(turn_id) = turn_id else {
+        return;
+    };
+    let item_id = format!("auto-review-interruption-warning:{turn_id}");
+    if let Ok(mut auto_review_interruption_warnings) =
+        state.auto_review_interruption_warnings.lock()
+    {
+        let warning_entries = auto_review_interruption_warnings
+            .entry(thread_turn_cache_key(thread_id, &turn_id))
+            .or_default();
+        if !warning_entries.iter().any(|entry| entry.id == item_id) {
+            warning_entries.push(AutoReviewInterruptionWarningCacheEntry {
+                id: item_id.clone(),
+            });
+        }
+    }
+    let item = build_auto_review_interruption_warning_item(&turn_id, item_id);
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ThreadItemUpdated {
+            thread_id: thread_id.to_string(),
+            turn_id,
+            item,
+        },
+    );
+}
+
+fn handle_error_notification(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    params: serde_json::Value,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(error) = params.get("error") else {
+        return;
+    };
+    let Some(content) = error.get("message").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let additional_details = error
+        .get("additionalDetails")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let will_retry = params
+        .get("willRetry")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let mut item_id = format!(
+        "{}:{turn_id}:0",
+        if will_retry {
+            "stream-error"
+        } else {
+            "system-error"
+        }
+    );
+    if let Ok(mut turn_errors) = state.turn_errors.lock() {
+        let error_entries = turn_errors
+            .entry(thread_turn_cache_key(thread_id, turn_id))
+            .or_default();
+        if let Some(existing) = error_entries.iter().find(|entry| {
+            entry.content == content
+                && entry.additional_details.as_deref() == additional_details.as_deref()
+                && entry.will_retry == will_retry
+        }) {
+            item_id = existing.id.clone();
+        } else {
+            item_id = format!(
+                "{}:{turn_id}:{}",
+                if will_retry {
+                    "stream-error"
+                } else {
+                    "system-error"
+                },
+                error_entries.len()
+            );
+            error_entries.push(TurnErrorCacheEntry {
+                id: item_id.clone(),
+                content: content.to_string(),
+                additional_details: additional_details.clone(),
+                will_retry,
+            });
+        }
+    }
+    let item = if will_retry {
+        build_stream_error_item(turn_id, item_id, content.to_string(), additional_details)
+    } else {
+        build_system_error_item(turn_id, item_id, content.to_string())
+    };
+    let Some(item) = item else {
+        return;
+    };
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ThreadItemUpdated {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            item,
+        },
+    );
+}
+
+fn handle_turn_plan_updated(app: &AppHandle, params: serde_json::Value) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let explanation = params
+        .get("explanation")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let plan = params
+        .get("plan")
+        .and_then(serde_json::Value::as_array)
+        .map(|plan| {
+            plan.iter()
+                .filter_map(map_todo_list_step)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let Some(item) = build_todo_list_item(turn_id, explanation, plan) else {
+        return;
+    };
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ThreadItemUpdated {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            item,
+        },
+    );
+}
+
+fn handle_turn_diff_updated(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    params: serde_json::Value,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(diff) = params.get("diff").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    if let Ok(mut turn_diffs) = state.turn_diffs.lock() {
+        turn_diffs.insert(thread_turn_cache_key(thread_id, turn_id), diff.to_string());
+    }
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ThreadItemUpdated {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            item: build_turn_diff_item(turn_id, diff.to_string()),
+        },
+    );
+}
+
+fn handle_model_rerouted(app: &AppHandle, state: &Arc<AuthBridgeState>, params: serde_json::Value) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(from_model) = params.get("fromModel").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(to_model) = params.get("toModel").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(reason) = params.get("reason").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let mut item_id = format!("model-rerouted:{turn_id}:0");
+    if let Ok(mut model_reroutes) = state.model_reroutes.lock() {
+        let reroutes = model_reroutes
+            .entry(thread_turn_cache_key(thread_id, turn_id))
+            .or_default();
+        if let Some(existing) = reroutes.iter().find(|entry| {
+            entry.from_model == from_model && entry.to_model == to_model && entry.reason == reason
+        }) {
+            item_id = existing.id.clone();
+        } else {
+            item_id = format!("model-rerouted:{turn_id}:{}", reroutes.len());
+            reroutes.push(ModelReroutedCacheEntry {
+                id: item_id.clone(),
+                from_model: from_model.to_string(),
+                to_model: to_model.to_string(),
+                reason: reason.to_string(),
+            });
+        }
+    }
+    let Some(item) = build_model_rerouted_item(
+        turn_id,
+        item_id,
+        from_model.to_string(),
+        to_model.to_string(),
+        reason.to_string(),
+    ) else {
+        return;
+    };
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ThreadItemUpdated {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            item,
         },
     );
 }
@@ -2038,6 +3285,9 @@ fn handle_command_approval_request(
         .get("reason")
         .and_then(serde_json::Value::as_str)
         .map(str::to_string);
+    let network_approval_context = params
+        .get("networkApprovalContext")
+        .and_then(map_network_approval_context_payload);
     let command = params
         .get("command")
         .and_then(serde_json::Value::as_str)
@@ -2046,6 +3296,39 @@ fn handle_command_approval_request(
         .get("cwd")
         .and_then(serde_json::Value::as_str)
         .map(str::to_string);
+    let command_actions = params
+        .get("commandActions")
+        .and_then(serde_json::Value::as_array)
+        .map(|actions| {
+            actions
+                .iter()
+                .filter_map(map_command_action_payload)
+                .collect::<Vec<_>>()
+        })
+        .filter(|actions| !actions.is_empty());
+    let additional_permissions =
+        map_optional_permission_profile_payload(params.get("additionalPermissions"));
+    let proposed_execpolicy_amendment = params
+        .get("proposedExecpolicyAmendment")
+        .and_then(serde_json::Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .filter(|entries| !entries.is_empty());
+    let proposed_network_policy_amendments = params
+        .get("proposedNetworkPolicyAmendments")
+        .and_then(serde_json::Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(map_network_policy_amendment_payload)
+                .collect::<Vec<_>>()
+        })
+        .filter(|entries| !entries.is_empty());
     let available_decisions = params
         .get("availableDecisions")
         .and_then(serde_json::Value::as_array)
@@ -2065,8 +3348,13 @@ fn handle_command_approval_request(
             turn_id: turn_id.to_string(),
             item_id: item_id.to_string(),
             reason,
+            network_approval_context,
             command,
             cwd,
+            command_actions,
+            additional_permissions,
+            proposed_execpolicy_amendment,
+            proposed_network_policy_amendments,
             available_decisions,
         },
     );
@@ -2134,6 +3422,304 @@ fn handle_server_request_resolved(app: &AppHandle, params: serde_json::Value) {
             thread_id: thread_id.to_string(),
         },
     );
+}
+
+fn thread_turn_cache_key(thread_id: &str, turn_id: &str) -> String {
+    format!("{thread_id}:{turn_id}")
+}
+
+fn handle_tool_request_user_input_request(
+    app: &AppHandle,
+    request_id: JsonRpcId,
+    params: serde_json::Value,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(item_id) = params.get("itemId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let questions = params
+        .get("questions")
+        .and_then(serde_json::Value::as_array)
+        .map(|questions| {
+            questions
+                .iter()
+                .filter_map(map_tool_request_user_input_question)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ToolRequestUserInputRequested {
+            request_id,
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            item_id: item_id.to_string(),
+            questions,
+        },
+    );
+}
+
+fn handle_permissions_request_approval_request(
+    app: &AppHandle,
+    request_id: JsonRpcId,
+    params: serde_json::Value,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(item_id) = params.get("itemId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(cwd) = params.get("cwd").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let reason = params
+        .get("reason")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let permissions = map_permission_profile_payload(params.get("permissions"));
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::PermissionsRequestApprovalRequested {
+            request_id,
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            item_id: item_id.to_string(),
+            cwd: cwd.to_string(),
+            reason,
+            permissions,
+        },
+    );
+}
+
+fn handle_mcp_server_elicitation_request(
+    app: &AppHandle,
+    request_id: JsonRpcId,
+    params: serde_json::Value,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let turn_id = params
+        .get("turnId")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string);
+    let Some(server_name) = params.get("serverName").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(request) = map_mcp_server_elicitation_request_payload(&params) else {
+        return;
+    };
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::McpServerElicitationRequested {
+            request_id,
+            thread_id: thread_id.to_string(),
+            turn_id,
+            server_name: server_name.to_string(),
+            request,
+        },
+    );
+}
+
+fn map_tool_request_user_input_question(
+    value: &serde_json::Value,
+) -> Option<ToolRequestUserInputQuestionPayload> {
+    Some(ToolRequestUserInputQuestionPayload {
+        id: value.get("id")?.as_str()?.to_string(),
+        header: value
+            .get("header")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        question: value
+            .get("question")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        is_other: value
+            .get("isOther")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+        is_secret: value
+            .get("isSecret")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+        options: value
+            .get("options")
+            .and_then(serde_json::Value::as_array)
+            .map(|options| {
+                options
+                    .iter()
+                    .filter_map(map_tool_request_user_input_option)
+                    .collect::<Vec<_>>()
+            }),
+    })
+}
+
+fn map_tool_request_user_input_option(
+    value: &serde_json::Value,
+) -> Option<ToolRequestUserInputOptionPayload> {
+    Some(ToolRequestUserInputOptionPayload {
+        label: value.get("label")?.as_str()?.to_string(),
+        description: value
+            .get("description")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+    })
+}
+
+fn map_permission_profile_payload(value: Option<&serde_json::Value>) -> PermissionProfilePayload {
+    let network =
+        value
+            .and_then(|value| value.get("network"))
+            .map(|network| NetworkPermissionPayload {
+                enabled: network.get("enabled").and_then(serde_json::Value::as_bool),
+            });
+    let file_system = value
+        .and_then(|value| value.get("fileSystem"))
+        .map(|file_system| FileSystemPermissionPayload {
+            read: file_system
+                .get("read")
+                .and_then(serde_json::Value::as_array)
+                .map(|paths| {
+                    paths
+                        .iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .map(str::to_string)
+                        .collect::<Vec<_>>()
+                })
+                .filter(|paths| !paths.is_empty()),
+            write: file_system
+                .get("write")
+                .and_then(serde_json::Value::as_array)
+                .map(|paths| {
+                    paths
+                        .iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .map(str::to_string)
+                        .collect::<Vec<_>>()
+                })
+                .filter(|paths| !paths.is_empty()),
+            entries: file_system
+                .get("entries")
+                .and_then(serde_json::Value::as_array)
+                .map(|entries| {
+                    entries
+                        .iter()
+                        .filter_map(map_file_system_entry_payload)
+                        .collect::<Vec<_>>()
+                })
+                .filter(|entries| !entries.is_empty()),
+        });
+    PermissionProfilePayload {
+        network,
+        file_system,
+    }
+}
+
+fn map_optional_permission_profile_payload(
+    value: Option<&serde_json::Value>,
+) -> Option<PermissionProfilePayload> {
+    let payload = map_permission_profile_payload(value);
+    if payload.network.is_none() && payload.file_system.is_none() {
+        return None;
+    }
+    Some(payload)
+}
+
+fn map_file_system_entry_payload(value: &serde_json::Value) -> Option<FileSystemEntryPayload> {
+    let access = value.get("access")?.as_str()?.to_string();
+    let path = value
+        .get("path")
+        .and_then(
+            |path| match path.get("type").and_then(serde_json::Value::as_str) {
+                Some("path") => path.get("path").and_then(serde_json::Value::as_str),
+                Some("glob_pattern") => path.get("pattern").and_then(serde_json::Value::as_str),
+                Some("special") => Some("special"),
+                _ => None,
+            },
+        )?
+        .to_string();
+    Some(FileSystemEntryPayload { path, access })
+}
+
+fn map_mcp_server_elicitation_request_payload(
+    value: &serde_json::Value,
+) -> Option<McpServerElicitationRequestPayload> {
+    match value.get("mode")?.as_str()? {
+        "form" => Some(McpServerElicitationRequestPayload::Form {
+            message: value.get("message")?.as_str()?.to_string(),
+            meta: value.get("_meta").cloned(),
+            requested_schema: value.get("requestedSchema")?.clone(),
+        }),
+        "url" => Some(McpServerElicitationRequestPayload::Url {
+            message: value.get("message")?.as_str()?.to_string(),
+            meta: value.get("_meta").cloned(),
+            url: value.get("url")?.as_str()?.to_string(),
+            elicitation_id: value.get("elicitationId")?.as_str()?.to_string(),
+        }),
+        _ => None,
+    }
+}
+
+fn map_network_approval_context_payload(
+    value: &serde_json::Value,
+) -> Option<NetworkApprovalContextPayload> {
+    Some(NetworkApprovalContextPayload {
+        host: value.get("host")?.as_str()?.to_string(),
+        protocol: value.get("protocol")?.as_str()?.to_string(),
+    })
+}
+
+fn map_network_policy_amendment_payload(
+    value: &serde_json::Value,
+) -> Option<NetworkPolicyAmendmentPayload> {
+    Some(NetworkPolicyAmendmentPayload {
+        host: value.get("host")?.as_str()?.to_string(),
+        action: value.get("action")?.as_str()?.to_string(),
+    })
+}
+
+fn map_command_action_payload(value: &serde_json::Value) -> Option<CommandActionPayload> {
+    match value.get("type")?.as_str()? {
+        "read" => Some(CommandActionPayload::Read {
+            command: value.get("command")?.as_str()?.to_string(),
+            name: value.get("name")?.as_str()?.to_string(),
+            path: value.get("path")?.as_str()?.to_string(),
+        }),
+        "listFiles" => Some(CommandActionPayload::ListFiles {
+            command: value.get("command")?.as_str()?.to_string(),
+            path: value
+                .get("path")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
+        }),
+        "search" => Some(CommandActionPayload::Search {
+            command: value.get("command")?.as_str()?.to_string(),
+            query: value
+                .get("query")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
+            path: value
+                .get("path")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
+        }),
+        "unknown" => Some(CommandActionPayload::Unknown {
+            command: value.get("command")?.as_str()?.to_string(),
+        }),
+        _ => None,
+    }
 }
 
 fn map_account(response: AccountReadResponse) -> AuthState {

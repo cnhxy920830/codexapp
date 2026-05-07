@@ -87,7 +87,8 @@ export type MessageKey =
   | "skills.appsPage.loadError.title"
   | "skills.appsPage.loadError.retry"
   | "skills.appsPage.empty.plugins"
-  | "skills.page.heading"
+  | "skills.appsPage.pluginsUnsupportedHost.title"
+  | "skills.appsPage.pluginsUnsupportedHost.description"
   | "skills.page.subheading"
   | "skills.page.loading"
   | "skills.page.empty"
@@ -98,6 +99,8 @@ export type MessageKey =
   | "skills.page.refreshSkills"
   | "skills.page.refreshFailed"
   | "skills.section.installed"
+  | "settings.nav.skills-settings"
+  | "settings.section.skills-settings"
   | "skills.card.enabledStatus"
   | "skills.card.disabledStatus"
   | "app.shell.appMenu"
@@ -123,6 +126,25 @@ export type MessageKey =
   | "app.chat.removeQueuedFollowUp"
   | "app.chat.commandExecution"
   | "app.chat.fileChange"
+  | "app.chat.hookPrompt"
+  | "app.chat.contextCompaction"
+  | "app.chat.contextCompactionDescription"
+  | "app.chat.imageGeneration"
+  | "app.chat.collabAgentToolCall"
+  | "app.chat.mcpServer"
+  | "app.chat.mcpTool"
+  | "app.chat.agentTool"
+  | "app.chat.senderThread"
+  | "app.chat.receiverThreads"
+  | "homePage.mainContent"
+  | "app.chat.revisedPrompt"
+  | "app.chat.prompt"
+  | "app.chat.model"
+  | "app.chat.reasoningEffort"
+  | "app.chat.agentStatus"
+  | "app.chat.savedPath"
+  | "app.chat.toolNamespace"
+  | "app.chat.toolCallFailed"
   | "app.chat.output"
   | "app.chat.noOutput"
   | "app.chat.exitCode"
@@ -138,6 +160,13 @@ export type MessageKey =
   | "app.chat.approval.reason"
   | "app.chat.approval.command"
   | "app.chat.approval.workingDirectory"
+  | "app.chat.approval.networkAccess"
+  | "app.chat.approval.protocol"
+  | "app.chat.approval.host"
+  | "app.chat.approval.commandActions"
+  | "app.chat.approval.additionalPermissions"
+  | "app.chat.approval.execPolicyAmendment"
+  | "app.chat.approval.networkPolicyAmendments"
   | "app.chat.approval.requestedWriteRoot"
   | "app.chat.approval.changes"
   | "app.chat.approval.noChanges"
@@ -146,8 +175,88 @@ export type MessageKey =
   | "app.chat.approval.decline"
   | "app.chat.approval.cancel"
   | "app.chat.approval.submitting"
+  | "app.chat.implementPlan.prompt"
+  | "app.chat.implementPlan.implement"
+  | "app.chat.implementPlan.otherPlaceholder"
+  | "app.chat.implementPlan.dismiss"
+  | "app.chat.implementPlan.submit"
+  | "app.chat.planImplementation"
+  | "app.chat.userInput.title"
+  | "app.chat.userInput.submit"
+  | "app.chat.userInput.otherHint"
+  | "app.chat.userInput.secretHint"
+  | "app.chat.permissions.title"
+  | "app.chat.permissions.network"
+  | "app.chat.permissions.networkEnabled"
+  | "app.chat.permissions.fileSystem"
+  | "app.chat.permissions.read"
+  | "app.chat.permissions.write"
+  | "app.chat.permissions.entries"
+  | "app.chat.permissions.strictAutoReview"
+  | "app.chat.permissions.grantTurn"
+  | "app.chat.permissions.grantSession"
+  | "app.chat.permissions.deny"
+  | "app.chat.mcpElicitation.title"
+  | "app.chat.mcpElicitation.url"
+  | "app.chat.mcpElicitation.accept"
+  | "app.chat.mcpElicitation.decline"
+  | "app.chat.mcpElicitation.cancel"
+  | "app.chat.mcpElicitation.submit"
+  | "app.chat.mcpElicitation.required"
+  | "app.chat.mcpElicitation.booleanEnabled"
+  | "app.chat.mcpElicitation.unsupportedField"
   | "composer.reviewMode.title"
   | "composer.reviewMode.option.unstaged.simple"
+  | "thinkingShimmer.default"
+  | "wham.whamProposedTask.title"
+  | "localConversation.planSummary.title"
+  | "localConversation.planSummary.titleWriting"
+  | "localConversation.planSummary.download"
+  | "localConversation.planSummary.copy"
+  | "localConversation.planSummary.openInNewWindow"
+  | "localConversation.planSummary.expand"
+  | "localConversation.planSummary.collapse"
+  | "localConversation.planSummary.viewPlan"
+  | "avatarOverlay.session.readFile"
+  | "avatarOverlay.session.readingFile"
+  | "avatarOverlay.session.listedFiles"
+  | "avatarOverlay.session.listingFiles"
+  | "avatarOverlay.session.searchedFiles"
+  | "avatarOverlay.session.searchedQuery"
+  | "avatarOverlay.session.searchingFiles"
+  | "avatarOverlay.session.searchingQuery"
+  | "avatarOverlay.session.searchedWeb"
+  | "codex.webSearch.summary"
+  | "codex.webSearch.summary.details"
+  | "codex.webSearch.summary.verb.completed"
+  | "codex.webSearch.summary.verb.inProgress"
+  | "avatarOverlay.session.calledToolName"
+  | "thread.browser.emptyState.title"
+  | "thread.browser.emptyState.description"
+  | "localConversation.remoteTaskCreated"
+  | "localConversation.remoteTaskCreated.task"
+  | "localConversation.personalityChanged"
+  | "localConversation.autoReviewInterruptionWarning"
+  | "localConversation.autoReviewInterruptionWarning.nextSteps"
+  | "localConversation.automaticApprovalReview.summary.inProgress"
+  | "localConversation.automaticApprovalReview.summary.aborted"
+  | "localConversation.automaticApprovalReview.summary.timedOut"
+  | "localConversation.automaticApprovalReview.summary.completed"
+  | "localConversation.automaticApprovalReview.title.inProgress"
+  | "localConversation.automaticApprovalReview.title.approved"
+  | "localConversation.automaticApprovalReview.title.denied"
+  | "localConversation.automaticApprovalReview.title.deniedHighRisk"
+  | "localConversation.automaticApprovalReview.title.timedOut"
+  | "localConversation.automaticApprovalReview.title.aborted"
+  | "localConversation.modelChanged"
+  | "localConversation.modelChanged.warning.line1"
+  | "localConversation.modelChanged.warning.line2"
+  | "localConversation.forkedFromConversation"
+  | "localConversation.modelRerouted"
+  | "localConversation.modelRerouted.warning.line1"
+  | "localConversation.modelRerouted.warning.line2"
+  | "codex.review.noDiff"
+  | "codex.review.noDiff.baseDescription"
   | "thread.sidePanel.browserTab"
   | "thread.sidePanel.diffTab"
   | "thread.sidePanel.empty.title"
@@ -156,10 +265,22 @@ export type MessageKey =
   | "thread.sidePanel.openReviewTab"
   | "thread.sidePanel.openTab"
   | "thread.sidePanel.toggle"
+  | "codex.tabs.closeNamed"
+  | "codex.tabs.contextMenu.close"
   | "thread.fileCommandMenu.filesGroup"
   | "thread.fileCommandMenu.searchFiles"
   | "thread.fileTreePanel.noMatchingFiles"
   | "thread.fileTreePanel.searchingFiles"
+  | "review.fileSource.breadcrumb.ariaLabel"
+  | "review.fileSource.breadcrumb.openInEditor.ariaLabel"
+  | "review.fileSource.breadcrumb.openInEditor.tooltip"
+  | "review.fileSource.options"
+  | "review.fileSource.copyPath"
+  | "review.fileSource.richPreview.enable"
+  | "review.fileSource.richPreview.disable"
+  | "review.fileSource.wrap.enable"
+  | "review.fileSource.wrap.disable"
+  | "wham.diff.binaryFile"
   | "threadHeader.archiveConfirmCancel"
   | "threadHeader.archiveConfirmConfirm"
   | "threadHeader.archiveConfirmSubtitle"
@@ -173,6 +294,7 @@ export type MessageKey =
   | "threadHeader.copyWorkingDirectoryError"
   | "threadHeader.copyWorkingDirectorySuccess"
   | "threadHeader.forkIntoLocal"
+  | "threadHeader.forkIntoSameWorktree"
   | "threadHeader.forkThreadError"
   | "threadHeader.moreActions"
   | "sidebarElectron.archiveThread"
@@ -184,6 +306,10 @@ export type MessageKey =
   | "sidebarElectron.renameThreadDialogSubtitle"
   | "sidebarElectron.renameThreadDialogTitle"
   | "sidebarElectron.renameThreadError"
+  | "sidebarElectron.skillsAppsRouteNavLink"
+  | "sidebarElectron.skillsRouteNavLink"
+  | "sidebarElectron.pluginsRouteNavLink"
+  | "sidebarElectron.pluginsDisabledTooltip"
   | "general.title"
   | "general.theme"
   | "general.themeDescription"
@@ -219,6 +345,7 @@ export type MessageKey =
   | "settings.nav.plugins-settings"
   | "settings.nav.browser-use"
   | "settings.nav.computer-use"
+  | "settings.nav.usage"
   | "settings.nav.data-controls"
   | "settings.nav.keyboard-shortcuts"
   | "settings.nav.git-settings"
@@ -226,6 +353,13 @@ export type MessageKey =
   | "settings.nav.personalization"
   | "settings.nav.mcp-settings"
   | "settings.nav.local-environments"
+  | "settings.section.general-settings"
+  | "settings.section.appearance"
+  | "settings.section.agent"
+  | "settings.section.personalization"
+  | "settings.section.usage"
+  | "settings.section.local-environments"
+  | "computerUse.label"
   | "settings.section.data-controls"
   | "settings.section.keyboard-shortcuts"
   | "settings.section.git-settings"
@@ -284,6 +418,17 @@ export type MessageKey =
   | "settings.computerUse.install.title"
   | "settings.computerUse.install.button"
   | "settings.computerUse.install.empty"
+  | "settings.computerUse.allowedApps.title"
+  | "settings.computerUse.allowedApps.loading"
+  | "settings.computerUse.allowedApps.loadError"
+  | "settings.computerUse.allowedApps.emptyTitle"
+  | "settings.computerUse.allowedApps.removeAriaLabel"
+  | "settings.computerUse.allowedApps.removeDialogTitle"
+  | "settings.computerUse.allowedApps.removeDialogSubtitle"
+  | "settings.computerUse.allowedApps.removeDialogCancel"
+  | "settings.computerUse.allowedApps.removeDialogConfirm"
+  | "settings.computerUse.allowedApps.saved"
+  | "settings.computerUse.allowedApps.saveError"
   | "plugins.installModal.about"
   | "plugins.installModal.capabilities"
   | "plugins.installModal.developedBy"
@@ -405,7 +550,22 @@ export type MessageKey =
   | "settings.dataControls.archivedChats.unarchiveSuccessPlain"
   | "settings.dataControls.archivedChats.untitled"
   | "settings.dataControls.archivedChats.viewNow"
-  | "settings.general.groupTitle"
+  | "settings.usage.load.loading"
+  | "settings.usage.load.error"
+  | "settings.usage.load.retry"
+  | "settings.usage.credit.title"
+  | "settings.usage.credit.remaining.description"
+  | "settings.usage.credit.purchase"
+  | "settings.usage.credit.remaining.unavailable"
+  | "settings.usage.credit.remaining.unlimited"
+  | "settings.usage.credit.remaining.value"
+  | "settings.usage.limits.title"
+  | "settings.usage.limits.spark.title"
+  | "settings.usage.limits.fiveHour.label"
+  | "settings.usage.limits.weekly.label"
+  | "settings.usage.limits.window.resetAt"
+  | "settings.usage.limits.progress.ariaLabel"
+  | "settings.usage.limits.progress.remaining"
   | "settings.general.enterBehavior.label"
   | "settings.general.enterBehavior.description"
   | "settings.general.followUpQueueMode.label"
@@ -462,8 +622,8 @@ export type MessageKey =
   | "settings.configuration"
   | "settings.backToApp"
   | "settings.title"
-  | "settings.sectionApp"
-  | "settings.sectionHost"
+  | "settings.nav.heading.app"
+  | "settings.nav.heading.host"
   | "settings.agent.title"
   | "settings.agent.configuration.subtitle.summary"
   | "settings.agent.customConfig"
@@ -551,6 +711,10 @@ export type MessageKey =
   | "settings.personalization.personality.description"
   | "settings.personalization.memory.title"
   | "settings.personalization.memory.subtitle"
+  | "settings.personalization.pets.title"
+  | "settings.personalization.pets.current"
+  | "settings.personalization.avatars.select"
+  | "settings.personalization.avatars.selected"
   | "settings.memory.enableMemoriesLabel"
   | "settings.memory.enableMemoriesDescription"
   | "settings.memory.enableMemoriesAriaLabel"
@@ -655,7 +819,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "skills.appsPage.loadError.title": "Unable to load apps",
     "skills.appsPage.loadError.retry": "Retry",
     "skills.appsPage.empty.plugins": "No plugins found",
-    "skills.page.heading": "Skills",
+    "skills.appsPage.pluginsUnsupportedHost.title": "Plugins are not available for this host",
+    "skills.appsPage.pluginsUnsupportedHost.description": "Choose another host to browse and manage plugins",
     "skills.page.subheading": "Give Codex superpowers. <a>Learn more</a>",
     "skills.page.loading": "Loading skills...",
     "skills.page.empty": "No skills found",
@@ -666,6 +831,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "skills.page.refreshSkills": "Refresh",
     "skills.page.refreshFailed": "Unable to load skills",
     "skills.section.installed": "Installed",
+    "settings.nav.skills-settings": "Skills",
     "skills.card.enabledStatus": "Enabled",
     "skills.card.disabledStatus": "Disabled",
     "plugins.installModal.about": "About",
@@ -702,6 +868,25 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.removeQueuedFollowUp": "Remove",
     "app.chat.commandExecution": "Command",
     "app.chat.fileChange": "File change",
+    "app.chat.hookPrompt": "Hook prompt",
+    "app.chat.contextCompaction": "Context compacted",
+    "app.chat.contextCompactionDescription": "Earlier conversation context was compacted.",
+    "app.chat.imageGeneration": "Generated image",
+    "app.chat.collabAgentToolCall": "Agent tool call",
+    "app.chat.mcpServer": "MCP server",
+    "app.chat.mcpTool": "Tool",
+    "app.chat.agentTool": "Agent tool",
+    "app.chat.senderThread": "Sender thread",
+    "app.chat.receiverThreads": "Receiver threads",
+    "homePage.mainContent": "Main content",
+    "app.chat.revisedPrompt": "Revised prompt",
+    "app.chat.prompt": "Prompt",
+    "app.chat.model": "Model",
+    "app.chat.reasoningEffort": "Reasoning effort",
+    "app.chat.agentStatus": "Agent status",
+    "app.chat.savedPath": "Saved path",
+    "app.chat.toolNamespace": "Namespace",
+    "app.chat.toolCallFailed": "Tool call failed.",
     "app.chat.output": "Output",
     "app.chat.noOutput": "No output yet",
     "app.chat.exitCode": "Exit code",
@@ -717,6 +902,13 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.approval.reason": "Reason",
     "app.chat.approval.command": "Command",
     "app.chat.approval.workingDirectory": "Working directory",
+    "app.chat.approval.networkAccess": "Requested network access",
+    "app.chat.approval.protocol": "Protocol",
+    "app.chat.approval.host": "Host",
+    "app.chat.approval.commandActions": "Parsed command actions",
+    "app.chat.approval.additionalPermissions": "Requested additional permissions",
+    "app.chat.approval.execPolicyAmendment": "Suggested future command allowance",
+    "app.chat.approval.networkPolicyAmendments": "Suggested future network rules",
     "app.chat.approval.requestedWriteRoot": "Requested write root",
     "app.chat.approval.changes": "Changes",
     "app.chat.approval.noChanges": "No file changes were attached to this request.",
@@ -725,8 +917,97 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.approval.decline": "Decline",
     "app.chat.approval.cancel": "Cancel",
     "app.chat.approval.submitting": "Submitting response...",
+    "app.chat.implementPlan.prompt": "Implement this plan?",
+    "app.chat.implementPlan.implement": "Yes, implement this plan",
+    "app.chat.implementPlan.otherPlaceholder": "No, and tell Codex what to do differently",
+    "app.chat.implementPlan.dismiss": "Dismiss",
+    "app.chat.implementPlan.submit": "Submit",
+    "app.chat.planImplementation": "Implement plan",
+    "app.chat.userInput.title": "User input requested",
+    "app.chat.userInput.submit": "Submit answers",
+    "app.chat.userInput.otherHint": "Other answers may be entered manually if needed.",
+    "app.chat.userInput.secretHint": "This answer may contain sensitive input.",
+    "app.chat.permissions.title": "Permissions request",
+    "app.chat.permissions.network": "Network",
+    "app.chat.permissions.networkEnabled": "This request asks for network access.",
+    "app.chat.permissions.fileSystem": "File system",
+    "app.chat.permissions.read": "Read access",
+    "app.chat.permissions.write": "Write access",
+    "app.chat.permissions.entries": "Detailed entries",
+    "app.chat.permissions.strictAutoReview": "Review subsequent commands in this turn before execution",
+    "app.chat.permissions.grantTurn": "Grant for turn",
+    "app.chat.permissions.grantSession": "Grant for session",
+    "app.chat.permissions.deny": "Deny",
+    "app.chat.mcpElicitation.title": "{serverName} request",
+    "app.chat.mcpElicitation.url": "Open URL",
+    "app.chat.mcpElicitation.accept": "Accept",
+    "app.chat.mcpElicitation.decline": "Decline",
+    "app.chat.mcpElicitation.cancel": "Cancel",
+    "app.chat.mcpElicitation.submit": "Submit response",
+    "app.chat.mcpElicitation.required": "Required",
+    "app.chat.mcpElicitation.booleanEnabled": "Enable this option",
+    "app.chat.mcpElicitation.unsupportedField": "This field type is not fully supported yet. The raw schema is shown for review.",
     "composer.reviewMode.title": "Code review",
     "composer.reviewMode.option.unstaged.simple": "Review uncommitted changes",
+    "thinkingShimmer.default": "Thinking",
+    "wham.whamProposedTask.title": "Suggested task",
+    "localConversation.planSummary.title": "Plan",
+    "localConversation.planSummary.titleWriting": "Writing plan",
+    "localConversation.planSummary.download": "Download plan",
+    "localConversation.planSummary.copy": "Copy plan",
+    "localConversation.planSummary.openInNewWindow": "Open",
+    "localConversation.planSummary.expand": "Expand plan summary",
+    "localConversation.planSummary.collapse": "Collapse plan summary",
+    "localConversation.planSummary.viewPlan": "Expand plan",
+    "avatarOverlay.session.readFile": "Read {fileName}",
+    "avatarOverlay.session.readingFile": "Reading {fileName}",
+    "avatarOverlay.session.listedFiles": "Listed files",
+    "avatarOverlay.session.listingFiles": "Listing files",
+    "avatarOverlay.session.searchedFiles": "Searched files",
+    "avatarOverlay.session.searchedQuery": "Searched “{query}”",
+    "avatarOverlay.session.searchingFiles": "Searching files",
+    "avatarOverlay.session.searchingQuery": "Searching “{query}”",
+    "avatarOverlay.session.searchedWeb": "Searched the web",
+    "codex.webSearch.summary": "{label}{details}",
+    "codex.webSearch.summary.details": " for {query}",
+    "codex.webSearch.summary.verb.completed": "Searched web",
+    "codex.webSearch.summary.verb.inProgress": "Searching the web",
+    "avatarOverlay.session.calledToolName": "Called {toolName}",
+    "thread.browser.emptyState.title": "Start browsing",
+    "thread.browser.emptyState.description": "Enter a URL to open a page",
+    "localConversation.remoteTaskCreated": "Created {taskLink} in Codex Cloud",
+    "localConversation.remoteTaskCreated.task": "task",
+    "localConversation.personalityChanged": "Switched to {personality} personality",
+    "localConversation.autoReviewInterruptionWarning": "Turn ended by Auto-review",
+    "localConversation.autoReviewInterruptionWarning.nextSteps":
+      "Auto-review stopped this turn after repeated denials. Add more context or choose a different permission mode to continue.",
+    "localConversation.automaticApprovalReview.summary.inProgress":
+      "A carefully prompted reviewer agent is reviewing this request before Codex runs it.",
+    "localConversation.automaticApprovalReview.summary.aborted":
+      "A carefully prompted reviewer agent stopped reviewing this request before Codex ran it.",
+    "localConversation.automaticApprovalReview.summary.timedOut":
+      "A carefully prompted reviewer agent timed out before Codex ran this request.",
+    "localConversation.automaticApprovalReview.summary.completed":
+      "A carefully prompted reviewer agent reviewed this request.",
+    "localConversation.automaticApprovalReview.title.inProgress": "Auto-reviewing",
+    "localConversation.automaticApprovalReview.title.approved": "Auto-review approved",
+    "localConversation.automaticApprovalReview.title.denied": "Auto-review denied",
+    "localConversation.automaticApprovalReview.title.deniedHighRisk":
+      "Auto-review denied high risk",
+    "localConversation.automaticApprovalReview.title.timedOut": "Auto-review timed out",
+    "localConversation.automaticApprovalReview.title.aborted": "Auto-review stopped",
+    "localConversation.modelChanged": "Model changed from {fromModel} to {toModel}.",
+    "localConversation.modelChanged.warning.line1":
+      "Changing models mid-conversation will degrade performance.",
+    "localConversation.modelChanged.warning.line2": "Context may automatically compact.",
+    "localConversation.forkedFromConversation": "Forked from conversation",
+    "localConversation.modelRerouted": "Your request was routed to {toModel}.",
+    "localConversation.modelRerouted.warning.line1":
+      "Heads up, your request was re-routed to reduce cyber-abuse risk.",
+    "localConversation.modelRerouted.warning.line2":
+      "Think this is a mistake? Request a review at <link>chatgpt.com/cyber</link> or report via /feedback",
+    "codex.review.noDiff": "No file changes yet",
+    "codex.review.noDiff.baseDescription": "Changes in this project will appear here.",
     "thread.sidePanel.browserTab": "Browser",
     "thread.sidePanel.diffTab": "Review",
     "thread.sidePanel.empty.title": "Nothing here yet",
@@ -735,10 +1016,22 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "thread.sidePanel.openReviewTab": "Review",
     "thread.sidePanel.openTab": "Open side panel tab",
     "thread.sidePanel.toggle": "Toggle side panel",
+    "codex.tabs.closeNamed": "Close {title} tab",
+    "codex.tabs.contextMenu.close": "Close tab",
     "thread.fileCommandMenu.filesGroup": "Files",
     "thread.fileCommandMenu.searchFiles": "Search files",
     "thread.fileTreePanel.noMatchingFiles": "No matching files",
     "thread.fileTreePanel.searchingFiles": "Searching files...",
+    "review.fileSource.breadcrumb.ariaLabel": "File path",
+    "review.fileSource.breadcrumb.openInEditor.ariaLabel": "Open in editor",
+    "review.fileSource.breadcrumb.openInEditor.tooltip": "Open in editor",
+    "review.fileSource.options": "File viewer options",
+    "review.fileSource.copyPath": "Copy path",
+    "review.fileSource.richPreview.enable": "Enable rich view",
+    "review.fileSource.richPreview.disable": "Disable rich view",
+    "review.fileSource.wrap.enable": "Enable word wrap",
+    "review.fileSource.wrap.disable": "Disable word wrap",
+    "wham.diff.binaryFile": "Binary file not shown",
     "threadHeader.archiveConfirmCancel": "Cancel",
     "threadHeader.archiveConfirmConfirm": "Archive",
     "threadHeader.archiveConfirmSubtitle": "You can find it later in archived chats.",
@@ -752,6 +1045,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "threadHeader.copyWorkingDirectoryError": "Failed to copy working directory",
     "threadHeader.copyWorkingDirectorySuccess": "Copied working directory",
     "threadHeader.forkIntoLocal": "Fork into local",
+    "threadHeader.forkIntoSameWorktree": "Fork into same worktree",
     "threadHeader.forkThreadError": "Failed to fork chat",
     "threadHeader.moreActions": "Thread actions",
     "sidebarElectron.archiveThread": "Archive chat",
@@ -763,6 +1057,10 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "sidebarElectron.renameThreadDialogSubtitle": "Keep it short and recognizable",
     "sidebarElectron.renameThreadDialogTitle": "Rename chat",
     "sidebarElectron.renameThreadError": "Failed to rename thread",
+    "sidebarElectron.skillsAppsRouteNavLink": "Plugins",
+    "sidebarElectron.skillsRouteNavLink": "Skills",
+    "sidebarElectron.pluginsRouteNavLink": "Plugins",
+    "sidebarElectron.pluginsDisabledTooltip": "Please sign in with ChatGPT to use plugins",
     "general.title": "General",
     "general.theme": "Theme",
     "general.themeDescription": "Use light, dark, or match your system",
@@ -799,6 +1097,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.nav.plugins-settings": "Plugins",
     "settings.nav.browser-use": "Browser use",
     "settings.nav.computer-use": "Computer use",
+    "settings.nav.usage": "Usage",
     "settings.nav.data-controls": "Archived chats",
     "settings.nav.keyboard-shortcuts": "Keyboard shortcuts",
     "settings.nav.git-settings": "Git",
@@ -806,11 +1105,19 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.nav.personalization": "Personalization",
     "settings.nav.mcp-settings": "MCP servers",
     "settings.nav.local-environments": "Local environments",
+    "settings.section.general-settings": "General",
+    "settings.section.appearance": "Appearance",
+    "settings.section.agent": "Configuration",
+    "settings.section.personalization": "Personalization",
+    "settings.section.usage": "Usage",
+    "settings.section.local-environments": "Environments",
+    "computerUse.label": "Computer use",
     "settings.section.data-controls": "Archived chats",
     "settings.section.keyboard-shortcuts": "Keyboard shortcuts",
     "settings.section.git-settings": "Git",
     "settings.section.worktrees": "Worktrees",
     "settings.section.plugins-settings": "Plugins",
+    "settings.section.skills-settings": "Skills",
     "settings.section.browser-use": "Browser use",
     "settings.section.mcp-settings": "MCP servers",
     "settings.section.mcp-settings.subtitle": "Connect external tools and data sources. <a>Learn more.</a>",
@@ -867,6 +1174,19 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.computerUse.install.title": "Plugin",
     "settings.computerUse.install.button": "Install",
     "settings.computerUse.install.empty": "Computer Use plugin unavailable",
+    "settings.computerUse.allowedApps.title": "Always-allowed apps",
+    "settings.computerUse.allowedApps.loading": "Loading allowed apps",
+    "settings.computerUse.allowedApps.loadError": "Unable to load allowed apps.",
+    "settings.computerUse.allowedApps.emptyTitle": "None yet",
+    "settings.computerUse.allowedApps.removeAriaLabel": "Remove {displayName}",
+    "settings.computerUse.allowedApps.removeDialogTitle":
+      "Remove “{displayName}” from always allowed apps?",
+    "settings.computerUse.allowedApps.removeDialogSubtitle":
+      "Codex will ask to use “{displayName}” in the next computer use session.",
+    "settings.computerUse.allowedApps.removeDialogCancel": "Cancel",
+    "settings.computerUse.allowedApps.removeDialogConfirm": "Remove",
+    "settings.computerUse.allowedApps.saved": "Allowed app removed",
+    "settings.computerUse.allowedApps.saveError": "Unable to save allowed apps",
     "settings.localEnvironments.workspaceSelect.description":
       "Local environments tell Codex how to set up worktrees for a project. <a>Learn more.</a>",
     "settings.localEnvironments.workspaceSelect.inherited": "{count} environments in parent folders",
@@ -986,7 +1306,22 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.dataControls.archivedChats.unarchiveSuccessPlain": "Unarchived chat",
     "settings.dataControls.archivedChats.untitled": "Untitled chat",
     "settings.dataControls.archivedChats.viewNow": "View now",
-    "settings.general.groupTitle": "General",
+    "settings.usage.load.loading": "Loading usage limits…",
+    "settings.usage.load.error": "Could not load usage limits.",
+    "settings.usage.load.retry": "Retry",
+    "settings.usage.credit.title": "Credit",
+    "settings.usage.credit.remaining.description": "Use credit to send messages when you reach usage limits. <a>Doc</a>",
+    "settings.usage.credit.purchase": "Purchase",
+    "settings.usage.credit.remaining.unavailable": "Credit remaining unavailable",
+    "settings.usage.credit.remaining.unlimited": "Unlimited credit",
+    "settings.usage.credit.remaining.value": "{credit} credit remaining",
+    "settings.usage.limits.title": "General usage limits",
+    "settings.usage.limits.spark.title": "GPT-5.3-Codex-Spark usage limits",
+    "settings.usage.limits.fiveHour.label": "5 hour usage limit",
+    "settings.usage.limits.weekly.label": "Weekly usage limit",
+    "settings.usage.limits.window.resetAt": "Resets {time}",
+    "settings.usage.limits.progress.ariaLabel": "Usage remaining",
+    "settings.usage.limits.progress.remaining": "{remaining}% left",
     "settings.general.enterBehavior.label": "Require {modifierSymbol} + enter to send long prompts",
     "settings.general.enterBehavior.description": "When enabled, multiline prompts require {modifierSymbol} + enter to send.",
     "settings.general.followUpQueueMode.label": "Follow-up behavior",
@@ -1045,8 +1380,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.configuration": "Configuration",
     "settings.backToApp": "Back to app",
     "settings.title": "SETTINGS",
-    "settings.sectionApp": "APP",
-    "settings.sectionHost": "HOST",
+    "settings.nav.heading.app": "APP",
+    "settings.nav.heading.host": "HOST",
     "settings.agent.title": "Configuration",
     "settings.agent.configuration.subtitle.summary": "Configure approval policy and sandbox settings <a>Learn more</a>",
     "settings.agent.customConfig": "Custom config.toml settings",
@@ -1134,6 +1469,10 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.personalization.personality.description": "Choose a default tone for Codex responses",
     "settings.personalization.memory.title": "Memory (experimental)",
     "settings.personalization.memory.subtitle": "Configure how Codex collects, retains, and consolidates memories. <a>Learn more</a>",
+    "settings.personalization.pets.title": "Pets",
+    "settings.personalization.pets.current": "{petName} selected",
+    "settings.personalization.avatars.select": "Select",
+    "settings.personalization.avatars.selected": "Selected",
     "settings.memory.enableMemoriesLabel": "Enable memories",
     "settings.memory.enableMemoriesDescription": "Generate new memories from chats and bring them into new chats",
     "settings.memory.enableMemoriesAriaLabel": "Enable memories",
@@ -1192,7 +1531,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "skills.appsPage.loadError.title": "无法加载应用",
     "skills.appsPage.loadError.retry": "重试",
     "skills.appsPage.empty.plugins": "未找到插件",
-    "skills.page.heading": "技能",
+    "skills.appsPage.pluginsUnsupportedHost.title": "此主机不支持插件",
+    "skills.appsPage.pluginsUnsupportedHost.description": "请选择其他主机以浏览和管理插件",
     "skills.page.subheading": "赋予 Codex 更强大的能力。<a>了解更多</a>",
     "skills.page.loading": "正在加载技能…",
     "skills.page.empty": "找不到技能",
@@ -1203,6 +1543,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "skills.page.refreshSkills": "刷新",
     "skills.page.refreshFailed": "无法加载技能",
     "skills.section.installed": "已安装",
+    "settings.nav.skills-settings": "技能",
     "skills.card.enabledStatus": "已启用",
     "skills.card.disabledStatus": "已禁用",
     "plugins.installModal.about": "关于",
@@ -1239,6 +1580,25 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.removeQueuedFollowUp": "移除",
     "app.chat.commandExecution": "命令",
     "app.chat.fileChange": "文件修改",
+    "app.chat.hookPrompt": "钩子提示",
+    "app.chat.contextCompaction": "上下文已压缩",
+    "app.chat.contextCompactionDescription": "较早的对话上下文已被压缩。",
+    "app.chat.imageGeneration": "已生成图片",
+    "app.chat.collabAgentToolCall": "智能体工具调用",
+    "app.chat.mcpServer": "MCP 服务器",
+    "app.chat.mcpTool": "工具",
+    "app.chat.agentTool": "智能体工具",
+    "app.chat.senderThread": "发送线程",
+    "app.chat.receiverThreads": "接收线程",
+    "homePage.mainContent": "主要内容",
+    "app.chat.revisedPrompt": "修订后的提示词",
+    "app.chat.prompt": "提示词",
+    "app.chat.model": "模型",
+    "app.chat.reasoningEffort": "推理强度",
+    "app.chat.agentStatus": "智能体状态",
+    "app.chat.savedPath": "保存路径",
+    "app.chat.toolNamespace": "命名空间",
+    "app.chat.toolCallFailed": "工具调用失败。",
     "app.chat.output": "输出",
     "app.chat.noOutput": "尚无输出",
     "app.chat.exitCode": "退出码",
@@ -1254,6 +1614,13 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.approval.reason": "原因",
     "app.chat.approval.command": "命令",
     "app.chat.approval.workingDirectory": "工作目录",
+    "app.chat.approval.networkAccess": "请求的网络访问",
+    "app.chat.approval.protocol": "协议",
+    "app.chat.approval.host": "主机",
+    "app.chat.approval.commandActions": "解析出的命令动作",
+    "app.chat.approval.additionalPermissions": "请求的额外权限",
+    "app.chat.approval.execPolicyAmendment": "建议的后续命令放行规则",
+    "app.chat.approval.networkPolicyAmendments": "建议的后续网络规则",
     "app.chat.approval.requestedWriteRoot": "请求的写入根目录",
     "app.chat.approval.changes": "变更",
     "app.chat.approval.noChanges": "该请求未附带文件变更内容。",
@@ -1262,8 +1629,95 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.approval.decline": "拒绝",
     "app.chat.approval.cancel": "取消",
     "app.chat.approval.submitting": "正在提交响应...",
+    "app.chat.implementPlan.prompt": "实施此计划？",
+    "app.chat.implementPlan.implement": "是，实施此计划",
+    "app.chat.implementPlan.otherPlaceholder": "否，请告知 Codex 如何调整",
+    "app.chat.implementPlan.dismiss": "忽略",
+    "app.chat.implementPlan.submit": "提交",
+    "app.chat.planImplementation": "实施计划",
+    "app.chat.userInput.title": "需要用户输入",
+    "app.chat.userInput.submit": "提交答案",
+    "app.chat.userInput.otherHint": "如有需要，可手动输入其他答案。",
+    "app.chat.userInput.secretHint": "该答案可能包含敏感输入。",
+    "app.chat.permissions.title": "权限请求",
+    "app.chat.permissions.network": "网络",
+    "app.chat.permissions.networkEnabled": "该请求需要网络访问权限。",
+    "app.chat.permissions.fileSystem": "文件系统",
+    "app.chat.permissions.read": "读取权限",
+    "app.chat.permissions.write": "写入权限",
+    "app.chat.permissions.entries": "详细条目",
+    "app.chat.permissions.strictAutoReview": "在本回合中后续命令执行前逐条审查",
+    "app.chat.permissions.grantTurn": "本回合允许",
+    "app.chat.permissions.grantSession": "本会话允许",
+    "app.chat.permissions.deny": "拒绝",
+    "app.chat.mcpElicitation.title": "{serverName} 请求",
+    "app.chat.mcpElicitation.url": "打开链接",
+    "app.chat.mcpElicitation.accept": "接受",
+    "app.chat.mcpElicitation.decline": "拒绝",
+    "app.chat.mcpElicitation.cancel": "取消",
+    "app.chat.mcpElicitation.submit": "提交响应",
+    "app.chat.mcpElicitation.required": "必填",
+    "app.chat.mcpElicitation.booleanEnabled": "启用此选项",
+    "app.chat.mcpElicitation.unsupportedField": "该字段类型尚未完整支持，当前展示原始 schema 供审查。",
     "composer.reviewMode.title": "代码审查",
     "composer.reviewMode.option.unstaged.simple": "审查未提交的更改",
+    "thinkingShimmer.default": "正在思考",
+    "wham.whamProposedTask.title": "建议的任务",
+    "localConversation.planSummary.title": "计划",
+    "localConversation.planSummary.titleWriting": "正在编写计划",
+    "localConversation.planSummary.download": "下载计划",
+    "localConversation.planSummary.copy": "复制计划",
+    "localConversation.planSummary.openInNewWindow": "打开",
+    "localConversation.planSummary.expand": "展开计划摘要",
+    "localConversation.planSummary.collapse": "折叠计划摘要",
+    "localConversation.planSummary.viewPlan": "展开计划",
+    "avatarOverlay.session.readFile": "已读取 {fileName}",
+    "avatarOverlay.session.readingFile": "正在读取 {fileName}",
+    "avatarOverlay.session.listedFiles": "已列出文件",
+    "avatarOverlay.session.listingFiles": "正在列出文件",
+    "avatarOverlay.session.searchedFiles": "已搜索文件",
+    "avatarOverlay.session.searchedQuery": "已搜索“{query}”",
+    "avatarOverlay.session.searchingFiles": "正在搜索文件",
+    "avatarOverlay.session.searchingQuery": "正在搜索“{query}”",
+    "avatarOverlay.session.searchedWeb": "已搜索网页",
+    "codex.webSearch.summary": "{label}{details}",
+    "codex.webSearch.summary.details": "（{query}）",
+    "codex.webSearch.summary.verb.completed": "已搜索网页",
+    "codex.webSearch.summary.verb.inProgress": "正在搜索网页",
+    "avatarOverlay.session.calledToolName": "已调用 {toolName}",
+    "thread.browser.emptyState.title": "开始浏览",
+    "thread.browser.emptyState.description": "输入 URL 以打开页面",
+    "localConversation.remoteTaskCreated": "已在 Codex Cloud 中创建{taskLink}",
+    "localConversation.remoteTaskCreated.task": "任务",
+    "localConversation.personalityChanged": "已切换为 {personality} 个性",
+    "localConversation.autoReviewInterruptionWarning": "回合已由自动审核结束",
+    "localConversation.autoReviewInterruptionWarning.nextSteps":
+      "因多次被拒绝，自动审查已停止本轮操作。请添加更多上下文或选择其他权限模式以继续。",
+    "localConversation.automaticApprovalReview.summary.inProgress":
+      "经优化提示的审查智能体正在审查此请求，随后 Codex 才会执行此请求。",
+    "localConversation.automaticApprovalReview.summary.aborted":
+      "经优化提示的审查智能体在 Codex 运行此请求之前，停止了对此请求的审查。",
+    "localConversation.automaticApprovalReview.summary.timedOut":
+      "经优化提示的审查智能体在 Codex 运行此请求前已超时。",
+    "localConversation.automaticApprovalReview.summary.completed":
+      "经优化提示的审查智能体已审查此请求。",
+    "localConversation.automaticApprovalReview.title.inProgress": "自动审核中",
+    "localConversation.automaticApprovalReview.title.approved": "自动审核已批准",
+    "localConversation.automaticApprovalReview.title.denied": "自动审核已拒绝",
+    "localConversation.automaticApprovalReview.title.deniedHighRisk":
+      "自动审核已拒绝高风险操作",
+    "localConversation.automaticApprovalReview.title.timedOut": "自动审核超时",
+    "localConversation.automaticApprovalReview.title.aborted": "自动审核已停止",
+    "localConversation.modelChanged": "模型已从 {fromModel} 更改为 {toModel}。",
+    "localConversation.modelChanged.warning.line1": "在对话中途切换模型会降低性能表现。",
+    "localConversation.modelChanged.warning.line2": "背景信息可能会自动压缩。",
+    "localConversation.forkedFromConversation": "从对话中派生",
+    "localConversation.modelRerouted": "你的请求已转发至 {toModel}。",
+    "localConversation.modelRerouted.warning.line1": "请注意，你的请求已被转发，以降低网络滥用风险。",
+    "localConversation.modelRerouted.warning.line2":
+      "认为这是误操作？可通过 <link>chatgpt.com/cyber 申请复核</link>或通过 /feedback 报告",
+    "codex.review.noDiff": "尚无文件更改",
+    "codex.review.noDiff.baseDescription": "此项目中的更改将显示在此处。",
     "thread.sidePanel.browserTab": "浏览器",
     "thread.sidePanel.diffTab": "审查",
     "thread.sidePanel.empty.title": "这里还没有内容",
@@ -1272,10 +1726,22 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "thread.sidePanel.openReviewTab": "审查",
     "thread.sidePanel.openTab": "打开侧边面板标签页",
     "thread.sidePanel.toggle": "显示/隐藏侧边栏",
+    "codex.tabs.closeNamed": "关闭 {title} 标签页",
+    "codex.tabs.contextMenu.close": "关闭标签页",
     "thread.fileCommandMenu.filesGroup": "文件",
     "thread.fileCommandMenu.searchFiles": "搜索文件",
     "thread.fileTreePanel.noMatchingFiles": "没有匹配的文件",
     "thread.fileTreePanel.searchingFiles": "正在搜索文件…",
+    "review.fileSource.breadcrumb.ariaLabel": "文件路径",
+    "review.fileSource.breadcrumb.openInEditor.ariaLabel": "在编辑器中打开",
+    "review.fileSource.breadcrumb.openInEditor.tooltip": "在编辑器中打开",
+    "review.fileSource.options": "文件查看器选项",
+    "review.fileSource.copyPath": "复制路径",
+    "review.fileSource.richPreview.enable": "启用富预览",
+    "review.fileSource.richPreview.disable": "禁用富预览",
+    "review.fileSource.wrap.enable": "启用自动换行",
+    "review.fileSource.wrap.disable": "禁用自动换行",
+    "wham.diff.binaryFile": "未显示二进制文件",
     "threadHeader.archiveConfirmCancel": "取消",
     "threadHeader.archiveConfirmConfirm": "归档",
     "threadHeader.archiveConfirmSubtitle": "稍后可在已归档对话中找到。",
@@ -1289,6 +1755,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "threadHeader.copyWorkingDirectoryError": "复制工作目录失败",
     "threadHeader.copyWorkingDirectorySuccess": "已复制工作目录",
     "threadHeader.forkIntoLocal": "派生到本地",
+    "threadHeader.forkIntoSameWorktree": "分叉到同一工作树",
     "threadHeader.forkThreadError": "创建对话分支失败",
     "threadHeader.moreActions": "对话操作",
     "sidebarElectron.archiveThread": "归档对话",
@@ -1300,6 +1767,10 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "sidebarElectron.renameThreadDialogSubtitle": "保持简短且易于区分",
     "sidebarElectron.renameThreadDialogTitle": "重命名对话",
     "sidebarElectron.renameThreadError": "重命名对话失败",
+    "sidebarElectron.skillsAppsRouteNavLink": "插件",
+    "sidebarElectron.skillsRouteNavLink": "技能",
+    "sidebarElectron.pluginsRouteNavLink": "插件",
+    "sidebarElectron.pluginsDisabledTooltip": "请登录 ChatGPT 以使用插件",
     "general.title": "通用",
     "general.theme": "主题",
     "general.themeDescription": "使用浅色、深色，或匹配你的系统",
@@ -1336,6 +1807,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.nav.plugins-settings": "插件",
     "settings.nav.browser-use": "浏览器使用",
     "settings.nav.computer-use": "计算机使用",
+    "settings.nav.usage": "用量",
     "settings.nav.data-controls": "已归档对话",
     "settings.nav.keyboard-shortcuts": "键盘快捷方式",
     "settings.nav.git-settings": "Git",
@@ -1343,11 +1815,19 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.nav.personalization": "个性化",
     "settings.nav.mcp-settings": "MCP 服务器",
     "settings.nav.local-environments": "本地环境",
+    "settings.section.general-settings": "通用",
+    "settings.section.appearance": "外观",
+    "settings.section.agent": "配置",
+    "settings.section.personalization": "个性化",
+    "settings.section.usage": "用量",
+    "settings.section.local-environments": "环境",
+    "computerUse.label": "计算机使用",
     "settings.section.data-controls": "已归档对话",
     "settings.section.keyboard-shortcuts": "键盘快捷键",
     "settings.section.git-settings": "Git",
     "settings.section.worktrees": "工作树",
     "settings.section.plugins-settings": "插件",
+    "settings.section.skills-settings": "技能",
     "settings.section.browser-use": "浏览器使用",
     "settings.section.mcp-settings": "MCP 服务器",
     "settings.section.mcp-settings.subtitle": "连接外部工具和数据源。<a>了解更多。</a>",
@@ -1401,7 +1881,19 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.browserUse.deniedWebsites.removeDialogSubtitle": "打开此域名前，Codex 可以再次询问。",
     "settings.computerUse.install.title": "插件",
     "settings.computerUse.install.button": "安装",
-    "settings.computerUse.install.empty": "计算机使用插件不可用",
+    "settings.computerUse.install.empty": "电脑操控插件不可用",
+    "settings.computerUse.allowedApps.title": "始终允许的应用",
+    "settings.computerUse.allowedApps.loading": "正在加载允许使用的应用",
+    "settings.computerUse.allowedApps.loadError": "无法加载允许使用的应用。",
+    "settings.computerUse.allowedApps.emptyTitle": "暂无",
+    "settings.computerUse.allowedApps.removeAriaLabel": "移除 {displayName}",
+    "settings.computerUse.allowedApps.removeDialogTitle": "要将“{displayName}”从始终允许使用的应用中移除吗？",
+    "settings.computerUse.allowedApps.removeDialogSubtitle":
+      "Codex 会在下一次电脑操控会话中请求使用“{displayName}”。",
+    "settings.computerUse.allowedApps.removeDialogCancel": "取消",
+    "settings.computerUse.allowedApps.removeDialogConfirm": "移除",
+    "settings.computerUse.allowedApps.saved": "已移除允许使用的应用",
+    "settings.computerUse.allowedApps.saveError": "无法保存允许使用的应用",
     "settings.localEnvironments.workspaceSelect.description":
       "本地环境用于指示 Codex 如何为项目设置工作树。<a>了解更多。</a>",
     "settings.localEnvironments.workspaceSelect.inherited": "父文件夹中的 {count} 个环境",
@@ -1514,7 +2006,22 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.dataControls.archivedChats.unarchiveSuccessPlain": "对话已取消归档。",
     "settings.dataControls.archivedChats.untitled": "无标题聊天",
     "settings.dataControls.archivedChats.viewNow": "立即查看",
-    "settings.general.groupTitle": "常规",
+    "settings.usage.load.loading": "正在加载用量限制…",
+    "settings.usage.load.error": "无法加载用量限制。",
+    "settings.usage.load.retry": "重试",
+    "settings.usage.credit.title": "额度",
+    "settings.usage.credit.remaining.description": "在达到用量限制时使用额度发送消息。<a>文档</a>",
+    "settings.usage.credit.purchase": "购买",
+    "settings.usage.credit.remaining.unavailable": "剩余额度不可用",
+    "settings.usage.credit.remaining.unlimited": "无限额度",
+    "settings.usage.credit.remaining.value": "剩余 {credit} 额度",
+    "settings.usage.limits.title": "常规使用限制",
+    "settings.usage.limits.spark.title": "GPT-5.3-Codex-Spark 使用限制",
+    "settings.usage.limits.fiveHour.label": "5 小时使用限制",
+    "settings.usage.limits.weekly.label": "每周使用限制",
+    "settings.usage.limits.window.resetAt": "在 {time} 重置",
+    "settings.usage.limits.progress.ariaLabel": "剩余用量",
+    "settings.usage.limits.progress.remaining": "剩余 {remaining}%",
     "settings.general.enterBehavior.label": "长提示词发送需按 {modifierSymbol} + enter",
     "settings.general.enterBehavior.description": "启用后，多行提示词需要按 {modifierSymbol} + enter 才会发送。",
     "settings.general.followUpQueueMode.label": "跟进行为",
@@ -1572,8 +2079,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.configuration": "配置",
     "settings.backToApp": "返回应用",
     "settings.title": "设置",
-    "settings.sectionApp": "应用",
-    "settings.sectionHost": "主机",
+    "settings.nav.heading.app": "应用",
+    "settings.nav.heading.host": "主机",
     "settings.agent.title": "配置",
     "settings.agent.configuration.subtitle.summary": "配置审批策略和沙盒设置 <a>了解更多</a>",
     "settings.agent.customConfig": "自定义 config.toml 设置",
@@ -1661,6 +2168,10 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.personalization.personality.description": "为 Codex 响应选择默认语气",
     "settings.personalization.memory.title": "记忆（实验性）",
     "settings.personalization.memory.subtitle": "设置 Codex 如何收集、保留和整合记忆。<a>了解更多</a>",
+    "settings.personalization.pets.title": "宠物",
+    "settings.personalization.pets.current": "已选择 {petName}",
+    "settings.personalization.avatars.select": "选择",
+    "settings.personalization.avatars.selected": "已选",
     "settings.memory.enableMemoriesLabel": "启用记忆",
     "settings.memory.enableMemoriesDescription": "从聊天中生成新记忆，并在新聊天中调用",
     "settings.memory.enableMemoriesAriaLabel": "启用记忆",

@@ -36,7 +36,9 @@ pub struct WorkspaceFileDocumentResponse {
     pub name: String,
     pub path: String,
     pub relative_path: String,
-    pub contents: String,
+    pub contents: Option<String>,
+    pub mime_type: Option<String>,
+    pub is_binary: bool,
 }
 
 #[tauri::command]
@@ -83,13 +85,18 @@ pub fn read_workspace_file(
         ));
     }
 
-    let contents = fs::read_to_string(&canonical_target)
+    let bytes = fs::read(&canonical_target)
         .map_err(|err| format!("failed to read workspace file: {err}"))?;
+    let contents = String::from_utf8(bytes.clone()).ok();
+    let mime_type = infer_mime_type(&canonical_target);
+    let is_binary = contents.is_none() || mime_type.as_deref() == Some("application/pdf");
     Ok(WorkspaceFileDocumentResponse {
         name: file_name_label(&canonical_target),
         path: canonical_target.display().to_string(),
         relative_path,
         contents,
+        mime_type,
+        is_binary,
     })
 }
 
@@ -201,4 +208,16 @@ fn file_name_label(path: &Path) -> String {
     path.file_name()
         .and_then(OsStr::to_str)
         .map_or_else(|| path.display().to_string(), ToString::to_string)
+}
+
+fn infer_mime_type(path: &Path) -> Option<String> {
+    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+    let mime_type = match extension.as_str() {
+        "c" | "cc" | "cpp" | "css" | "go" | "h" | "hpp" | "html" | "java" | "js" | "json"
+        | "jsx" | "md" | "mjs" | "py" | "rb" | "rs" | "sh" | "sql" | "svg" | "toml" | "ts"
+        | "tsx" | "txt" | "xml" | "yaml" | "yml" => "text/plain",
+        "pdf" => "application/pdf",
+        _ => return None,
+    };
+    Some(mime_type.to_string())
 }

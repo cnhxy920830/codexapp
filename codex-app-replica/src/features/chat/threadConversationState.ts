@@ -1,7 +1,13 @@
 import type {
   ApprovalDecision,
   FileChangeSummary,
+  GrantedPermissionProfile,
   JsonRpcId,
+  McpServerElicitationRequestResponse,
+  PermissionProfile,
+  PermissionsRequestApprovalResponse,
+  ToolRequestUserInputQuestion,
+  ToolRequestUserInputResponse,
   ThreadConversationItem,
   ThreadEvent,
 } from "../../services/history";
@@ -11,6 +17,36 @@ export type PendingApproval = Extract<
   { type: "commandApprovalRequested" } | { type: "fileChangeApprovalRequested" }
 >;
 
+export type PendingToolRequestUserInput = Extract<
+  ThreadEvent,
+  { type: "toolRequestUserInputRequested" }
+>;
+
+export type PendingPermissionsRequestApproval = Extract<
+  ThreadEvent,
+  { type: "permissionsRequestApprovalRequested" }
+>;
+
+export type PendingMcpServerElicitationRequest = Extract<
+  ThreadEvent,
+  { type: "mcpServerElicitationRequested" }
+>;
+
+export type PendingImplementPlanRequest = {
+  requestId: string;
+  threadId: string;
+  turnId: string;
+  planContent: string;
+};
+
+export type PlanImplementationItem = {
+  id: string;
+  threadId: string;
+  turnId: string;
+  planContent: string;
+  isCompleted: boolean;
+};
+
 const defaultApprovalDecisions: ApprovalDecision[] = [
   "accept",
   "acceptForSession",
@@ -18,8 +54,38 @@ const defaultApprovalDecisions: ApprovalDecision[] = [
   "cancel",
 ];
 
+const implementPlanRequestPrefix = "implement-plan:";
+
 export function approvalRequestKey(requestId: JsonRpcId) {
   return `${typeof requestId}:${requestId}`;
+}
+
+export function createPendingImplementPlanRequest(
+  threadId: string,
+  turnId: string,
+  planContent: string,
+): PendingImplementPlanRequest {
+  return {
+    requestId: `${implementPlanRequestPrefix}${turnId}`,
+    threadId,
+    turnId,
+    planContent,
+  };
+}
+
+export function createPlanImplementationItem(
+  threadId: string,
+  turnId: string,
+  planContent: string,
+  isCompleted: boolean,
+): PlanImplementationItem {
+  return {
+    id: `${implementPlanRequestPrefix}${turnId}`,
+    threadId,
+    turnId,
+    planContent,
+    isCompleted,
+  };
 }
 
 export function upsertPendingApproval(approvals: PendingApproval[], approval: PendingApproval) {
@@ -29,6 +95,140 @@ export function upsertPendingApproval(approvals: PendingApproval[], approval: Pe
     return [...approvals, approval];
   }
   return approvals.map((entry, entryIndex) => (entryIndex === index ? approval : entry));
+}
+
+export function upsertPendingToolRequestUserInput(
+  requests: PendingToolRequestUserInput[],
+  request: PendingToolRequestUserInput,
+) {
+  const key = approvalRequestKey(request.requestId);
+  const index = requests.findIndex((entry) => approvalRequestKey(entry.requestId) === key);
+  if (index === -1) {
+    return [...requests, request];
+  }
+  return requests.map((entry, entryIndex) => (entryIndex === index ? request : entry));
+}
+
+export function upsertPendingPermissionsRequestApproval(
+  requests: PendingPermissionsRequestApproval[],
+  request: PendingPermissionsRequestApproval,
+) {
+  const key = approvalRequestKey(request.requestId);
+  const index = requests.findIndex((entry) => approvalRequestKey(entry.requestId) === key);
+  if (index === -1) {
+    return [...requests, request];
+  }
+  return requests.map((entry, entryIndex) => (entryIndex === index ? request : entry));
+}
+
+export function upsertPendingMcpServerElicitationRequest(
+  requests: PendingMcpServerElicitationRequest[],
+  request: PendingMcpServerElicitationRequest,
+) {
+  const key = approvalRequestKey(request.requestId);
+  const index = requests.findIndex((entry) => approvalRequestKey(entry.requestId) === key);
+  if (index === -1) {
+    return [...requests, request];
+  }
+  return requests.map((entry, entryIndex) => (entryIndex === index ? request : entry));
+}
+
+export function upsertPendingImplementPlanRequest(
+  requests: PendingImplementPlanRequest[],
+  request: PendingImplementPlanRequest,
+) {
+  const index = requests.findIndex((entry) => entry.requestId === request.requestId);
+  if (index === -1) {
+    return [...requests, request];
+  }
+  return requests.map((entry, entryIndex) => (entryIndex === index ? request : entry));
+}
+
+export function upsertPlanImplementationItem(
+  items: PlanImplementationItem[],
+  item: PlanImplementationItem,
+) {
+  const index = items.findIndex((entry) => entry.id === item.id);
+  if (index === -1) {
+    return [...items, item];
+  }
+  return items.map((entry, entryIndex) => (entryIndex === index ? item : entry));
+}
+
+export function clearPendingImplementPlanRequestsForThread(
+  requests: PendingImplementPlanRequest[],
+  threadId: string,
+) {
+  return requests.filter((request) => request.threadId !== threadId);
+}
+
+export function markPlanImplementationItemsCompletedForThread(
+  items: PlanImplementationItem[],
+  threadId: string,
+) {
+  return items.map((item) =>
+    item.threadId === threadId && !item.isCompleted
+      ? {
+          ...item,
+          isCompleted: true,
+        }
+      : item,
+  );
+}
+
+export function removePendingImplementPlanRequest(
+  requests: PendingImplementPlanRequest[],
+  requestId: string,
+) {
+  return requests.filter((request) => request.requestId !== requestId);
+}
+
+export function markPlanImplementationItemCompleted(
+  items: PlanImplementationItem[],
+  requestId: string,
+) {
+  return items.map((item) =>
+    item.id === requestId && !item.isCompleted
+      ? {
+          ...item,
+          isCompleted: true,
+        }
+      : item,
+  );
+}
+
+export function buildPendingImplementPlanRequestForTurn(
+  threadId: string,
+  items: ThreadConversationItem[],
+  turnId: string,
+) {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item.turnId !== turnId) {
+      continue;
+    }
+    if (item.type !== "plan") {
+      continue;
+    }
+    const planContent = item.text.trim();
+    if (planContent.length === 0) {
+      return null;
+    }
+    return createPendingImplementPlanRequest(threadId, turnId, planContent);
+  }
+  return null;
+}
+
+export function buildPlanImplementationItemForTurn(
+  threadId: string,
+  items: ThreadConversationItem[],
+  turnId: string,
+) {
+  const request = buildPendingImplementPlanRequestForTurn(threadId, items, turnId);
+  if (!request) {
+    return null;
+  }
+  return createPlanImplementationItem(threadId, turnId, request.planContent, false);
 }
 
 export function resolveApprovalDecisions(approval: PendingApproval) {
@@ -46,6 +246,69 @@ export function resolveApprovalDecisions(approval: PendingApproval) {
     return defaultApprovalDecisions;
   }
   return Array.from(new Set(decisions));
+}
+
+export function createToolRequestUserInputResponse(
+  questions: ToolRequestUserInputQuestion[],
+  values: Record<string, string>,
+): ToolRequestUserInputResponse {
+  const answers = Object.fromEntries(
+    questions.map((question) => [
+      question.id,
+      {
+        answers: splitToolRequestUserInputAnswer(values[question.id] ?? ""),
+      },
+    ]),
+  );
+  return { answers };
+}
+
+export function createPermissionsRequestApprovalResponse(
+  permissions: PermissionProfile,
+  grantMode: "deny" | "turn" | "session",
+  strictAutoReview: boolean,
+): PermissionsRequestApprovalResponse {
+  if (grantMode === "deny") {
+    return {
+      permissions: {},
+      scope: "turn",
+      ...(strictAutoReview ? { strictAutoReview: true } : {}),
+    };
+  }
+  return {
+    permissions: toGrantedPermissionProfile(permissions),
+    scope: grantMode,
+    ...(strictAutoReview ? { strictAutoReview: true } : {}),
+  };
+}
+
+function toGrantedPermissionProfile(permissions: PermissionProfile): GrantedPermissionProfile {
+  const granted: GrantedPermissionProfile = {};
+  if (permissions.network !== null) {
+    granted.network = permissions.network;
+  }
+  if (permissions.fileSystem !== null) {
+    granted.fileSystem = permissions.fileSystem;
+  }
+  return granted;
+}
+
+export function createMcpServerElicitationRequestResponse(
+  action: "accept" | "decline" | "cancel",
+  content: unknown | null,
+): McpServerElicitationRequestResponse {
+  return {
+    action,
+    content,
+    meta: null,
+  };
+}
+
+function splitToolRequestUserInputAnswer(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
 }
 
 export function upsertConversationItem(

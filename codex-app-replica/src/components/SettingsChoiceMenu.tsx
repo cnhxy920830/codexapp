@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { CheckIcon, ChevronDownIcon } from "./AppShellIcons";
 
 type SettingsChoiceMenuOption = {
   value: string;
@@ -52,7 +53,7 @@ export function SettingsChoiceMenu({
         className="app-control flex w-full items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-[13px]"
       >
         <span className="truncate text-left">{selectedOption?.label ?? value}</span>
-        <span className="app-text-muted shrink-0">▾</span>
+        <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
       </button>
       {isOpen ? (
         <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-full rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
@@ -79,7 +80,7 @@ export function SettingsChoiceMenu({
                       <span className="app-text-muted mt-1 block text-[12px] leading-5">{option.description}</span>
                     ) : null}
                   </span>
-                  {isSelected ? <span className="shrink-0 text-[13px]">✓</span> : null}
+                  {isSelected ? <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" /> : null}
                 </button>
               );
             })}

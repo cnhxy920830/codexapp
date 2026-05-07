@@ -19,6 +19,9 @@ import {
 import {
   archiveThread,
   respondToApprovalRequest,
+  respondToMcpServerElicitationRequest,
+  respondToPermissionsRequestApproval,
+  respondToToolRequestUserInput,
   forkThread,
   setThreadName,
   type ApprovalDecision,
@@ -32,6 +35,8 @@ import {
   steerTurn,
   startTurn,
   type HistoryProjectGroup,
+  type FileChangeSummary,
+  type ToolRequestUserInputQuestion,
   type ThreadConversation,
 } from "./services/history";
 import {
@@ -48,7 +53,17 @@ import {
   type ConfigSnapshot,
 } from "./services/settings";
 import { AppearanceSettings } from "./components/AppearanceSettings";
-import { NewChatIcon, SearchIcon, SettingsCogIcon } from "./components/AppShellIcons";
+import {
+  BackNavigationIcon,
+  BrowserTabIcon,
+  ForwardNavigationIcon,
+  MoreActionsIcon,
+  PlusIcon,
+  NewChatIcon,
+  ReviewTabIcon,
+  SearchIcon,
+  SettingsCogIcon,
+} from "./components/AppShellIcons";
 import { AppToastRegion, type AppToast } from "./components/AppToastRegion";
 import { ConfigScopeMenu } from "./components/ConfigScopeMenu";
 import { DataControlsSettings } from "./components/DataControlsSettings";
@@ -61,14 +76,28 @@ import { McpSettings } from "./components/McpSettings";
 import { ComputerUseSettings } from "./components/ComputerUseSettings";
 import { PersonalizationSettings } from "./components/PersonalizationSettings";
 import { PluginsSettings } from "./components/PluginsSettings";
+import { BackToAppIcon, SettingsSectionIcon } from "./components/SettingsSectionIcons";
 import { SkillsSettings } from "./components/SkillsSettings";
+import { UsageSettings } from "./components/UsageSettings";
 import { WorktreesSettings } from "./components/WorktreesSettings";
 import { SettingsChoiceMenu } from "./components/SettingsChoiceMenu";
 import { ToggleSwitch } from "./components/ToggleSwitch";
 import { ChatConversationMainPane } from "./features/chat/ChatConversationMainPane";
-import { ChatSidePanel, type ChatSidePanelTab } from "./features/chat/ChatSidePanel";
+import { ChatSidePanel } from "./features/chat/ChatSidePanel";
+import { RightPanelOpenTabMenu, RightPanelTabStrip } from "./features/chat/RightPanelTabStrip";
 import { WorkspaceFileSearchDialog } from "./features/chat/WorkspaceFileSearchDialog";
 import { renderConversationMarkdown } from "./features/chat/conversationMarkdown";
+import { SkillsRoutePage } from "./features/skills/SkillsRoutePage";
+import { usePluginsRouteEnabled } from "./features/skills/usePluginsRouteEnabled";
+import {
+  createStaticRightPanelTab,
+  createWorkspaceFileRightPanelTab,
+  isStaticRightPanelTab,
+  isWorkspaceFileRightPanelTab,
+  isWorkspaceFileRightPanelTabId,
+  type RightPanelTab,
+  type StaticRightPanelTabId,
+} from "./features/chat/rightPanelTabs";
 import {
   enqueueQueuedLocalFollowUp,
   prependQueuedLocalFollowUp,
@@ -79,18 +108,41 @@ import {
 } from "./features/chat/localFollowUpQueue";
 import {
   approvalRequestKey,
+  buildPlanImplementationItemForTurn,
+  buildPendingImplementPlanRequestForTurn,
+  createMcpServerElicitationRequestResponse,
+  createPermissionsRequestApprovalResponse,
   buildThreadDiffSummary,
+  clearPendingImplementPlanRequestsForThread,
+  createToolRequestUserInputResponse,
+  markPlanImplementationItemCompleted,
+  markPlanImplementationItemsCompletedForThread,
+  removePendingImplementPlanRequest,
+  upsertPlanImplementationItem,
   upsertConversationItem,
+  upsertPendingImplementPlanRequest,
   upsertPendingApproval,
+  upsertPendingMcpServerElicitationRequest,
+  upsertPendingPermissionsRequestApproval,
+  upsertPendingToolRequestUserInput,
+  type PlanImplementationItem,
+  type PendingImplementPlanRequest,
   type PendingApproval,
+  type PendingMcpServerElicitationRequest,
+  type PendingPermissionsRequestApproval,
+  type PendingToolRequestUserInput,
 } from "./features/chat/threadConversationState";
 import { useI18n } from "./i18n/i18n";
 import type { MessageKey } from "./i18n/messages";
-import type { WorkspaceFileDocument } from "./services/workspaceFiles";
+import { readComputerUseApprovalsVisibility } from "./services/computerUseSettings";
+import { getCodexHomePath, isWithinCodexWorktrees } from "./services/codexHome";
+import { readWorkspaceFile, type WorkspaceFileDocument } from "./services/workspaceFiles";
 
 const appWindow = getCurrentWindow();
 const AGENT_SETTINGS_DOCS_URL = "https://developers.openai.com/codex/app/local-environments";
 const CONFIG_TOML_DOCS_URL = "https://developers.openai.com/codex/config-basic";
+const IMPLEMENT_PLAN_PROMPT_PREFIX = "PLEASE IMPLEMENT THIS PLAN:";
+type WorkspaceFileRightPanelTabState = Extract<RightPanelTab, { kind: "workspaceFile" }>;
 
 type SettingsSection =
   | "general-settings"
@@ -100,6 +152,7 @@ type SettingsSection =
   | "personalization"
   | "browser-use"
   | "computer-use"
+  | "usage"
   | "plugins-settings"
   | "skills-settings"
   | "keyboard-shortcuts"
@@ -108,30 +161,32 @@ type SettingsSection =
   | "worktrees"
   | "data-controls";
 type AgentConfigControlErrors = Partial<Record<"approval" | "sandbox" | "network", string>>;
+type AppRoute = "chat" | "settings" | "skills";
 
 const settingsGroups = [
   {
-    headingKey: "settings.sectionApp" as const,
+    headingKey: "settings.nav.heading.app" as const,
     items: [
       { id: "general-settings" as const, labelKey: "settings.nav.general-settings" as const, disabled: false },
       { id: "appearance" as const, labelKey: "settings.nav.appearance" as const, disabled: false },
       { id: "git-settings" as const, labelKey: "settings.nav.git-settings" as const, disabled: false },
+      { id: "usage" as const, labelKey: "settings.nav.usage" as const, disabled: false },
     ],
   },
   {
-    headingKey: "settings.sectionHost" as const,
+    headingKey: "settings.nav.heading.host" as const,
     items: [
       { id: "agent" as const, labelKey: "settings.nav.agent" as const, disabled: false },
       { id: "personalization" as const, labelKey: "settings.nav.personalization" as const, disabled: false },
+      { id: "keyboard-shortcuts" as const, labelKey: "settings.nav.keyboard-shortcuts" as const, disabled: false },
+      { id: "mcp-settings" as const, labelKey: "settings.nav.mcp-settings" as const, disabled: false },
       { id: "browser-use" as const, labelKey: "settings.nav.browser-use" as const, disabled: false },
       { id: "computer-use" as const, labelKey: "settings.nav.computer-use" as const, disabled: false },
-      { id: "mcp-settings" as const, labelKey: "settings.nav.mcp-settings" as const, disabled: false },
-      { id: "plugins-settings" as const, labelKey: "settings.nav.plugins-settings" as const, disabled: false },
-      { id: "skills-settings" as const, labelKey: "skills.page.heading" as const, disabled: false },
-      { id: "keyboard-shortcuts" as const, labelKey: "settings.nav.keyboard-shortcuts" as const, disabled: false },
       { id: "local-environments" as const, labelKey: "settings.nav.local-environments" as const, disabled: false },
       { id: "worktrees" as const, labelKey: "settings.nav.worktrees" as const, disabled: false },
       { id: "data-controls" as const, labelKey: "settings.nav.data-controls" as const, disabled: false },
+      { id: "plugins-settings" as const, labelKey: "settings.nav.plugins-settings" as const, disabled: false },
+      { id: "skills-settings" as const, labelKey: "settings.nav.skills-settings" as const, disabled: false },
     ],
   },
 ];
@@ -139,9 +194,10 @@ const settingsGroups = [
 type NavItem = {
   icon: ReactNode;
   label: string;
-  route: "chat" | "settings";
+  route: AppRoute;
   action?: "new-thread";
-  section?: SettingsSection;
+  disabled?: boolean;
+  tooltipKey?: MessageKey;
 };
 
 const approvalPolicyOptions = [
@@ -158,21 +214,34 @@ const sandboxModeOptions = [
 ];
 
 const settingsSectionLabelKeys: Record<SettingsSection, MessageKey> = {
-  "general-settings": "settings.nav.general-settings",
-  appearance: "settings.nav.appearance",
+  "general-settings": "settings.section.general-settings",
+  appearance: "settings.section.appearance",
   "git-settings": "settings.section.git-settings",
-  agent: "settings.nav.agent",
-  personalization: "settings.nav.personalization",
+  agent: "settings.section.agent",
+  personalization: "settings.section.personalization",
   "browser-use": "settings.section.browser-use",
-  "computer-use": "settings.nav.computer-use",
+  "computer-use": "computerUse.label",
+  usage: "settings.section.usage",
   "plugins-settings": "settings.section.plugins-settings",
-  "skills-settings": "skills.page.heading",
-  "keyboard-shortcuts": "settings.nav.keyboard-shortcuts",
+  "skills-settings": "settings.section.skills-settings",
+  "keyboard-shortcuts": "settings.section.keyboard-shortcuts",
   "mcp-settings": "settings.section.mcp-settings",
-  "local-environments": "settings.nav.local-environments",
-  worktrees: "settings.nav.worktrees",
-  "data-controls": "settings.nav.data-controls",
+  "local-environments": "settings.section.local-environments",
+  worktrees: "settings.section.worktrees",
+  "data-controls": "settings.section.data-controls",
 };
+
+const rightPanelTabLabelKeys: Record<StaticRightPanelTabId, MessageKey> = {
+  review: "thread.sidePanel.diffTab",
+  browser: "thread.sidePanel.browserTab",
+};
+
+function renderRightPanelTabIcon(tabId: StaticRightPanelTabId, className?: string) {
+  if (tabId === "review") {
+    return <ReviewTabIcon className={className} />;
+  }
+  return <BrowserTabIcon className={className} />;
+}
 
 function getConfigScopeLabel(
   scope: ConfigScopeOption,
@@ -279,13 +348,21 @@ function App() {
   const [turnError, setTurnError] = useState<string | null>(null);
   const [queuedFollowUps, setQueuedFollowUps] = useState<QueuedLocalFollowUp[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
+  const [pendingMcpServerElicitationRequest, setPendingMcpServerElicitationRequest] = useState<
+    PendingMcpServerElicitationRequest[]
+  >([]);
+  const [pendingPermissionsRequestApproval, setPendingPermissionsRequestApproval] = useState<
+    PendingPermissionsRequestApproval[]
+  >([]);
+  const [pendingToolRequestUserInput, setPendingToolRequestUserInput] = useState<PendingToolRequestUserInput[]>([]);
+  const [pendingImplementPlanRequests, setPendingImplementPlanRequests] = useState<PendingImplementPlanRequest[]>([]);
+  const [planImplementationItems, setPlanImplementationItems] = useState<PlanImplementationItem[]>([]);
   const [approvalActionErrors, setApprovalActionErrors] = useState<Record<string, string>>({});
   const [respondingApprovalKeys, setRespondingApprovalKeys] = useState<string[]>([]);
-  const [isSidePanelOpen, setIsSidePanelOpen] = useState(true);
-  const [activeSidePanelTab, setActiveSidePanelTab] = useState<ChatSidePanelTab>("review");
-  const [selectedSidePanelFile, setSelectedSidePanelFile] = useState<WorkspaceFileDocument | null>(null);
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
+  const [openRightPanelTabs, setOpenRightPanelTabs] = useState<RightPanelTab[]>([]);
+  const [activeRightPanelTabId, setActiveRightPanelTabId] = useState<string | null>(null);
   const [isWorkspaceFileSearchOpen, setIsWorkspaceFileSearchOpen] = useState(false);
-  const [isSidePanelTabMenuOpen, setIsSidePanelTabMenuOpen] = useState(false);
   const [isThreadActionsMenuOpen, setIsThreadActionsMenuOpen] = useState(false);
   const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false);
   const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
@@ -295,24 +372,71 @@ function App() {
     message: string;
   } | null>(null);
   const [appToast, setAppToast] = useState<AppToast | null>(null);
-  const [currentRoute, setCurrentRoute] = useState<"chat" | "settings">("chat");
+  const [currentRoute, setCurrentRoute] = useState<AppRoute>("chat");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general-settings");
+  const [hasComputerUseApprovalStore, setHasComputerUseApprovalStore] = useState(false);
+  const [codexHome, setCodexHome] = useState<string | null>(null);
   const [configSnapshot, setConfigSnapshot] = useState<ConfigSnapshot | null>(null);
   const [configScopeOptions, setConfigScopeOptions] = useState<ConfigScopeOption[]>([]);
   const [selectedConfigScopeKey, setSelectedConfigScopeKey] = useState<string>("user");
   const [agentConfigControlErrors, setAgentConfigControlErrors] = useState<AgentConfigControlErrors>({});
   const [configError, setConfigError] = useState<string | null>(null);
+  const isPluginsRouteEnabled = usePluginsRouteEnabled();
   const queuedFollowUpsRef = useRef<QueuedLocalFollowUp[]>([]);
   const drainingQueuedThreadIdsRef = useRef(new Set<string>());
-  const sidePanelTabMenuRef = useRef<HTMLDivElement | null>(null);
   const threadActionsMenuRef = useRef<HTMLDivElement | null>(null);
+  const openRightPanelTabsRef = useRef<RightPanelTab[]>([]);
+  const activeRightPanelTabIdRef = useRef<string | null>(null);
+  const previousSelectedThreadIdRef = useRef<string | null>(null);
+  const workspaceFileTabsByThreadIdRef = useRef(new Map<string, WorkspaceFileRightPanelTabState[]>());
+  const activeWorkspaceFileTabIdByThreadIdRef = useRef(new Map<string, string>());
   const openProjectPath = launchContext?.openProjectPath ?? null;
   const chatWorkspaceRoot = threadConversation?.cwd ?? openProjectPath ?? null;
   const settingsWorkspaceRoot = chatWorkspaceRoot;
+  const isApiKeyAuth = authSnapshot.authState.authMethod === "apikey";
+  const isChatGptAuth = authSnapshot.authState.authMethod === "chatgpt";
+  const isWorktreeThread = isWithinCodexWorktrees(threadConversation?.cwd ?? null, codexHome);
+  const primarySkillsRouteLabelKey: MessageKey = isChatGptAuth && isPluginsRouteEnabled
+      ? "sidebarElectron.skillsAppsRouteNavLink"
+      : "sidebarElectron.skillsRouteNavLink";
+  const showUsageSettings =
+    authSnapshot.authState.authMethod === "chatgpt" &&
+    ["plus", "pro", "prolite"].includes((authSnapshot.authState.planAtLogin ?? "").toLowerCase());
+  const visibleSettingsGroups = settingsGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter(
+        (item) =>
+          (item.id !== "computer-use" || hasComputerUseApprovalStore) &&
+          (item.id !== "usage" || showUsageSettings),
+      ),
+    }))
+    .filter((group) => group.items.length > 0);
+  const firstVisibleSettingsSection =
+    visibleSettingsGroups[0]?.items[0]?.id ?? "general-settings";
+  const isCurrentSettingsSectionVisible = visibleSettingsGroups.some((group) =>
+    group.items.some((item) => item.id === settingsSection),
+  );
   const menuItems = [t("app.menu.file"), t("app.menu.edit"), t("app.menu.view"), t("app.menu.window"), t("app.menu.help")];
   const navItems: NavItem[] = [
     { action: "new-thread", icon: <NewChatIcon className="h-4 w-4" />, label: t("app.nav.newChat"), route: "chat" },
     { icon: <SearchIcon className="h-4 w-4" />, label: t("app.nav.search"), route: "chat" },
+    {
+      icon: <SettingsSectionIcon className="h-4 w-4" section="skills-settings" />,
+      label: t(primarySkillsRouteLabelKey),
+      route: "skills",
+    },
+    ...(isApiKeyAuth
+      ? [
+          {
+            icon: <SettingsSectionIcon className="h-4 w-4" section="plugins-settings" />,
+            label: t("sidebarElectron.pluginsRouteNavLink"),
+            route: "skills" as const,
+            disabled: true,
+            tooltipKey: "sidebarElectron.pluginsDisabledTooltip" as const,
+          },
+        ]
+      : []),
     { icon: <SettingsCogIcon className="h-4 w-4" />, label: t("app.nav.settings"), route: "settings" },
   ];
   const threadDiffSummary = buildThreadDiffSummary(threadConversation?.items ?? []);
@@ -321,10 +445,27 @@ function App() {
   const shellHeaderTitle =
     currentRoute === "settings"
       ? `${t("app.shell.settings")} / ${t(settingsSectionLabelKeys[settingsSection])}`
+      : currentRoute === "skills"
+        ? t(primarySkillsRouteLabelKey)
       : threadConversation?.title || t("app.nav.newChat");
   const isTurnInProgress = activeTurn !== null && activeTurn.threadId === selectedThreadId;
   const submitButtonMode = isTurnInProgress && composerDraft.trim().length === 0 ? "stop" : "send";
   const currentThreadApprovals = pendingApprovals.filter((approval) => approval.threadId === selectedThreadId);
+  const currentThreadPermissionsRequestApproval = pendingPermissionsRequestApproval.filter(
+    (request) => request.threadId === selectedThreadId,
+  );
+  const currentThreadMcpServerElicitationRequest = pendingMcpServerElicitationRequest.filter(
+    (request) => request.threadId === selectedThreadId,
+  );
+  const currentThreadToolRequestUserInput = pendingToolRequestUserInput.filter(
+    (request) => request.threadId === selectedThreadId,
+  );
+  const currentThreadImplementPlanRequests = pendingImplementPlanRequests.filter(
+    (request) => request.threadId === selectedThreadId,
+  );
+  const currentThreadPlanImplementationItems = planImplementationItems.filter(
+    (item) => item.threadId === selectedThreadId,
+  );
   const currentThreadQueuedFollowUps = queuedLocalFollowUpsForThread(queuedFollowUps, selectedThreadId);
 
   useEffect(() => {
@@ -380,20 +521,24 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!isSidePanelTabMenuOpen) {
-      return;
-    }
-    const handlePointerDown = (event: PointerEvent) => {
-      if (sidePanelTabMenuRef.current?.contains(event.target as Node)) {
-        return;
-      }
-      setIsSidePanelTabMenuOpen(false);
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
+    let cancelled = false;
+
+    void getCodexHomePath()
+      .then((path) => {
+        if (!cancelled) {
+          setCodexHome(path);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCodexHome(null);
+        }
+      });
+
     return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
+      cancelled = true;
     };
-  }, [isSidePanelTabMenuOpen]);
+  }, []);
 
   useEffect(() => {
     if (!isThreadActionsMenuOpen) {
@@ -436,10 +581,93 @@ function App() {
   }, [appToast]);
 
   useEffect(() => {
-    setSelectedSidePanelFile(null);
+    openRightPanelTabsRef.current = openRightPanelTabs;
+    activeRightPanelTabIdRef.current = activeRightPanelTabId;
+  }, [activeRightPanelTabId, openRightPanelTabs]);
+
+  useEffect(() => {
+    const previousThreadId = previousSelectedThreadIdRef.current;
+    const currentOpenRightPanelTabs = openRightPanelTabsRef.current;
+    const currentStaticTabs = currentOpenRightPanelTabs.filter(isStaticRightPanelTab);
+    const currentActiveRightPanelTabId = activeRightPanelTabIdRef.current;
+
+    if (previousThreadId !== null) {
+      const currentWorkspaceFileTabs = currentOpenRightPanelTabs.filter(isWorkspaceFileRightPanelTab);
+      if (currentWorkspaceFileTabs.length > 0) {
+        workspaceFileTabsByThreadIdRef.current.set(previousThreadId, currentWorkspaceFileTabs);
+      } else {
+        workspaceFileTabsByThreadIdRef.current.delete(previousThreadId);
+      }
+
+      if (
+        currentActiveRightPanelTabId !== null &&
+        isWorkspaceFileRightPanelTabId(currentActiveRightPanelTabId)
+      ) {
+        activeWorkspaceFileTabIdByThreadIdRef.current.set(previousThreadId, currentActiveRightPanelTabId);
+      } else {
+        activeWorkspaceFileTabIdByThreadIdRef.current.delete(previousThreadId);
+      }
+    }
+
+    const restoredWorkspaceFileTabs =
+      selectedThreadId === null ? [] : (workspaceFileTabsByThreadIdRef.current.get(selectedThreadId) ?? []);
+    const restoredActiveWorkspaceFileTabId =
+      selectedThreadId === null ? null : (activeWorkspaceFileTabIdByThreadIdRef.current.get(selectedThreadId) ?? null);
+
+    setOpenRightPanelTabs([...currentStaticTabs, ...restoredWorkspaceFileTabs]);
+    setActiveRightPanelTabId((current) => {
+      if (!isWorkspaceFileRightPanelTabId(current) && current !== null) {
+        return current;
+      }
+      if (
+        restoredActiveWorkspaceFileTabId !== null &&
+        restoredWorkspaceFileTabs.some((tab) => tab.id === restoredActiveWorkspaceFileTabId)
+      ) {
+        return restoredActiveWorkspaceFileTabId;
+      }
+      if (restoredWorkspaceFileTabs.length > 0) {
+        return restoredWorkspaceFileTabs[0].id;
+      }
+      if (isWorkspaceFileRightPanelTabId(current)) {
+        return currentStaticTabs[0]?.id ?? null;
+      }
+      return current;
+    });
     setIsWorkspaceFileSearchOpen(false);
-    setActiveSidePanelTab((current) => (current === "file" ? "review" : current));
+    previousSelectedThreadIdRef.current = selectedThreadId;
   }, [selectedThreadId]);
+
+  useEffect(() => {
+    if (currentRoute !== "settings") {
+      return;
+    }
+
+    let cancelled = false;
+
+    void readComputerUseApprovalsVisibility()
+      .then((state) => {
+        if (!cancelled) {
+          setHasComputerUseApprovalStore(state.hasApprovalStore);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHasComputerUseApprovalStore(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentRoute]);
+
+  useEffect(() => {
+    if (currentRoute !== "settings" || isCurrentSettingsSectionVisible) {
+      return;
+    }
+
+    setSettingsSection(firstVisibleSettingsSection);
+  }, [currentRoute, firstVisibleSettingsSection, isCurrentSettingsSectionVisible]);
 
   useEffect(() => {
     queuedFollowUpsRef.current = queuedFollowUps;
@@ -467,6 +695,7 @@ function App() {
           text: nextQueuedFollowUp.followUp.text,
           cwd: nextQueuedFollowUp.followUp.cwd,
         });
+        completeImplementPlanFlowForThread(threadId);
         setActiveTurn({ threadId, turnId });
       } catch (error) {
         queuedFollowUpsRef.current = prependQueuedLocalFollowUp(
@@ -495,10 +724,62 @@ function App() {
         setPendingApprovals((current) => upsertPendingApproval(current, event));
         return;
       }
+      if (event.type === "toolRequestUserInputRequested") {
+        const requestKey = approvalRequestKey(event.requestId);
+        setApprovalActionErrors((current) => {
+          if (!(requestKey in current)) {
+            return current;
+          }
+          const next = { ...current };
+          delete next[requestKey];
+          return next;
+        });
+        setPendingToolRequestUserInput((current) => upsertPendingToolRequestUserInput(current, event));
+        return;
+      }
+      if (event.type === "permissionsRequestApprovalRequested") {
+        const requestKey = approvalRequestKey(event.requestId);
+        setApprovalActionErrors((current) => {
+          if (!(requestKey in current)) {
+            return current;
+          }
+          const next = { ...current };
+          delete next[requestKey];
+          return next;
+        });
+        setPendingPermissionsRequestApproval((current) =>
+          upsertPendingPermissionsRequestApproval(current, event),
+        );
+        return;
+      }
+      if (event.type === "mcpServerElicitationRequested") {
+        const requestKey = approvalRequestKey(event.requestId);
+        setApprovalActionErrors((current) => {
+          if (!(requestKey in current)) {
+            return current;
+          }
+          const next = { ...current };
+          delete next[requestKey];
+          return next;
+        });
+        setPendingMcpServerElicitationRequest((current) =>
+          upsertPendingMcpServerElicitationRequest(current, event),
+        );
+        return;
+      }
       if (event.type === "serverRequestResolved") {
         const requestKey = approvalRequestKey(event.requestId);
         setPendingApprovals((current) =>
           current.filter((approval) => approvalRequestKey(approval.requestId) !== requestKey),
+        );
+        setPendingMcpServerElicitationRequest((current) =>
+          current.filter((request) => approvalRequestKey(request.requestId) !== requestKey),
+        );
+        setPendingPermissionsRequestApproval((current) =>
+          current.filter((request) => approvalRequestKey(request.requestId) !== requestKey),
+        );
+        setPendingToolRequestUserInput((current) =>
+          current.filter((request) => approvalRequestKey(request.requestId) !== requestKey),
         );
         setRespondingApprovalKeys((current) => current.filter((key) => key !== requestKey));
         setApprovalActionErrors((current) => {
@@ -518,6 +799,21 @@ function App() {
             : current,
         );
         void drainQueuedFollowUp(event.threadId);
+        if (event.status === "completed" && event.error === null) {
+          void readThread(event.threadId)
+            .then((thread) => {
+              const request = buildPendingImplementPlanRequestForTurn(thread.id, thread.items, event.turnId);
+              const item = buildPlanImplementationItemForTurn(thread.id, thread.items, event.turnId);
+              setPendingImplementPlanRequests((current) => {
+                const withoutThread = clearPendingImplementPlanRequestsForThread(current, thread.id);
+                return request ? upsertPendingImplementPlanRequest(withoutThread, request) : withoutThread;
+              });
+              if (item) {
+                setPlanImplementationItems((current) => upsertPlanImplementationItem(current, item));
+              }
+            })
+            .catch(() => undefined);
+        }
       }
       if (event.threadId !== selectedThreadId) {
         return;
@@ -529,9 +825,6 @@ function App() {
             : current,
         );
         return;
-      }
-      if (event.type === "turnCompleted" && event.error) {
-        setTurnError(event.error);
       }
       void Promise.all([getRecentThreads(), readThread(event.threadId)])
         .then(([threads, thread]) => {
@@ -665,13 +958,46 @@ function App() {
   };
 
   const shellColumns = {
-    gridTemplateColumns: isSidePanelOpen ? "minmax(0, 1fr) var(--app-shell-right-width)" : "minmax(0, 1fr)",
+    gridTemplateColumns: isRightPanelOpen ? "minmax(0, 1fr) var(--app-shell-right-width)" : "minmax(0, 1fr)",
   } as const;
+  const activeRightPanelTab = openRightPanelTabs.find((tab) => tab.id === activeRightPanelTabId) ?? null;
+  const collapsedRightPanelTabs = !isRightPanelOpen ? openRightPanelTabs.filter(isStaticRightPanelTab).slice(0, 3) : [];
+  const canOfferReviewRightPanelTab = !openRightPanelTabs.some((tab) => tab.kind === "review");
+  const canOfferBrowserRightPanelTab = !openRightPanelTabs.some((tab) => tab.kind === "browser");
+  const openRightPanelTab = (tabId: StaticRightPanelTabId) => {
+    setOpenRightPanelTabs((current) =>
+      current.some((tab) => tab.id === tabId) ? current : [...current, createStaticRightPanelTab(tabId)],
+    );
+    setActiveRightPanelTabId(tabId);
+    setIsRightPanelOpen(true);
+  };
 
-  const openSidePanelTab = (tab: ChatSidePanelTab) => {
-    setActiveSidePanelTab(tab);
-    setIsSidePanelOpen(true);
-    setIsSidePanelTabMenuOpen(false);
+  const activateRightPanelTab = (tabId: string) => {
+    setActiveRightPanelTabId(tabId);
+    setIsRightPanelOpen(true);
+  };
+
+  const closeRightPanelTab = (tabId: string) => {
+    setOpenRightPanelTabs((current) => {
+      const closingIndex = current.findIndex((tab) => tab.id === tabId);
+      if (closingIndex === -1) {
+        return current;
+      }
+
+      const nextTabs = current.filter((tab) => tab.id !== tabId);
+      setActiveRightPanelTabId((activeTabId) => {
+        if (activeTabId !== tabId) {
+          return activeTabId;
+        }
+        return nextTabs[closingIndex]?.id ?? nextTabs[closingIndex - 1]?.id ?? null;
+      });
+
+      return nextTabs;
+    });
+  };
+
+  const toggleRightPanel = () => {
+    setIsRightPanelOpen((current) => !current);
   };
 
   const openWorkspaceFileSearch = () => {
@@ -679,15 +1005,64 @@ function App() {
       return;
     }
     setIsThreadActionsMenuOpen(false);
-    setIsSidePanelTabMenuOpen(false);
     setIsWorkspaceFileSearchOpen(true);
   };
 
   const handleWorkspaceFileSelected = (file: WorkspaceFileDocument) => {
-    setSelectedSidePanelFile(file);
-    setActiveSidePanelTab("file");
-    setIsSidePanelOpen(true);
+    const workspaceFileTab = createWorkspaceFileRightPanelTab(file);
+    setOpenRightPanelTabs((current) => [
+      ...current.filter((tab) => !isWorkspaceFileRightPanelTab(tab)),
+      workspaceFileTab,
+    ]);
+    setActiveRightPanelTabId(workspaceFileTab.id);
+    setIsRightPanelOpen(true);
     setIsWorkspaceFileSearchOpen(false);
+  };
+
+  const handleReviewFileSelected = async (change: FileChangeSummary) => {
+    if (!chatWorkspaceRoot) {
+      return;
+    }
+
+    const candidatePath = change.movePath ?? change.path;
+    const normalizedWorkspaceRoot = chatWorkspaceRoot.replaceAll("\\", "/").replace(/\/+$/, "");
+    const normalizedCandidatePath = candidatePath.replaceAll("\\", "/");
+    const isAbsolutePath = /^[A-Za-z]:\//.test(normalizedCandidatePath) || normalizedCandidatePath.startsWith("/");
+
+    let relativePath = normalizedCandidatePath;
+    if (normalizedCandidatePath.startsWith(`${normalizedWorkspaceRoot}/`)) {
+      relativePath = normalizedCandidatePath.slice(normalizedWorkspaceRoot.length + 1);
+    } else if (isAbsolutePath) {
+      setThreadActionFeedback({
+        tone: "error",
+        message: `workspace file path must be relative: ${candidatePath}`,
+      });
+      return;
+    } else {
+      relativePath = normalizedCandidatePath.replace(/^\.?\//, "");
+    }
+
+    if (!relativePath) {
+      setThreadActionFeedback({
+        tone: "error",
+        message: `workspace file path is empty: ${candidatePath}`,
+      });
+      return;
+    }
+
+    try {
+      const file = await readWorkspaceFile({
+        workspaceRoot: chatWorkspaceRoot,
+        relativePath,
+      });
+      handleWorkspaceFileSelected(file);
+      setThreadActionFeedback(null);
+    } catch (error) {
+      setThreadActionFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   };
 
   const syncProjectGroups = (activeThreadId: string | null, threads: Awaited<ReturnType<typeof getRecentThreads>>) => {
@@ -737,6 +1112,11 @@ function App() {
       queuedFollowUpsRef.current = next;
       return next;
     });
+  };
+
+  const completeImplementPlanFlowForThread = (threadId: string) => {
+    setPendingImplementPlanRequests((current) => clearPendingImplementPlanRequestsForThread(current, threadId));
+    setPlanImplementationItems((current) => markPlanImplementationItemsCompletedForThread(current, threadId));
   };
 
   const createAndSelectThread = async () => {
@@ -793,6 +1173,22 @@ function App() {
   const isDeviceCodePending = activeLoginId !== null && deviceCode !== null;
   const shouldShowAuthPanel =
     showApiKeyEntry || isBrowserLoginPending || isDeviceCodePending || loginError !== null;
+
+  const openRemoteTask = async (taskId: string) => {
+    const normalizedTaskId = taskId.trim();
+    if (!normalizedTaskId) {
+      return;
+    }
+    try {
+      const thread = await readThread(normalizedTaskId);
+      setSelectedThreadId(normalizedTaskId);
+      setTurnError(null);
+      setCurrentRoute("chat");
+      setThreadConversation(thread);
+    } catch {
+      // Keep the current selection untouched when the local shell cannot open the task id directly.
+    }
+  };
 
   const selectThread = async (threadId: string) => {
     setSelectedThreadId(threadId);
@@ -876,7 +1272,17 @@ function App() {
       return;
     }
     try {
-      const markdown = renderConversationMarkdown(threadConversation, t);
+      const markdown = renderConversationMarkdown(
+        threadConversation,
+        t,
+        currentThreadPlanImplementationItems,
+        {
+          approvals: currentThreadApprovals,
+          mcpRequests: currentThreadMcpServerElicitationRequest,
+          permissionsRequests: currentThreadPermissionsRequestApproval,
+          userInputRequests: currentThreadToolRequestUserInput,
+        },
+      );
       await navigator.clipboard.writeText(markdown);
       setThreadActionFeedback({
         tone: "success",
@@ -1021,6 +1427,7 @@ function App() {
           turnId: activeTurn.turnId,
           text,
         });
+        completeImplementPlanFlowForThread(threadId);
         setActiveTurn({ threadId, turnId });
         setComposerDraft("");
         return;
@@ -1038,11 +1445,57 @@ function App() {
         return;
       }
       const turnId = await startTurn({ threadId, text, cwd });
+      completeImplementPlanFlowForThread(threadId);
       setActiveTurn({ threadId, turnId });
       setComposerDraft("");
     } catch (error) {
       setTurnError(error instanceof Error ? error.message : String(error));
     }
+  };
+
+  const handleImplementPlanRequestSubmit = async (
+    request: PendingImplementPlanRequest,
+    submission: { type: "followUp"; text: string } | { type: "implement" },
+  ) => {
+    const text =
+      submission.type === "implement"
+        ? `${IMPLEMENT_PLAN_PROMPT_PREFIX}\n${request.planContent}`
+        : submission.text.trim();
+    if (text.length === 0) {
+      return;
+    }
+
+    setTurnError(null);
+    try {
+      const cwd = threadConversation?.id === request.threadId ? threadConversation.cwd || openProjectPath || null : openProjectPath || null;
+      if (activeTurn && activeTurn.threadId === request.threadId) {
+        const turnId = await steerTurn({
+          threadId: request.threadId,
+          turnId: activeTurn.turnId,
+          text,
+        });
+        setPendingImplementPlanRequests((current) => removePendingImplementPlanRequest(current, request.requestId));
+        setPlanImplementationItems((current) => markPlanImplementationItemCompleted(current, request.requestId));
+        setActiveTurn({ threadId: request.threadId, turnId });
+        return;
+      }
+      const turnId = await startTurn({
+        threadId: request.threadId,
+        text,
+        cwd,
+      });
+      setPendingImplementPlanRequests((current) => removePendingImplementPlanRequest(current, request.requestId));
+      setPlanImplementationItems((current) => markPlanImplementationItemCompleted(current, request.requestId));
+      setActiveTurn({ threadId: request.threadId, turnId });
+    } catch (error) {
+      setTurnError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const dismissImplementPlanRequest = (request: PendingImplementPlanRequest) => {
+    setTurnError(null);
+    setPendingImplementPlanRequests((current) => removePendingImplementPlanRequest(current, request.requestId));
+    setPlanImplementationItems((current) => markPlanImplementationItemCompleted(current, request.requestId));
   };
 
   const stopTurn = async () => {
@@ -1076,6 +1529,105 @@ function App() {
     );
     try {
       await respondToApprovalRequest({ requestId: approval.requestId, decision });
+    } catch (error) {
+      setRespondingApprovalKeys((current) => current.filter((key) => key !== requestKey));
+      setApprovalActionErrors((current) => ({
+        ...current,
+        [requestKey]: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  };
+
+  const handleToolRequestUserInputSubmit = async (
+    request: PendingToolRequestUserInput,
+    values: Record<string, string>,
+  ) => {
+    const requestKey = approvalRequestKey(request.requestId);
+    setTurnError(null);
+    setApprovalActionErrors((current) => {
+      if (!(requestKey in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[requestKey];
+      return next;
+    });
+    setRespondingApprovalKeys((current) =>
+      current.includes(requestKey) ? current : [...current, requestKey],
+    );
+    try {
+      await respondToToolRequestUserInput({
+        requestId: request.requestId,
+        response: createToolRequestUserInputResponse(request.questions, values),
+      });
+    } catch (error) {
+      setRespondingApprovalKeys((current) => current.filter((key) => key !== requestKey));
+      setApprovalActionErrors((current) => ({
+        ...current,
+        [requestKey]: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  };
+
+  const handlePermissionsRequestApprovalSubmit = async (
+    request: PendingPermissionsRequestApproval,
+    grantMode: "deny" | "turn" | "session",
+    strictAutoReview: boolean,
+  ) => {
+    const requestKey = approvalRequestKey(request.requestId);
+    setTurnError(null);
+    setApprovalActionErrors((current) => {
+      if (!(requestKey in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[requestKey];
+      return next;
+    });
+    setRespondingApprovalKeys((current) =>
+      current.includes(requestKey) ? current : [...current, requestKey],
+    );
+    try {
+      await respondToPermissionsRequestApproval({
+        requestId: request.requestId,
+        response: createPermissionsRequestApprovalResponse(
+          request.permissions,
+          grantMode,
+          strictAutoReview,
+        ),
+      });
+    } catch (error) {
+      setRespondingApprovalKeys((current) => current.filter((key) => key !== requestKey));
+      setApprovalActionErrors((current) => ({
+        ...current,
+        [requestKey]: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  };
+
+  const handleMcpServerElicitationRequestSubmit = async (
+    request: PendingMcpServerElicitationRequest,
+    action: "accept" | "decline" | "cancel",
+    content: unknown | null,
+  ) => {
+    const requestKey = approvalRequestKey(request.requestId);
+    setTurnError(null);
+    setApprovalActionErrors((current) => {
+      if (!(requestKey in current)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[requestKey];
+      return next;
+    });
+    setRespondingApprovalKeys((current) =>
+      current.includes(requestKey) ? current : [...current, requestKey],
+    );
+    try {
+      await respondToMcpServerElicitationRequest({
+        requestId: request.requestId,
+        response: createMcpServerElicitationRequestResponse(action, content),
+      });
     } catch (error) {
       setRespondingApprovalKeys((current) => current.filter((key) => key !== requestKey));
       setApprovalActionErrors((current) => ({
@@ -1249,7 +1801,20 @@ function App() {
     }
 
     if (settingsSection === "computer-use") {
-      return <ComputerUseSettings workspaceRoot={settingsWorkspaceRoot} />;
+      if (!hasComputerUseApprovalStore) {
+        return null;
+      }
+
+      return <ComputerUseSettings workspaceRoot={settingsWorkspaceRoot} onShowToast={(toast) => setAppToast(toast)} />;
+    }
+
+    if (settingsSection === "usage") {
+      return (
+        <UsageSettings
+          authMethod={authSnapshot.authState.authMethod}
+          planAtLogin={authSnapshot.authState.planAtLogin}
+        />
+      );
     }
 
     if (settingsSection === "plugins-settings") {
@@ -1656,37 +2221,43 @@ function App() {
 
         <div className="flex min-h-0 flex-1">
           <aside className="flex min-h-0 w-[var(--app-shell-sidebar-width)] flex-col border-r border-[var(--app-shell-border)] bg-[var(--app-shell-sidebar)] px-3 pt-3 pb-3">
-            {currentRoute === "chat" ? (
+            {currentRoute !== "settings" ? (
               <>
                 <div className="space-y-1.5">
                   {navItems.map((item) => {
-                    const isActive = item.action === "new-thread";
+                    const isActive = item.action === "new-thread" || (!item.disabled && item.route === currentRoute);
+                    const buttonClassName = [
+                      "flex h-10 w-full items-center gap-3 rounded-[12px] px-3.5 text-left text-[14px]",
+                      isActive ? "app-nav-item-active" : item.disabled ? "app-nav-item-disabled" : "app-nav-item-idle",
+                    ].join(" ");
                     return (
-                      <button
-                        key={item.label}
-                        type="button"
-                        onClick={() => {
-                          if (item.action === "new-thread") {
-                            void startNewThread();
-                            return;
-                          }
-                          if (item.section) {
-                            setSettingsSection(item.section);
-                            setCurrentRoute("settings");
-                          } else if (item.route === "settings") {
-                            setCurrentRoute("settings");
-                          } else {
-                            setCurrentRoute("chat");
-                          }
-                        }}
-                        className={[
-                          "flex h-10 w-full items-center gap-3 rounded-[12px] px-3.5 text-left text-[14px]",
-                          isActive ? "app-nav-item-active" : "app-nav-item-idle",
-                        ].join(" ")}
-                      >
-                        <span className="app-text-muted flex h-4 w-4 items-center justify-center">{item.icon}</span>
-                        <span>{item.label}</span>
-                      </button>
+                      <div key={`${item.route}:${item.label}`} className="group relative">
+                        <button
+                          type="button"
+                          disabled={item.disabled}
+                          title={item.tooltipKey ? t(item.tooltipKey) : undefined}
+                          onClick={() => {
+                            if (item.action === "new-thread") {
+                              setCurrentRoute("chat");
+                              void startNewThread();
+                              return;
+                            }
+                            if (item.disabled) {
+                              return;
+                            }
+                            setCurrentRoute(item.route);
+                          }}
+                          className={buttonClassName}
+                        >
+                          <span className="app-text-muted flex h-4 w-4 items-center justify-center">{item.icon}</span>
+                          <span>{item.label}</span>
+                        </button>
+                        {item.tooltipKey ? (
+                          <div className="pointer-events-none absolute top-1/2 left-full z-10 ml-3 hidden -translate-y-1/2 rounded-[12px] border border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)] px-3 py-2 text-[12px] leading-5 text-[var(--app-shell-text)] shadow-[0_12px_30px_rgba(0,0,0,0.18)] group-hover:block">
+                            {t(item.tooltipKey)}
+                          </div>
+                        ) : null}
+                      </div>
                     );
                   })}
                 </div>
@@ -1696,9 +2267,9 @@ function App() {
                   <button
                     type="button"
                     onClick={() => void startNewThread()}
-                    className="app-text-muted text-[13px] tracking-normal"
+                    className="app-text-muted flex h-4 w-4 items-center justify-center"
                   >
-                    +
+                    <PlusIcon className="h-4 w-4" />
                   </button>
                 </div>
 
@@ -1708,7 +2279,9 @@ function App() {
                       <section key={group.name} className="space-y-1.5">
                         <div className="app-title flex items-center justify-between px-1 text-[14px]">
                           <span className="truncate">{group.name}</span>
-                          <span className="text-[12px] text-[var(--app-shell-subtle)]">⋯</span>
+                          <span className="app-text-muted flex h-3.5 w-3.5 items-center justify-center">
+                            <MoreActionsIcon className="h-3.5 w-3.5" />
+                          </span>
                         </div>
 
                         <div className="space-y-1">
@@ -1747,7 +2320,9 @@ function App() {
                   onClick={() => setCurrentRoute("chat")}
                   className="app-nav-item-idle flex h-10 items-center gap-3 rounded-[12px] px-3.5 text-left text-[14px]"
                 >
-                  <span className="app-text-muted w-4 text-center text-[13px]">←</span>
+                  <span className="app-text-muted flex h-4 w-4 items-center justify-center">
+                    <BackToAppIcon className="h-4 w-4" />
+                  </span>
                   <span>{t("settings.backToApp")}</span>
                 </button>
 
@@ -1756,7 +2331,7 @@ function App() {
                 </div>
 
                 <div className="mt-3 min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
-                  {settingsGroups.map((group) => (
+                  {visibleSettingsGroups.map((group) => (
                     <section key={group.headingKey} className="space-y-1.5">
                       <div className="px-1 text-[12px] font-medium tracking-[0.16em] text-[var(--app-shell-subtle)]">
                         {t(group.headingKey)}
@@ -1769,7 +2344,7 @@ function App() {
                             disabled={item.disabled}
                             onClick={() => setSettingsSection(item.id)}
                             className={[
-                              "flex h-10 w-full items-center rounded-[12px] px-3.5 text-left text-[14px]",
+                              "flex h-10 w-full items-center gap-3 rounded-[12px] px-3.5 text-left text-[14px]",
                               settingsSection === item.id
                                 ? "app-nav-item-active"
                                 : item.disabled
@@ -1777,6 +2352,9 @@ function App() {
                                   : "app-nav-item-idle",
                             ].join(" ")}
                           >
+                            <span className="app-text-muted flex h-4 w-4 shrink-0 items-center justify-center">
+                              <SettingsSectionIcon className="h-4 w-4" section={item.id} />
+                            </span>
                             {t(item.labelKey)}
                           </button>
                         ))}
@@ -1798,14 +2376,14 @@ function App() {
                     onClick={() => setCurrentRoute("chat")}
                     className="app-topbar-button flex h-8 w-8 items-center justify-center rounded-[10px] text-[13px]"
                   >
-                    ←
+                    <BackNavigationIcon className="h-4 w-4" />
                   </button>
                   <button
                     type="button"
                     aria-label={t("app.shell.forward")}
                     className="app-topbar-button flex h-8 w-8 items-center justify-center rounded-[10px] text-[13px]"
                   >
-                    →
+                    <ForwardNavigationIcon className="h-4 w-4" />
                   </button>
                 </div>
 
@@ -1826,71 +2404,62 @@ function App() {
                 <div className="flex items-center gap-2">
                   {currentRoute === "chat" ? (
                     <div className="relative flex items-center gap-2">
-                      <div ref={sidePanelTabMenuRef}>
-                        <button
-                          type="button"
-                          title={t("thread.sidePanel.openTab")}
-                          aria-label={t("thread.sidePanel.openTab")}
-                          aria-expanded={isSidePanelTabMenuOpen}
-                          onClick={() => {
-                            setIsThreadActionsMenuOpen(false);
-                            setIsSidePanelTabMenuOpen((value) => !value);
-                          }}
-                          className="app-control-weak flex h-8 w-8 items-center justify-center rounded-[10px] text-[12px]"
-                        >
-                          ⋯
-                        </button>
-                        {isSidePanelTabMenuOpen ? (
-                          <div className="app-card absolute top-10 right-[52px] z-10 min-w-[168px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
-                            <button
-                              type="button"
-                              disabled={!chatWorkspaceRoot}
-                              onClick={openWorkspaceFileSearch}
-                              className="app-nav-item-idle flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
-                            >
-                              {t("thread.sidePanel.openFile")}
-                            </button>
-                            <div className="my-1 h-px bg-[var(--app-shell-border)]" />
-                            <button
-                              type="button"
-                              onClick={() => openSidePanelTab("review")}
-                              className={[
-                                "flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px]",
-                                activeSidePanelTab === "review" && isSidePanelOpen
-                                  ? "app-nav-item-active"
-                                  : "app-nav-item-idle",
-                              ].join(" ")}
-                            >
-                              {t("thread.sidePanel.openReviewTab")}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => openSidePanelTab("browser")}
-                              className={[
-                                "mt-1 flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px]",
-                                activeSidePanelTab === "browser" && isSidePanelOpen
-                                  ? "app-nav-item-active"
-                                  : "app-nav-item-idle",
-                              ].join(" ")}
-                            >
-                              {t("thread.sidePanel.openBrowserTab")}
-                            </button>
-                          </div>
-                        ) : null}
-                      </div>
-                      <button
-                        type="button"
-                        title={t("thread.sidePanel.toggle")}
-                        aria-label={t("thread.sidePanel.toggle")}
-                        aria-pressed={isSidePanelOpen}
-                        onClick={() => setIsSidePanelOpen((value) => !value)}
+                      {!isRightPanelOpen ? (
+                        <RightPanelOpenTabMenu
+                          canOfferBrowserTab={canOfferBrowserRightPanelTab}
+                          canOfferReviewTab={canOfferReviewRightPanelTab}
+                          canOpenWorkspaceFileSearch={chatWorkspaceRoot !== null}
+                          onOpenBrowserTab={() => openRightPanelTab("browser")}
+                          onOpenReviewTab={() => openRightPanelTab("review")}
+                          onOpenWorkspaceFileSearch={openWorkspaceFileSearch}
+                          t={t}
+                        />
+                      ) : null}
+                      <div
                         className={[
-                          "flex h-8 w-8 items-center justify-center rounded-[10px] text-[12px]",
-                          isSidePanelOpen ? "app-control" : "app-control-weak",
+                          "flex items-center gap-1 rounded-lg border border-transparent",
+                          !isRightPanelOpen && collapsedRightPanelTabs.length > 0
+                            ? "p-0.5 hover:border-[var(--app-shell-border)]"
+                            : "",
                         ].join(" ")}
                       >
-                        {isSidePanelOpen ? "◂" : "▸"}
-                      </button>
+                        {!isRightPanelOpen && collapsedRightPanelTabs.length > 0 ? (
+                          <div className="flex items-center gap-1">
+                            {collapsedRightPanelTabs.map((tab) => (
+                              <button
+                                key={tab.id}
+                                type="button"
+                                title={t(rightPanelTabLabelKeys[tab.id])}
+                                aria-label={t(rightPanelTabLabelKeys[tab.id])}
+                                onClick={() => openRightPanelTab(tab.id)}
+                                className="app-control-weak !h-6 !w-6 rounded-[8px]"
+                              >
+                                <span className="icon-sm flex items-center justify-center [&>*]:!h-full [&>*]:!w-full">
+                                  {renderRightPanelTabIcon(tab.id)}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                        <button
+                          type="button"
+                          title={t("thread.sidePanel.toggle")}
+                          aria-label={t("thread.sidePanel.toggle")}
+                          aria-pressed={isRightPanelOpen}
+                          onClick={toggleRightPanel}
+                          className={[
+                            "flex h-8 w-8 items-center justify-center rounded-[10px]",
+                            isRightPanelOpen ? "app-control" : "app-control-weak",
+                          ].join(" ")}
+                        >
+                          <ForwardNavigationIcon
+                            className={[
+                              "h-4 w-4",
+                              isRightPanelOpen ? "rotate-180" : "",
+                            ].join(" ")}
+                          />
+                        </button>
+                      </div>
                     </div>
                   ) : null}
                   <button
@@ -1902,18 +2471,17 @@ function App() {
                   </button>
                   {currentRoute === "chat" ? (
                     <div className="relative" ref={threadActionsMenuRef}>
-                      <button
-                        type="button"
-                        title={t("threadHeader.moreActions")}
-                        aria-label={t("threadHeader.moreActions")}
-                        aria-expanded={isThreadActionsMenuOpen}
-                        onClick={() => {
-                          setIsSidePanelTabMenuOpen(false);
-                          setIsThreadActionsMenuOpen((value) => !value);
-                        }}
-                        className="app-control-weak rounded-full px-3 py-1.5 text-[13px]"
-                      >
-                        ⋯
+                        <button
+                          type="button"
+                          title={t("threadHeader.moreActions")}
+                          aria-label={t("threadHeader.moreActions")}
+                          aria-expanded={isThreadActionsMenuOpen}
+                          onClick={() => {
+                            setIsThreadActionsMenuOpen((value) => !value);
+                          }}
+                          className="app-topbar-button flex items-center justify-center rounded-[8px] border border-transparent p-1"
+                        >
+                          <MoreActionsIcon className="h-4 w-4" />
                       </button>
                       {isThreadActionsMenuOpen ? (
                         <div className="app-card absolute top-10 right-0 z-10 min-w-[220px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
@@ -1976,7 +2544,7 @@ function App() {
                             onClick={() => void forkSelectedThread()}
                             className="app-nav-item-idle flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
                           >
-                            {t("threadHeader.forkIntoLocal")}
+                            {t(isWorktreeThread ? "threadHeader.forkIntoSameWorktree" : "threadHeader.forkIntoLocal")}
                           </button>
                         </div>
                       ) : null}
@@ -1991,8 +2559,28 @@ function App() {
                     composerDraft={composerDraft}
                     composerEnterBehavior={composerEnterBehavior}
                     currentThreadApprovals={currentThreadApprovals}
+                    currentThreadImplementPlanRequests={currentThreadImplementPlanRequests}
+                    currentThreadMcpServerElicitationRequest={currentThreadMcpServerElicitationRequest}
+                    currentThreadPlanImplementationItems={currentThreadPlanImplementationItems}
+                    currentThreadPermissionsRequestApproval={currentThreadPermissionsRequestApproval}
+                    currentThreadToolRequestUserInput={currentThreadToolRequestUserInput}
                     currentThreadQueuedFollowUps={currentThreadQueuedFollowUps}
                     onApprovalDecision={(approval, decision) => void handleApprovalDecision(approval, decision)}
+                    onDismissImplementPlanRequest={dismissImplementPlanRequest}
+                    onImplementPlanRequestSubmit={(request, submission) =>
+                      void handleImplementPlanRequestSubmit(request, submission)
+                    }
+                    onMcpServerElicitationRequestSubmit={(request, action, content) =>
+                      void handleMcpServerElicitationRequestSubmit(request, action, content)
+                    }
+                    onOpenRemoteTask={(taskId) => void openRemoteTask(taskId)}
+                    onSelectThread={(threadId) => void selectThread(threadId)}
+                    onPermissionsRequestApprovalSubmit={(request, grantMode, strictAutoReview) =>
+                      void handlePermissionsRequestApprovalSubmit(request, grantMode, strictAutoReview)
+                    }
+                    onToolRequestUserInputSubmit={(request, values) =>
+                      void handleToolRequestUserInputSubmit(request, values)
+                    }
                     onComposerDraftChange={setComposerDraft}
                     onRemoveQueuedFollowUp={removeQueuedFollowUp}
                     onStopTurn={() => void stopTurn()}
@@ -2005,15 +2593,37 @@ function App() {
                     turnError={turnError}
                   />
 
-                  {isSidePanelOpen ? (
-                    <ChatSidePanel
-                      activeTab={activeSidePanelTab}
-                      onTabChange={setActiveSidePanelTab}
-                      selectedFile={selectedSidePanelFile}
-                      t={t}
-                      threadDiffSummary={threadDiffSummary}
-                    />
+                  {isRightPanelOpen ? (
+                    <div className="min-h-0 flex flex-col">
+                      <RightPanelTabStrip
+                        activeTabId={activeRightPanelTabId}
+                        openTabs={openRightPanelTabs}
+                        onActivateTab={activateRightPanelTab}
+                        onCloseTab={closeRightPanelTab}
+                        canOfferBrowserTab={canOfferBrowserRightPanelTab}
+                        canOfferReviewTab={canOfferReviewRightPanelTab}
+                        canOpenWorkspaceFileSearch={chatWorkspaceRoot !== null}
+                        onOpenBrowserTab={() => openRightPanelTab("browser")}
+                        onOpenReviewTab={() => openRightPanelTab("review")}
+                        onOpenWorkspaceFileSearch={openWorkspaceFileSearch}
+                        t={t}
+                      />
+                      <ChatSidePanel
+                        activeTab={activeRightPanelTab}
+                        onOpenReviewFile={(change) => void handleReviewFileSelected(change)}
+                        t={t}
+                        threadDiffSummary={threadDiffSummary}
+                      />
+                    </div>
                   ) : null}
+                </div>
+              ) : currentRoute === "skills" ? (
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  <SkillsRoutePage
+                    authMethod={authSnapshot.authState.authMethod}
+                    isPluginsRouteEnabled={isPluginsRouteEnabled}
+                    workspaceRoot={settingsWorkspaceRoot}
+                  />
                 </div>
               ) : (
                 <div className="min-h-0 flex-1 overflow-y-auto">{renderSettings()}</div>

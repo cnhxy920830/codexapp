@@ -80,6 +80,7 @@ export type GlobalStateKey =
   | "appearanceDarkChromeTheme"
   | "appearanceLightCodeThemeId"
   | "appearanceDarkCodeThemeId"
+  | "selected-avatar-id"
   | "composerEnterBehavior"
   | "followUpQueueMode"
   | "reviewDelivery"
@@ -169,6 +170,10 @@ export async function batchWriteConfigValues(params: {
   reloadUserConfig?: boolean;
 }) {
   return invoke<void>("batch_write_config_values", { params });
+}
+
+export async function setPersonality(personality: ConfigPersonality | null) {
+  return invoke<void>("set_personality", { personality });
 }
 
 export function buildConfigScopeOptions(response: ConfigReadResponse) {
@@ -297,6 +302,15 @@ export async function readAppearanceSettingsSnapshot(): Promise<AppearanceSettin
     lightChromeTheme: normalizeAppearanceChromeTheme(lightChromeTheme.value, "light"),
     lightCodeThemeId: normalizeAppearanceCodeThemeId(lightCodeThemeId.value, "light"),
   };
+}
+
+export async function readSelectedAvatarId() {
+  const response = await getGlobalState("selected-avatar-id");
+  return typeof response.value === "string" && response.value.length > 0 ? response.value : "codex";
+}
+
+export async function setSelectedAvatarId(value: string) {
+  await setGlobalState("selected-avatar-id", value);
 }
 
 export function applyGeneralSettingsSnapshot(settings: GeneralSettingsSnapshot) {

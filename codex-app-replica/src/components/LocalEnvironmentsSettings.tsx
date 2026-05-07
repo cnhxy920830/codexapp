@@ -13,6 +13,7 @@ import {
   type LocalEnvironmentGroup,
   type LocalEnvironmentScriptSection,
 } from "../services/localEnvironments";
+import { ChevronDownIcon } from "./AppShellIcons";
 import { SettingsChoiceMenu } from "./SettingsChoiceMenu";
 import type { AppToast } from "./AppToastRegion";
 import type { MessageKey } from "../i18n/messages";
@@ -420,7 +421,7 @@ export function LocalEnvironmentsSettings({
   return (
     <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-5 py-5">
       <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="text-[14px] font-medium">{t("settings.nav.local-environments")}</div>
+        <div className="text-[14px] font-medium">{t("settings.section.local-environments")}</div>
         <div className="app-text-muted mt-1 text-[13px] leading-6">
           {renderInlineLinkMessage(t("settings.localEnvironments.workspaceSelect.description"), LOCAL_ENVIRONMENTS_DOCS_URL)}
         </div>
@@ -480,7 +481,12 @@ export function LocalEnvironmentsSettings({
                 <span className="text-[14px] font-medium">
                   {t("settings.localEnvironments.workspaceSelect.inherited", { count: inheritedCount })}
                 </span>
-                <span className="app-text-muted text-[12px]">{isInheritedOpen ? "▾" : "▸"}</span>
+                <ChevronDownIcon
+                  className={[
+                    "h-3.5 w-3.5 shrink-0 text-token-text-secondary transition-transform",
+                    isInheritedOpen ? "rotate-180" : "",
+                  ].join(" ")}
+                />
               </button>
 
               {isInheritedOpen ? (

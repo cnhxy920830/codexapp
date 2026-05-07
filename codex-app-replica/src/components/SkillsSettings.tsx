@@ -79,7 +79,7 @@ export function SkillsSettings({ workspaceRoot }: { workspaceRoot: string | null
   return (
     <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-5 py-5">
       <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="text-[14px] font-medium">{t("skills.page.heading")}</div>
+        <div className="text-[14px] font-medium">{t("settings.section.skills-settings")}</div>
         <div className="app-text-muted mt-1 text-[13px] leading-6">
           {renderInlineLinkMessage(t("skills.page.subheading"), SKILLS_DOCS_URL)}
         </div>

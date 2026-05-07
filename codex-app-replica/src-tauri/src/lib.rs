@@ -1,5 +1,7 @@
 mod auth_bridge;
 mod browser_use_settings;
+mod codex_home;
+mod computer_use_settings;
 mod global_settings;
 mod keyboard_shortcuts;
 mod local_environments;
@@ -13,6 +15,7 @@ use auth_bridge::fork_thread;
 use auth_bridge::get_auth_state;
 use auth_bridge::install_plugin;
 use auth_bridge::interrupt_turn;
+use auth_bridge::list_apps;
 use auth_bridge::list_archived_threads;
 use auth_bridge::list_experimental_features;
 use auth_bridge::list_mcp_server_status;
@@ -24,13 +27,19 @@ use auth_bridge::login_chatgpt;
 use auth_bridge::login_chatgpt_device_code;
 use auth_bridge::login_mcp_server;
 use auth_bridge::logout;
+use auth_bridge::read_account_rate_limits;
 use auth_bridge::read_config;
 use auth_bridge::read_plugin;
 use auth_bridge::read_thread;
 use auth_bridge::reload_mcp_server_config;
 use auth_bridge::reset_memories;
 use auth_bridge::respond_to_approval_request;
+use auth_bridge::respond_to_mcp_server_elicitation_request;
+use auth_bridge::respond_to_permissions_request_approval;
+use auth_bridge::respond_to_tool_request_user_input;
+use auth_bridge::send_add_credits_nudge_email;
 use auth_bridge::set_experimental_feature_enablement;
+use auth_bridge::set_personality;
 use auth_bridge::set_thread_name;
 use auth_bridge::shared_state;
 use auth_bridge::start_review;
@@ -45,6 +54,10 @@ use browser_use_settings::read_browser_use_settings;
 use browser_use_settings::remove_browser_use_origin;
 use browser_use_settings::write_browser_use_approval_mode;
 use browser_use_settings::write_browser_use_history_approval_mode;
+use codex_home::get_codex_home;
+use computer_use_settings::read_computer_use_approvals;
+use computer_use_settings::read_computer_use_approvals_visibility;
+use computer_use_settings::remove_computer_use_approval;
 use global_settings::get_global_state;
 use global_settings::set_global_state;
 use keyboard_shortcuts::get_command_keymap_state;
@@ -86,6 +99,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_launch_context,
             get_auth_state,
+            read_account_rate_limits,
+            send_add_credits_nudge_email,
+            list_apps,
             read_config,
             list_experimental_features,
             list_plugins,
@@ -97,6 +113,10 @@ pub fn run() {
             write_browser_use_history_approval_mode,
             add_browser_use_origin,
             remove_browser_use_origin,
+            get_codex_home,
+            read_computer_use_approvals_visibility,
+            read_computer_use_approvals,
+            remove_computer_use_approval,
             list_mcp_server_status,
             list_skills,
             list_recent_threads,
@@ -113,6 +133,9 @@ pub fn run() {
             set_experimental_feature_enablement,
             reset_memories,
             respond_to_approval_request,
+            respond_to_mcp_server_elicitation_request,
+            respond_to_permissions_request_approval,
+            respond_to_tool_request_user_input,
             read_thread,
             get_global_state,
             get_command_keymap_state,
@@ -124,6 +147,7 @@ pub fn run() {
             logout,
             set_global_state,
             set_command_keybinding,
+            set_personality,
             batch_write_config_values,
             write_config_value,
             read_workspace_agents_md,

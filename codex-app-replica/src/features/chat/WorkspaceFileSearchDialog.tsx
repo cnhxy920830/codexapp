@@ -68,6 +68,24 @@ export function WorkspaceFileSearchDialog({
     };
   }, [isOpen, onError, query, workspaceRoot]);
 
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   const canSearch = workspaceRoot !== null;
   const heading = useMemo(() => t("thread.fileCommandMenu.filesGroup"), [t]);
 
@@ -76,19 +94,20 @@ export function WorkspaceFileSearchDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
-      <div className="app-card w-full max-w-[640px] rounded-[18px] px-5 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
-        <div className="flex items-center justify-between gap-3">
-          <div className="app-title text-[15px] font-medium">{t("thread.sidePanel.openFile")}</div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
-          >
-            {t("threadHeader.archiveConfirmCancel")}
-          </button>
-        </div>
-
+    <div
+      className="fixed inset-0 z-20 flex items-start justify-center bg-[rgba(0,0,0,0.24)] px-4 pt-[12vh]"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div
+        className="app-card w-full max-w-[640px] rounded-[20px] px-4 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]"
+        onMouseDown={(event) => {
+          event.stopPropagation();
+        }}
+      >
         <input
           autoFocus
           disabled={!canSearch || isOpeningFile}
@@ -96,7 +115,7 @@ export function WorkspaceFileSearchDialog({
           onChange={(event) => setQuery(event.target.value)}
           aria-label={t("thread.fileCommandMenu.searchFiles")}
           placeholder={t("thread.fileCommandMenu.searchFiles")}
-          className="app-control app-text-input mt-4 w-full rounded-[12px] px-3 py-2 text-[13px] outline-none"
+          className="app-control app-text-input w-full rounded-[12px] px-3 py-2 text-[13px] outline-none"
         />
 
         <div className="mt-4">

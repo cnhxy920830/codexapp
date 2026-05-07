@@ -31,6 +31,118 @@ export type ThreadConversationMessage = {
   text: string;
 };
 
+export type ThreadConversationPlan = {
+  type: "plan";
+  id: string;
+  turnId: string;
+  text: string;
+};
+
+export type ThreadConversationTodoList = {
+  type: "todoList";
+  id: string;
+  turnId: string;
+  explanation: string | null;
+  plan: Array<{
+    step: string;
+    status: string;
+  }>;
+};
+
+export type ThreadConversationTurnDiff = {
+  type: "turnDiff";
+  id: string;
+  turnId: string;
+  unifiedDiff: string;
+};
+
+export type ThreadConversationModelRerouted = {
+  type: "modelRerouted";
+  id: string;
+  turnId: string;
+  fromModel: string;
+  toModel: string;
+  reason: string;
+};
+
+export type ThreadConversationModelChanged = {
+  type: "modelChanged";
+  id: string;
+  turnId: string;
+  fromModel: string;
+  toModel: string;
+};
+
+export type ThreadConversationPersonalityChanged = {
+  type: "personalityChanged";
+  id: string;
+  turnId: string;
+  personality: string;
+};
+
+export type ThreadConversationForkedFromConversation = {
+  type: "forkedFromConversation";
+  id: string;
+  turnId: string;
+  sourceConversationId: string;
+  sourceConversationTitle: string | null;
+};
+
+export type ThreadConversationRemoteTaskCreated = {
+  type: "remoteTaskCreated";
+  id: string;
+  turnId: string;
+  taskId: string;
+};
+
+export type ThreadConversationAutomaticApprovalReview = {
+  type: "automaticApprovalReview";
+  id: string;
+  turnId: string;
+  status: string;
+  riskLevel: string | null;
+  rationale: string | null;
+};
+
+export type ThreadConversationAutoReviewInterruptionWarning = {
+  type: "autoReviewInterruptionWarning";
+  id: string;
+  turnId: string;
+};
+
+export type ThreadConversationSystemError = {
+  type: "systemError";
+  id: string;
+  turnId: string;
+  content: string;
+};
+
+export type ThreadConversationStreamError = {
+  type: "streamError";
+  id: string;
+  turnId: string;
+  content: string;
+  additionalDetails: string | null;
+};
+
+export type ThreadConversationReasoning = {
+  type: "reasoning";
+  id: string;
+  turnId: string;
+  summary: string[];
+  content: string[];
+};
+
+export type ThreadConversationHookPrompt = {
+  type: "hookPrompt";
+  id: string;
+  turnId: string;
+  fragments: Array<{
+    text: string;
+    hookRunId: string;
+  }>;
+};
+
 export type ThreadCommandAction =
   | {
       type: "read";
@@ -78,6 +190,115 @@ export type JsonRpcId = number | string;
 
 export type ApprovalDecision = "accept" | "acceptForSession" | "decline" | "cancel";
 
+export type ToolRequestUserInputQuestion = {
+  id: string;
+  header: string;
+  question: string;
+  isOther: boolean;
+  isSecret: boolean;
+  options: Array<{
+    label: string;
+    description: string;
+  }> | null;
+};
+
+export type ToolRequestUserInputAnswer = {
+  answers: string[];
+};
+
+export type ToolRequestUserInputResponse = {
+  answers: Record<string, ToolRequestUserInputAnswer>;
+};
+
+export type PermissionProfile = {
+  network: { enabled: boolean | null } | null;
+  fileSystem: {
+    read: string[] | null;
+    write: string[] | null;
+    entries: Array<{
+      path: string;
+      access: "read" | "write" | "none" | string;
+    }> | null;
+  } | null;
+};
+
+export type GrantedPermissionProfile = {
+  network?: { enabled: boolean | null };
+  fileSystem?: {
+    read: string[] | null;
+    write: string[] | null;
+    entries: Array<{
+      path: string;
+      access: "read" | "write" | "none" | string;
+    }> | null;
+  };
+};
+
+export type PermissionsRequestApprovalResponse = {
+  permissions: GrantedPermissionProfile;
+  scope: "turn" | "session";
+  strictAutoReview?: boolean;
+};
+
+export type NetworkApprovalContext = {
+  host: string;
+  protocol: "http" | "https" | "socks5Tcp" | "socks5Udp" | string;
+};
+
+export type NetworkPolicyAmendment = {
+  host: string;
+  action: "allow" | "deny" | string;
+};
+
+export type CommandAction =
+  | {
+      type: "read";
+      command: string;
+      name: string;
+      path: string;
+    }
+  | {
+      type: "listFiles";
+      command: string;
+      path: string | null;
+    }
+  | {
+      type: "search";
+      command: string;
+      query: string | null;
+      path: string | null;
+    }
+  | {
+      type: "unknown";
+      command: string;
+    };
+
+export type McpServerElicitationRequest =
+  | {
+      mode: "form";
+      message: string;
+      meta: unknown;
+      requestedSchema: {
+        $schema?: string;
+        type: string;
+        properties: Record<string, unknown>;
+        required?: string[];
+      };
+    }
+  | {
+      mode: "url";
+      message: string;
+      meta: unknown;
+      url: string;
+      elicitationId: string;
+    };
+
+export type McpServerElicitationRequestResponse = {
+  action: "accept" | "decline" | "cancel";
+  content: unknown | null;
+  meta: unknown | null;
+};
+
 export type FileChangeSummary = {
   path: string;
   kind: string;
@@ -91,6 +312,94 @@ export type ThreadConversationFileChange = {
   turnId: string;
   status: string;
   changes: FileChangeSummary[];
+};
+
+export type ThreadConversationMcpToolCall = {
+  type: "mcpToolCall";
+  id: string;
+  turnId: string;
+  server: string;
+  tool: string;
+  status: string;
+  resultSummary: string | null;
+  errorMessage: string | null;
+};
+
+export type ThreadConversationDynamicToolCall = {
+  type: "dynamicToolCall";
+  id: string;
+  turnId: string;
+  namespace: string | null;
+  tool: string;
+  status: string;
+  resultSummary: string | null;
+  success: boolean | null;
+};
+
+export type ThreadConversationCollabAgentToolCall = {
+  type: "collabAgentToolCall";
+  id: string;
+  turnId: string;
+  tool: "spawnAgent" | "sendInput" | "resumeAgent" | "wait" | "closeAgent";
+  status: string;
+  senderThreadId: string;
+  receiverThreadIds: string[];
+  prompt: string | null;
+  model: string | null;
+  reasoningEffort: string | null;
+  receiverSummary: string | null;
+};
+
+export type ThreadConversationWebSearchAction =
+  | {
+      type: "search";
+      query: string | null;
+      queries: string[] | null;
+    }
+  | {
+      type: "openPage";
+      url: string | null;
+    }
+  | {
+      type: "findInPage";
+      pattern: string | null;
+      url: string | null;
+    }
+  | {
+      type: "other";
+    };
+
+export type ThreadConversationWebSearch = {
+  type: "webSearch";
+  id: string;
+  turnId: string;
+  query: string;
+  action: ThreadConversationWebSearchAction | null;
+  completed: boolean;
+};
+
+export type ThreadConversationImageView = {
+  type: "imageView";
+  id: string;
+  turnId: string;
+  path: string;
+};
+
+export type ThreadConversationImageGeneration = {
+  type: "imageGeneration";
+  id: string;
+  turnId: string;
+  status: string;
+  revisedPrompt: string | null;
+  result: string;
+  savedPath: string | null;
+};
+
+export type ThreadConversationContextCompaction = {
+  type: "contextCompaction";
+  id: string;
+  turnId: string;
+  isCompleted: boolean;
 };
 
 export type ThreadConversationEnteredReviewMode = {
@@ -109,8 +418,29 @@ export type ThreadConversationExitedReviewMode = {
 
 export type ThreadConversationItem =
   | ThreadConversationMessage
+  | ThreadConversationHookPrompt
+  | ThreadConversationTodoList
+  | ThreadConversationTurnDiff
+  | ThreadConversationPersonalityChanged
+  | ThreadConversationModelChanged
+  | ThreadConversationModelRerouted
+  | ThreadConversationForkedFromConversation
+  | ThreadConversationRemoteTaskCreated
+  | ThreadConversationAutomaticApprovalReview
+  | ThreadConversationAutoReviewInterruptionWarning
+  | ThreadConversationSystemError
+  | ThreadConversationStreamError
+  | ThreadConversationPlan
+  | ThreadConversationReasoning
   | ThreadConversationCommandExecution
   | ThreadConversationFileChange
+  | ThreadConversationMcpToolCall
+  | ThreadConversationDynamicToolCall
+  | ThreadConversationCollabAgentToolCall
+  | ThreadConversationWebSearch
+  | ThreadConversationImageView
+  | ThreadConversationImageGeneration
+  | ThreadConversationContextCompaction
   | ThreadConversationEnteredReviewMode
   | ThreadConversationExitedReviewMode;
 
@@ -135,8 +465,13 @@ export type ThreadEvent =
       turnId: string;
       itemId: string;
       reason: string | null;
+      networkApprovalContext: NetworkApprovalContext | null;
       command: string | null;
       cwd: string | null;
+      commandActions: CommandAction[] | null;
+      additionalPermissions: PermissionProfile | null;
+      proposedExecpolicyAmendment: string[] | null;
+      proposedNetworkPolicyAmendments: NetworkPolicyAmendment[] | null;
       availableDecisions: ApprovalDecision[] | null;
     }
   | {
@@ -148,6 +483,32 @@ export type ThreadEvent =
       reason: string | null;
       grantRoot: string | null;
       changes: FileChangeSummary[];
+    }
+  | {
+      type: "permissionsRequestApprovalRequested";
+      requestId: JsonRpcId;
+      threadId: string;
+      turnId: string;
+      itemId: string;
+      cwd: string;
+      reason: string | null;
+      permissions: PermissionProfile;
+    }
+  | {
+      type: "mcpServerElicitationRequested";
+      requestId: JsonRpcId;
+      threadId: string;
+      turnId: string | null;
+      serverName: string;
+      request: McpServerElicitationRequest;
+    }
+  | {
+      type: "toolRequestUserInputRequested";
+      requestId: JsonRpcId;
+      threadId: string;
+      turnId: string;
+      itemId: string;
+      questions: ToolRequestUserInputQuestion[];
     }
   | {
       type: "serverRequestResolved";
@@ -208,6 +569,27 @@ export async function interruptTurn(params: { threadId: string; turnId: string }
 
 export async function respondToApprovalRequest(params: { requestId: JsonRpcId; decision: ApprovalDecision }) {
   return invoke<void>("respond_to_approval_request", params);
+}
+
+export async function respondToToolRequestUserInput(params: {
+  requestId: JsonRpcId;
+  response: ToolRequestUserInputResponse;
+}) {
+  return invoke<void>("respond_to_tool_request_user_input", params);
+}
+
+export async function respondToPermissionsRequestApproval(params: {
+  requestId: JsonRpcId;
+  response: PermissionsRequestApprovalResponse;
+}) {
+  return invoke<void>("respond_to_permissions_request_approval", params);
+}
+
+export async function respondToMcpServerElicitationRequest(params: {
+  requestId: JsonRpcId;
+  response: McpServerElicitationRequestResponse;
+}) {
+  return invoke<void>("respond_to_mcp_server_elicitation_request", params);
 }
 
 export async function readThread(threadId: string) {

@@ -253,7 +253,7 @@ export function AppearanceSettings({
   return (
     <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-5 py-5">
       <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="app-title text-[14px] font-medium">{t("settings.nav.appearance")}</div>
+        <div className="app-title text-[14px] font-medium">{t("settings.section.appearance")}</div>
       </div>
 
       <div className="app-card rounded-[18px] px-5 py-4">

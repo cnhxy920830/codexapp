@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n/i18n";
 import { renderInlineLinkMessage } from "../i18n/renderInlineLinkMessage";
 import type { AppToast } from "./AppToastRegion";
+import { CheckIcon } from "./AppShellIcons";
 import { PersonalizationMemorySettings } from "./PersonalizationMemorySettings";
 import {
   readWorkspaceAgentsMd,
@@ -13,6 +14,7 @@ import {
   buildConfigScopeOptions,
   chooseDefaultConfigScopeKey,
   readConfig,
+  setPersonality,
   type ConfigPersonality,
 } from "../services/settings";
 
@@ -144,6 +146,18 @@ export function PersonalizationSettings({
   }, [refreshVersion, workspaceRoot]);
 
   useEffect(() => {
+    if (personalityState.isLoading || personalityState.isSaving || personalityState.error) {
+      return;
+    }
+    void setPersonality(personalityState.activePersonality);
+  }, [
+    personalityState.activePersonality,
+    personalityState.error,
+    personalityState.isLoading,
+    personalityState.isSaving,
+  ]);
+
+  useEffect(() => {
     const migrationKey = `${workspaceRoot ?? ""}:${personalityState.filePath ?? "user"}`;
     if (
       personalityState.isLoading ||
@@ -215,6 +229,7 @@ export function PersonalizationSettings({
       error: null,
     }));
     try {
+      await setPersonality(nextPersonality);
       const edits: Array<{
         keyPath: string;
         value: string | null;
@@ -241,6 +256,7 @@ export function PersonalizationSettings({
       });
       setRefreshVersion((current) => current + 1);
     } catch (error) {
+      void setPersonality(previousPersonality);
       setPersonalityState((current) => ({
         ...current,
         activePersonality: previousPersonality,
@@ -296,7 +312,7 @@ export function PersonalizationSettings({
   return (
     <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-5 py-5">
       <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="app-title text-[14px] font-medium">{t("settings.nav.personalization")}</div>
+        <div className="app-title text-[14px] font-medium">{t("settings.section.personalization")}</div>
       </div>
 
       <div className="app-card rounded-[18px] px-5 py-4">
@@ -326,7 +342,7 @@ export function PersonalizationSettings({
                     <div className="app-text-muted mt-1 text-[12px] leading-5">{t(option.descriptionKey)}</div>
                   </div>
                   {isActive ? (
-                    <span className="app-control shrink-0 rounded-full px-2 py-0.5 text-[11px]">✓</span>
+                    <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
                   ) : null}
                 </div>
               </button>

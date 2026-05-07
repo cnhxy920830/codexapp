@@ -40,6 +40,7 @@ fn ensure_supported_key(key: &str) -> Result<(), String> {
         | "appearanceDarkChromeTheme"
         | "appearanceLightCodeThemeId"
         | "appearanceDarkCodeThemeId"
+        | "selected-avatar-id"
         | "composerEnterBehavior"
         | "followUpQueueMode"
         | "reviewDelivery"
