@@ -8,9 +8,23 @@ import type {
   PermissionsRequestApprovalResponse,
   ToolRequestUserInputQuestion,
   ToolRequestUserInputResponse,
+  ThreadConversation,
   ThreadConversationItem,
+  ThreadConversationMcpServerElicitation,
+  ThreadConversationMessage,
+  ThreadConversationPermissionRequest,
+  ThreadConversationSteered,
+  ThreadConversationSteeringUserMessage,
+  ThreadConversationTurnTiming,
+  ThreadConversationUserInputRequest,
   ThreadEvent,
 } from "../../services/history";
+import type { QueuedLocalFollowUp } from "./localFollowUpQueue";
+
+type UserMessageItem = ThreadConversationMessage & {
+  type: "userMessage";
+  role: "user";
+};
 
 export type PendingApproval = Extract<
   ThreadEvent,
@@ -39,14 +53,6 @@ export type PendingImplementPlanRequest = {
   planContent: string;
 };
 
-export type PlanImplementationItem = {
-  id: string;
-  threadId: string;
-  turnId: string;
-  planContent: string;
-  isCompleted: boolean;
-};
-
 const defaultApprovalDecisions: ApprovalDecision[] = [
   "accept",
   "acceptForSession",
@@ -55,6 +61,15 @@ const defaultApprovalDecisions: ApprovalDecision[] = [
 ];
 
 const implementPlanRequestPrefix = "implement-plan:";
+const steeringUserMessagePrefix = "steering-user-message:";
+const steeredPrefix = "steered:";
+
+type TurnTimingUpdate = Partial<
+  Pick<
+    ThreadConversationTurnTiming,
+    "status" | "turnStartedAtMs" | "finalAssistantStartedAtMs" | "firstTurnWorkItemStartedAtMs"
+  >
+>;
 
 export function approvalRequestKey(requestId: JsonRpcId) {
   return `${typeof requestId}:${requestId}`;
@@ -70,21 +85,6 @@ export function createPendingImplementPlanRequest(
     threadId,
     turnId,
     planContent,
-  };
-}
-
-export function createPlanImplementationItem(
-  threadId: string,
-  turnId: string,
-  planContent: string,
-  isCompleted: boolean,
-): PlanImplementationItem {
-  return {
-    id: `${implementPlanRequestPrefix}${turnId}`,
-    threadId,
-    turnId,
-    planContent,
-    isCompleted,
   };
 }
 
@@ -166,17 +166,6 @@ export function upsertPendingImplementPlanRequest(
   return requests.map((entry, entryIndex) => (entryIndex === index ? request : entry));
 }
 
-export function upsertPlanImplementationItem(
-  items: PlanImplementationItem[],
-  item: PlanImplementationItem,
-) {
-  const index = items.findIndex((entry) => entry.id === item.id);
-  if (index === -1) {
-    return [...items, item];
-  }
-  return items.map((entry, entryIndex) => (entryIndex === index ? item : entry));
-}
-
 export function clearPendingImplementPlanRequestsForThread(
   requests: PendingImplementPlanRequest[],
   threadId: string,
@@ -184,39 +173,11 @@ export function clearPendingImplementPlanRequestsForThread(
   return requests.filter((request) => request.threadId !== threadId);
 }
 
-export function markPlanImplementationItemsCompletedForThread(
-  items: PlanImplementationItem[],
-  threadId: string,
-) {
-  return items.map((item) =>
-    item.threadId === threadId && !item.isCompleted
-      ? {
-          ...item,
-          isCompleted: true,
-        }
-      : item,
-  );
-}
-
 export function removePendingImplementPlanRequest(
   requests: PendingImplementPlanRequest[],
   requestId: string,
 ) {
   return requests.filter((request) => request.requestId !== requestId);
-}
-
-export function markPlanImplementationItemCompleted(
-  items: PlanImplementationItem[],
-  requestId: string,
-) {
-  return items.map((item) =>
-    item.id === requestId && !item.isCompleted
-      ? {
-          ...item,
-          isCompleted: true,
-        }
-      : item,
-  );
 }
 
 export function buildPendingImplementPlanRequestForTurn(
@@ -239,18 +200,6 @@ export function buildPendingImplementPlanRequestForTurn(
     return createPendingImplementPlanRequest(threadId, turnId, planContent);
   }
   return null;
-}
-
-export function buildPlanImplementationItemForTurn(
-  threadId: string,
-  items: ThreadConversationItem[],
-  turnId: string,
-) {
-  const request = buildPendingImplementPlanRequestForTurn(threadId, items, turnId);
-  if (!request) {
-    return null;
-  }
-  return createPlanImplementationItem(threadId, turnId, request.planContent, false);
 }
 
 export function resolveApprovalDecisions(approval: PendingApproval) {
@@ -342,6 +291,357 @@ export function upsertConversationItem(
     return [...items, item];
   }
   return items.map((entry, entryIndex) => (entryIndex === index ? item : entry));
+}
+
+export function createPermissionRequestConversationItem(
+  request: PendingPermissionsRequestApproval,
+): ThreadConversationPermissionRequest {
+  return {
+    type: "permissionRequest",
+    id: permissionRequestConversationItemId(request.requestId),
+    turnId: request.turnId,
+    requestId: request.requestId,
+    itemId: request.itemId,
+    cwd: request.cwd,
+    reason: request.reason,
+    permissions: request.permissions,
+    completed: false,
+    response: null,
+  };
+}
+
+export function createMcpServerElicitationConversationItem(
+  request: PendingMcpServerElicitationRequest,
+): ThreadConversationMcpServerElicitation {
+  return {
+    type: "mcpServerElicitation",
+    id: mcpServerElicitationConversationItemId(request.requestId),
+    turnId: request.turnId,
+    requestId: request.requestId,
+    serverName: request.serverName,
+    request: request.request,
+    completed: false,
+    action: null,
+    content: null,
+  };
+}
+
+export function createUserInputConversationItem(
+  request: PendingToolRequestUserInput,
+): ThreadConversationUserInputRequest {
+  return {
+    type: "userInput",
+    id: userInputConversationItemId(request.requestId),
+    turnId: request.turnId,
+    requestId: request.requestId,
+    itemId: request.itemId,
+    questions: request.questions,
+    completed: false,
+  };
+}
+
+export function upsertPermissionRequestConversationItem(
+  items: ThreadConversationItem[],
+  request: PendingPermissionsRequestApproval,
+) {
+  return upsertConversationItem(items, createPermissionRequestConversationItem(request));
+}
+
+export function upsertMcpServerElicitationConversationItem(
+  items: ThreadConversationItem[],
+  request: PendingMcpServerElicitationRequest,
+) {
+  return upsertConversationItem(items, createMcpServerElicitationConversationItem(request));
+}
+
+export function upsertUserInputConversationItem(
+  items: ThreadConversationItem[],
+  request: PendingToolRequestUserInput,
+) {
+  return upsertConversationItem(items, createUserInputConversationItem(request));
+}
+
+export function completePermissionRequestConversationItem(
+  items: ThreadConversationItem[],
+  requestId: JsonRpcId,
+  response: PermissionsRequestApprovalResponse,
+) {
+  const conversationItemId = permissionRequestConversationItemId(requestId);
+  return items.map((item) =>
+    item.type === "permissionRequest" && item.id === conversationItemId
+      ? {
+          ...item,
+          completed: true,
+          response,
+        }
+      : item,
+  );
+}
+
+export function completeMcpServerElicitationConversationItem(
+  items: ThreadConversationItem[],
+  requestId: JsonRpcId,
+  response: McpServerElicitationRequestResponse,
+) {
+  const conversationItemId = mcpServerElicitationConversationItemId(requestId);
+  return items.map((item) =>
+    item.type === "mcpServerElicitation" && item.id === conversationItemId
+      ? {
+          ...item,
+          completed: true,
+          action: response.action,
+          content: response.content,
+        }
+      : item,
+  );
+}
+
+export function removeRequestConversationItem(
+  items: ThreadConversationItem[],
+  requestId: JsonRpcId,
+) {
+  const requestKey = approvalRequestKey(requestId);
+  return items.filter((item) => {
+    if (
+      item.type === "permissionRequest" ||
+      item.type === "mcpServerElicitation" ||
+      item.type === "userInput"
+    ) {
+      return approvalRequestKey(item.requestId) !== requestKey;
+    }
+    return true;
+  });
+}
+
+export function createSteeringUserMessage(params: {
+  threadId: string;
+  turnId: string;
+  text: string;
+  cwd: string | null;
+}): ThreadConversationSteeringUserMessage {
+  return {
+    type: "steeringUserMessage",
+    id: `${steeringUserMessagePrefix}${createQueuedLocalFollowUpId()}`,
+    turnId: params.turnId,
+    status: "pending",
+    text: params.text,
+    cwd: params.cwd,
+  };
+}
+
+export function createSteeredItem(
+  userMessage: UserMessageItem,
+): ThreadConversationSteered {
+  return {
+    type: "steered",
+    id: `${steeredPrefix}${userMessage.id}`,
+    turnId: userMessage.turnId,
+  };
+}
+
+export function appendSteeringUserMessage(
+  conversation: ThreadConversation,
+  steeringItem: ThreadConversationSteeringUserMessage,
+): ThreadConversation {
+  return {
+    ...conversation,
+    items: [...conversation.items, steeringItem],
+  };
+}
+
+export function upsertThreadConversationTurnTiming(
+  conversation: ThreadConversation,
+  turnId: string,
+  update: TurnTimingUpdate,
+): ThreadConversation {
+  const index = conversation.turnTimings.findIndex((entry) => entry.turnId === turnId);
+  if (index === -1) {
+    return {
+      ...conversation,
+      turnTimings: [
+        ...conversation.turnTimings,
+        {
+          turnId,
+          status: update.status ?? "completed",
+          turnStartedAtMs: update.turnStartedAtMs ?? null,
+          finalAssistantStartedAtMs: update.finalAssistantStartedAtMs ?? null,
+          firstTurnWorkItemStartedAtMs: update.firstTurnWorkItemStartedAtMs ?? null,
+        },
+      ],
+    };
+  }
+
+  const currentTiming = conversation.turnTimings[index];
+  const nextTiming: ThreadConversationTurnTiming = {
+    ...currentTiming,
+    ...update,
+  };
+
+  if (
+    nextTiming.status === currentTiming.status &&
+    nextTiming.turnStartedAtMs === currentTiming.turnStartedAtMs &&
+    nextTiming.finalAssistantStartedAtMs === currentTiming.finalAssistantStartedAtMs &&
+    nextTiming.firstTurnWorkItemStartedAtMs === currentTiming.firstTurnWorkItemStartedAtMs
+  ) {
+    return conversation;
+  }
+
+  return {
+    ...conversation,
+    turnTimings: conversation.turnTimings.map((entry, entryIndex) => (entryIndex === index ? nextTiming : entry)),
+  };
+}
+
+export function isWorkStartedConversationItem(item: ThreadConversationItem) {
+  return item.type !== "userMessage" && item.type !== "hook";
+}
+
+export function foldStartedThreadItemWithSteer(
+  items: ThreadConversationItem[],
+  item: ThreadConversationItem,
+): { items: ThreadConversationItem[]; suppressed: boolean } {
+  if (!isUserMessageItem(item)) {
+    return {
+      items: upsertConversationItem(items, item),
+      suppressed: false,
+    };
+  }
+
+  if (findPendingSteeringUserMessageIndex(items, item) !== -1) {
+    return {
+      items,
+      suppressed: true,
+    };
+  }
+
+  return {
+    items: upsertConversationItem(items, item),
+    suppressed: false,
+  };
+}
+
+export function foldCompletedThreadItemWithSteer(
+  items: ThreadConversationItem[],
+  item: ThreadConversationItem,
+): { items: ThreadConversationItem[]; suppressed: boolean } {
+  if (!isUserMessageItem(item)) {
+    return {
+      items: upsertConversationItem(items, item),
+      suppressed: false,
+    };
+  }
+
+  const steeringIndex = findPendingSteeringUserMessageIndex(items, item);
+  if (steeringIndex === -1) {
+    return {
+      items: upsertConversationItem(items, item),
+      suppressed: false,
+    };
+  }
+
+  const steeringItem = items[steeringIndex];
+  if (!steeringItem || steeringItem.type !== "steeringUserMessage") {
+    return {
+      items: upsertConversationItem(items, item),
+      suppressed: false,
+    };
+  }
+
+  const nextItems = items.map<ThreadConversationItem>((entry, entryIndex) =>
+    entryIndex === steeringIndex
+      ? {
+          ...steeringItem,
+          status: "accepted" as const,
+        }
+      : entry,
+  );
+  const steeredItem = createSteeredItem(item);
+  return {
+    items: upsertConversationItem(nextItems, steeredItem),
+    suppressed: true,
+  };
+}
+
+export function clearUnacceptedSteeringUserMessagesForTurn(
+  items: ThreadConversationItem[],
+  threadId: string,
+  turnId: string,
+): {
+  items: ThreadConversationItem[];
+  restoredQueuedFollowUps: QueuedLocalFollowUp[];
+} {
+  const restoredQueuedFollowUps: QueuedLocalFollowUp[] = [];
+  const nextItems = items.filter((item) => {
+    if (item.type !== "steeringUserMessage" || item.turnId !== turnId || item.status === "accepted") {
+      return true;
+    }
+
+    restoredQueuedFollowUps.push({
+      id: createQueuedLocalFollowUpId(),
+      threadId,
+      cwd: item.cwd,
+      text: item.text,
+    });
+    return false;
+  });
+
+  return {
+    items: nextItems,
+    restoredQueuedFollowUps,
+  };
+}
+
+export function isSteerSyntheticConversationItem(item: ThreadConversationItem) {
+  return item.type === "steered";
+}
+
+function findPendingSteeringUserMessageIndex(
+  items: ThreadConversationItem[],
+  userMessage: UserMessageItem,
+) {
+  const normalizedUserText = normalizeSteerText(userMessage.text);
+
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (
+      item?.type === "steeringUserMessage" &&
+      item.turnId === userMessage.turnId &&
+      item.status === "pending" &&
+      normalizeSteerText(item.text) === normalizedUserText
+    ) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function normalizeSteerText(text: string) {
+  return text.replaceAll(/\r\n?/g, "\n").trim();
+}
+
+function isUserMessageItem(item: ThreadConversationItem): item is UserMessageItem {
+  return item.type === "userMessage";
+}
+
+function permissionRequestConversationItemId(requestId: JsonRpcId) {
+  return `permission-request:${approvalRequestKey(requestId)}`;
+}
+
+function mcpServerElicitationConversationItemId(requestId: JsonRpcId) {
+  return `mcp-server-elicitation:${approvalRequestKey(requestId)}`;
+}
+
+function userInputConversationItemId(requestId: JsonRpcId) {
+  return `user-input:${approvalRequestKey(requestId)}`;
+}
+
+function createQueuedLocalFollowUpId() {
+  const randomUuid = globalThis.crypto?.randomUUID?.();
+  if (randomUuid) {
+    return randomUuid;
+  }
+  return `queued-follow-up:${Date.now()}:${Math.random().toString(16).slice(2)}`;
 }
 
 export type ThreadDiffSummary = {

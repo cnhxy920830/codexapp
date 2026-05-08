@@ -127,6 +127,19 @@ export type MessageKey =
   | "app.chat.commandExecution"
   | "app.chat.fileChange"
   | "app.chat.hookPrompt"
+  | "localConversation.hookItem.eventName.preToolUse"
+  | "localConversation.hookItem.eventName.postToolUse"
+  | "localConversation.hookItem.eventName.sessionStart"
+  | "localConversation.hookItem.eventName.userPromptSubmit"
+  | "localConversation.hookItem.eventName.permissionRequest"
+  | "localConversation.hookItem.eventName.stop"
+  | "localConversation.hookItem.summary.withStatusMessage"
+  | "localConversation.hookItem.summary.ariaLabel"
+  | "localConversation.hookItem.feedback"
+  | "localConversation.hookItem.warning"
+  | "localConversation.hookItem.error"
+  | "localConversation.hookItem.hookContext"
+  | "localConversation.hookItem.stop"
   | "app.chat.contextCompaction"
   | "app.chat.contextCompactionDescription"
   | "app.chat.imageGeneration"
@@ -185,6 +198,26 @@ export type MessageKey =
   | "app.chat.userInput.submit"
   | "app.chat.userInput.otherHint"
   | "app.chat.userInput.secretHint"
+  | "app.chat.userMessage.autoResolveSync"
+  | "app.chat.userMessage.commentCount"
+  | "app.chat.userMessage.copyAriaLabel"
+  | "app.chat.userMessage.copyCopiedAriaLabel"
+  | "app.chat.userMessage.copyCopiedTooltip"
+  | "app.chat.userMessage.copyTooltip"
+  | "app.chat.userMessage.editAriaLabel"
+  | "app.chat.userMessage.editTooltip"
+  | "app.chat.userMessage.editTextareaAriaLabel"
+  | "app.chat.userMessage.editPlaceholder"
+  | "app.chat.userMessage.cancelEditMessage"
+  | "app.chat.userMessage.sendEditedMessage"
+  | "app.chat.userMessage.showLess"
+  | "app.chat.userMessage.showMore"
+  | "app.chat.userMessage.implementPlan"
+  | "app.chat.userMessage.noContent"
+  | "app.chat.userMessage.pullRequestCheckCount"
+  | "app.chat.userMessage.pullRequestFixMode"
+  | "app.chat.userMessage.referencesPriorConversation"
+  | "app.chat.userMessage.reviewMode"
   | "app.chat.latestTurnPreview.items"
   | "app.chat.permissions.title"
   | "app.chat.permissions.network"
@@ -237,6 +270,24 @@ export type MessageKey =
   | "localConversation.remoteTaskCreated"
   | "localConversation.remoteTaskCreated.task"
   | "localConversation.dynamicToolCall"
+  | "localConversation.appControlToolCall.appHelp.active"
+  | "localConversation.appControlToolCall.appHelp.completed"
+  | "localConversation.appControlToolCall.threadsCreate.active"
+  | "localConversation.appControlToolCall.threadsCreate.completed"
+  | "localConversation.appControlToolCall.threadsCreateInWorktree.active"
+  | "localConversation.appControlToolCall.threadsCreateInWorktree.completed"
+  | "localConversation.appControlToolCall.threadsList.active"
+  | "localConversation.appControlToolCall.threadsList.completed"
+  | "localConversation.appControlToolCall.threadsRead.active"
+  | "localConversation.appControlToolCall.threadsRead.completed"
+  | "localConversation.appControlToolCall.threadsSendMessage.active"
+  | "localConversation.appControlToolCall.threadsSendMessage.completed"
+  | "localConversation.appControlToolCall.threadsSetArchived.active"
+  | "localConversation.appControlToolCall.threadsSetArchived.completed"
+  | "localConversation.appControlToolCall.threadsSetPinned.active"
+  | "localConversation.appControlToolCall.threadsSetPinned.completed"
+  | "localConversation.appControlToolCall.threadsSetTitle.active"
+  | "localConversation.appControlToolCall.threadsSetTitle.completed"
   | "localConversation.multiAgentAction.header"
   | "localConversation.multiAgentAction.header.count"
   | "localConversation.multiAgentAction.header.close.completed"
@@ -281,6 +332,8 @@ export type MessageKey =
   | "localConversation.personalityChanged"
   | "localConversation.autoReviewInterruptionWarning"
   | "localConversation.autoReviewInterruptionWarning.nextSteps"
+  | "localConversation.header.heartbeatAutomationNextRun"
+  | "localConversation.header.openHeartbeatAutomation"
   | "composer.latestTurn"
   | "composer.latestTurn.working"
   | "localConversation.automaticApprovalReview.summary.inProgress"
@@ -314,6 +367,11 @@ export type MessageKey =
   | "codex.tabs.contextMenu.close"
   | "thread.fileCommandMenu.filesGroup"
   | "thread.fileCommandMenu.searchFiles"
+  | "threadSidePanel.workspaceBrowser.loading"
+  | "threadSidePanel.workspaceBrowser.empty"
+  | "codex.fileTreeSearch.label"
+  | "codex.fileTreeSearch.placeholder"
+  | "codex.fileTreeSearch.clear"
   | "thread.fileTreePanel.noMatchingFiles"
   | "thread.fileTreePanel.searchingFiles"
   | "review.fileSource.breadcrumb.ariaLabel"
@@ -351,8 +409,13 @@ export type MessageKey =
   | "wham.diff.binaryFile"
   | "threadHeader.archiveConfirmCancel"
   | "threadHeader.archiveConfirmConfirm"
+  | "threadHeader.archiveConfirmHeartbeatConfirm"
+  | "threadHeader.archiveConfirmHeartbeatSubtitleNamed"
+  | "threadHeader.archiveConfirmHeartbeatSubtitleUnnamed"
+  | "threadHeader.archiveConfirmHeartbeatTitle"
   | "threadHeader.archiveConfirmSubtitle"
   | "threadHeader.archiveConfirmTitle"
+  | "threadHeader.addAutomation"
   | "threadHeader.copyAppLink"
   | "threadHeader.copyConversationMarkdown"
   | "threadHeader.copyConversationMarkdownError"
@@ -361,6 +424,7 @@ export type MessageKey =
   | "threadHeader.copyWorkingDirectory"
   | "threadHeader.copyWorkingDirectoryError"
   | "threadHeader.copyWorkingDirectorySuccess"
+  | "threadHeader.editAutomation"
   | "threadHeader.forkIntoLocal"
   | "threadHeader.forkIntoSameWorktree"
   | "threadHeader.forkThreadError"
@@ -376,9 +440,93 @@ export type MessageKey =
   | "sidebarElectron.renameThreadError"
   | "sidebarElectron.skillsAppsRouteNavLink"
   | "sidebarElectron.skillsRouteNavLink"
+  | "sidebarElectron.automationsRouteNavLink"
+  | "sidebarElectron.pullRequestsRouteNavLink"
   | "sidebarElectron.pluginsRouteNavLink"
   | "sidebarElectron.pluginsDisabledTooltip"
   | "sidebarElectron.scratchpadNavLink"
+  | "pullRequestsPage.title"
+  | "pullRequestsPage.filter.authored"
+  | "pullRequestsPage.filter.review"
+  | "pullRequestsPage.filter.ariaLabel"
+  | "pullRequestsPage.repo.allRepos"
+  | "pullRequestsPage.error.title"
+  | "pullRequestsPage.error.description"
+  | "pullRequestsPage.empty.noPullRequests.title"
+  | "pullRequestsPage.empty.noPullRequests.description"
+  | "pullRequestsPage.empty.noPullRequests.reviewDescription"
+  | "pullRequestsPage.empty.noPullRequests.allReposDescription"
+  | "pullRequestsPage.empty.noRepos.title"
+  | "pullRequestsPage.empty.noRepos.description"
+  | "pullRequestsPage.sectionsNav"
+  | "inbox.mode.automations"
+  | "inbox.automations.createError"
+  | "inbox.automations.loading"
+  | "inbox.automations.new"
+  | "inbox.automations.current"
+  | "inbox.automations.sectionsNav"
+  | "inbox.automations.pausedSection"
+  | "inbox.automations.inProgress"
+  | "inbox.automations.header.root"
+  | "inbox.automations.details"
+  | "inbox.automations.nextRun.label"
+  | "inbox.automations.nextRun.none"
+  | "inbox.automations.lastRun.label"
+  | "inbox.automations.lastRun.none"
+  | "inbox.automations.missing"
+  | "inbox.automations.missingBack"
+  | "inbox.automations.missingSubtitle"
+  | "inbox.automations.emptySubtitle.learnMore"
+  | "inbox.automations.rowSummary.heartbeat"
+  | "inbox.automations.editTooltip"
+  | "inbox.automations.moreOptionsTooltip"
+  | "inbox.automations.rowActions"
+  | "inbox.automations.pauseMenuItem"
+  | "inbox.automations.resumeMenuItem"
+  | "inbox.automations.deleteMenuItem"
+  | "inbox.automations.deleteConfirm.cancel"
+  | "inbox.automations.deleteConfirm.confirm"
+  | "inbox.automations.deleteConfirm.description"
+  | "inbox.automations.deleteConfirm.title"
+  | "inbox.automations.deleteError"
+  | "inbox.automations.deleteFailedDescription"
+  | "inbox.automations.runNowError"
+  | "inbox.automations.runNowSuccess"
+  | "inbox.automations.relativeDate.pastToday"
+  | "inbox.automations.relativeDate.pastWeekday"
+  | "inbox.automations.relativeDate.today"
+  | "inbox.automations.relativeDate.tomorrow"
+  | "inbox.automations.relativeDate.weekday"
+  | "inbox.automations.relativeDate.yesterday"
+  | "inbox.automations.status.label"
+  | "inbox.automations.status.active"
+  | "inbox.automations.status.paused"
+  | "inbox.automations.status.deleted"
+  | "inbox.automations.executionEnvironment.label"
+  | "inbox.automations.folder.label"
+  | "inbox.automations.workspaceFallback"
+  | "inbox.automations.targetThread.label"
+  | "inbox.automations.model.label"
+  | "inbox.automations.reasoning.label"
+  | "inbox.automations.interval.label"
+  | "inbox.automations.repeats.label"
+  | "settings.automations.runNow"
+  | "settings.automations.cancel"
+  | "settings.automations.create"
+  | "settings.automations.save"
+  | "settings.automations.deleteAria"
+  | "settings.automations.nameLabel"
+  | "settings.automations.namePlaceholder"
+  | "settings.automations.pauseAria"
+  | "settings.automations.promptLabel"
+  | "settings.automations.promptPlaceholder"
+  | "settings.automations.resumeAria"
+  | "settings.automations.rruleSummaryFallback"
+  | "settings.automations.cwdPlaceholder"
+  | "settings.automations.heartbeatThread.placeholder"
+  | "settings.automations.executionEnvironment.ariaLabel"
+  | "settings.automations.executionEnvironment.local"
+  | "settings.automations.executionEnvironment.worktree"
   | "scratchpadPage.headerTitle"
   | "scratchpadPage.headerSubtitle"
   | "scratchpadPage.clearButton"
@@ -945,6 +1093,19 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.commandExecution": "Command",
     "app.chat.fileChange": "File change",
     "app.chat.hookPrompt": "Hook prompt",
+    "localConversation.hookItem.eventName.preToolUse": "Before tool use",
+    "localConversation.hookItem.eventName.postToolUse": "After tool use",
+    "localConversation.hookItem.eventName.sessionStart": "Session start",
+    "localConversation.hookItem.eventName.userPromptSubmit": "User prompt submit",
+    "localConversation.hookItem.eventName.permissionRequest": "Permission request",
+    "localConversation.hookItem.eventName.stop": "Stop",
+    "localConversation.hookItem.summary.withStatusMessage": "{eventName} - {statusMessage}",
+    "localConversation.hookItem.summary.ariaLabel": "{summary} {status}",
+    "localConversation.hookItem.feedback": "Feedback",
+    "localConversation.hookItem.warning": "Warning",
+    "localConversation.hookItem.error": "Error",
+    "localConversation.hookItem.hookContext": "Hook context",
+    "localConversation.hookItem.stop": "Stop",
     "app.chat.contextCompaction": "Context compacted",
     "app.chat.contextCompactionDescription": "Earlier conversation context was compacted.",
     "app.chat.imageGeneration": "Generated image",
@@ -1003,6 +1164,26 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.userInput.submit": "Submit answers",
     "app.chat.userInput.otherHint": "Other answers may be entered manually if needed.",
     "app.chat.userInput.secretHint": "This answer may contain sensitive input.",
+    "app.chat.userMessage.autoResolveSync": "Auto resolve conflicts",
+    "app.chat.userMessage.commentCount": "{count, plural, one {# comment} other {# comments}}",
+    "app.chat.userMessage.copyAriaLabel": "Copy message",
+    "app.chat.userMessage.copyCopiedAriaLabel": "Copied",
+    "app.chat.userMessage.copyCopiedTooltip": "Copied",
+    "app.chat.userMessage.copyTooltip": "Copy",
+    "app.chat.userMessage.editAriaLabel": "Edit message",
+    "app.chat.userMessage.editTooltip": "Edit",
+    "app.chat.userMessage.editTextareaAriaLabel": "Edit message",
+    "app.chat.userMessage.editPlaceholder": "Edit message",
+    "app.chat.userMessage.cancelEditMessage": "Cancel",
+    "app.chat.userMessage.sendEditedMessage": "Send",
+    "app.chat.userMessage.showLess": "Show less",
+    "app.chat.userMessage.showMore": "Show more",
+    "app.chat.userMessage.implementPlan": "Implement plan",
+    "app.chat.userMessage.noContent": "(No content)",
+    "app.chat.userMessage.pullRequestCheckCount": "{count, plural, one {# CI test} other {# CI tests}}",
+    "app.chat.userMessage.pullRequestFixMode": "PR fix",
+    "app.chat.userMessage.referencesPriorConversation": "References prior conversation",
+    "app.chat.userMessage.reviewMode": "Review mode",
     "app.chat.latestTurnPreview.items": "{count, plural, one {# item} other {# items}}",
     "app.chat.permissions.title": "Permissions request",
     "app.chat.permissions.network": "Network",
@@ -1057,6 +1238,26 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "localConversation.remoteTaskCreated": "Created {taskLink} in Codex Cloud",
     "localConversation.remoteTaskCreated.task": "task",
     "localConversation.dynamicToolCall": "{toolName}",
+    "localConversation.appControlToolCall.appHelp.active": "Checking thread actions",
+    "localConversation.appControlToolCall.appHelp.completed": "Checked thread actions",
+    "localConversation.appControlToolCall.threadsCreate.active": "Creating new thread",
+    "localConversation.appControlToolCall.threadsCreate.completed": "Created new thread",
+    "localConversation.appControlToolCall.threadsCreateInWorktree.active": "Creating worktree thread",
+    "localConversation.appControlToolCall.threadsCreateInWorktree.completed": "Created worktree thread",
+    "localConversation.appControlToolCall.threadsList.active": "Listing threads",
+    "localConversation.appControlToolCall.threadsList.completed": "Listed threads",
+    "localConversation.appControlToolCall.threadsRead.active": "Reading thread",
+    "localConversation.appControlToolCall.threadsRead.completed": "Read thread",
+    "localConversation.appControlToolCall.threadsSendMessage.active": "Sending message to thread",
+    "localConversation.appControlToolCall.threadsSendMessage.completed": "Sent message to thread",
+    "localConversation.appControlToolCall.threadsSetArchived.active": "Updating thread archive",
+    "localConversation.appControlToolCall.threadsSetArchived.completed": "Updated thread archive",
+    "localConversation.appControlToolCall.threadsSetPinned.active": "Updating thread pin",
+    "localConversation.appControlToolCall.threadsSetPinned.completed": "Updated thread pin",
+    "localConversation.appControlToolCall.threadsSetTitle.active": "Renaming thread",
+    "localConversation.appControlToolCall.threadsSetTitle.completed": "Renamed thread",
+    "localConversation.header.heartbeatAutomationNextRun": "Next run: {nextRunLabel}",
+    "localConversation.header.openHeartbeatAutomation": "Open heartbeat automation",
     "localConversation.multiAgentAction.header": "{action}{countLabel}",
     "localConversation.multiAgentAction.header.count":
       " {count, plural, one {# agent} other {# agents}}",
@@ -1144,6 +1345,11 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.tabs.contextMenu.close": "Close tab",
     "thread.fileCommandMenu.filesGroup": "Files",
     "thread.fileCommandMenu.searchFiles": "Search files",
+    "threadSidePanel.workspaceBrowser.loading": "Loading directory entries…",
+    "threadSidePanel.workspaceBrowser.empty": "No files in this folder",
+    "codex.fileTreeSearch.label": "Filter files",
+    "codex.fileTreeSearch.placeholder": "Filter files…",
+    "codex.fileTreeSearch.clear": "Clear file filter",
     "thread.fileTreePanel.noMatchingFiles": "No matching files",
     "thread.fileTreePanel.searchingFiles": "Searching files...",
     "review.fileSource.breadcrumb.ariaLabel": "File path",
@@ -1181,8 +1387,15 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "wham.diff.binaryFile": "Binary file not shown",
     "threadHeader.archiveConfirmCancel": "Cancel",
     "threadHeader.archiveConfirmConfirm": "Archive",
+    "threadHeader.archiveConfirmHeartbeatConfirm": "Archive and remove",
+    "threadHeader.archiveConfirmHeartbeatSubtitleNamed":
+      "This chat has a running heartbeat automation: {name}. Archiving the chat will also remove this automation and stop future runs.",
+    "threadHeader.archiveConfirmHeartbeatSubtitleUnnamed":
+      "This chat has a running heartbeat automation. Archiving the chat will also remove this automation and stop future runs.",
+    "threadHeader.archiveConfirmHeartbeatTitle": "Archive chat and remove automation?",
     "threadHeader.archiveConfirmSubtitle": "You can find it later in archived chats.",
     "threadHeader.archiveConfirmTitle": "Archive chat?",
+    "threadHeader.addAutomation": "Add automation",
     "threadHeader.copyAppLink": "Copy deeplink",
     "threadHeader.copyConversationMarkdown": "Copy as Markdown",
     "threadHeader.copyConversationMarkdownError": "Failed to copy conversation as Markdown",
@@ -1191,6 +1404,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "threadHeader.copyWorkingDirectory": "Copy working directory",
     "threadHeader.copyWorkingDirectoryError": "Failed to copy working directory",
     "threadHeader.copyWorkingDirectorySuccess": "Copied working directory",
+    "threadHeader.editAutomation": "Edit automation",
     "threadHeader.forkIntoLocal": "Fork into local",
     "threadHeader.forkIntoSameWorktree": "Fork into same worktree",
     "threadHeader.forkThreadError": "Failed to fork chat",
@@ -1206,9 +1420,93 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "sidebarElectron.renameThreadError": "Failed to rename thread",
     "sidebarElectron.skillsAppsRouteNavLink": "Plugins",
     "sidebarElectron.skillsRouteNavLink": "Skills",
+    "sidebarElectron.automationsRouteNavLink": "Automations",
+    "sidebarElectron.pullRequestsRouteNavLink": "Pull requests",
     "sidebarElectron.pluginsRouteNavLink": "Plugins",
     "sidebarElectron.pluginsDisabledTooltip": "Please sign in with ChatGPT to use plugins",
     "sidebarElectron.scratchpadNavLink": "Scratchpad",
+    "pullRequestsPage.title": "Pull requests",
+    "pullRequestsPage.filter.authored": "Authored",
+    "pullRequestsPage.filter.review": "Review",
+    "pullRequestsPage.filter.ariaLabel": "Pull request views",
+    "pullRequestsPage.repo.allRepos": "All repos",
+    "pullRequestsPage.error.title": "Couldn’t load pull requests",
+    "pullRequestsPage.error.description": "Check your GitHub CLI auth and try again in a moment",
+    "pullRequestsPage.empty.noPullRequests.title": "No pull requests yet",
+    "pullRequestsPage.empty.noPullRequests.description": "Your recent authored pull requests for this repo will appear here",
+    "pullRequestsPage.empty.noPullRequests.reviewDescription": "Pull requests requesting your review for this repo will appear here",
+    "pullRequestsPage.empty.noPullRequests.allReposDescription": "Pull requests across your GitHub repos will appear here",
+    "pullRequestsPage.empty.noRepos.title": "No GitHub repos available",
+    "pullRequestsPage.empty.noRepos.description": "Add a workspace with a GitHub remote to populate this board",
+    "pullRequestsPage.sectionsNav": "Pull request sections",
+    "inbox.mode.automations": "Automations",
+    "inbox.automations.createError": "Could not create automation",
+    "inbox.automations.loading": "Loading…",
+    "inbox.automations.new": "New automation",
+    "inbox.automations.current": "Current",
+    "inbox.automations.sectionsNav": "Automation sections",
+    "inbox.automations.pausedSection": "Paused",
+    "inbox.automations.inProgress": "In progress",
+    "inbox.automations.header.root": "Automations",
+    "inbox.automations.details": "Details",
+    "inbox.automations.nextRun.label": "Next run",
+    "inbox.automations.nextRun.none": "Not scheduled",
+    "inbox.automations.lastRun.label": "Last run",
+    "inbox.automations.lastRun.none": "-",
+    "inbox.automations.missing": "Automation not found",
+    "inbox.automations.missingBack": "Back to automations",
+    "inbox.automations.missingSubtitle": "This automation may have been deleted or is no longer available on this device.",
+    "inbox.automations.emptySubtitle.learnMore": "Automate recurring chat work by configuring scheduled conversations.",
+    "inbox.automations.rowSummary.heartbeat": "Heartbeat • {thread}",
+    "inbox.automations.editTooltip": "Edit automation",
+    "inbox.automations.moreOptionsTooltip": "More options",
+    "inbox.automations.rowActions": "Automation actions",
+    "inbox.automations.pauseMenuItem": "Pause",
+    "inbox.automations.resumeMenuItem": "Resume",
+    "inbox.automations.deleteMenuItem": "Delete",
+    "inbox.automations.deleteConfirm.cancel": "Cancel",
+    "inbox.automations.deleteConfirm.confirm": "Delete automation",
+    "inbox.automations.deleteConfirm.description": "This will permanently delete the automation and stop all future runs.",
+    "inbox.automations.deleteConfirm.title": "Delete {name}?",
+    "inbox.automations.deleteError": "Could not delete automation",
+    "inbox.automations.deleteFailedDescription": "Please try again.",
+    "inbox.automations.runNowError": "Could not start automation",
+    "inbox.automations.runNowSuccess": "Automation started",
+    "inbox.automations.relativeDate.pastToday": "Today at {time}",
+    "inbox.automations.relativeDate.pastWeekday": "{weekday} at {time}",
+    "inbox.automations.relativeDate.today": "Today at {time}",
+    "inbox.automations.relativeDate.tomorrow": "Tomorrow at {time}",
+    "inbox.automations.relativeDate.weekday": "{weekday} at {time}",
+    "inbox.automations.relativeDate.yesterday": "Yesterday at {time}",
+    "inbox.automations.status.label": "Status",
+    "inbox.automations.status.active": "Active",
+    "inbox.automations.status.paused": "Paused",
+    "inbox.automations.status.deleted": "Deleted",
+    "inbox.automations.executionEnvironment.label": "Execution environment",
+    "inbox.automations.folder.label": "Project",
+    "inbox.automations.workspaceFallback": "-",
+    "inbox.automations.targetThread.label": "Chat",
+    "inbox.automations.model.label": "Model",
+    "inbox.automations.reasoning.label": "Reasoning",
+    "inbox.automations.interval.label": "Interval",
+    "inbox.automations.repeats.label": "Repeats",
+    "settings.automations.runNow": "Run now",
+    "settings.automations.cancel": "Cancel",
+    "settings.automations.create": "Create",
+    "settings.automations.save": "Save",
+    "settings.automations.deleteAria": "Delete automation",
+    "settings.automations.nameLabel": "Name",
+    "settings.automations.namePlaceholder": "Automation name",
+    "settings.automations.pauseAria": "Pause automation",
+    "settings.automations.promptLabel": "Prompt",
+    "settings.automations.promptPlaceholder": "What should Codex do?",
+    "settings.automations.resumeAria": "Resume automation",
+    "settings.automations.rruleSummaryFallback": "Custom schedule",
+    "settings.automations.cwdPlaceholder": "One project path per line",
+    "settings.automations.heartbeatThread.placeholder": "Select a chat",
+    "settings.automations.executionEnvironment.ariaLabel": "Execution environment",
+    "settings.automations.executionEnvironment.local": "Local",
+    "settings.automations.executionEnvironment.worktree": "Worktree",
     "scratchpadPage.headerTitle": "Scratchpad",
     "scratchpadPage.headerSubtitle": "Experiment",
     "scratchpadPage.clearButton": "Clear",
@@ -1736,6 +2034,19 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.commandExecution": "命令",
     "app.chat.fileChange": "文件修改",
     "app.chat.hookPrompt": "钩子提示",
+    "localConversation.hookItem.eventName.preToolUse": "调用工具前",
+    "localConversation.hookItem.eventName.postToolUse": "调用工具后",
+    "localConversation.hookItem.eventName.sessionStart": "会话开始",
+    "localConversation.hookItem.eventName.userPromptSubmit": "用户提示提交",
+    "localConversation.hookItem.eventName.permissionRequest": "权限请求",
+    "localConversation.hookItem.eventName.stop": "停止",
+    "localConversation.hookItem.summary.withStatusMessage": "{eventName} - {statusMessage}",
+    "localConversation.hookItem.summary.ariaLabel": "{summary} {status}",
+    "localConversation.hookItem.feedback": "反馈",
+    "localConversation.hookItem.warning": "警告",
+    "localConversation.hookItem.error": "错误",
+    "localConversation.hookItem.hookContext": "钩子上下文",
+    "localConversation.hookItem.stop": "停止",
     "app.chat.contextCompaction": "上下文已压缩",
     "app.chat.contextCompactionDescription": "较早的对话上下文已被压缩。",
     "app.chat.imageGeneration": "已生成图片",
@@ -1794,6 +2105,26 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.userInput.submit": "提交答案",
     "app.chat.userInput.otherHint": "如有需要，可手动输入其他答案。",
     "app.chat.userInput.secretHint": "该答案可能包含敏感输入。",
+    "app.chat.userMessage.autoResolveSync": "自动解决冲突",
+    "app.chat.userMessage.commentCount": "{count, plural, other {# 个评论}}",
+    "app.chat.userMessage.copyAriaLabel": "复制消息",
+    "app.chat.userMessage.copyCopiedAriaLabel": "已复制",
+    "app.chat.userMessage.copyCopiedTooltip": "已复制",
+    "app.chat.userMessage.copyTooltip": "复制",
+    "app.chat.userMessage.editAriaLabel": "编辑消息",
+    "app.chat.userMessage.editTooltip": "编辑",
+    "app.chat.userMessage.editTextareaAriaLabel": "编辑消息",
+    "app.chat.userMessage.editPlaceholder": "编辑消息",
+    "app.chat.userMessage.cancelEditMessage": "取消",
+    "app.chat.userMessage.sendEditedMessage": "发送",
+    "app.chat.userMessage.showLess": "收起",
+    "app.chat.userMessage.showMore": "显示更多",
+    "app.chat.userMessage.implementPlan": "实现计划",
+    "app.chat.userMessage.noContent": "（无内容）",
+    "app.chat.userMessage.pullRequestCheckCount": "{count, plural, one {# 个 CI 测试} other {# 个 CI 测试}}",
+    "app.chat.userMessage.pullRequestFixMode": "PR 修复",
+    "app.chat.userMessage.referencesPriorConversation": "参考历史对话",
+    "app.chat.userMessage.reviewMode": "审查模式",
     "app.chat.latestTurnPreview.items": "{count, plural, one {# 个项目} other {# 个项目}}",
     "app.chat.permissions.title": "权限请求",
     "app.chat.permissions.network": "网络",
@@ -1848,6 +2179,26 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "localConversation.remoteTaskCreated": "已在 Codex Cloud 中创建{taskLink}",
     "localConversation.remoteTaskCreated.task": "任务",
     "localConversation.dynamicToolCall": "{toolName}",
+    "localConversation.appControlToolCall.appHelp.active": "正在检查线程操作",
+    "localConversation.appControlToolCall.appHelp.completed": "已检查线程操作",
+    "localConversation.appControlToolCall.threadsCreate.active": "正在创建新线程",
+    "localConversation.appControlToolCall.threadsCreate.completed": "已创建新线程",
+    "localConversation.appControlToolCall.threadsCreateInWorktree.active": "正在创建工作树线程",
+    "localConversation.appControlToolCall.threadsCreateInWorktree.completed": "已创建工作树线程",
+    "localConversation.appControlToolCall.threadsList.active": "正在列出线程",
+    "localConversation.appControlToolCall.threadsList.completed": "已列出线程",
+    "localConversation.appControlToolCall.threadsRead.active": "正在阅读对话串",
+    "localConversation.appControlToolCall.threadsRead.completed": "已读讨论串",
+    "localConversation.appControlToolCall.threadsSendMessage.active": "正在向线程发送消息",
+    "localConversation.appControlToolCall.threadsSendMessage.completed": "已向线程发送消息",
+    "localConversation.appControlToolCall.threadsSetArchived.active": "正在更新线程归档",
+    "localConversation.appControlToolCall.threadsSetArchived.completed": "已更新线程归档状态",
+    "localConversation.appControlToolCall.threadsSetPinned.active": "正在更新线程置顶状态",
+    "localConversation.appControlToolCall.threadsSetPinned.completed": "已更新线程置顶",
+    "localConversation.appControlToolCall.threadsSetTitle.active": "正在重命名线程",
+    "localConversation.appControlToolCall.threadsSetTitle.completed": "线程已重命名",
+    "localConversation.header.heartbeatAutomationNextRun": "下次运行：{nextRunLabel}",
+    "localConversation.header.openHeartbeatAutomation": "打开心跳自动化",
     "localConversation.multiAgentAction.header": "{action}{countLabel}",
     "localConversation.multiAgentAction.header.count":
       " {count, plural, one {# 个智能体} other {# 个智能体}}",
@@ -1933,6 +2284,11 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.tabs.contextMenu.close": "关闭标签页",
     "thread.fileCommandMenu.filesGroup": "文件",
     "thread.fileCommandMenu.searchFiles": "搜索文件",
+    "threadSidePanel.workspaceBrowser.loading": "正在加载目录内容…",
+    "threadSidePanel.workspaceBrowser.empty": "此文件夹中没有文件",
+    "codex.fileTreeSearch.label": "筛选文件",
+    "codex.fileTreeSearch.placeholder": "筛选文件…",
+    "codex.fileTreeSearch.clear": "清除文件筛选",
     "thread.fileTreePanel.noMatchingFiles": "没有匹配的文件",
     "thread.fileTreePanel.searchingFiles": "正在搜索文件…",
     "review.fileSource.breadcrumb.ariaLabel": "文件路径",
@@ -1970,8 +2326,15 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "wham.diff.binaryFile": "未显示二进制文件",
     "threadHeader.archiveConfirmCancel": "取消",
     "threadHeader.archiveConfirmConfirm": "归档",
+    "threadHeader.archiveConfirmHeartbeatConfirm": "归档并移除",
+    "threadHeader.archiveConfirmHeartbeatSubtitleNamed":
+      "此对话有一个正在运行的心跳自动化：{name}。归档对话也会将其移除并停止后续运行。",
+    "threadHeader.archiveConfirmHeartbeatSubtitleUnnamed":
+      "此对话有一个正在运行的心跳自动化。归档对话也会将其移除并停止后续运行。",
+    "threadHeader.archiveConfirmHeartbeatTitle": "归档对话并移除自动化？",
     "threadHeader.archiveConfirmSubtitle": "稍后可在已归档对话中找到。",
     "threadHeader.archiveConfirmTitle": "归档对话？",
+    "threadHeader.addAutomation": "添加自动化",
     "threadHeader.copyAppLink": "复制深度链接",
     "threadHeader.copyConversationMarkdown": "复制为 Markdown",
     "threadHeader.copyConversationMarkdownError": "将对话复制为 Markdown 失败",
@@ -1980,6 +2343,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "threadHeader.copyWorkingDirectory": "复制工作目录",
     "threadHeader.copyWorkingDirectoryError": "复制工作目录失败",
     "threadHeader.copyWorkingDirectorySuccess": "已复制工作目录",
+    "threadHeader.editAutomation": "编辑自动化",
     "threadHeader.forkIntoLocal": "派生到本地",
     "threadHeader.forkIntoSameWorktree": "分叉到同一工作树",
     "threadHeader.forkThreadError": "创建对话分支失败",
@@ -1995,9 +2359,93 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "sidebarElectron.renameThreadError": "重命名对话失败",
     "sidebarElectron.skillsAppsRouteNavLink": "插件",
     "sidebarElectron.skillsRouteNavLink": "技能",
+    "sidebarElectron.automationsRouteNavLink": "自动化",
+    "sidebarElectron.pullRequestsRouteNavLink": "拉取请求",
     "sidebarElectron.pluginsRouteNavLink": "插件",
     "sidebarElectron.pluginsDisabledTooltip": "请登录 ChatGPT 以使用插件",
     "sidebarElectron.scratchpadNavLink": "草稿区",
+    "pullRequestsPage.title": "拉取请求",
+    "pullRequestsPage.filter.authored": "我发起的",
+    "pullRequestsPage.filter.review": "待我审查",
+    "pullRequestsPage.filter.ariaLabel": "拉取请求视图",
+    "pullRequestsPage.repo.allRepos": "所有仓库",
+    "pullRequestsPage.error.title": "无法加载拉取请求",
+    "pullRequestsPage.error.description": "请检查 GitHub CLI 身份验证，稍后重试",
+    "pullRequestsPage.empty.noPullRequests.title": "还没有拉取请求",
+    "pullRequestsPage.empty.noPullRequests.description": "此仓库中你最近发起的拉取请求会显示在这里",
+    "pullRequestsPage.empty.noPullRequests.reviewDescription": "此仓库中请求你审查的拉取请求会显示在这里",
+    "pullRequestsPage.empty.noPullRequests.allReposDescription": "你的 GitHub 仓库中的拉取请求会显示在这里",
+    "pullRequestsPage.empty.noRepos.title": "没有可用的 GitHub 仓库",
+    "pullRequestsPage.empty.noRepos.description": "添加带有 GitHub 远程地址的工作区以填充此看板",
+    "pullRequestsPage.sectionsNav": "拉取请求分区",
+    "inbox.mode.automations": "自动化",
+    "inbox.automations.createError": "无法创建自动化",
+    "inbox.automations.loading": "正在加载…",
+    "inbox.automations.new": "新建自动化功能",
+    "inbox.automations.current": "当前",
+    "inbox.automations.sectionsNav": "自动化概览板块",
+    "inbox.automations.pausedSection": "已暂停",
+    "inbox.automations.inProgress": "正在进行中",
+    "inbox.automations.header.root": "自动化功能",
+    "inbox.automations.details": "详情",
+    "inbox.automations.nextRun.label": "下次运行",
+    "inbox.automations.nextRun.none": "未计划",
+    "inbox.automations.lastRun.label": "上次运行时间",
+    "inbox.automations.lastRun.none": "-",
+    "inbox.automations.missing": "未找到自动化功能",
+    "inbox.automations.missingBack": "返回自动化功能",
+    "inbox.automations.missingSubtitle": "该自动化功能可能已被删除，或在此设备上不再可用。",
+    "inbox.automations.emptySubtitle.learnMore": "通过设置定期对话，实现工作自动化。",
+    "inbox.automations.rowSummary.heartbeat": "心跳 • {thread}",
+    "inbox.automations.editTooltip": "编辑自动化",
+    "inbox.automations.moreOptionsTooltip": "更多选项",
+    "inbox.automations.rowActions": "自动化操作",
+    "inbox.automations.pauseMenuItem": "暂停",
+    "inbox.automations.resumeMenuItem": "恢复",
+    "inbox.automations.deleteMenuItem": "删除",
+    "inbox.automations.deleteConfirm.cancel": "取消",
+    "inbox.automations.deleteConfirm.confirm": "删除自动化",
+    "inbox.automations.deleteConfirm.description": "此操作将永久删除该自动化并停止所有未来运行。",
+    "inbox.automations.deleteConfirm.title": "删除 {name}？",
+    "inbox.automations.deleteError": "无法删除自动化",
+    "inbox.automations.deleteFailedDescription": "请重试。",
+    "inbox.automations.runNowError": "无法启动自动化功能",
+    "inbox.automations.runNowSuccess": "自动化功能已启动",
+    "inbox.automations.relativeDate.pastToday": "今天 {time}",
+    "inbox.automations.relativeDate.pastWeekday": "{weekday} {time}",
+    "inbox.automations.relativeDate.today": "今天 {time}",
+    "inbox.automations.relativeDate.tomorrow": "明天 {time}",
+    "inbox.automations.relativeDate.weekday": "{weekday} {time}",
+    "inbox.automations.relativeDate.yesterday": "昨天 {time}",
+    "inbox.automations.status.label": "状态",
+    "inbox.automations.status.active": "活跃",
+    "inbox.automations.status.paused": "已暂停",
+    "inbox.automations.status.deleted": "已删除",
+    "inbox.automations.executionEnvironment.label": "运行环境",
+    "inbox.automations.folder.label": "项目",
+    "inbox.automations.workspaceFallback": "-",
+    "inbox.automations.targetThread.label": "对话",
+    "inbox.automations.model.label": "模型",
+    "inbox.automations.reasoning.label": "推理",
+    "inbox.automations.interval.label": "间隔",
+    "inbox.automations.repeats.label": "重复次数",
+    "settings.automations.runNow": "立即运行",
+    "settings.automations.cancel": "取消",
+    "settings.automations.create": "创建",
+    "settings.automations.save": "保存",
+    "settings.automations.deleteAria": "删除自动化",
+    "settings.automations.nameLabel": "名称",
+    "settings.automations.namePlaceholder": "自动化名称",
+    "settings.automations.pauseAria": "暂停自动化",
+    "settings.automations.promptLabel": "提示词",
+    "settings.automations.promptPlaceholder": "让 Codex 做什么？",
+    "settings.automations.resumeAria": "恢复自动化",
+    "settings.automations.rruleSummaryFallback": "自定义计划",
+    "settings.automations.cwdPlaceholder": "每行一个项目路径",
+    "settings.automations.heartbeatThread.placeholder": "选择一个对话",
+    "settings.automations.executionEnvironment.ariaLabel": "运行环境",
+    "settings.automations.executionEnvironment.local": "本地",
+    "settings.automations.executionEnvironment.worktree": "工作树",
     "scratchpadPage.headerTitle": "草稿区",
     "scratchpadPage.headerSubtitle": "实验性功能",
     "scratchpadPage.clearButton": "清除",

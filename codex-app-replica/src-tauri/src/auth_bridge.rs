@@ -16,6 +16,7 @@ use crate::thread_history::append_reasoning_summary_delta;
 use crate::thread_history::build_auto_review_interruption_warning_item;
 use crate::thread_history::build_automatic_approval_review_item;
 use crate::thread_history::build_forked_from_conversation_item;
+use crate::thread_history::build_hook_item;
 use crate::thread_history::build_model_rerouted_item;
 use crate::thread_history::build_stream_error_item;
 use crate::thread_history::build_system_error_item;
@@ -25,11 +26,14 @@ use crate::thread_history::ensure_reasoning_summary_part;
 use crate::thread_history::map_file_change_summary;
 use crate::thread_history::map_thread_item;
 use crate::thread_history::map_todo_list_step;
+use crate::thread_history::map_turn_input;
 use crate::thread_history::replace_file_change_changes;
 use crate::thread_history::thread_item_id;
 use crate::thread_history::FileChangeSummary;
 use crate::thread_history::ThreadConversation;
 use crate::thread_history::ThreadConversationItem;
+use crate::thread_history::ThreadConversationTurn;
+use crate::thread_history::ThreadConversationTurnTiming;
 
 const AUTH_EVENT: &str = "auth-state-changed";
 const THREAD_EVENT: &str = "thread-event";
@@ -233,6 +237,12 @@ struct ThreadListItem {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ThreadReadResponse {
+    thread: ThreadReadThread,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadRollbackResponse {
     thread: ThreadReadThread,
 }
 
@@ -591,6 +601,10 @@ struct ThreadReadThread {
 struct ThreadReadTurn {
     id: String,
     status: Option<String>,
+    started_at: Option<f64>,
+    completed_at: Option<f64>,
+    #[serde(default)]
+    input: Vec<serde_json::Value>,
     items: Vec<serde_json::Value>,
 }
 
@@ -601,6 +615,18 @@ fn resolved_thread_title(thread: &ThreadReadThread) -> String {
         .unwrap_or_else(|| thread.preview.clone())
         .trim()
         .to_string()
+}
+
+fn seconds_to_milliseconds(value: Option<f64>) -> Option<i64> {
+    let seconds = value?;
+    if !seconds.is_finite() {
+        return None;
+    }
+    let milliseconds = seconds * 1000.0;
+    if !milliseconds.is_finite() {
+        return None;
+    }
+    Some(milliseconds.round() as i64)
 }
 
 impl Default for AuthState {
@@ -643,6 +669,15 @@ pub struct AuthBridgeState {
     forked_from_conversations: Mutex<HashMap<String, ForkedFromConversationCacheEntry>>,
 }
 
+impl AuthBridgeState {
+    pub fn current_personality(&self) -> Option<String> {
+        self.current_personality
+            .lock()
+            .expect("current personality mutex poisoned")
+            .clone()
+    }
+}
+
 #[derive(Debug, Clone)]
 struct ModelReroutedCacheEntry {
     id: String,
@@ -679,12 +714,20 @@ struct TurnErrorCacheEntry {
     will_retry: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ThreadItemUpdatePhase {
+    Started,
+    Completed,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ThreadEventPayload {
     ThreadItemUpdated {
         thread_id: String,
         turn_id: String,
+        phase: ThreadItemUpdatePhase,
         item: ThreadConversationItem,
     },
     TurnCompleted {
@@ -1012,6 +1055,7 @@ enum AppServerRequestKind {
     ThreadUnarchive,
     ThreadNameSet,
     ThreadRead,
+    ThreadRollback,
     ReviewStart,
     TurnStart,
     TurnSteer,
@@ -1597,30 +1641,7 @@ pub async fn start_thread(
     state: State<'_, Arc<AuthBridgeState>>,
     cwd: Option<String>,
 ) -> Result<String, String> {
-    let current_personality = state
-        .current_personality
-        .lock()
-        .expect("current personality mutex poisoned")
-        .clone();
-    let mut payload = serde_json::Map::new();
-    if let Some(cwd) = cwd {
-        payload.insert("cwd".to_string(), serde_json::Value::String(cwd));
-    }
-    if let Some(personality) = current_personality {
-        payload.insert(
-            "personality".to_string(),
-            serde_json::Value::String(personality),
-        );
-    }
-    let value = send_request(
-        state.inner(),
-        AppServerRequestKind::ThreadStart,
-        serde_json::Value::Object(payload),
-    )
-    .await?;
-    let response = serde_json::from_value::<ThreadStartResponse>(value)
-        .map_err(|err| format!("failed to decode thread start response: {err}"))?;
-    Ok(response.thread.id)
+    start_thread_with_personality(state.inner(), cwd, state.current_personality()).await
 }
 
 #[tauri::command]
@@ -1687,6 +1708,7 @@ pub async fn fork_thread(
             ThreadEventPayload::ThreadItemUpdated {
                 thread_id: forked_thread_id.clone(),
                 turn_id: forked_turn_id,
+                phase: ThreadItemUpdatePhase::Completed,
                 item,
             },
         );
@@ -1753,35 +1775,31 @@ pub async fn start_turn(
     text: String,
     cwd: Option<String>,
 ) -> Result<String, String> {
-    let current_personality = state
-        .current_personality
-        .lock()
-        .expect("current personality mutex poisoned")
-        .clone();
-    let mut payload = serde_json::Map::new();
-    payload.insert("threadId".to_string(), serde_json::Value::String(thread_id));
-    payload.insert(
-        "input".to_string(),
-        serde_json::json!([{ "type": "text", "text": text }]),
-    );
-    if let Some(cwd) = cwd {
-        payload.insert("cwd".to_string(), serde_json::Value::String(cwd));
-    }
-    if let Some(personality) = current_personality {
-        payload.insert(
-            "personality".to_string(),
-            serde_json::Value::String(personality),
-        );
-    }
-    let value = send_request(
+    start_turn_with_personality(
         state.inner(),
-        AppServerRequestKind::TurnStart,
-        serde_json::Value::Object(payload),
+        thread_id,
+        text,
+        cwd,
+        state.current_personality(),
     )
-    .await?;
-    let response = serde_json::from_value::<TurnStartResponse>(value)
-        .map_err(|err| format!("failed to decode turn start response: {err}"))?;
-    Ok(response.turn.id)
+    .await
+}
+
+#[tauri::command]
+pub async fn start_turn_with_input(
+    state: State<'_, Arc<AuthBridgeState>>,
+    thread_id: String,
+    input: Vec<serde_json::Value>,
+    cwd: Option<String>,
+) -> Result<String, String> {
+    start_turn_with_input_and_personality(
+        state.inner(),
+        thread_id,
+        serde_json::Value::Array(input),
+        cwd,
+        state.current_personality(),
+    )
+    .await
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1957,7 +1975,39 @@ pub async fn read_thread(
     if let Some(latest_turn_id) = response.thread.turns.last().map(|turn| turn.id.clone()) {
         remember_latest_turn_id(state.inner(), &response.thread.id, &latest_turn_id);
     }
+    map_thread_conversation(state.inner(), response.thread)
+}
+
+#[tauri::command]
+pub async fn rollback_thread(
+    state: State<'_, Arc<AuthBridgeState>>,
+    thread_id: String,
+    num_turns: u32,
+) -> Result<ThreadConversation, String> {
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::ThreadRollback,
+        serde_json::json!({
+            "threadId": thread_id,
+            "numTurns": num_turns,
+        }),
+    )
+    .await?;
+    let response = serde_json::from_value::<ThreadRollbackResponse>(value)
+        .map_err(|err| format!("failed to decode thread rollback response: {err}"))?;
+    if let Some(latest_turn_id) = response.thread.turns.last().map(|turn| turn.id.clone()) {
+        remember_latest_turn_id(state.inner(), &response.thread.id, &latest_turn_id);
+    }
+    map_thread_conversation(state.inner(), response.thread)
+}
+
+fn map_thread_conversation(
+    state: &Arc<AuthBridgeState>,
+    thread: ThreadReadThread,
+) -> Result<ThreadConversation, String> {
     let mut items = Vec::<ThreadConversationItem>::new();
+    let mut turns = Vec::<ThreadConversationTurn>::new();
+    let mut turn_timings = Vec::<ThreadConversationTurnTiming>::new();
     let turn_diffs = state
         .turn_diffs
         .lock()
@@ -1982,7 +2032,23 @@ pub async fn read_thread(
         .forked_from_conversations
         .lock()
         .map_err(|_| "failed to lock forked conversation cache".to_string())?;
-    for turn in response.thread.turns.iter() {
+    for turn in thread.turns.iter() {
+        let status = turn
+            .status
+            .clone()
+            .unwrap_or_else(|| "completed".to_string());
+        turns.push(ThreadConversationTurn {
+            id: turn.id.clone(),
+            status: status.clone(),
+            input: map_turn_input(&turn.input),
+        });
+        turn_timings.push(ThreadConversationTurnTiming {
+            turn_id: turn.id.clone(),
+            status,
+            turn_started_at_ms: seconds_to_milliseconds(turn.started_at),
+            final_assistant_started_at_ms: seconds_to_milliseconds(turn.completed_at),
+            first_turn_work_item_started_at_ms: None,
+        });
         let context_compaction_completed = !matches!(
             turn.status.as_deref(),
             Some("inProgress") | Some("in_progress")
@@ -2002,7 +2068,7 @@ pub async fn read_thread(
             }
         }
         if let Some(diff) = turn_diffs
-            .get(&thread_turn_cache_key(&response.thread.id, &turn.id))
+            .get(&thread_turn_cache_key(&thread.id, &turn.id))
             .cloned()
         {
             let item = build_turn_diff_item(&turn.id, diff);
@@ -2016,7 +2082,7 @@ pub async fn read_thread(
             }
         }
         if let Some(reroutes) = model_reroutes
-            .get(&thread_turn_cache_key(&response.thread.id, &turn.id))
+            .get(&thread_turn_cache_key(&thread.id, &turn.id))
             .cloned()
         {
             for reroute in reroutes {
@@ -2040,7 +2106,7 @@ pub async fn read_thread(
             }
         }
         if let Some(review_entries) = automatic_approval_reviews
-            .get(&thread_turn_cache_key(&response.thread.id, &turn.id))
+            .get(&thread_turn_cache_key(&thread.id, &turn.id))
             .cloned()
         {
             for review_entry in review_entries {
@@ -2064,7 +2130,7 @@ pub async fn read_thread(
             }
         }
         if let Some(warning_entries) = auto_review_interruption_warnings
-            .get(&thread_turn_cache_key(&response.thread.id, &turn.id))
+            .get(&thread_turn_cache_key(&thread.id, &turn.id))
             .cloned()
         {
             for warning_entry in warning_entries {
@@ -2080,7 +2146,7 @@ pub async fn read_thread(
             }
         }
         if let Some(error_entries) = turn_errors
-            .get(&thread_turn_cache_key(&response.thread.id, &turn.id))
+            .get(&thread_turn_cache_key(&thread.id, &turn.id))
             .cloned()
         {
             for error_entry in error_entries {
@@ -2108,10 +2174,10 @@ pub async fn read_thread(
             }
         }
     }
-    if let Some(forked_from_conversation) = forked_from_conversations.get(&response.thread.id) {
+    if let Some(forked_from_conversation) = forked_from_conversations.get(&thread.id) {
         if let Some(item) = build_forked_from_conversation_item(
             &forked_from_conversation.turn_id,
-            format!("forked-from-conversation:{}", response.thread.id),
+            format!("forked-from-conversation:{}", thread.id),
             forked_from_conversation.source_conversation_id.clone(),
             forked_from_conversation.source_conversation_title.clone(),
         ) {
@@ -2125,19 +2191,94 @@ pub async fn read_thread(
             }
         }
     }
-    let title = resolved_thread_title(&response.thread);
-    let id = response.thread.id;
-    let cwd = response.thread.cwd;
+    let title = resolved_thread_title(&thread);
+    let id = thread.id;
+    let cwd = thread.cwd;
     Ok(ThreadConversation {
         id,
         title,
         cwd,
+        turns,
+        turn_timings,
         items,
     })
 }
 
 pub fn shared_state() -> Arc<AuthBridgeState> {
     Arc::new(AuthBridgeState::default())
+}
+
+pub async fn start_thread_with_personality(
+    state: &Arc<AuthBridgeState>,
+    cwd: Option<String>,
+    personality: Option<String>,
+) -> Result<String, String> {
+    let mut payload = serde_json::Map::new();
+    if let Some(cwd) = cwd {
+        payload.insert("cwd".to_string(), serde_json::Value::String(cwd));
+    }
+    if let Some(personality) = personality {
+        payload.insert(
+            "personality".to_string(),
+            serde_json::Value::String(personality),
+        );
+    }
+    let value = send_request(
+        state,
+        AppServerRequestKind::ThreadStart,
+        serde_json::Value::Object(payload),
+    )
+    .await?;
+    let response = serde_json::from_value::<ThreadStartResponse>(value)
+        .map_err(|err| format!("failed to decode thread start response: {err}"))?;
+    Ok(response.thread.id)
+}
+
+pub async fn start_turn_with_personality(
+    state: &Arc<AuthBridgeState>,
+    thread_id: String,
+    text: String,
+    cwd: Option<String>,
+    personality: Option<String>,
+) -> Result<String, String> {
+    start_turn_with_input_and_personality(
+        state,
+        thread_id,
+        serde_json::json!([{ "type": "text", "text": text }]),
+        cwd,
+        personality,
+    )
+    .await
+}
+
+pub async fn start_turn_with_input_and_personality(
+    state: &Arc<AuthBridgeState>,
+    thread_id: String,
+    input: serde_json::Value,
+    cwd: Option<String>,
+    personality: Option<String>,
+) -> Result<String, String> {
+    let mut payload = serde_json::Map::new();
+    payload.insert("threadId".to_string(), serde_json::Value::String(thread_id));
+    payload.insert("input".to_string(), input);
+    if let Some(cwd) = cwd {
+        payload.insert("cwd".to_string(), serde_json::Value::String(cwd));
+    }
+    if let Some(personality) = personality {
+        payload.insert(
+            "personality".to_string(),
+            serde_json::Value::String(personality),
+        );
+    }
+    let value = send_request(
+        state,
+        AppServerRequestKind::TurnStart,
+        serde_json::Value::Object(payload),
+    )
+    .await?;
+    let response = serde_json::from_value::<TurnStartResponse>(value)
+        .map_err(|err| format!("failed to decode turn start response: {err}"))?;
+    Ok(response.turn.id)
 }
 
 pub async fn start(app: AppHandle) -> Result<(), String> {
@@ -2364,6 +2505,22 @@ async fn run_client(
                                 remember_latest_turn_from_notification(&state, &params);
                                 handle_item_completed(&app, params, &mut pending_thread_items);
                             }
+                            "hook/started" => {
+                                remember_latest_turn_from_notification(&state, &params);
+                                handle_hook_notification(
+                                    &app,
+                                    params,
+                                    ThreadItemUpdatePhase::Started,
+                                );
+                            }
+                            "hook/completed" => {
+                                remember_latest_turn_from_notification(&state, &params);
+                                handle_hook_notification(
+                                    &app,
+                                    params,
+                                    ThreadItemUpdatePhase::Completed,
+                                );
+                            }
                             "item/agentMessage/delta" => {
                                 remember_latest_turn_from_notification(&state, &params);
                                 handle_agent_message_delta(&app, params, &mut pending_thread_items);
@@ -2538,6 +2695,7 @@ fn request_method(kind: &AppServerRequestKind) -> &'static str {
         AppServerRequestKind::ThreadUnarchive => "thread/unarchive",
         AppServerRequestKind::ThreadNameSet => "thread/name/set",
         AppServerRequestKind::ThreadRead => "thread/read",
+        AppServerRequestKind::ThreadRollback => "thread/rollback",
         AppServerRequestKind::ReviewStart => "review/start",
         AppServerRequestKind::TurnStart => "turn/start",
         AppServerRequestKind::TurnSteer => "turn/steer",
@@ -2579,6 +2737,7 @@ fn handle_item_started(
         ThreadEventPayload::ThreadItemUpdated {
             thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
+            phase: ThreadItemUpdatePhase::Started,
             item: thread_item,
         },
     );
@@ -2618,7 +2777,36 @@ fn handle_item_completed(
         ThreadEventPayload::ThreadItemUpdated {
             thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
+            phase: ThreadItemUpdatePhase::Completed,
             item: thread_item,
+        },
+    );
+}
+
+fn handle_hook_notification(
+    app: &AppHandle,
+    params: serde_json::Value,
+    phase: ThreadItemUpdatePhase,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(turn_id) = params.get("turnId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(run) = params.get("run") else {
+        return;
+    };
+    let Some(item) = build_hook_item(turn_id, run) else {
+        return;
+    };
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ThreadItemUpdated {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            phase,
+            item,
         },
     );
 }
@@ -2647,6 +2835,7 @@ fn handle_agent_message_delta(
             turn_id: turn_id.to_string(),
             role: "assistant".to_string(),
             text: String::new(),
+            completed: false,
         });
     let Some(updated_item) = append_agent_message_delta(item, delta) else {
         return;
@@ -2656,6 +2845,7 @@ fn handle_agent_message_delta(
         ThreadEventPayload::ThreadItemUpdated {
             thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
+            phase: ThreadItemUpdatePhase::Completed,
             item: updated_item,
         },
     );
@@ -2698,6 +2888,7 @@ fn handle_reasoning_summary_part_added(
         ThreadEventPayload::ThreadItemUpdated {
             thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
+            phase: ThreadItemUpdatePhase::Completed,
             item: updated_item,
         },
     );
@@ -2735,6 +2926,7 @@ fn handle_plan_delta(
         ThreadEventPayload::ThreadItemUpdated {
             thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
+            phase: ThreadItemUpdatePhase::Completed,
             item: updated_item,
         },
     );
@@ -2780,6 +2972,7 @@ fn handle_reasoning_summary_text_delta(
         ThreadEventPayload::ThreadItemUpdated {
             thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
+            phase: ThreadItemUpdatePhase::Completed,
             item: updated_item,
         },
     );
@@ -2825,6 +3018,7 @@ fn handle_reasoning_text_delta(
         ThreadEventPayload::ThreadItemUpdated {
             thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
+            phase: ThreadItemUpdatePhase::Completed,
             item: updated_item,
         },
     );
@@ -2947,6 +3141,7 @@ fn handle_automatic_approval_review_notification(
         ThreadEventPayload::ThreadItemUpdated {
             thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
+            phase: ThreadItemUpdatePhase::Completed,
             item,
         },
     );
@@ -2997,6 +3192,7 @@ fn handle_guardian_warning_notification(
         ThreadEventPayload::ThreadItemUpdated {
             thread_id: thread_id.to_string(),
             turn_id,
+            phase: ThreadItemUpdatePhase::Completed,
             item,
         },
     );
@@ -3076,6 +3272,7 @@ fn handle_error_notification(
         ThreadEventPayload::ThreadItemUpdated {
             thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
+            phase: ThreadItemUpdatePhase::Completed,
             item,
         },
     );
@@ -3109,6 +3306,7 @@ fn handle_turn_plan_updated(app: &AppHandle, params: serde_json::Value) {
         ThreadEventPayload::ThreadItemUpdated {
             thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
+            phase: ThreadItemUpdatePhase::Completed,
             item,
         },
     );
@@ -3136,6 +3334,7 @@ fn handle_turn_diff_updated(
         ThreadEventPayload::ThreadItemUpdated {
             thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
+            phase: ThreadItemUpdatePhase::Completed,
             item: build_turn_diff_item(turn_id, diff.to_string()),
         },
     );
@@ -3190,6 +3389,7 @@ fn handle_model_rerouted(app: &AppHandle, state: &Arc<AuthBridgeState>, params: 
         ThreadEventPayload::ThreadItemUpdated {
             thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
+            phase: ThreadItemUpdatePhase::Completed,
             item,
         },
     );
@@ -3223,6 +3423,7 @@ fn handle_command_execution_output_delta(
         ThreadEventPayload::ThreadItemUpdated {
             thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
+            phase: ThreadItemUpdatePhase::Completed,
             item: updated_item,
         },
     );
@@ -3262,6 +3463,7 @@ fn handle_file_change_patch_updated(
         ThreadEventPayload::ThreadItemUpdated {
             thread_id: thread_id.to_string(),
             turn_id: turn_id.to_string(),
+            phase: ThreadItemUpdatePhase::Completed,
             item: updated_item,
         },
     );

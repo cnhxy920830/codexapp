@@ -33,10 +33,26 @@ This directory is for building a Windows Codex App replica with Tauri + React.
 ## Source Of Truth
 
 - The installed Windows Codex App is the sole authoritative baseline for UI, page layout, static assets, window behavior, interaction logic, shortcuts, auth handling, and protocol behavior.
+- The extracted artifact set under `codex-app-replica/compare/resources/<target-version>/app.asar.extracted/` is the primary working baseline for implementation and parity checking against that installed app version.
 - If code cannot determine or verify behavior, comparison against the installed app is limited to these methods only: resource extraction, network packet capture, and protocol observation.
-- Resource extraction is the default and highest-priority comparison method.
+- Resource extraction is the default, mandatory first step, and highest-priority comparison method.
 - Do not continue with lower-priority comparison methods unless there is a concrete, necessary, and tracker-documented reason that resource extraction is insufficient for the specific question being answered.
-- Prefer extracted resources and directly observed runtime behavior from the installed app over inference from adjacent code.
+- Prefer extracted resources and directly observed runtime behavior from the installed app over inference from adjacent code, generic Tauri/React patterns, or existing replica code.
+- The replica codebase, including its current Rust/Tauri/React implementation, is never a source of truth for parity decisions. It is only the rewrite target that must converge to the extracted baseline.
+- When extracted artifacts, manually restored helper files, and current replica code disagree, the extracted artifacts win. Restored helper files are secondary aids only and must map back to exact extracted artifact paths before they can justify a change.
+- Existing comparison leftovers such as legacy screenshots or ad hoc notes under `compare/` are non-authoritative unless they point back to a concrete extracted artifact or allowed protocol/network evidence.
+
+## Artifact-First Replica Workflow
+
+- For every UI surface, interaction flow, config path, menu item, and protocol-visible behavior, locate the corresponding extracted upstream artifacts first.
+- Start implementation and parity correction from the extracted artifacts, not from the current replica rendering.
+- Compare the replica code against the upstream extracted source for the same surface, then close only the measured gap.
+- If the replica contains behavior, text, layout, icons, assets, config bindings, or feature branches that are not backed by extracted artifacts or allowed protocol/network evidence, remove them or mark the path blocked. Do not keep replica-only guesses.
+- Reverse-engineered helper output such as prettified, deobfuscated, or module-restored files may be used only to improve readability. They cannot replace the requirement to cite the exact original extracted bundle, asset, locale file, style token source, or protocol evidence.
+- When reverse-engineering reveals a direct reusable upstream asset, locale bundle, style token, or structural definition, prefer reusing or faithfully porting it over hand-recreating an approximation.
+- For frontend behavior, treat extracted webview bundles, locale files, CSS, and asset files as the primary subject matter. For shell and integration behavior, use extracted desktop resources first and protocol/network evidence only where extraction cannot answer the question.
+- For Rust/Tauri bridge work, derive required frontend-visible behavior from extracted frontend artifacts and observed app-server usage, then implement only the minimum Rust support needed to match that behavior.
+- Do not “polish” the current replica toward parity by intuition. Every correction must point to an extracted upstream source or to allowed protocol/network evidence that explains what the extracted source does not expose.
 
 ## Backend And Auth Constraints
 
@@ -86,6 +102,8 @@ This directory is for building a Windows Codex App replica with Tauri + React.
 - When an item becomes `blocked`, fill `Blocked Reason` with the concrete blocker and mirror the item in the tracker `Blocked Items` section.
 - When an item is completed, add or update its evidence path or evidence summary in `Evidence`.
 - Use `Notes` for scope boundaries, implementation decisions, reverse-engineering observations, and links to related tracker IDs.
+- For implementation or parity-correction items, record the exact upstream extracted artifact path or paths before code changes begin.
+- For implementation or parity-correction items, `Notes` must make the mapping explicit: upstream source path, replica target path, and the concrete gap being closed.
 - Keep `Open TODOs` focused on near-term executable work.
 - Keep `Verification Log` focused on completed checks and their evidence.
 - If a tracker item splits into multiple concrete tasks, create child or sibling entries instead of overloading one row with unrelated work.
@@ -142,6 +160,7 @@ These rules are mandatory for every visual surface, menu, settings page, toolbar
 
 Before implementing or changing any UI surface, identify the original-app evidence for all applicable items:
 
+- Exact extracted source file or asset path that owns the surface.
 - Icon source or explicit proof that the original item has no icon.
 - Exact menu/action hierarchy and item order.
 - Exact page section order and row order.
@@ -260,6 +279,7 @@ src/features/<feature>/
 - When copying an asset from extracted resources into runtime source, record the original path and target path in `compare/tracker.md`.
 - Do not recreate icons, fonts, images, or locale bundles manually when the extracted upstream asset can be reused.
 - Hardcoded layout or behavior values must come from extracted resources, app-server protocol docs, or directly observed protocol/network evidence.
+- Generated reverse-engineering output is helper material only. If a generated readable file does not cite or preserve its originating extracted bundle path, it is not sufficient evidence for parity work.
 
 ### Target Tauri/Rust File Map
 

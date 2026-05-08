@@ -1,5 +1,7 @@
 import type { MessageKey } from "../../i18n/messages";
 import type {
+  ThreadConversationAutomationUpdate,
+  ThreadConversationAutomationUpdateArguments,
   FileChangeSummary,
   ThreadConversation,
   ThreadConversationCommandExecution,
@@ -7,12 +9,13 @@ import type {
   ThreadConversationDynamicToolCall,
   ThreadConversationFileChange,
   ThreadConversationForkedFromConversation,
-  ThreadConversationHookPrompt,
+  ThreadConversationHook,
   ThreadConversationImageView,
   ThreadConversationImageGeneration,
   ThreadConversationItem,
   ThreadConversationModelChanged,
   ThreadConversationPersonalityChanged,
+  ThreadConversationPlanImplementation,
   ThreadConversationModelRerouted,
   ThreadConversationMcpToolCall,
   ThreadConversationMessage,
@@ -22,19 +25,18 @@ import type {
   ThreadConversationTurnDiff,
   ThreadConversationWebSearch,
 } from "../../services/history";
-import { keepLatestTurnScopedPendingRequests } from "./threadConversationState";
 import type {
   PendingApproval,
-  PendingMcpServerElicitationRequest,
-  PendingPermissionsRequestApproval,
   PendingToolRequestUserInput,
-  PlanImplementationItem,
 } from "./threadConversationState";
 import {
   attachTurnScopedItemsToRenderableConversationGroups,
   buildRenderableConversationGroups,
 } from "./renderableConversationGroups";
 import {
+  buildCollapsedToolActivityDetailLines,
+  resolveCollapsedToolActivitySummaryText,
+  type CollapsedToolActivityItem,
   type ExplorationGroupItem,
   type MultiAgentGroupItem,
   type WebSearchGroupItem,
@@ -50,30 +52,27 @@ import {
 type Translate = (key: MessageKey, values?: Record<string, number | string>) => string;
 type MarkdownConversationItem =
   | ThreadConversationItem
+  | CollapsedToolActivityItem
   | ExplorationGroupItem
   | MultiAgentGroupItem
   | WebSearchGroupItem
-  | PlanImplementationItem
-  | PendingApproval
-  | PendingMcpServerElicitationRequest
-  | PendingPermissionsRequestApproval
-  | PendingToolRequestUserInput;
+  | PendingApproval;
 
 type ConversationMarkdownPendingRequests = {
   approvals?: PendingApproval[];
-  mcpRequests?: PendingMcpServerElicitationRequest[];
-  permissionsRequests?: PendingPermissionsRequestApproval[];
-  userInputRequests?: PendingToolRequestUserInput[];
 };
 
 export function renderConversationMarkdown(
   threadConversation: ThreadConversation,
   t: Translate,
-  planImplementationItems: PlanImplementationItem[] = [],
   pendingRequests: ConversationMarkdownPendingRequests = {},
 ) {
   const sections = [`# ${sanitizeHeading(threadConversation.title || "Codex conversation")}`];
-  const items = buildMarkdownConversationItems(threadConversation.items, planImplementationItems, pendingRequests);
+  const items = buildMarkdownConversationItems(
+    threadConversation.items,
+    threadConversation.turnTimings,
+    pendingRequests,
+  );
 
   for (const item of items) {
     const rendered = renderConversationItem(item, t);
@@ -87,16 +86,14 @@ export function renderConversationMarkdown(
 
 function buildMarkdownConversationItems(
   items: ThreadConversationItem[],
-  planImplementationItems: PlanImplementationItem[],
+  turnTimings: ThreadConversation["turnTimings"],
   pendingRequests: ConversationMarkdownPendingRequests,
 ) {
-  const groups = buildRenderableConversationGroups(items);
+  const groups = buildRenderableConversationGroups(items, {
+    turnTimings,
+  });
   const groupedConversation = attachTurnScopedItemsToRenderableConversationGroups(groups, {
-    approvalItems: keepLatestTurnScopedPendingRequests(pendingRequests.approvals ?? []),
-    mcpServerElicitationItems: pendingRequests.mcpRequests ?? [],
-    permissionRequestItems: pendingRequests.permissionsRequests ?? [],
-    planImplementationItems,
-    userInputItems: keepLatestTurnScopedPendingRequests(pendingRequests.userInputRequests ?? []),
+    approvalItems: pendingRequests.approvals ?? [],
   });
 
   const mergedItems: MarkdownConversationItem[] = [];
@@ -105,11 +102,12 @@ function buildMarkdownConversationItems(
     mergedItems.push(...group.userItems);
     mergedItems.push(...group.modelReroutedItems);
     mergedItems.push(...group.activityItems);
+    mergedItems.push(...group.automationUpdateItems);
+    mergedItems.push(...group.toolOutputItems);
+    mergedItems.push(...group.postAssistantItems);
     if (group.systemEventItem) {
       mergedItems.push(group.systemEventItem);
     }
-    mergedItems.push(...group.toolOutputItems);
-    mergedItems.push(...group.postAssistantItems);
     if (group.todoListItem) {
       mergedItems.push(group.todoListItem);
     }
@@ -135,39 +133,37 @@ function buildMarkdownConversationItems(
     mergedItems.push(...group.forkedFromConversationItems);
   }
 
-  mergedItems.push(...groupedConversation.unmatchedPlanImplementationItems);
-  mergedItems.push(...groupedConversation.unmatchedMcpServerElicitationItems);
-  mergedItems.push(...groupedConversation.unmatchedPermissionRequestItems);
   mergedItems.push(...groupedConversation.unmatchedApprovalItems);
-  mergedItems.push(...groupedConversation.unmatchedUserInputItems);
 
   return mergedItems;
 }
 
 function renderConversationItem(item: MarkdownConversationItem, t: Translate): string | null {
-  if ("threadId" in item && "planContent" in item) {
+  if (item.type === "planImplementation") {
     return renderPlanImplementation(item, t);
   }
   if (item.type === "commandApprovalRequested" || item.type === "fileChangeApprovalRequested") {
     return renderPendingApproval(item);
   }
-  if (item.type === "permissionsRequestApprovalRequested") {
-    return renderPendingPermissionsRequest(item);
-  }
-  if (item.type === "mcpServerElicitationRequested") {
-    return renderPendingMcpRequest(item);
-  }
-  if (item.type === "toolRequestUserInputRequested") {
-    return renderPendingUserInputRequest(item);
-  }
-
   switch (item.type) {
     case "userMessage":
       return renderUserMessage(item);
     case "agentMessage":
       return renderAgentMessage(item);
-    case "hookPrompt":
-      return renderHookPrompt(item, t);
+    case "steeringUserMessage":
+      return renderUserMessage({
+        type: "userMessage",
+        id: item.id,
+        turnId: item.turnId,
+        role: "user",
+        text: item.text,
+        completed: item.status === "accepted",
+        steeringStatus: item.status,
+      });
+    case "steered":
+      return null;
+    case "hook":
+      return null;
     case "todoList":
       return renderTodoList(item);
     case "turnDiff":
@@ -185,11 +181,13 @@ function renderConversationItem(item: MarkdownConversationItem, t: Translate): s
     case "plan":
       return renderPlan(item);
     case "reasoning":
-      return renderReasoning(item, t);
+      return null;
     case "commandExecution":
       return renderCommandExecution(item);
     case "explorationGroup":
       return renderExplorationGroup(item, t);
+    case "collapsedToolActivity":
+      return renderCollapsedToolActivity(item);
     case "multiAgentGroup":
       return renderMultiAgentGroup(item, t);
     case "fileChange":
@@ -197,7 +195,9 @@ function renderConversationItem(item: MarkdownConversationItem, t: Translate): s
     case "mcpToolCall":
       return renderMcpToolCall(item, t);
     case "dynamicToolCall":
-      return renderDynamicToolCall(item, t);
+      return renderDynamicToolCall(item);
+    case "automationUpdate":
+      return renderAutomationUpdate(item);
     case "automaticApprovalReview":
       return renderAutomaticApprovalReview(item);
     case "autoReviewInterruptionWarning":
@@ -215,13 +215,30 @@ function renderConversationItem(item: MarkdownConversationItem, t: Translate): s
     case "imageGeneration":
       return renderImageGeneration(item, t);
     case "multiAgentAction":
-      return renderMultiAgentGroup(toSingleMultiAgentGroupItem(item), t);
+      return renderSingleMultiAgentAction(item);
     case "contextCompaction":
       return renderContextCompaction(item, t);
+    case "mcpServerElicitation":
+      return renderDetails("MCP server elicitation", [
+        item.completed ? "Status: completed" : "Status: pending",
+        `Action: ${item.action ?? "none"}`,
+      ].join("\n"));
+    case "permissionRequest":
+      return renderDetails("Permission request", [
+        item.completed ? "Status: completed" : "Status: pending",
+        `Reason: ${normalizeText(item.reason ?? "Not provided")}`,
+        `Response: ${item.response === null ? "none" : "granted"}`,
+      ].join("\n"));
+    case "userInput":
+      return renderDetails(
+        item.completed ? "User input request" : "User input requested",
+        item.questions.map((question) => `- ${normalizeText(question.question).trim()}`).join("\n"),
+      );
+    case "userInputResponse":
+      return renderUserInputResponse(item);
     case "enteredReviewMode":
-      return renderDetails("Code review", formatReviewModeLabel(item.review, t));
     case "exitedReviewMode":
-      return renderDetails("Code review", normalizeText(item.review));
+      return null;
     default:
       return null;
   }
@@ -229,10 +246,72 @@ function renderConversationItem(item: MarkdownConversationItem, t: Translate): s
 
 function renderUserMessage(item: ThreadConversationMessage) {
   const text = normalizeText(item.text);
-  if (text.length === 0) {
+  const contextLines: string[] = [];
+  if (Array.isArray(item.attachments) && item.attachments.length > 0) {
+    contextLines.push("Attachments:");
+    for (const attachment of item.attachments) {
+      const label = normalizeText(attachment.label).trim();
+      const path = normalizeText(attachment.path).trim();
+      if (label.length === 0 || path.length === 0) {
+        continue;
+      }
+      contextLines.push(`- ${label}: ${path}`);
+    }
+  }
+  if (Array.isArray(item.images) && item.images.length > 0) {
+    contextLines.push("Images:");
+    for (const image of item.images) {
+      const normalizedImage = normalizeText(image).trim();
+      if (normalizedImage.length > 0) {
+        contextLines.push(`- ${normalizedImage}`);
+      }
+    }
+  }
+  if (Array.isArray(item.comments) && item.comments.length > 0) {
+    contextLines.push("Comments:");
+    for (const comment of item.comments) {
+      const path = normalizeText(comment.path).trim();
+      const lineRange = typeof comment.lineRange === "string" ? normalizeText(comment.lineRange).trim() : "";
+      const body = normalizeText(comment.body).replaceAll("\n", " ").trim();
+      if (path.length === 0 || body.length === 0) {
+        continue;
+      }
+      contextLines.push(`- ${path}${lineRange.length > 0 ? ` ${inlineCode(lineRange)}` : ""}: ${body}`);
+    }
+  }
+  if (item.referencesPriorConversation) {
+    contextLines.push("Referenced prior conversation");
+  }
+  if (item.reviewMode) {
+    contextLines.push("Mode: code review");
+  }
+  if (item.pullRequestFixMode) {
+    contextLines.push("Mode: pull request fix");
+  }
+  if (item.autoResolveSync) {
+    contextLines.push("Mode: auto resolve merge");
+  }
+  if (
+    typeof item.pullRequestCheckCount === "number"
+    && Number.isFinite(item.pullRequestCheckCount)
+    && item.pullRequestCheckCount > 0
+  ) {
+    contextLines.push(`Pull request checks: ${item.pullRequestCheckCount}`);
+  }
+
+  const sections: string[] = [];
+  if (text.length > 0) {
+    sections.push(text);
+  }
+  if (contextLines.length > 0) {
+    sections.push(renderDetails("User context", contextLines.join("\n")));
+  }
+  if (sections.length === 0) {
     return null;
   }
-  return text
+
+  return sections
+    .join("\n\n")
     .split("\n")
     .map((line) => (line.length === 0 ? ">" : `> ${line}`))
     .join("\n");
@@ -244,14 +323,6 @@ function renderAgentMessage(item: ThreadConversationMessage) {
     return null;
   }
   return escapeDetailsTags(text);
-}
-
-function renderHookPrompt(item: ThreadConversationHookPrompt, t: Translate) {
-  const fragments = item.fragments.map((fragment) => normalizeText(fragment.text).trim()).filter((text) => text.length > 0);
-  if (fragments.length === 0) {
-    return null;
-  }
-  return renderDetails(t("app.chat.hookPrompt"), fragments.join("\n\n"));
 }
 
 function renderPlan(item: ThreadConversationPlan) {
@@ -314,7 +385,7 @@ function renderModelChanged(item: ThreadConversationModelChanged, t: Translate) 
   if (fromModel.length === 0 || toModel.length === 0) {
     return null;
   }
-  return renderDetails("Model changed", t("localConversation.modelChanged", { fromModel, toModel }));
+  return renderDetails("Model changed", `${fromModel} -> ${toModel}`);
 }
 
 function renderPersonalityChanged(item: ThreadConversationPersonalityChanged) {
@@ -349,7 +420,7 @@ function renderReasoning(item: ThreadConversationReasoning, t: Translate) {
   return renderDetails(t("thinkingShimmer.default"), sections.join("\n\n"));
 }
 
-function renderPlanImplementation(item: PlanImplementationItem, t: Translate) {
+function renderPlanImplementation(item: ThreadConversationPlanImplementation, t: Translate) {
   const text = normalizeText(item.planContent).trim();
   const sections = [item.isCompleted ? t("app.chat.status.completed") : t("app.chat.status.inProgress")];
   if (text.length > 0) {
@@ -385,34 +456,29 @@ function renderPendingApproval(item: PendingApproval) {
   return renderDetails(title, sections.join("\n\n"));
 }
 
-function renderPendingPermissionsRequest(item: PendingPermissionsRequestApproval) {
-  const sections = ["Status: pending"];
-  const reason = item.reason ? normalizeText(item.reason).trim() : "";
-  sections.push(`Reason: ${reason.length > 0 ? reason : "Not provided"}`);
-  sections.push("Response: none");
-  return renderDetails("Permission request", sections.join("\n\n"));
-}
+function renderUserInputResponse(
+  item: Extract<ThreadConversationItem, { type: "userInputResponse" }>,
+) {
+  const lines = item.questionsAndAnswers.flatMap((entry) => {
+    const question = normalizeText(entry.question).trim();
+    const answers = entry.answers
+      .map((answer) => normalizeText(answer).trim())
+      .filter((answer) => answer.length > 0);
+    const sections: string[] = [];
+    if (question.length > 0) {
+      sections.push(`- ${question}`);
+    }
+    for (const answer of answers) {
+      sections.push(`  - ${answer}`);
+    }
+    return sections;
+  });
 
-function renderPendingMcpRequest(item: PendingMcpServerElicitationRequest) {
-  const sections = ["Status: pending", "Action: none"];
-  const serverName = normalizeText(item.serverName).trim();
-  if (serverName.length > 0) {
-    sections.push(`Server: ${serverName}`);
+  if (lines.length === 0) {
+    return renderDetails("User input response", item.completed ? "Status: completed" : "Status: pending");
   }
-  const message = normalizeText(item.request.message).trim();
-  if (message.length > 0) {
-    sections.push(message);
-  }
-  return renderDetails("MCP server elicitation", sections.join("\n\n"));
-}
 
-function renderPendingUserInputRequest(item: PendingToolRequestUserInput) {
-  const questions = item.questions
-    .map((question) => normalizeText(question.question).trim())
-    .filter((question) => question.length > 0)
-    .map((question) => `- ${question}`);
-  const title = questions.length > 0 ? "User input request" : "User input requested";
-  return renderDetails(title, questions.length > 0 ? questions.join("\n") : "Status: pending");
+  return renderDetails("User input response", lines.join("\n"));
 }
 
 function renderCommandExecution(item: ThreadConversationCommandExecution) {
@@ -488,6 +554,17 @@ function renderExplorationGroup(item: ExplorationGroupItem, t: Translate) {
   return renderDetails("Exploration", sections.join("\n\n"));
 }
 
+function renderCollapsedToolActivity(item: CollapsedToolActivityItem) {
+  const summary = resolveCollapsedToolActivitySummaryText(item.summary);
+  const detailLines = buildCollapsedToolActivityDetailLines(item);
+
+  if (detailLines.length === 0) {
+    return summary;
+  }
+
+  return renderDetails(summary, detailLines.map((line) => `- ${line}`).join("\n"));
+}
+
 function getThreadCommandActions(item: Extract<ThreadConversationItem, { type: "commandExecution" }>) {
   return Array.isArray(item.commandActions) ? item.commandActions : [];
 }
@@ -514,21 +591,11 @@ function renderWebSearchGroup(item: WebSearchGroupItem) {
 }
 
 function renderImageGeneration(item: ThreadConversationImageGeneration, t: Translate) {
-  const sections: string[] = [];
   const result = normalizeText(item.result).trim();
-  if (item.revisedPrompt) {
-    sections.push(`${t("app.chat.revisedPrompt")}: ${normalizeText(item.revisedPrompt).trim()}`);
+  if (result.length === 0) {
+    return renderDetails("Generated image", [`Status: ${normalizeText(item.status).trim()}`].join("\n\n"));
   }
-  if (result.length > 0) {
-    sections.push(`${t("app.chat.output")}: ${result}`);
-  }
-  if (item.savedPath) {
-    sections.push(`${t("app.chat.savedPath")}: ${item.savedPath}`);
-  }
-  if (sections.length === 0) {
-    sections.push(t("app.chat.status.inProgress"));
-  }
-  return renderDetails(t("app.chat.imageGeneration"), sections.join("\n\n"));
+  return `Generated image\n\n![Generated image](${result})`;
 }
 
 function renderImageView(item: ThreadConversationImageView) {
@@ -540,39 +607,72 @@ function renderImageView(item: ThreadConversationImageView) {
 }
 
 function renderMultiAgentGroup(item: MultiAgentGroupItem, t: Translate) {
-  const action = resolveMultiAgentActionLabel(item.action, item.status, t, "header");
-  const countLabel = resolveMultiAgentCountLabel(item.items, t);
-  const rows = buildMultiAgentGroupRows(item.items, t);
-  const sections: string[] = [];
-
-  if (rows.length > 0) {
-    sections.push(rows.map((row) => `- ${row}`).join("\n"));
-  }
-  if (isMultiAgentInProgressStatus(item.status) && sections.length === 0) {
-    sections.push(t("app.chat.status.inProgress"));
-  }
-
+  const firstItem = item.items[0];
   return renderDetails(
-    t("localConversation.multiAgentAction.header", {
-      action,
-      countLabel,
-    }),
-    sections.join("\n\n"),
+    "Subagent action",
+    [
+      firstItem ? `Action: ${firstItem.action}` : null,
+      firstItem ? `Status: ${firstItem.status}` : null,
+      `Receiver threads: ${item.items.length}`,
+    ]
+      .filter((section): section is string => section !== null && section.trim().length > 0)
+      .join("\n\n"),
+  );
+}
+
+function renderSingleMultiAgentAction(
+  item: Extract<ThreadConversationItem, { type: "multiAgentAction" }>,
+) {
+  return renderDetails(
+    "Subagent action",
+    [
+      `Action: ${item.action}`,
+      `Status: ${item.status}`,
+      `Receiver threads: ${item.receiverThreads.length}`,
+      item.prompt ? `Prompt: ${normalizeText(item.prompt).trim()}` : null,
+    ]
+      .filter((section): section is string => section !== null && section.trim().length > 0)
+      .join("\n\n"),
   );
 }
 
 function renderMcpToolCall(item: ThreadConversationMcpToolCall, t: Translate) {
-  const sections = [`${t("app.chat.mcpServer")}: ${item.server}`, `${t("app.chat.mcpTool")}: ${item.tool}`];
-  if (item.resultSummary) {
-    sections.push(renderCodeBlock("text", normalizeText(item.resultSummary).trim()));
+  const invocationLabel = `${item.server}.${item.tool}`.trim();
+  if (invocationLabel.length === 0) {
+    return null;
   }
-  if (item.errorMessage) {
-    sections.push(item.errorMessage);
+
+  const sections = [`MCP tool call\n\n${normalizeText(invocationLabel)}`];
+  sections.push(renderCodeBlock("json", JSON.stringify(item.arguments ?? null, null, 2)));
+
+  const resultRecord = asRecord(item.result);
+  const resultContent = Array.isArray(resultRecord?.content)
+    ? resultRecord.content
+        .map(renderMcpToolResultContentItem)
+        .filter((value): value is string => value !== null)
+        .join("\n\n")
+    : "";
+  if (resultContent.length > 0) {
+    sections.push(resultContent);
   }
-  return renderDetails(t("avatarOverlay.session.calledToolName", { toolName: item.tool }), sections.join("\n\n"));
+
+  if (resultRecord && "structuredContent" in resultRecord) {
+    sections.push(renderCodeBlock("json", JSON.stringify(resultRecord.structuredContent ?? null, null, 2)));
+  }
+
+  const errorMessage = extractMcpToolCallErrorMessage(item.error) ?? item.errorMessage;
+  if (errorMessage) {
+    sections.push(normalizeText(errorMessage).trim());
+  } else if (item.result === null && item.status === "inProgress") {
+    sections.push("Status: running");
+  } else if (item.result === null) {
+    sections.push("Result: none");
+  }
+
+  return sections.join("\n\n");
 }
 
-function renderDynamicToolCall(item: ThreadConversationDynamicToolCall, t: Translate) {
+function renderDynamicToolCall(item: ThreadConversationDynamicToolCall) {
   const tool = normalizeText(item.tool).trim();
   if (tool.length === 0) {
     return null;
@@ -580,6 +680,104 @@ function renderDynamicToolCall(item: ThreadConversationDynamicToolCall, t: Trans
 
   const status = item.status === "inProgress" ? "running" : "completed";
   return renderDetails("Tool call", [`Tool: ${tool}`, `Status: ${status}`].join("\n\n"));
+}
+
+function renderAutomationUpdate(item: ThreadConversationAutomationUpdate) {
+  const sections: string[] = [];
+  sections.push(`Mode: ${item.result?.mode ?? "pending"}`);
+  sections.push(`Automation ID: ${item.result?.automationId ?? "pending"}`);
+
+  return renderDetails("Automation update", sections.join("\n\n"));
+}
+
+function renderMcpToolResultContentItem(value: unknown): string | null {
+  const record = asRecord(value);
+  if (record === null) {
+    return null;
+  }
+  const type = typeof record.type === "string" ? record.type : null;
+  switch (type) {
+    case "text": {
+      const text = typeof record.text === "string" ? normalizeText(record.text).trim() : "";
+      return text.length === 0 ? null : renderCodeBlock("text", text);
+    }
+    case "image": {
+      const mimeType = typeof record.mimeType === "string" ? record.mimeType.trim() : "";
+      return mimeType.length === 0 ? null : `Image output: ${mimeType}`;
+    }
+    case "audio": {
+      const mimeType = typeof record.mimeType === "string" ? record.mimeType.trim() : "";
+      return mimeType.length === 0 ? null : `Audio output: ${mimeType}`;
+    }
+    case "resource_link": {
+      const uri = typeof record.uri === "string" ? record.uri.trim() : "";
+      const title = firstNonEmptyString(record.title, record.name, uri);
+      return title === null ? null : `Resource: ${title}${uri.length > 0 ? ` (${uri})` : ""}`;
+    }
+    case "embedded_resource": {
+      const resource = asRecord(record.resource);
+      const title = firstNonEmptyString(resource?.title, resource?.name, resource?.uri);
+      const text = typeof resource?.text === "string" ? normalizeText(resource.text).trim() : "";
+      if (title === null) {
+        return text.length > 0 ? renderCodeBlock("text", text) : null;
+      }
+      if (text.length > 0) {
+        return `Resource: ${title}\n\n${renderCodeBlock("text", text)}`;
+      }
+      return `Resource: ${title}`;
+    }
+    case "unknown":
+      return renderCodeBlock("json", JSON.stringify(record.raw ?? null, null, 2));
+    default:
+      return null;
+  }
+}
+
+function extractMcpToolCallErrorMessage(error: unknown): string | null {
+  const record = asRecord(error);
+  const message = typeof record?.message === "string" ? normalizeText(record.message).trim() : "";
+  return message.length === 0 ? null : `Error: ${message}`;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function firstNonEmptyString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value !== "string") {
+      continue;
+    }
+    const trimmed = value.trim();
+    if (trimmed.length > 0) {
+      return trimmed;
+    }
+  }
+  return null;
+}
+
+function getAutomationUpdateArgumentMode(argumentsValue: ThreadConversationAutomationUpdateArguments) {
+  return argumentsValue?.mode;
+}
+
+function normalizeAutomationUpdateModeLabel(mode: ReturnType<typeof getAutomationUpdateArgumentMode>) {
+  switch (mode) {
+    case "create":
+    case "suggested_create":
+      return "create";
+    case "update":
+    case "suggested_update":
+      return "update";
+    case "delete":
+      return "delete";
+    case "view":
+      return "view";
+    default:
+      return null;
+  }
 }
 
 function renderAutomaticApprovalReview(
@@ -618,14 +816,15 @@ function renderStreamError(item: Extract<ThreadConversationItem, { type: "stream
 }
 
 function renderContextCompaction(item: ThreadConversationContextCompaction, t: Translate) {
+  const source = normalizeText(item.source).trim() || "automatic";
   return renderDetails(
-    t("app.chat.contextCompaction"),
-    [item.isCompleted ? t("app.chat.status.completed") : t("app.chat.status.inProgress"), t("app.chat.contextCompactionDescription")].join(
-      "\n\n",
-    ),
+    "Context compaction",
+    [
+      `Source: ${source}`,
+      item.isCompleted ? t("app.chat.status.completed") : t("app.chat.status.inProgress"),
+    ].join("\n\n"),
   );
 }
-
 
 function renderSingleFileChange(change: FileChangeSummary) {
   const diff = change.diff ? normalizeText(change.diff).trimEnd() : "";
@@ -670,14 +869,6 @@ function isCommandExecutionStillRunning(item: ThreadConversationCommandExecution
     return true;
   }
   return item.exitCode === null && normalizedStatus !== "completed" && normalizedStatus !== "interrupted";
-}
-
-function formatReviewModeLabel(review: string, t: Translate) {
-  const normalized = review.trim().toLowerCase();
-  if (normalized === "current changes" || normalized === "uncommitted changes") {
-    return t("composer.reviewMode.option.unstaged.simple");
-  }
-  return review;
 }
 
 function renderDetails(summary: string, body: string) {

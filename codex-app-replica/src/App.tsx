@@ -24,8 +24,11 @@ import {
   respondToToolRequestUserInput,
   forkThread,
   setThreadName,
+  rollbackThread,
   type ApprovalDecision,
   buildProjectGroups,
+  type ThreadConversationItem,
+  type ThreadConversationUserInput,
   getRecentThreads,
   interruptTurn,
   onThreadEvent,
@@ -34,6 +37,7 @@ import {
   startThread,
   steerTurn,
   startTurn,
+  startTurnWithInput,
   type HistoryProjectGroup,
   type FileChangeSummary,
   type ToolRequestUserInputQuestion,
@@ -48,14 +52,17 @@ import {
   type ReviewDelivery,
   readAppearanceSettingsSnapshot,
   readConfig,
+  readSelectedAvatarId,
   writeConfigValue,
   type ConfigScopeOption,
   type ConfigSnapshot,
 } from "./services/settings";
 import { AppearanceSettings } from "./components/AppearanceSettings";
+import { BUILTIN_AVATARS, DEFAULT_AVATAR_ID, type BuiltInAvatarId } from "./components/appearance/avatarData";
 import {
   BackNavigationIcon,
   BrowserTabIcon,
+  ClockIcon,
   ForwardNavigationIcon,
   MoreActionsIcon,
   PlusIcon,
@@ -91,6 +98,10 @@ import { renderConversationMarkdown } from "./features/chat/conversationMarkdown
 import { ScratchpadPage } from "./features/scratchpad/ScratchpadPage";
 import { SkillsRoutePage } from "./features/skills/SkillsRoutePage";
 import { usePluginsRouteEnabled } from "./features/skills/usePluginsRouteEnabled";
+import { AutomationsRoutePage } from "./features/automations/AutomationsRoutePage";
+import { PullRequestsRoutePage } from "./features/pullRequests/PullRequestsRoutePage";
+import { ThreadHeartbeatAutomationDialog } from "./features/automations/ThreadHeartbeatAutomationDialog";
+import { formatHeartbeatAutomationTooltip } from "./features/automations/time";
 import {
   createStaticRightPanelTab,
   createWorkspaceFileRightPanelTab,
@@ -110,24 +121,31 @@ import {
 } from "./features/chat/localFollowUpQueue";
 import {
   approvalRequestKey,
-  buildPlanImplementationItemForTurn,
+  appendSteeringUserMessage,
   buildPendingImplementPlanRequestForTurn,
+  clearUnacceptedSteeringUserMessagesForTurn,
+  completeMcpServerElicitationConversationItem,
+  completePermissionRequestConversationItem,
   createMcpServerElicitationRequestResponse,
+  createSteeringUserMessage,
   createPermissionsRequestApprovalResponse,
   buildThreadDiffSummary,
   clearPendingImplementPlanRequestsForThread,
   createToolRequestUserInputResponse,
-  markPlanImplementationItemCompleted,
-  markPlanImplementationItemsCompletedForThread,
+  foldCompletedThreadItemWithSteer,
+  foldStartedThreadItemWithSteer,
+  isWorkStartedConversationItem,
   removePendingImplementPlanRequest,
-  upsertPlanImplementationItem,
-  upsertConversationItem,
+  removeRequestConversationItem,
+  upsertThreadConversationTurnTiming,
   upsertPendingImplementPlanRequest,
   upsertPendingApproval,
+  upsertMcpServerElicitationConversationItem,
   upsertPendingMcpServerElicitationRequest,
   upsertPendingPermissionsRequestApproval,
+  upsertPermissionRequestConversationItem,
   upsertPendingToolRequestUserInput,
-  type PlanImplementationItem,
+  upsertUserInputConversationItem,
   type PendingImplementPlanRequest,
   type PendingApproval,
   type PendingMcpServerElicitationRequest,
@@ -145,11 +163,19 @@ import {
 import { readComputerUseApprovalsVisibility } from "./services/computerUseSettings";
 import { getCodexHomePath, isWithinCodexWorktrees } from "./services/codexHome";
 import type { WorkspaceFilePreviewTarget } from "./services/workspaceFiles";
+import {
+  buildAutomationDraft,
+  deleteAutomation,
+  listAutomations,
+  type AutomationRecord,
+  type HeartbeatAutomationRecord,
+} from "./services/automations";
 
 const appWindow = getCurrentWindow();
 const AGENT_SETTINGS_DOCS_URL = "https://developers.openai.com/codex/app/local-environments";
 const CONFIG_TOML_DOCS_URL = "https://developers.openai.com/codex/config-basic";
 const IMPLEMENT_PLAN_PROMPT_PREFIX = "PLEASE IMPLEMENT THIS PLAN:";
+const USER_MESSAGE_REQUEST_HEADING = "## My request for Codex:";
 type WorkspaceFileRightPanelTabState = Extract<RightPanelTab, { kind: "workspaceFile" }>;
 type PersistedWorkspaceFileRightPanelTabState = {
   workspaceFileTabsByThreadId: Array<[string, WorkspaceFileRightPanelTabState[]]>;
@@ -176,7 +202,7 @@ type SettingsSection =
   | "worktrees"
   | "data-controls";
 type AgentConfigControlErrors = Partial<Record<"approval" | "sandbox" | "network", string>>;
-type AppRoute = "chat" | "settings" | "skills" | "scratchpad";
+type AppRoute = "chat" | "settings" | "skills" | "scratchpad" | "automations" | "pull-requests";
 
 const settingsGroups = [
   {
@@ -386,6 +412,106 @@ function writePersistedWorkspaceFileRightPanelTabState(
   }
 }
 
+function mergeSyntheticRequestItemsIntoConversation(
+  conversation: ThreadConversation,
+  syntheticItemsByThreadId: Record<string, ThreadConversationItem[]>,
+) {
+  const syntheticItems = syntheticItemsByThreadId[conversation.id] ?? [];
+  if (syntheticItems.length === 0) {
+    return conversation;
+  }
+
+  return {
+    ...conversation,
+    items: [...conversation.items, ...syntheticItems],
+  };
+}
+
+function updateSyntheticRequestItemsForThread(
+  current: Record<string, ThreadConversationItem[]>,
+  threadId: string,
+  updater: (items: ThreadConversationItem[]) => ThreadConversationItem[],
+) {
+  const existingItems = current[threadId] ?? [];
+  const nextItems = updater(existingItems);
+  if (nextItems === existingItems) {
+    return current;
+  }
+
+  if (nextItems.length === 0) {
+    if (!(threadId in current)) {
+      return current;
+    }
+    const next = { ...current };
+    delete next[threadId];
+    return next;
+  }
+
+  return {
+    ...current,
+    [threadId]: nextItems,
+  };
+}
+
+function replaceEditedUserRequestText(originalText: string, editedMessage: string) {
+  const segments = originalText.split(USER_MESSAGE_REQUEST_HEADING);
+  if (segments.length <= 1) {
+    return editedMessage;
+  }
+  return `${segments.slice(0, -1).join(USER_MESSAGE_REQUEST_HEADING).trimEnd()}\n${USER_MESSAGE_REQUEST_HEADING}\n${editedMessage}\n`;
+}
+
+function replaceFirstTextInput(
+  input: ThreadConversationUserInput[],
+  editedMessage: string,
+): ThreadConversationUserInput[] {
+  const textInputIndex = input.findIndex((item) => item.type === "text");
+  if (textInputIndex === -1) {
+    return input;
+  }
+  return input.map((item, index) => {
+    if (index !== textInputIndex || item.type !== "text") {
+      return item;
+    }
+    return {
+      ...item,
+      text: replaceEditedUserRequestText(item.text, editedMessage),
+      textElements: [],
+    };
+  });
+}
+
+function isEditableUserMessageText(text: string) {
+  return !text.trim().startsWith(IMPLEMENT_PLAN_PROMPT_PREFIX);
+}
+
+function findLastEditableUserMessage(
+  conversation: ThreadConversation | null,
+  activeTurn: { threadId: string; turnId: string } | null,
+) {
+  if (!conversation || activeTurn?.threadId === conversation.id) {
+    return null;
+  }
+  const lastTurn = conversation.turns.at(-1) ?? null;
+  if (!lastTurn || lastTurn.status === "inProgress" || lastTurn.status === "in_progress") {
+    return null;
+  }
+  const message = [...conversation.items]
+    .reverse()
+    .find(
+      (item): item is Extract<ThreadConversationItem, { type: "userMessage" }> =>
+        item.type === "userMessage" && item.turnId === lastTurn.id && isEditableUserMessageText(item.text),
+    );
+  if (!message) {
+    return null;
+  }
+  return {
+    threadId: conversation.id,
+    turnId: lastTurn.id,
+    input: lastTurn.input,
+  };
+}
+
 function App() {
   const { locale, t } = useI18n();
   const [isMaximized, setIsMaximized] = useState(false);
@@ -394,6 +520,9 @@ function App() {
   const [projectGroups, setProjectGroups] = useState<HistoryProjectGroup[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [threadConversation, setThreadConversation] = useState<ThreadConversation | null>(null);
+  const [syntheticRequestItemsByThreadId, setSyntheticRequestItemsByThreadId] = useState<
+    Record<string, ThreadConversationItem[]>
+  >({});
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [showApiKeyEntry, setShowApiKeyEntry] = useState(false);
   const [authActionError, setAuthActionError] = useState<string | null>(null);
@@ -401,6 +530,7 @@ function App() {
   const [composerEnterBehavior, setComposerEnterBehavior] = useState<ComposerEnterBehavior>("enter");
   const [followUpQueueMode, setFollowUpQueueMode] = useState<FollowUpQueueMode>("queue");
   const [reviewDelivery, setReviewDelivery] = useState<ReviewDelivery>("inline");
+  const [selectedAvatarId, setSelectedAvatarId] = useState<BuiltInAvatarId>(DEFAULT_AVATAR_ID);
   const [activeTurn, setActiveTurn] = useState<{ threadId: string; turnId: string } | null>(null);
   const [turnError, setTurnError] = useState<string | null>(null);
   const [queuedFollowUps, setQueuedFollowUps] = useState<QueuedLocalFollowUp[]>([]);
@@ -413,7 +543,6 @@ function App() {
   >([]);
   const [pendingToolRequestUserInput, setPendingToolRequestUserInput] = useState<PendingToolRequestUserInput[]>([]);
   const [pendingImplementPlanRequests, setPendingImplementPlanRequests] = useState<PendingImplementPlanRequest[]>([]);
-  const [planImplementationItems, setPlanImplementationItems] = useState<PlanImplementationItem[]>([]);
   const [approvalActionErrors, setApprovalActionErrors] = useState<Record<string, string>>({});
   const [respondingApprovalKeys, setRespondingApprovalKeys] = useState<string[]>([]);
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
@@ -430,6 +559,12 @@ function App() {
   } | null>(null);
   const [appToast, setAppToast] = useState<AppToast | null>(null);
   const [currentRoute, setCurrentRoute] = useState<AppRoute>("chat");
+  const [threadHeaderAutomations, setThreadHeaderAutomations] = useState<AutomationRecord[]>([]);
+  const [isThreadHeartbeatAutomationDialogOpen, setIsThreadHeartbeatAutomationDialogOpen] = useState(false);
+  const [threadHeartbeatAutomationDialogDraft, setThreadHeartbeatAutomationDialogDraft] =
+    useState<HeartbeatAutomationRecord | null>(null);
+  const [threadHeartbeatAutomationDialogMode, setThreadHeartbeatAutomationDialogMode] =
+    useState<"create" | "edit">("create");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general-settings");
   const [hasComputerUseApprovalStore, setHasComputerUseApprovalStore] = useState(false);
   const [codexHome, setCodexHome] = useState<string | null>(null);
@@ -439,12 +574,15 @@ function App() {
   const [agentConfigControlErrors, setAgentConfigControlErrors] = useState<AgentConfigControlErrors>({});
   const [configError, setConfigError] = useState<string | null>(null);
   const [commandKeymapState, setCommandKeymapState] = useState<CommandKeymapState | null>(null);
+  const selectedAvatar = BUILTIN_AVATARS.find((avatar) => avatar.id === selectedAvatarId) ?? BUILTIN_AVATARS[0];
   const isPluginsRouteEnabled = usePluginsRouteEnabled();
   const queuedFollowUpsRef = useRef<QueuedLocalFollowUp[]>([]);
   const drainingQueuedThreadIdsRef = useRef(new Set<string>());
   const threadActionsMenuRef = useRef<HTMLDivElement | null>(null);
   const openRightPanelTabsRef = useRef<RightPanelTab[]>([]);
   const activeRightPanelTabIdRef = useRef<string | null>(null);
+  const selectedThreadIdRef = useRef<string | null>(null);
+  const threadConversationRef = useRef<ThreadConversation | null>(null);
   const previousSelectedThreadIdRef = useRef<string | null>(null);
   const workspaceFileTabsByThreadIdRef = useRef(new Map<string, WorkspaceFileRightPanelTabState[]>());
   const activeWorkspaceFileTabIdByThreadIdRef = useRef(new Map<string, string>());
@@ -485,6 +623,11 @@ function App() {
       route: "chat",
     },
     {
+      icon: <ClockIcon className="h-4 w-4" />,
+      label: t("sidebarElectron.automationsRouteNavLink"),
+      route: "automations",
+    },
+    {
       icon: <SettingsSectionIcon className="h-4 w-4" section="skills-settings" />,
       label: t(primarySkillsRouteLabelKey),
       route: "skills",
@@ -500,7 +643,6 @@ function App() {
           },
         ]
       : []),
-    { icon: <SettingsCogIcon className="h-4 w-4" />, label: t("app.nav.settings"), route: "settings" },
   ];
   const threadDiffSummary = buildThreadDiffSummary(threadConversation?.items ?? []);
   const totalAdditions = threadDiffSummary.linesAdded;
@@ -508,12 +650,17 @@ function App() {
   const shellHeaderTitle =
     currentRoute === "settings"
       ? `${t("app.shell.settings")} / ${t(settingsSectionLabelKeys[settingsSection])}`
+      : currentRoute === "automations"
+        ? t("sidebarElectron.automationsRouteNavLink")
+      : currentRoute === "pull-requests"
+        ? t("pullRequestsPage.title")
       : currentRoute === "scratchpad"
         ? t("sidebarElectron.scratchpadNavLink")
       : currentRoute === "skills"
         ? t(primarySkillsRouteLabelKey)
       : threadConversation?.title || t("app.nav.newChat");
   const isTurnInProgress = activeTurn !== null && activeTurn.threadId === selectedThreadId;
+  const editableUserMessage = findLastEditableUserMessage(threadConversation, activeTurn);
   const submitButtonMode = isTurnInProgress && composerDraft.trim().length === 0 ? "stop" : "send";
   const currentThreadApprovals = pendingApprovals.filter((approval) => approval.threadId === selectedThreadId);
   const currentThreadPermissionsRequestApproval = pendingPermissionsRequestApproval.filter(
@@ -528,10 +675,81 @@ function App() {
   const currentThreadImplementPlanRequests = pendingImplementPlanRequests.filter(
     (request) => request.threadId === selectedThreadId,
   );
-  const currentThreadPlanImplementationItems = planImplementationItems.filter(
-    (item) => item.threadId === selectedThreadId,
-  );
   const currentThreadQueuedFollowUps = queuedLocalFollowUpsForThread(queuedFollowUps, selectedThreadId);
+  const recentThreadEntries = projectGroups.flatMap((group) =>
+    group.threads.map((thread) => ({
+      id: thread.id,
+      preview: thread.title,
+      createdAt: 0,
+      updatedAt: 0,
+      cwd: "",
+      path: null,
+      name: thread.title,
+    })),
+  );
+  const selectedThreadAttachedHeartbeatAutomation: HeartbeatAutomationRecord | null =
+    selectedThreadId === null
+      ? null
+      : threadHeaderAutomations.find(
+          (automation): automation is HeartbeatAutomationRecord =>
+            automation.kind === "heartbeat" &&
+            automation.status === "ACTIVE" &&
+            automation.targetThreadId === selectedThreadId,
+        ) ?? null;
+  const selectedThreadAttachedHeartbeatAutomationIncludingPaused: HeartbeatAutomationRecord | null =
+    selectedThreadId === null
+      ? null
+      : threadHeaderAutomations.find(
+          (automation): automation is HeartbeatAutomationRecord =>
+            automation.kind === "heartbeat" &&
+            (automation.status === "ACTIVE" || automation.status === "PAUSED") &&
+            automation.targetThreadId === selectedThreadId,
+        ) ?? null;
+  const hasBlockingHeartbeatAutomationRequest =
+    currentThreadApprovals.length > 0 ||
+    currentThreadPermissionsRequestApproval.length > 0 ||
+    currentThreadMcpServerElicitationRequest.length > 0 ||
+    currentThreadToolRequestUserInput.length > 0 ||
+    currentThreadImplementPlanRequests.length > 0;
+  const hasHeartbeatAutomationEligibleTurn = (threadConversation?.items.length ?? 0) > 0;
+  const heartbeatAutomationEligibilityReason =
+    !selectedThreadId || !threadConversation
+      ? "missing_conversation"
+      : !hasHeartbeatAutomationEligibleTurn
+        ? "missing_last_turn"
+        : hasBlockingHeartbeatAutomationRequest
+          ? "pending_request"
+          : isTurnInProgress
+            ? "turn_in_progress"
+            : null;
+  const isHeartbeatAutomationEligible = heartbeatAutomationEligibilityReason === null;
+  const shouldShowThreadHeartbeatAutomationAction =
+    selectedThreadAttachedHeartbeatAutomationIncludingPaused !== null ||
+    isHeartbeatAutomationEligible ||
+    heartbeatAutomationEligibilityReason === "turn_in_progress";
+  const isThreadHeartbeatAutomationActionDisabled =
+    selectedThreadAttachedHeartbeatAutomationIncludingPaused === null && !isHeartbeatAutomationEligible;
+  const threadHeartbeatAutomationActionLabelKey: MessageKey =
+    selectedThreadAttachedHeartbeatAutomationIncludingPaused !== null
+      ? "threadHeader.editAutomation"
+      : "threadHeader.addAutomation";
+  const heartbeatAutomationOpenButtonTooltip = formatHeartbeatAutomationTooltip({
+    locale,
+    nextRunAt: selectedThreadAttachedHeartbeatAutomation?.nextRunAt ?? null,
+    status: selectedThreadAttachedHeartbeatAutomation?.status ?? "ACTIVE",
+    t,
+  });
+  const hasArchivedThreadHeartbeatAutomation = selectedThreadAttachedHeartbeatAutomationIncludingPaused !== null;
+  const archivedThreadHeartbeatAutomationName =
+    selectedThreadAttachedHeartbeatAutomationIncludingPaused?.name.trim() ?? "";
+
+  const refreshThreadHeaderAutomations = async () => {
+    try {
+      setThreadHeaderAutomations(await listAutomations());
+    } catch {
+      // Keep the last known snapshot when the local automations store cannot be read.
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -583,6 +801,26 @@ function App() {
         setReviewDelivery(settings.reviewDelivery);
       })
       .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void readSelectedAvatarId()
+      .then((value) => {
+        if (!cancelled) {
+          setSelectedAvatarId(normalizeAvatarId(value));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSelectedAvatarId(DEFAULT_AVATAR_ID);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -786,6 +1024,14 @@ function App() {
   }, [currentRoute]);
 
   useEffect(() => {
+    if (currentRoute !== "chat" && currentRoute !== "automations") {
+      return;
+    }
+
+    void refreshThreadHeaderAutomations();
+  }, [currentRoute]);
+
+  useEffect(() => {
     if (currentRoute !== "settings" || isCurrentSettingsSectionVisible) {
       return;
     }
@@ -796,6 +1042,14 @@ function App() {
   useEffect(() => {
     queuedFollowUpsRef.current = queuedFollowUps;
   }, [queuedFollowUps]);
+
+  useEffect(() => {
+    selectedThreadIdRef.current = selectedThreadId;
+  }, [selectedThreadId]);
+
+  useEffect(() => {
+    threadConversationRef.current = threadConversation;
+  }, [threadConversation]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -810,7 +1064,7 @@ function App() {
       drainingQueuedThreadIdsRef.current.add(threadId);
       queuedFollowUpsRef.current = nextQueuedFollowUp.remaining;
       setQueuedFollowUps(nextQueuedFollowUp.remaining);
-      if (selectedThreadId === threadId) {
+      if (selectedThreadIdRef.current === threadId) {
         setTurnError(null);
       }
       try {
@@ -827,7 +1081,7 @@ function App() {
           nextQueuedFollowUp.followUp,
         );
         setQueuedFollowUps(queuedFollowUpsRef.current);
-        if (selectedThreadId === threadId) {
+        if (selectedThreadIdRef.current === threadId) {
           setTurnError(error instanceof Error ? error.message : String(error));
         }
       } finally {
@@ -859,6 +1113,20 @@ function App() {
           return next;
         });
         setPendingToolRequestUserInput((current) => upsertPendingToolRequestUserInput(current, event));
+        setSyntheticRequestItemsByThreadId((current) =>
+          updateSyntheticRequestItemsForThread(current, event.threadId, (items) =>
+            upsertUserInputConversationItem(items, event),
+          ),
+        );
+        setThreadConversation((current) => {
+          if (!current || current.id !== event.threadId) {
+            return current;
+          }
+          return {
+            ...current,
+            items: upsertUserInputConversationItem(current.items, event),
+          };
+        });
         return;
       }
       if (event.type === "permissionsRequestApprovalRequested") {
@@ -874,6 +1142,20 @@ function App() {
         setPendingPermissionsRequestApproval((current) =>
           upsertPendingPermissionsRequestApproval(current, event),
         );
+        setSyntheticRequestItemsByThreadId((current) =>
+          updateSyntheticRequestItemsForThread(current, event.threadId, (items) =>
+            upsertPermissionRequestConversationItem(items, event),
+          ),
+        );
+        setThreadConversation((current) => {
+          if (!current || current.id !== event.threadId) {
+            return current;
+          }
+          return {
+            ...current,
+            items: upsertPermissionRequestConversationItem(current.items, event),
+          };
+        });
         return;
       }
       if (event.type === "mcpServerElicitationRequested") {
@@ -889,6 +1171,20 @@ function App() {
         setPendingMcpServerElicitationRequest((current) =>
           upsertPendingMcpServerElicitationRequest(current, event),
         );
+        setSyntheticRequestItemsByThreadId((current) =>
+          updateSyntheticRequestItemsForThread(current, event.threadId, (items) =>
+            upsertMcpServerElicitationConversationItem(items, event),
+          ),
+        );
+        setThreadConversation((current) => {
+          if (!current || current.id !== event.threadId) {
+            return current;
+          }
+          return {
+            ...current,
+            items: upsertMcpServerElicitationConversationItem(current.items, event),
+          };
+        });
         return;
       }
       if (event.type === "serverRequestResolved") {
@@ -922,47 +1218,93 @@ function App() {
             ? null
             : current,
         );
+        setThreadConversation((current) => {
+          if (!current || current.id !== event.threadId) {
+            return current;
+          }
+          const withCompletedTurnTiming = upsertThreadConversationTurnTiming(current, event.turnId, {
+            status: event.status,
+          });
+          const cleared = clearUnacceptedSteeringUserMessagesForTurn(current.items, event.threadId, event.turnId);
+          if (cleared.restoredQueuedFollowUps.length > 0) {
+            mutateQueuedFollowUps((queued) => [...cleared.restoredQueuedFollowUps, ...queued]);
+          }
+          if (cleared.items === current.items && withCompletedTurnTiming === current) {
+            return current;
+          }
+          return {
+            ...withCompletedTurnTiming,
+            items: cleared.items,
+          };
+        });
         void drainQueuedFollowUp(event.threadId);
         if (event.status === "completed" && event.error === null) {
-          void readThread(event.threadId)
-            .then((thread) => {
-              const request = buildPendingImplementPlanRequestForTurn(thread.id, thread.items, event.turnId);
-              const item = buildPlanImplementationItemForTurn(thread.id, thread.items, event.turnId);
+          void getRecentThreads()
+            .then((threads) => {
+              syncProjectGroups(selectedThreadIdRef.current ?? threads[0]?.id ?? null, threads);
+              const sourceThread =
+                threadConversationRef.current && threadConversationRef.current.id === event.threadId
+                  ? threadConversationRef.current
+                  : null;
+              if (!sourceThread) {
+                return;
+              }
+              const request = buildPendingImplementPlanRequestForTurn(sourceThread.id, sourceThread.items, event.turnId);
               setPendingImplementPlanRequests((current) => {
-                const withoutThread = clearPendingImplementPlanRequestsForThread(current, thread.id);
+                const withoutThread = clearPendingImplementPlanRequestsForThread(current, sourceThread.id);
                 return request ? upsertPendingImplementPlanRequest(withoutThread, request) : withoutThread;
               });
-              if (item) {
-                setPlanImplementationItems((current) => upsertPlanImplementationItem(current, item));
-              }
             })
             .catch(() => undefined);
         }
+        return;
       }
-      if (event.threadId !== selectedThreadId) {
+      if (event.threadId !== selectedThreadIdRef.current) {
         return;
       }
       if (event.type === "threadItemUpdated") {
-        setThreadConversation((current) =>
-          current && current.id === event.threadId
-            ? { ...current, items: upsertConversationItem(current.items, event.item) }
-            : current,
-        );
+        setThreadConversation((current) => {
+          if (!current || current.id !== event.threadId) {
+            return current;
+          }
+
+          const now = Date.now();
+          let nextConversation = current;
+          if (event.phase === "started" && event.item.type === "agentMessage") {
+            nextConversation = upsertThreadConversationTurnTiming(nextConversation, event.turnId, {
+              finalAssistantStartedAtMs:
+                nextConversation.turnTimings.find((entry) => entry.turnId === event.turnId)?.finalAssistantStartedAtMs ?? now,
+            });
+          }
+          if (
+            (event.phase === "started" || event.phase === "completed") &&
+            isWorkStartedConversationItem(event.item)
+          ) {
+            const currentTiming = nextConversation.turnTimings.find((entry) => entry.turnId === event.turnId);
+            if (currentTiming?.firstTurnWorkItemStartedAtMs === null || currentTiming === undefined) {
+              nextConversation = upsertThreadConversationTurnTiming(nextConversation, event.turnId, {
+                firstTurnWorkItemStartedAtMs: now,
+                ...(currentTiming === undefined ? { status: activeTurn?.turnId === event.turnId ? "in_progress" : "completed" } : {}),
+              });
+            }
+          }
+
+          const folded =
+            event.phase === "started"
+              ? foldStartedThreadItemWithSteer(nextConversation.items, event.item)
+              : foldCompletedThreadItemWithSteer(nextConversation.items, event.item);
+
+          if (folded.items === nextConversation.items && nextConversation === current) {
+            return current;
+          }
+
+          return {
+            ...nextConversation,
+            items: folded.items,
+          };
+        });
         return;
       }
-      void Promise.all([getRecentThreads(), readThread(event.threadId)])
-        .then(([threads, thread]) => {
-          setSelectedThreadId(event.threadId);
-          setProjectGroups(
-            buildProjectGroups(threads, {
-              activeThreadId: event.threadId,
-              locale,
-              noMessageLabel: t("history.noMessageYet"),
-            }),
-          );
-          setThreadConversation(thread);
-        })
-        .catch(() => undefined);
     }).then((dispose) => {
       unlisten = dispose;
     });
@@ -985,7 +1327,9 @@ function App() {
           void readThread(activeThreadId)
             .then((thread) => {
               if (!cancelled) {
-                setThreadConversation(thread);
+                setThreadConversation((current) =>
+                  mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId),
+                );
               }
             })
             .catch(() => {
@@ -1008,7 +1352,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [locale, t]);
+  }, [locale, syntheticRequestItemsByThreadId, t]);
 
   useEffect(() => {
     if (authSnapshot.activeLoginId || authSnapshot.authState.authMethod) {
@@ -1259,7 +1603,7 @@ function App() {
     try {
       const [threads, thread] = await Promise.all([getRecentThreads(), readThread(threadId)]);
       syncProjectGroups(threadId, threads);
-      setThreadConversation(thread);
+      setThreadConversation(mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId));
       setTurnError(null);
       setCurrentRoute("chat");
     } catch (error) {
@@ -1280,7 +1624,6 @@ function App() {
 
   const completeImplementPlanFlowForThread = (threadId: string) => {
     setPendingImplementPlanRequests((current) => clearPendingImplementPlanRequestsForThread(current, threadId));
-    setPlanImplementationItems((current) => markPlanImplementationItemsCompletedForThread(current, threadId));
   };
 
   const createAndSelectThread = async () => {
@@ -1288,7 +1631,7 @@ function App() {
     const threadId = await startThread(cwd);
     const [threads, thread] = await Promise.all([getRecentThreads(), readThread(threadId)]);
     syncProjectGroups(threadId, threads);
-    setThreadConversation(thread);
+    setThreadConversation(mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId));
     setCurrentRoute("chat");
     return thread;
   };
@@ -1348,7 +1691,7 @@ function App() {
       setSelectedThreadId(normalizedTaskId);
       setTurnError(null);
       setCurrentRoute("chat");
-      setThreadConversation(thread);
+      setThreadConversation(mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId));
     } catch {
       // Keep the current selection untouched when the local shell cannot open the task id directly.
     }
@@ -1360,7 +1703,7 @@ function App() {
     setCurrentRoute("chat");
     try {
       const thread = await readThread(threadId);
-      setThreadConversation(thread);
+      setThreadConversation(mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId));
     } catch {
       setThreadConversation(null);
     }
@@ -1439,12 +1782,8 @@ function App() {
       const markdown = renderConversationMarkdown(
         threadConversation,
         t,
-        currentThreadPlanImplementationItems,
         {
           approvals: currentThreadApprovals,
-          mcpRequests: currentThreadMcpServerElicitationRequest,
-          permissionsRequests: currentThreadPermissionsRequestApproval,
-          userInputRequests: currentThreadToolRequestUserInput,
         },
       );
       await navigator.clipboard.writeText(markdown);
@@ -1469,7 +1808,7 @@ function App() {
       const forkedThreadId = await forkThread(selectedThreadId);
       const [threads, thread] = await Promise.all([getRecentThreads(), readThread(forkedThreadId)]);
       syncProjectGroups(forkedThreadId, threads);
-      setThreadConversation(thread);
+      setThreadConversation(mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId));
       setTurnError(null);
       setIsThreadActionsMenuOpen(false);
       setThreadActionFeedback(null);
@@ -1485,8 +1824,18 @@ function App() {
     if (!selectedThreadId) {
       return;
     }
+    const attachedHeartbeatAutomation = selectedThreadAttachedHeartbeatAutomationIncludingPaused;
     try {
       await archiveThread(selectedThreadId);
+      let heartbeatAutomationError: unknown = null;
+      if (attachedHeartbeatAutomation) {
+        try {
+          await deleteAutomation(attachedHeartbeatAutomation.id);
+        } catch (error) {
+          heartbeatAutomationError = error;
+        }
+        await refreshThreadHeaderAutomations();
+      }
       const threads = await getRecentThreads();
       const nextThreadId = threads[0]?.id ?? null;
       syncProjectGroups(nextThreadId, threads);
@@ -1499,26 +1848,35 @@ function App() {
       setTurnError(null);
       setIsArchiveDialogOpen(false);
       setIsThreadActionsMenuOpen(false);
-      setThreadActionFeedback(null);
-      const settingsLinkLabel = t("codex.archiveInfo.settingsLink");
-      const archiveInfoTemplate = t("codex.archiveInfo.electron", { settingsLink: "__SETTINGS_LINK__" });
-      const [archiveInfoPrefix, archiveInfoSuffix = ""] = archiveInfoTemplate.split("__SETTINGS_LINK__");
-      setAppToast({
-        tone: "info",
-        message: (
-          <span>
-            {archiveInfoPrefix}
-            <button
-              type="button"
-              onClick={openArchivedChatsSettings}
-              className="cursor-interaction text-[var(--app-shell-accent)] underline underline-offset-2 hover:opacity-80"
-            >
-              {settingsLinkLabel}
-            </button>
-            {archiveInfoSuffix}
-          </span>
-        ),
-      });
+      if (heartbeatAutomationError) {
+        setThreadActionFeedback({
+          tone: "error",
+          message: heartbeatAutomationError instanceof Error
+            ? heartbeatAutomationError.message
+            : String(heartbeatAutomationError),
+        });
+      } else {
+        setThreadActionFeedback(null);
+        const settingsLinkLabel = t("codex.archiveInfo.settingsLink");
+        const archiveInfoTemplate = t("codex.archiveInfo.electron", { settingsLink: "__SETTINGS_LINK__" });
+        const [archiveInfoPrefix, archiveInfoSuffix = ""] = archiveInfoTemplate.split("__SETTINGS_LINK__");
+        setAppToast({
+          tone: "info",
+          message: (
+            <span>
+              {archiveInfoPrefix}
+              <button
+                type="button"
+                onClick={openArchivedChatsSettings}
+                className="cursor-interaction text-[var(--app-shell-accent)] underline underline-offset-2 hover:opacity-80"
+              >
+                {settingsLinkLabel}
+              </button>
+              {archiveInfoSuffix}
+            </span>
+          ),
+        });
+      }
     } catch (error) {
       setThreadActionFeedback({
         tone: "error",
@@ -1534,6 +1892,39 @@ function App() {
     setIsThreadActionsMenuOpen(false);
   };
 
+  const openThreadHeartbeatAutomationDialog = (mode: "create" | "edit") => {
+    if (!selectedThreadId || !threadConversation) {
+      return;
+    }
+
+    if (mode === "edit" && selectedThreadAttachedHeartbeatAutomationIncludingPaused) {
+      setThreadHeartbeatAutomationDialogDraft({
+        ...selectedThreadAttachedHeartbeatAutomationIncludingPaused,
+      });
+      setThreadHeartbeatAutomationDialogMode("edit");
+    } else {
+      const baseDraft = buildAutomationDraft("heartbeat");
+      if (baseDraft.kind !== "heartbeat") {
+        return;
+      }
+      setThreadHeartbeatAutomationDialogDraft({
+        ...baseDraft,
+        name: threadConversation.title ?? "",
+        targetThreadId: selectedThreadId,
+      });
+      setThreadHeartbeatAutomationDialogMode("create");
+    }
+
+    setIsThreadHeartbeatAutomationDialogOpen(true);
+    setIsThreadActionsMenuOpen(false);
+  };
+
+  const openThreadHeartbeatAutomationAction = () => {
+    openThreadHeartbeatAutomationDialog(
+      selectedThreadAttachedHeartbeatAutomationIncludingPaused ? "edit" : "create",
+    );
+  };
+
   const saveThreadNameChange = async () => {
     if (!selectedThreadId) {
       return;
@@ -1545,7 +1936,7 @@ function App() {
       });
       const [threads, thread] = await Promise.all([getRecentThreads(), readThread(selectedThreadId)]);
       syncProjectGroups(selectedThreadId, threads);
-      setThreadConversation(thread);
+      setThreadConversation(mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId));
       setIsRenameDialogOpen(false);
       setThreadActionFeedback(null);
     } catch {
@@ -1591,6 +1982,22 @@ function App() {
           turnId: activeTurn.turnId,
           text,
         });
+        setThreadConversation((current) =>
+          current && current.id === threadId
+            ? appendSteeringUserMessage(
+                upsertThreadConversationTurnTiming(current, turnId, {
+                  status: "in_progress",
+                  turnStartedAtMs: Date.now(),
+                }),
+                createSteeringUserMessage({
+                  threadId,
+                  turnId,
+                  text,
+                  cwd,
+                }),
+              )
+            : current,
+        );
         completeImplementPlanFlowForThread(threadId);
         setActiveTurn({ threadId, turnId });
         setComposerDraft("");
@@ -1610,10 +2017,59 @@ function App() {
       }
       const turnId = await startTurn({ threadId, text, cwd });
       completeImplementPlanFlowForThread(threadId);
+      setThreadConversation((current) =>
+        current && current.id === threadId
+          ? upsertThreadConversationTurnTiming(current, turnId, {
+              status: "in_progress",
+              turnStartedAtMs: Date.now(),
+            })
+          : current,
+      );
       setActiveTurn({ threadId, turnId });
       setComposerDraft("");
     } catch (error) {
       setTurnError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const handleEditUserMessage = async (editedMessage: string) => {
+    const normalizedMessage = editedMessage.trim();
+    if (!editableUserMessage || normalizedMessage.length === 0) {
+      return;
+    }
+
+    setTurnError(null);
+    try {
+      const rollbackResult = await rollbackThread({
+        threadId: editableUserMessage.threadId,
+        numTurns: 1,
+      });
+      const mergedRollbackConversation = mergeSyntheticRequestItemsIntoConversation(
+        rollbackResult,
+        syntheticRequestItemsByThreadId,
+      );
+      setThreadConversation(mergedRollbackConversation);
+
+      const nextInput = replaceFirstTextInput(editableUserMessage.input, normalizedMessage);
+      const cwd = rollbackResult.cwd || openProjectPath || null;
+      const turnId = await startTurnWithInput({
+        threadId: editableUserMessage.threadId,
+        input: nextInput,
+        cwd,
+      });
+      completeImplementPlanFlowForThread(editableUserMessage.threadId);
+      setThreadConversation((current) =>
+        current && current.id === editableUserMessage.threadId
+          ? upsertThreadConversationTurnTiming(current, turnId, {
+              status: "in_progress",
+              turnStartedAtMs: Date.now(),
+            })
+          : current,
+      );
+      setActiveTurn({ threadId: editableUserMessage.threadId, turnId });
+    } catch (error) {
+      setTurnError(error instanceof Error ? error.message : String(error));
+      throw error;
     }
   };
 
@@ -1638,8 +2094,23 @@ function App() {
           turnId: activeTurn.turnId,
           text,
         });
+        setThreadConversation((current) =>
+          current && current.id === request.threadId
+            ? appendSteeringUserMessage(
+                upsertThreadConversationTurnTiming(current, turnId, {
+                  status: "in_progress",
+                  turnStartedAtMs: Date.now(),
+                }),
+                createSteeringUserMessage({
+                  threadId: request.threadId,
+                  turnId,
+                  text,
+                  cwd,
+                }),
+              )
+            : current,
+        );
         setPendingImplementPlanRequests((current) => removePendingImplementPlanRequest(current, request.requestId));
-        setPlanImplementationItems((current) => markPlanImplementationItemCompleted(current, request.requestId));
         setActiveTurn({ threadId: request.threadId, turnId });
         return;
       }
@@ -1648,8 +2119,15 @@ function App() {
         text,
         cwd,
       });
+      setThreadConversation((current) =>
+        current && current.id === request.threadId
+          ? upsertThreadConversationTurnTiming(current, turnId, {
+              status: "in_progress",
+              turnStartedAtMs: Date.now(),
+            })
+          : current,
+      );
       setPendingImplementPlanRequests((current) => removePendingImplementPlanRequest(current, request.requestId));
-      setPlanImplementationItems((current) => markPlanImplementationItemCompleted(current, request.requestId));
       setActiveTurn({ threadId: request.threadId, turnId });
     } catch (error) {
       setTurnError(error instanceof Error ? error.message : String(error));
@@ -1659,7 +2137,6 @@ function App() {
   const dismissImplementPlanRequest = (request: PendingImplementPlanRequest) => {
     setTurnError(null);
     setPendingImplementPlanRequests((current) => removePendingImplementPlanRequest(current, request.requestId));
-    setPlanImplementationItems((current) => markPlanImplementationItemCompleted(current, request.requestId));
   };
 
   const stopTurn = async () => {
@@ -1720,11 +2197,39 @@ function App() {
       current.includes(requestKey) ? current : [...current, requestKey],
     );
     try {
+      setSyntheticRequestItemsByThreadId((current) =>
+        updateSyntheticRequestItemsForThread(current, request.threadId, (items) =>
+          removeRequestConversationItem(items, request.requestId),
+        ),
+      );
+      setThreadConversation((current) => {
+        if (!current || current.id !== request.threadId) {
+          return current;
+        }
+        return {
+          ...current,
+          items: removeRequestConversationItem(current.items, request.requestId),
+        };
+      });
       await respondToToolRequestUserInput({
         requestId: request.requestId,
         response: createToolRequestUserInputResponse(request.questions, values),
       });
     } catch (error) {
+      setSyntheticRequestItemsByThreadId((current) =>
+        updateSyntheticRequestItemsForThread(current, request.threadId, (items) =>
+          upsertUserInputConversationItem(items, request),
+        ),
+      );
+      setThreadConversation((current) => {
+        if (!current || current.id !== request.threadId) {
+          return current;
+        }
+        return {
+          ...current,
+          items: upsertUserInputConversationItem(current.items, request),
+        };
+      });
       setRespondingApprovalKeys((current) => current.filter((key) => key !== requestKey));
       setApprovalActionErrors((current) => ({
         ...current,
@@ -1752,15 +2257,44 @@ function App() {
       current.includes(requestKey) ? current : [...current, requestKey],
     );
     try {
+      const response = createPermissionsRequestApprovalResponse(
+        request.permissions,
+        grantMode,
+        strictAutoReview,
+      );
+      setSyntheticRequestItemsByThreadId((current) =>
+        updateSyntheticRequestItemsForThread(current, request.threadId, (items) =>
+          completePermissionRequestConversationItem(items, request.requestId, response),
+        ),
+      );
+      setThreadConversation((current) => {
+        if (!current || current.id !== request.threadId) {
+          return current;
+        }
+        return {
+          ...current,
+          items: completePermissionRequestConversationItem(current.items, request.requestId, response),
+        };
+      });
       await respondToPermissionsRequestApproval({
         requestId: request.requestId,
-        response: createPermissionsRequestApprovalResponse(
-          request.permissions,
-          grantMode,
-          strictAutoReview,
-        ),
+        response,
       });
     } catch (error) {
+      setSyntheticRequestItemsByThreadId((current) =>
+        updateSyntheticRequestItemsForThread(current, request.threadId, (items) =>
+          upsertPermissionRequestConversationItem(items, request),
+        ),
+      );
+      setThreadConversation((current) => {
+        if (!current || current.id !== request.threadId) {
+          return current;
+        }
+        return {
+          ...current,
+          items: upsertPermissionRequestConversationItem(current.items, request),
+        };
+      });
       setRespondingApprovalKeys((current) => current.filter((key) => key !== requestKey));
       setApprovalActionErrors((current) => ({
         ...current,
@@ -1788,11 +2322,40 @@ function App() {
       current.includes(requestKey) ? current : [...current, requestKey],
     );
     try {
+      const response = createMcpServerElicitationRequestResponse(action, content);
+      setSyntheticRequestItemsByThreadId((current) =>
+        updateSyntheticRequestItemsForThread(current, request.threadId, (items) =>
+          completeMcpServerElicitationConversationItem(items, request.requestId, response),
+        ),
+      );
+      setThreadConversation((current) => {
+        if (!current || current.id !== request.threadId) {
+          return current;
+        }
+        return {
+          ...current,
+          items: completeMcpServerElicitationConversationItem(current.items, request.requestId, response),
+        };
+      });
       await respondToMcpServerElicitationRequest({
         requestId: request.requestId,
-        response: createMcpServerElicitationRequestResponse(action, content),
+        response,
       });
     } catch (error) {
+      setSyntheticRequestItemsByThreadId((current) =>
+        updateSyntheticRequestItemsForThread(current, request.threadId, (items) =>
+          upsertMcpServerElicitationConversationItem(items, request),
+        ),
+      );
+      setThreadConversation((current) => {
+        if (!current || current.id !== request.threadId) {
+          return current;
+        }
+        return {
+          ...current,
+          items: upsertMcpServerElicitationConversationItem(current.items, request),
+        };
+      });
       setRespondingApprovalKeys((current) => current.filter((key) => key !== requestKey));
       setApprovalActionErrors((current) => ({
         ...current,
@@ -2485,6 +3048,19 @@ function App() {
                     </div>
                   )}
                 </div>
+
+                <div className="mt-3 border-t border-[var(--app-shell-border)] pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentRoute("settings")}
+                    className="app-nav-item-idle flex h-10 w-full items-center gap-3 rounded-[12px] px-3.5 text-left text-[14px]"
+                  >
+                    <span className="app-text-muted flex h-4 w-4 items-center justify-center">
+                      <SettingsCogIcon className="h-4 w-4" />
+                    </span>
+                    <span>{t("app.nav.settings")}</span>
+                  </button>
+                </div>
               </>
             ) : (
               <>
@@ -2635,106 +3211,26 @@ function App() {
                       </div>
                     </div>
                   ) : null}
-                  <button
-                    type="button"
-                    onClick={() => setCurrentRoute("settings")}
-                    className="app-control-weak rounded-full px-3 py-1.5 text-[13px]"
-                  >
-                    {t("app.shell.settings")}
-                  </button>
-                  {currentRoute === "chat" ? (
-                    <div className="relative" ref={threadActionsMenuRef}>
-                        <button
-                          type="button"
-                          title={t("threadHeader.moreActions")}
-                          aria-label={t("threadHeader.moreActions")}
-                          aria-expanded={isThreadActionsMenuOpen}
-                          onClick={() => {
-                            setIsThreadActionsMenuOpen((value) => !value);
-                          }}
-                          className="app-topbar-button flex items-center justify-center rounded-[8px] border border-transparent p-1"
-                        >
-                          <MoreActionsIcon className="h-4 w-4" />
-                      </button>
-                      {isThreadActionsMenuOpen ? (
-                        <div className="app-card absolute top-10 right-0 z-10 min-w-[220px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
-                          <button
-                            type="button"
-                            disabled={!selectedThreadId}
-                            onClick={openRenameDialog}
-                            className="app-nav-item-idle flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
-                          >
-                            {t("sidebarElectron.renameThread")}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={!selectedThreadId}
-                            onClick={() => {
-                              setIsArchiveDialogOpen(true);
-                              setIsThreadActionsMenuOpen(false);
-                            }}
-                            className="app-nav-item-idle mt-1 flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
-                          >
-                            {t("sidebarElectron.archiveThread")}
-                          </button>
-                          <div className="my-1 h-px bg-[var(--app-shell-border)]" />
-                          <button
-                            type="button"
-                            disabled={!threadConversation?.cwd}
-                            onClick={() => void copyWorkingDirectory()}
-                            className="app-nav-item-idle flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
-                          >
-                            {t("threadHeader.copyWorkingDirectory")}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={!selectedThreadId}
-                            onClick={() => void copySessionId()}
-                            className="app-nav-item-idle mt-1 flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
-                          >
-                            {t("threadHeader.copySessionId")}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={!selectedThreadId}
-                            onClick={() => void copyAppLink()}
-                            className="app-nav-item-idle mt-1 flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
-                          >
-                            {t("threadHeader.copyAppLink")}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={!threadConversation}
-                            onClick={() => void copyConversationMarkdown()}
-                            className="app-nav-item-idle mt-1 flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
-                          >
-                            {t("threadHeader.copyConversationMarkdown")}
-                          </button>
-                          <div className="my-1 h-px bg-[var(--app-shell-border)]" />
-                          <button
-                            type="button"
-                            disabled={!selectedThreadId || isTurnInProgress}
-                            onClick={() => void forkSelectedThread()}
-                            className="app-nav-item-idle flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
-                          >
-                            {t(isWorktreeThread ? "threadHeader.forkIntoSameWorktree" : "threadHeader.forkIntoLocal")}
-                          </button>
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
                 </div>
               </div>
 
               {currentRoute === "chat" ? (
                 <div className="grid min-h-0 flex-1" style={shellColumns}>
                   <ChatConversationMainPane
+                    threadActionsMenuRef={threadActionsMenuRef}
                     composerDraft={composerDraft}
                     composerEnterBehavior={composerEnterBehavior}
+                    followUpQueueMode={followUpQueueMode}
+                    hasAttachedHeartbeatAutomation={selectedThreadAttachedHeartbeatAutomation !== null}
+                    isThreadActionsMenuOpen={isThreadActionsMenuOpen}
+                    isThreadHeartbeatAutomationActionDisabled={isThreadHeartbeatAutomationActionDisabled}
+                    isThreadHeartbeatAutomationActionVisible={shouldShowThreadHeartbeatAutomationAction}
+                    isWorktreeThread={isWorktreeThread}
+                    heartbeatAutomationActionLabelKey={threadHeartbeatAutomationActionLabelKey}
+                    heartbeatAutomationButtonTooltip={heartbeatAutomationOpenButtonTooltip}
                     currentThreadApprovals={currentThreadApprovals}
                     currentThreadImplementPlanRequests={currentThreadImplementPlanRequests}
                     currentThreadMcpServerElicitationRequest={currentThreadMcpServerElicitationRequest}
-                    currentThreadPlanImplementationItems={currentThreadPlanImplementationItems}
                     currentThreadPermissionsRequestApproval={currentThreadPermissionsRequestApproval}
                     currentThreadToolRequestUserInput={currentThreadToolRequestUserInput}
                     currentThreadQueuedFollowUps={currentThreadQueuedFollowUps}
@@ -2746,8 +3242,21 @@ function App() {
                     onMcpServerElicitationRequestSubmit={(request, action, content) =>
                       void handleMcpServerElicitationRequestSubmit(request, action, content)
                     }
+                    onArchiveThread={() => {
+                      setIsArchiveDialogOpen(true);
+                      setIsThreadActionsMenuOpen(false);
+                    }}
+                    onCopyAppLink={() => void copyAppLink()}
+                    onCopyConversationMarkdown={() => void copyConversationMarkdown()}
+                    onCopySessionId={() => void copySessionId()}
+                    onCopyWorkingDirectory={() => void copyWorkingDirectory()}
+                    onForkSelectedThread={() => void forkSelectedThread()}
+                    onOpenAttachedHeartbeatAutomation={() => openThreadHeartbeatAutomationDialog("edit")}
+                    onOpenThreadHeartbeatAutomationAction={openThreadHeartbeatAutomationAction}
                     onOpenRemoteTask={(taskId) => void openRemoteTask(taskId)}
+                    onOpenRenameDialog={openRenameDialog}
                     onSelectThread={(threadId) => void selectThread(threadId)}
+                    onEditUserMessage={(text) => void handleEditUserMessage(text)}
                     onPermissionsRequestApprovalSubmit={(request, grantMode, strictAutoReview) =>
                       void handlePermissionsRequestApprovalSubmit(request, grantMode, strictAutoReview)
                     }
@@ -2758,8 +3267,11 @@ function App() {
                     onRemoveQueuedFollowUp={removeQueuedFollowUp}
                     onStopTurn={() => void stopTurn()}
                     onSubmitTurn={(invertFollowUpAction) => void submitTurn(invertFollowUpAction)}
+                    onToggleThreadActionsMenu={() => setIsThreadActionsMenuOpen((value) => !value)}
                     approvalActionErrors={approvalActionErrors}
+                    reviewDelivery={reviewDelivery}
                     respondingApprovalKeys={respondingApprovalKeys}
+                    selectedAvatar={selectedAvatar}
                     submitButtonMode={submitButtonMode}
                     t={t}
                     threadConversation={threadConversation}
@@ -2784,6 +3296,7 @@ function App() {
                       <ChatSidePanel
                         activeTab={activeRightPanelTab}
                         onOpenReviewFile={(change) => void handleReviewFileSelected(change)}
+                        onSelectWorkspaceFile={handleWorkspaceFileSelected}
                         t={t}
                         threadDiffSummary={threadDiffSummary}
                       />
@@ -2793,6 +3306,14 @@ function App() {
               ) : currentRoute === "scratchpad" ? (
                 <div className="min-h-0 flex-1 overflow-y-auto">
                   <ScratchpadPage />
+                </div>
+              ) : currentRoute === "pull-requests" ? (
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <PullRequestsRoutePage />
+                </div>
+              ) : currentRoute === "automations" ? (
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <AutomationsRoutePage recentThreads={recentThreadEntries} onOpenThread={selectThread} />
                 </div>
               ) : currentRoute === "skills" ? (
                 <div className="min-h-0 flex-1 overflow-y-auto">
@@ -2822,9 +3343,21 @@ function App() {
       {isArchiveDialogOpen ? (
         <div className="fixed inset-0 z-20 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
           <div className="app-card w-full max-w-[420px] rounded-[18px] px-5 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
-            <div className="app-title text-[15px] font-medium">{t("threadHeader.archiveConfirmTitle")}</div>
+            <div className="app-title text-[15px] font-medium">
+              {t(
+                hasArchivedThreadHeartbeatAutomation
+                  ? "threadHeader.archiveConfirmHeartbeatTitle"
+                  : "threadHeader.archiveConfirmTitle",
+              )}
+            </div>
             <div className="app-text-muted mt-2 text-[13px] leading-6">
-              {t("threadHeader.archiveConfirmSubtitle")}
+              {hasArchivedThreadHeartbeatAutomation
+                ? archivedThreadHeartbeatAutomationName.length > 0
+                  ? t("threadHeader.archiveConfirmHeartbeatSubtitleNamed", {
+                      name: archivedThreadHeartbeatAutomationName,
+                    })
+                  : t("threadHeader.archiveConfirmHeartbeatSubtitleUnnamed")
+                : t("threadHeader.archiveConfirmSubtitle")}
             </div>
             <div className="mt-5 flex items-center justify-end gap-2">
               <button
@@ -2839,12 +3372,28 @@ function App() {
                 onClick={() => void archiveSelectedThread()}
                 className="app-card-error rounded-[11px] px-3 py-1.5 text-[12px]"
               >
-                {t("threadHeader.archiveConfirmConfirm")}
+                {t(
+                  hasArchivedThreadHeartbeatAutomation
+                    ? "threadHeader.archiveConfirmHeartbeatConfirm"
+                    : "threadHeader.archiveConfirmConfirm",
+                )}
               </button>
             </div>
           </div>
         </div>
       ) : null}
+      <ThreadHeartbeatAutomationDialog
+        open={isThreadHeartbeatAutomationDialogOpen}
+        initialDraft={threadHeartbeatAutomationDialogDraft}
+        initialMode={threadHeartbeatAutomationDialogMode}
+        recentThreads={recentThreadEntries}
+        onAutomationsChanged={() => refreshThreadHeaderAutomations()}
+        onClose={() => setIsThreadHeartbeatAutomationDialogOpen(false)}
+        onOpenThread={(threadId) => {
+          setIsThreadHeartbeatAutomationDialogOpen(false);
+          void selectThread(threadId);
+        }}
+      />
       <WorkspaceFileSearchDialog
         isOpen={isWorkspaceFileSearchOpen}
         workspaceRoot={chatWorkspaceRoot}
@@ -2895,3 +3444,7 @@ function App() {
 }
 
 export default App;
+
+function normalizeAvatarId(value: string): BuiltInAvatarId {
+  return BUILTIN_AVATARS.some((avatar) => avatar.id === value) ? (value as BuiltInAvatarId) : DEFAULT_AVATAR_ID;
+}

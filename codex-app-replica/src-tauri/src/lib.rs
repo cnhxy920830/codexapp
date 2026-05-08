@@ -1,4 +1,5 @@
 mod auth_bridge;
+mod automations;
 mod browser_use_settings;
 mod codex_home;
 mod computer_use_settings;
@@ -37,6 +38,7 @@ use auth_bridge::respond_to_approval_request;
 use auth_bridge::respond_to_mcp_server_elicitation_request;
 use auth_bridge::respond_to_permissions_request_approval;
 use auth_bridge::respond_to_tool_request_user_input;
+use auth_bridge::rollback_thread;
 use auth_bridge::send_add_credits_nudge_email;
 use auth_bridge::set_experimental_feature_enablement;
 use auth_bridge::set_personality;
@@ -45,10 +47,17 @@ use auth_bridge::shared_state;
 use auth_bridge::start_review;
 use auth_bridge::start_thread;
 use auth_bridge::start_turn;
+use auth_bridge::start_turn_with_input;
 use auth_bridge::steer_turn;
 use auth_bridge::unarchive_thread;
 use auth_bridge::uninstall_plugin;
 use auth_bridge::write_config_value;
+use automations::delete_automation;
+use automations::list_automations;
+use automations::read_automation;
+use automations::run_automation_now;
+use automations::save_automation;
+use automations::set_automation_status;
 use browser_use_settings::add_browser_use_origin;
 use browser_use_settings::read_browser_use_settings;
 use browser_use_settings::remove_browser_use_origin;
@@ -71,6 +80,7 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use workspace_agents::read_workspace_agents_md;
 use workspace_agents::write_workspace_agents_md;
+use workspace_files::list_workspace_directory_entries;
 use workspace_files::read_workspace_file;
 use workspace_files::read_workspace_file_metadata;
 use workspace_files::search_workspace_files;
@@ -103,6 +113,7 @@ pub fn run() {
             read_account_rate_limits,
             send_add_credits_nudge_email,
             list_apps,
+            list_automations,
             read_config,
             list_experimental_features,
             list_plugins,
@@ -128,6 +139,7 @@ pub fn run() {
             unarchive_thread,
             set_thread_name,
             start_turn,
+            start_turn_with_input,
             start_review,
             steer_turn,
             interrupt_turn,
@@ -138,6 +150,8 @@ pub fn run() {
             respond_to_permissions_request_approval,
             respond_to_tool_request_user_input,
             read_thread,
+            rollback_thread,
+            read_automation,
             get_global_state,
             get_command_keymap_state,
             login_api_key,
@@ -153,7 +167,12 @@ pub fn run() {
             write_config_value,
             read_workspace_agents_md,
             write_workspace_agents_md,
+            save_automation,
+            set_automation_status,
+            delete_automation,
+            run_automation_now,
             search_workspace_files,
+            list_workspace_directory_entries,
             read_workspace_file_metadata,
             read_workspace_file,
             list_local_environments,

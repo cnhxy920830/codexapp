@@ -29,6 +29,38 @@ export type ThreadConversationMessage = {
   turnId: string;
   role: "user" | "assistant";
   text: string;
+  completed: boolean;
+  images?: string[];
+  attachments?: Array<{
+    label: string;
+    path: string;
+  }>;
+  comments?: Array<{
+    path: string;
+    lineRange?: string | null;
+    body: string;
+  }>;
+  referencesPriorConversation?: boolean;
+  reviewMode?: boolean;
+  pullRequestFixMode?: boolean;
+  autoResolveSync?: boolean;
+  pullRequestCheckCount?: number | null;
+  steeringStatus?: "pending" | "accepted";
+};
+
+export type ThreadConversationSteeringUserMessage = {
+  type: "steeringUserMessage";
+  id: string;
+  turnId: string;
+  status: "pending" | "accepted";
+  text: string;
+  cwd: string | null;
+};
+
+export type ThreadConversationSteered = {
+  type: "steered";
+  id: string;
+  turnId: string;
 };
 
 export type ThreadConversationPlan = {
@@ -143,6 +175,25 @@ export type ThreadConversationHookPrompt = {
   }>;
 };
 
+export type ThreadConversationHookOutputEntry = {
+  kind: "warning" | "stop" | "feedback" | "context" | "error" | string;
+  text: string;
+};
+
+export type ThreadConversationHook = {
+  type: "hook";
+  id: string;
+  turnId: string;
+  eventName: "preToolUse" | "permissionRequest" | "postToolUse" | "sessionStart" | "userPromptSubmit" | "stop" | string;
+  status: "running" | "completed" | "failed" | "blocked" | "stopped" | string;
+  statusMessage: string | null;
+  sourcePath: string | null;
+  startedAt: number | null;
+  completedAt: number | null;
+  durationMs: number | null;
+  entries: ThreadConversationHookOutputEntry[];
+};
+
 export type ThreadCommandAction =
   | {
       type: "read";
@@ -183,7 +234,65 @@ export type ThreadConversation = {
   id: string;
   title: string;
   cwd: string;
+  turns: ThreadConversationTurn[];
+  turnTimings: ThreadConversationTurnTiming[];
   items: ThreadConversationItem[];
+};
+
+export type ThreadConversationTurn = {
+  id: string;
+  status: string;
+  input: ThreadConversationUserInput[];
+};
+
+export type ThreadConversationTurnTiming = {
+  turnId: string;
+  status: string;
+  turnStartedAtMs: number | null;
+  finalAssistantStartedAtMs: number | null;
+  firstTurnWorkItemStartedAtMs: number | null;
+};
+
+export type ThreadConversationTextElement = {
+  byteRange: {
+    start: number;
+    end: number;
+  };
+  placeholder: string | null;
+};
+
+export type ThreadConversationUserInput =
+  | {
+      type: "text";
+      text: string;
+      textElements: ThreadConversationTextElement[];
+    }
+  | {
+      type: "image";
+      url: string;
+    }
+  | {
+      type: "localImage";
+      path: string;
+    }
+  | {
+      type: "skill";
+      name: string;
+      path: string;
+    }
+  | {
+      type: "mention";
+      name: string;
+      path: string;
+    };
+
+export type ThreadConversationWorkedFor = {
+  type: "workedFor";
+  id: string;
+  turnId: string;
+  status: "working" | "worked";
+  startedAtMs: number;
+  completedAtMs: number | null;
 };
 
 export type JsonRpcId = number | string;
@@ -321,6 +430,9 @@ export type ThreadConversationMcpToolCall = {
   server: string;
   tool: string;
   status: string;
+  arguments: unknown;
+  result: unknown | null;
+  error: unknown | null;
   resultSummary: string | null;
   errorMessage: string | null;
 };
@@ -334,6 +446,54 @@ export type ThreadConversationDynamicToolCall = {
   status: string;
   resultSummary: string | null;
   success: boolean | null;
+  arguments: unknown | null;
+  contentItems: unknown[];
+};
+
+export type ThreadConversationAutomationSnapshot = {
+  kind: "cron" | "heartbeat";
+  name: string;
+  rrule: string;
+};
+
+export type ThreadConversationAutomationUpdateResult = {
+  automationId: string;
+  mode: "create" | "update" | "delete" | null;
+  deleteStatus?: "deleted" | "not_found";
+  snapshot?: ThreadConversationAutomationSnapshot | null;
+};
+
+export type ThreadConversationAutomationUpdateArguments =
+  | {
+      id?: string;
+      mode:
+        | "view"
+        | "create"
+        | "update"
+        | "delete"
+        | "suggested_create"
+        | "suggested_update";
+      kind?: "cron" | "heartbeat";
+      name?: string;
+      prompt?: string;
+      rrule?: string;
+      cwds?: string[];
+      destination?: "local" | "worktree" | "thread";
+      executionEnvironment?: "worktree" | "local";
+      localEnvironmentConfigPath?: string | null;
+      model?: string;
+      reasoningEffort?: string;
+      targetThreadId?: string;
+      status?: "ACTIVE" | "PAUSED";
+    }
+  | null;
+
+export type ThreadConversationAutomationUpdate = {
+  type: "automationUpdate";
+  id: string;
+  turnId: string;
+  arguments: ThreadConversationAutomationUpdateArguments;
+  result: ThreadConversationAutomationUpdateResult | null;
 };
 
 export type ThreadConversationCollabAgentState = {
@@ -423,6 +583,64 @@ export type ThreadConversationContextCompaction = {
   id: string;
   turnId: string;
   isCompleted: boolean;
+  source: string;
+};
+
+export type ThreadConversationPlanImplementation = {
+  type: "planImplementation";
+  id: string;
+  turnId: string;
+  planContent: string;
+  isCompleted: boolean;
+};
+
+export type ThreadConversationPermissionRequest = {
+  type: "permissionRequest";
+  id: string;
+  turnId: string;
+  requestId: JsonRpcId;
+  itemId: string;
+  cwd: string;
+  reason: string | null;
+  permissions: PermissionProfile;
+  completed: boolean;
+  response: PermissionsRequestApprovalResponse | null;
+};
+
+export type ThreadConversationMcpServerElicitation = {
+  type: "mcpServerElicitation";
+  id: string;
+  turnId: string | null;
+  requestId: JsonRpcId;
+  serverName: string;
+  request: McpServerElicitationRequest;
+  completed: boolean;
+  action: McpServerElicitationRequestResponse["action"] | null;
+  content: unknown | null;
+};
+
+export type ThreadConversationUserInputRequest = {
+  type: "userInput";
+  id: string;
+  turnId: string;
+  requestId: JsonRpcId;
+  itemId: string;
+  questions: ToolRequestUserInputQuestion[];
+  completed: boolean;
+};
+
+export type ThreadConversationUserInputResponse = {
+  type: "userInputResponse";
+  id: string;
+  turnId: string;
+  requestId: JsonRpcId | null;
+  questionsAndAnswers: Array<{
+    id: string;
+    header: string;
+    question: string;
+    answers: string[];
+  }>;
+  completed: boolean;
 };
 
 export type ThreadConversationEnteredReviewMode = {
@@ -441,6 +659,9 @@ export type ThreadConversationExitedReviewMode = {
 
 export type ThreadConversationItem =
   | ThreadConversationMessage
+  | ThreadConversationSteeringUserMessage
+  | ThreadConversationSteered
+  | ThreadConversationHook
   | ThreadConversationHookPrompt
   | ThreadConversationTodoList
   | ThreadConversationTurnDiff
@@ -459,12 +680,19 @@ export type ThreadConversationItem =
   | ThreadConversationFileChange
   | ThreadConversationMcpToolCall
   | ThreadConversationDynamicToolCall
+  | ThreadConversationAutomationUpdate
   | ThreadConversationMultiAgentAction
   | ThreadConversationCollabAgentToolCall
   | ThreadConversationWebSearch
   | ThreadConversationImageView
   | ThreadConversationImageGeneration
   | ThreadConversationContextCompaction
+  | ThreadConversationPlanImplementation
+  | ThreadConversationPermissionRequest
+  | ThreadConversationMcpServerElicitation
+  | ThreadConversationUserInputRequest
+  | ThreadConversationWorkedFor
+  | ThreadConversationUserInputResponse
   | ThreadConversationEnteredReviewMode
   | ThreadConversationExitedReviewMode;
 
@@ -473,6 +701,7 @@ export type ThreadEvent =
       type: "threadItemUpdated";
       threadId: string;
       turnId: string;
+      phase: "started" | "completed";
       item: ThreadConversationItem;
     }
   | {
@@ -579,6 +808,14 @@ export async function startTurn(params: { threadId: string; text: string; cwd: s
   return invoke<string>("start_turn", params);
 }
 
+export async function startTurnWithInput(params: {
+  threadId: string;
+  input: ThreadConversationUserInput[];
+  cwd: string | null;
+}) {
+  return invoke<string>("start_turn_with_input", params);
+}
+
 export async function startReview(params: { threadId: string; delivery: ReviewDelivery }) {
   return invoke<ReviewStartResponse>("start_review", { params });
 }
@@ -618,6 +855,10 @@ export async function respondToMcpServerElicitationRequest(params: {
 
 export async function readThread(threadId: string) {
   return invoke<ThreadConversation>("read_thread", { threadId }).then(normalizeThreadConversation);
+}
+
+export async function rollbackThread(params: { threadId: string; numTurns: number }) {
+  return invoke<ThreadConversation>("rollback_thread", params).then(normalizeThreadConversation);
 }
 
 export function onThreadEvent(handler: (event: ThreadEvent) => void) {
@@ -689,11 +930,78 @@ export function normalizeThreadConversation(thread: ThreadConversation): ThreadC
 
   return {
     ...thread,
+    turns: Array.isArray(thread.turns)
+      ? thread.turns.map((turn) => ({
+          ...turn,
+          input: Array.isArray(turn.input)
+            ? turn.input
+                .map(normalizeThreadConversationUserInput)
+                .filter((input): input is ThreadConversationUserInput => input !== null)
+            : [],
+        }))
+      : [],
+    turnTimings: Array.isArray(thread.turnTimings) ? thread.turnTimings : [],
     items,
   };
 }
 
+function normalizeThreadConversationUserInput(
+  input: ThreadConversationUserInput,
+): ThreadConversationUserInput | null {
+  if (!input || typeof input !== "object" || typeof input.type !== "string") {
+    return null;
+  }
+
+  if (input.type === "text") {
+    return {
+      ...input,
+      text: typeof input.text === "string" ? input.text : "",
+      textElements: Array.isArray(input.textElements)
+        ? input.textElements
+            .map((element) => ({
+              byteRange: {
+                start:
+                  typeof element?.byteRange?.start === "number" && Number.isFinite(element.byteRange.start)
+                    ? element.byteRange.start
+                    : 0,
+                end:
+                  typeof element?.byteRange?.end === "number" && Number.isFinite(element.byteRange.end)
+                    ? element.byteRange.end
+                    : 0,
+              },
+              placeholder: typeof element?.placeholder === "string" ? element.placeholder : null,
+            }))
+            .filter((element) => element.byteRange.end >= element.byteRange.start)
+        : [],
+    };
+  }
+
+  if (input.type === "image") {
+    return typeof input.url === "string" ? input : null;
+  }
+  if (input.type === "localImage") {
+    return typeof input.path === "string" ? input : null;
+  }
+  if (input.type === "skill" || input.type === "mention") {
+    return typeof input.name === "string" && typeof input.path === "string" ? input : null;
+  }
+
+  return null;
+}
+
 export function normalizeThreadConversationItem(item: ThreadConversationItem): ThreadConversationItem | null {
+  if (item.type === "hook") {
+    return {
+      ...item,
+      statusMessage: item.statusMessage ?? null,
+      sourcePath: item.sourcePath ?? null,
+      startedAt: typeof item.startedAt === "number" ? item.startedAt : null,
+      completedAt: typeof item.completedAt === "number" ? item.completedAt : null,
+      durationMs: typeof item.durationMs === "number" ? item.durationMs : null,
+      entries: Array.isArray(item.entries) ? item.entries : [],
+    };
+  }
+
   if (item.type === "commandExecution") {
     return {
       ...item,
@@ -703,6 +1011,10 @@ export function normalizeThreadConversationItem(item: ThreadConversationItem): T
 
   if (item.type === "collabAgentToolCall") {
     return normalizeCollabAgentToolCall(item);
+  }
+
+  if (item.type === "dynamicToolCall") {
+    return normalizeDynamicToolCall(item);
   }
 
   return item;
@@ -752,4 +1064,300 @@ function normalizeCollabAgentToolCall(
     model: item.model,
     agentsStates,
   };
+}
+
+function normalizeDynamicToolCall(
+  item: ThreadConversationDynamicToolCall,
+): ThreadConversationAutomationUpdate | ThreadConversationDynamicToolCall | null {
+  if (isAutomationUpdateDynamicToolCall(item)) {
+    const argumentsValue = parseAutomationUpdateArguments(item.arguments);
+    if (argumentsValue !== null) {
+      return {
+        type: "automationUpdate",
+        id: item.id,
+        turnId: item.turnId,
+        arguments: argumentsValue,
+        result: parseAutomationUpdateResult(item.contentItems),
+      };
+    }
+  }
+
+  if (item.tool === "automation_update" || item.tool === "load_workspace_dependencies") {
+    return null;
+  }
+
+  return {
+    ...item,
+    arguments: item.arguments ?? null,
+    contentItems: Array.isArray(item.contentItems) ? item.contentItems : [],
+  };
+}
+
+function isAutomationUpdateDynamicToolCall(item: ThreadConversationDynamicToolCall) {
+  return item.tool === "automation_update" && item.status === "completed" && item.success === true;
+}
+
+function parseAutomationUpdateArguments(value: unknown): ThreadConversationAutomationUpdateArguments {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const mode = normalizeAutomationUpdateMode(record.mode);
+  if (mode === null) {
+    return null;
+  }
+
+  const normalized: NonNullable<ThreadConversationAutomationUpdateArguments> = { mode };
+  const id = asNonEmptyString(record.id);
+  if (id !== null) {
+    normalized.id = id;
+  }
+  const kind = normalizeAutomationUpdateKind(record.kind);
+  if (kind !== null) {
+    normalized.kind = kind;
+  }
+  const name = asNonEmptyString(record.name);
+  if (name !== null) {
+    normalized.name = name;
+  }
+  const prompt = asNonEmptyString(record.prompt);
+  if (prompt !== null) {
+    normalized.prompt = prompt;
+  }
+  const rrule = asNonEmptyString(record.rrule);
+  if (rrule !== null) {
+    normalized.rrule = rrule;
+  }
+  const cwds = asNonEmptyStringArray(record.cwds);
+  if (cwds !== null) {
+    normalized.cwds = cwds;
+  }
+  const destination = normalizeAutomationUpdateDestination(record.destination);
+  if (destination !== null) {
+    normalized.destination = destination;
+  }
+  const executionEnvironment = normalizeAutomationUpdateExecutionEnvironment(record.executionEnvironment);
+  if (executionEnvironment !== null) {
+    normalized.executionEnvironment = executionEnvironment;
+  }
+  if (record.localEnvironmentConfigPath === null) {
+    normalized.localEnvironmentConfigPath = null;
+  } else {
+    const localEnvironmentConfigPath = asNonEmptyString(record.localEnvironmentConfigPath);
+    if (localEnvironmentConfigPath !== null) {
+      normalized.localEnvironmentConfigPath = localEnvironmentConfigPath;
+    }
+  }
+  const model = asNonEmptyString(record.model);
+  if (model !== null) {
+    normalized.model = model;
+  }
+  const reasoningEffort = asNonEmptyString(record.reasoningEffort);
+  if (reasoningEffort !== null) {
+    normalized.reasoningEffort = reasoningEffort;
+  }
+  const targetThreadId = asNonEmptyString(record.targetThreadId);
+  if (targetThreadId !== null) {
+    normalized.targetThreadId = targetThreadId;
+  }
+  const status = normalizeAutomationUpdateStatus(record.status);
+  if (status !== null) {
+    normalized.status = status;
+  }
+
+  return normalized;
+}
+
+function parseAutomationUpdateResult(
+  contentItems: unknown[],
+): ThreadConversationAutomationUpdateResult | null {
+  for (const item of contentItems) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    if (record.type !== "inputText") {
+      continue;
+    }
+    const text = typeof record.text === "string" ? record.text.trim() : "";
+    if (!looksLikeJsonObject(text)) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      const result = normalizeAutomationUpdateResult(parsed);
+      if (result !== null) {
+        return result;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+function normalizeAutomationUpdateResult(value: unknown): ThreadConversationAutomationUpdateResult | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const automationId = asNonEmptyString(record.automationId);
+  if (automationId === null) {
+    return null;
+  }
+
+  const normalized: ThreadConversationAutomationUpdateResult = {
+    automationId,
+    mode: normalizeAutomationMutationMode(record.mode),
+  };
+
+  const deleteStatus = normalizeAutomationDeleteStatus(record.deleteStatus);
+  if (deleteStatus !== null) {
+    normalized.deleteStatus = deleteStatus;
+  }
+
+  if (record.snapshot === null) {
+    normalized.snapshot = null;
+  } else {
+    const snapshot = normalizeAutomationSnapshot(record.snapshot);
+    if (snapshot !== null) {
+      normalized.snapshot = snapshot;
+    }
+  }
+
+  return normalized;
+}
+
+function normalizeAutomationSnapshot(value: unknown): ThreadConversationAutomationSnapshot | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const kind = normalizeAutomationUpdateKind(record.kind);
+  const name = asNonEmptyString(record.name);
+  const rrule = asNonEmptyString(record.rrule);
+  if (kind === null || name === null || rrule === null) {
+    return null;
+  }
+
+  return {
+    kind,
+    name,
+    rrule,
+  };
+}
+
+function looksLikeJsonObject(value: string) {
+  return value.startsWith("{") && value.endsWith("}");
+}
+
+function asNonEmptyString(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function asNonEmptyStringArray(value: unknown) {
+  if (Array.isArray(value)) {
+    const items = value.map(asNonEmptyString).filter((item): item is string => item !== null);
+    return items.length > 0 ? items : [];
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed.map(asNonEmptyString).filter((item): item is string => item !== null);
+      }
+    } catch {
+      return trimmed
+        .split(",")
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0);
+    }
+  }
+
+  return null;
+}
+
+function normalizeAutomationUpdateMode(value: unknown) {
+  switch (value) {
+    case "view":
+    case "create":
+    case "update":
+    case "delete":
+    case "suggested_create":
+    case "suggested_update":
+      return value;
+    default:
+      return null;
+  }
+}
+
+function normalizeAutomationMutationMode(value: unknown) {
+  switch (value) {
+    case "create":
+    case "update":
+    case "delete":
+      return value;
+    default:
+      return null;
+  }
+}
+
+function normalizeAutomationUpdateKind(value: unknown) {
+  switch (value) {
+    case "cron":
+    case "heartbeat":
+      return value;
+    default:
+      return null;
+  }
+}
+
+function normalizeAutomationUpdateDestination(value: unknown) {
+  switch (value) {
+    case "local":
+    case "worktree":
+    case "thread":
+      return value;
+    default:
+      return null;
+  }
+}
+
+function normalizeAutomationUpdateExecutionEnvironment(value: unknown) {
+  switch (value) {
+    case "worktree":
+    case "local":
+      return value;
+    default:
+      return null;
+  }
+}
+
+function normalizeAutomationUpdateStatus(value: unknown) {
+  switch (value) {
+    case "ACTIVE":
+    case "PAUSED":
+      return value;
+    default:
+      return null;
+  }
+}
+
+function normalizeAutomationDeleteStatus(value: unknown) {
+  switch (value) {
+    case "deleted":
+    case "not_found":
+      return value;
+    default:
+      return null;
+  }
 }

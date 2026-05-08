@@ -1,14 +1,19 @@
-import type { ThreadConversationItem, ThreadConversationMessage } from "../../services/history";
+import type {
+  ThreadConversationAutomationUpdate,
+  ThreadConversationHook,
+  ThreadConversationItem,
+  ThreadConversationMessage,
+  ThreadConversationPlanImplementation,
+  ThreadConversationTurnTiming,
+} from "../../services/history";
 import {
   buildRenderableConversationItems,
+  collapseToolActivityItems,
   type RenderableConversationItem,
 } from "./renderableConversationItems";
 import type {
   PendingApproval,
-  PendingMcpServerElicitationRequest,
-  PendingPermissionsRequestApproval,
   PendingToolRequestUserInput,
-  PlanImplementationItem,
 } from "./threadConversationState";
 
 type UserMessage = ThreadConversationMessage & { type: "userMessage" };
@@ -16,7 +21,7 @@ type AgentMessage = ThreadConversationMessage & {
   type: "agentMessage";
   role: "assistant";
 };
-type HookPromptItem = Extract<ThreadConversationItem, { type: "hookPrompt" }>;
+type HookItem = ThreadConversationHook;
 type TodoListItem = Extract<ThreadConversationItem, { type: "todoList" }>;
 type TurnDiffItem = Extract<ThreadConversationItem, { type: "turnDiff" }>;
 type PersonalityChangedItem = Extract<ThreadConversationItem, { type: "personalityChanged" }>;
@@ -27,29 +32,32 @@ type RemoteTaskCreatedItem = Extract<ThreadConversationItem, { type: "remoteTask
 type AutomaticApprovalReviewItem = Extract<ThreadConversationItem, { type: "automaticApprovalReview" }>;
 type PlanItem = Extract<ThreadConversationItem, { type: "plan" }>;
 type ImageGenerationItem = Extract<ThreadConversationItem, { type: "imageGeneration" }>;
-type SystemEventItem = Extract<
-  ThreadConversationItem,
-  { type: "streamError" } | { type: "systemError" }
->;
+type SystemEventItem = Extract<ThreadConversationItem, { type: "systemError" }>;
+
+type McpServerElicitationItem = Extract<ThreadConversationItem, { type: "mcpServerElicitation" }>;
+type PermissionRequestItem = Extract<ThreadConversationItem, { type: "permissionRequest" }>;
+type UserInputRequestItem = Extract<ThreadConversationItem, { type: "userInput" }>;
 
 export type RenderableConversationGroup = {
   id: string;
   turnId: string;
-  preUserItems: HookPromptItem[];
+  preUserItems: HookItem[];
   userItems: UserMessage[];
   activityItems: RenderableConversationItem[];
   assistantMessage: AgentMessage | null;
+  assistantAutomationUpdateItems: ThreadConversationAutomationUpdate[];
+  automationUpdateItems: ThreadConversationAutomationUpdate[];
   toolOutputItems: ImageGenerationItem[];
   postAssistantItems: RenderableConversationItem[];
   systemEventItem: SystemEventItem | null;
   unifiedDiffItem: TurnDiffItem | null;
   todoListItem: TodoListItem | null;
   proposedPlanItem: PlanItem | null;
-  planImplementationItem: PlanImplementationItem | null;
-  mcpServerElicitationItems: PendingMcpServerElicitationRequest[];
-  permissionRequestItems: PendingPermissionsRequestApproval[];
+  planImplementationItem: ThreadConversationPlanImplementation | null;
+  mcpServerElicitationItems: McpServerElicitationItem[];
+  permissionRequestItems: PermissionRequestItem[];
   approvalItem: PendingApproval | null;
-  userInputItem: PendingToolRequestUserInput | null;
+  userInputItem: UserInputRequestItem | null;
   remoteTaskCreatedItems: RemoteTaskCreatedItem[];
   personalityChangedItems: PersonalityChangedItem[];
   forkedFromConversationItems: ForkedFromConversationItem[];
@@ -58,25 +66,22 @@ export type RenderableConversationGroup = {
 };
 
 type RenderableConversationGroupTurnScopedItems = {
-  planImplementationItems?: PlanImplementationItem[];
-  mcpServerElicitationItems?: PendingMcpServerElicitationRequest[];
-  permissionRequestItems?: PendingPermissionsRequestApproval[];
   approvalItems?: PendingApproval[];
-  userInputItems?: PendingToolRequestUserInput[];
 };
 
 export type RenderableConversationGroupsWithTurnScopedItems = {
   groups: RenderableConversationGroup[];
-  unmatchedPlanImplementationItems: PlanImplementationItem[];
-  unmatchedMcpServerElicitationItems: PendingMcpServerElicitationRequest[];
-  unmatchedPermissionRequestItems: PendingPermissionsRequestApproval[];
   unmatchedApprovalItems: PendingApproval[];
-  unmatchedUserInputItems: PendingToolRequestUserInput[];
 };
 
-export function buildRenderableConversationGroups(items: ThreadConversationItem[]) {
+export function buildRenderableConversationGroups(
+  items: ThreadConversationItem[],
+  options?: {
+    turnTimings?: ThreadConversationTurnTiming[];
+  },
+) {
   const groups: RenderableConversationGroup[] = [];
-  const renderableItems = buildRenderableConversationItems(items);
+  const renderableItems = buildRenderableConversationItems(items, options);
   let currentTurnId: string | null = null;
   let currentItems: RenderableConversationItem[] = [];
 
@@ -103,26 +108,17 @@ export function attachTurnScopedItemsToRenderableConversationGroups(
   items: RenderableConversationGroupTurnScopedItems = {},
 ): RenderableConversationGroupsWithTurnScopedItems {
   const knownTurnIds = new Set(groups.map((group) => group.turnId));
-  const planImplementationItems = partitionTurnScopedItems(items.planImplementationItems ?? [], knownTurnIds);
-  const mcpServerElicitationItems = partitionTurnScopedItems(items.mcpServerElicitationItems ?? [], knownTurnIds);
-  const permissionRequestItems = partitionTurnScopedItems(items.permissionRequestItems ?? [], knownTurnIds);
   const approvalItems = partitionTurnScopedItems(items.approvalItems ?? [], knownTurnIds);
-  const userInputItems = partitionTurnScopedItems(items.userInputItems ?? [], knownTurnIds);
 
   return {
     groups: groups.map((group) => ({
       ...group,
-      planImplementationItem: takeLatestTurnScopedItem(planImplementationItems.grouped.get(group.turnId) ?? []),
-      mcpServerElicitationItems: mcpServerElicitationItems.grouped.get(group.turnId) ?? [],
-      permissionRequestItems: permissionRequestItems.grouped.get(group.turnId) ?? [],
-      approvalItem: takeLatestTurnScopedItem(approvalItems.grouped.get(group.turnId) ?? []),
-      userInputItem: takeLatestTurnScopedItem(userInputItems.grouped.get(group.turnId) ?? []),
+      approvalItem: takeLatestApprovalItem(
+        approvalItems.grouped.get(group.turnId) ?? [],
+        collectConversationGroupItemOrder(group),
+      ),
     })),
-    unmatchedPlanImplementationItems: planImplementationItems.unmatched,
-    unmatchedMcpServerElicitationItems: mcpServerElicitationItems.unmatched,
-    unmatchedPermissionRequestItems: permissionRequestItems.unmatched,
     unmatchedApprovalItems: approvalItems.unmatched,
-    unmatchedUserInputItems: userInputItems.unmatched,
   };
 }
 
@@ -130,31 +126,39 @@ function createConversationGroup(
   turnId: string,
   items: RenderableConversationItem[],
 ): RenderableConversationGroup {
-  const preUserItems: HookPromptItem[] = [];
+  const preUserItems: HookItem[] = [];
   let proposedPlanItem: PlanItem | null = null;
+  let planImplementationItem: ThreadConversationPlanImplementation | null = null;
   const userItems: UserMessage[] = [];
   const personalityChangedItems: PersonalityChangedItem[] = [];
   const modelChangedItems: ModelChangedItem[] = [];
   const modelReroutedItems: ModelReroutedItem[] = [];
   const toolOutputItems: ImageGenerationItem[] = [];
+  const automationUpdateItems: ThreadConversationAutomationUpdate[] = [];
   const forkedFromConversationItems: ForkedFromConversationItem[] = [];
+  const mcpServerElicitationItems: McpServerElicitationItem[] = [];
+  const permissionRequestItems: PermissionRequestItem[] = [];
+  let userInputItem: UserInputRequestItem | null = null;
   const remoteTaskCreatedItems: RemoteTaskCreatedItem[] = [];
   const pinnedPostAssistantItems: RenderableConversationItem[] = [];
   const nonUserItems: RenderableConversationItem[] = [];
   let unifiedDiffItem: TurnDiffItem | null = null;
   let todoListItem: TodoListItem | null = null;
-  let hasReachedUserMessage = false;
+  let hasEnteredPrimaryConversationRegion = false;
+  const hasLaterPrimaryConversationContent = buildHasLaterPrimaryConversationContent(items);
 
-  for (const item of items) {
-    if (!hasReachedUserMessage && item.type === "hookPrompt") {
-      preUserItems.push(item);
-      continue;
-    }
-    if (item.type === "userMessage") {
-      hasReachedUserMessage = true;
+  for (const [index, item] of items.entries()) {
+    if (!hasEnteredPrimaryConversationRegion && item.type === "userMessage") {
       userItems.push(item as UserMessage);
       continue;
     }
+    if (!hasEnteredPrimaryConversationRegion && item.type === "hook") {
+      preUserItems.push(item);
+      continue;
+    }
+
+    hasEnteredPrimaryConversationRegion = true;
+
     if (item.type === "todoList") {
       todoListItem = item;
       continue;
@@ -179,12 +183,24 @@ function createConversationGroup(
       proposedPlanItem = item;
       continue;
     }
+    if (item.type === "planImplementation") {
+      planImplementationItem = item;
+      continue;
+    }
     if (item.type === "remoteTaskCreated") {
       remoteTaskCreatedItems.push(item);
       continue;
     }
     if (item.type === "autoReviewInterruptionWarning") {
       pinnedPostAssistantItems.push(item);
+      continue;
+    }
+    if (item.type === "hook") {
+      if (hasLaterPrimaryConversationContent[index]) {
+        nonUserItems.push(item);
+      } else {
+        pinnedPostAssistantItems.push(item);
+      }
       continue;
     }
     if (item.type === "explorationGroup" || item.type === "webSearchGroup") {
@@ -195,6 +211,22 @@ function createConversationGroup(
       toolOutputItems.push(item);
       continue;
     }
+    if (item.type === "automationUpdate") {
+      automationUpdateItems.push(item);
+      continue;
+    }
+    if (item.type === "mcpServerElicitation") {
+      mcpServerElicitationItems.push(item);
+      continue;
+    }
+    if (item.type === "permissionRequest") {
+      permissionRequestItems.push(item);
+      continue;
+    }
+    if (item.type === "userInput") {
+      userInputItem = item;
+      continue;
+    }
     if (item.type === "forkedFromConversation") {
       forkedFromConversationItems.push(item);
       continue;
@@ -202,25 +234,28 @@ function createConversationGroup(
     nonUserItems.push(item);
   }
 
-  const assistantMessageIndex = findLastAssistantMessageIndex(nonUserItems);
-  const assistantMessage =
-    assistantMessageIndex === -1 ? null : (nonUserItems[assistantMessageIndex] as AgentMessage);
-  const activityItems =
-    assistantMessageIndex === -1 ? nonUserItems : nonUserItems.slice(0, assistantMessageIndex);
-  const trailingAutomaticApprovalReviewItems =
-    assistantMessageIndex === -1 ? [] : extractTrailingAutomaticApprovalReviewItems(activityItems);
-  const normalizedActivityItems =
+  const trailingAutomaticApprovalReviewItems = extractTrailingAutomaticApprovalReviewItems(nonUserItems);
+  const agentItems =
     trailingAutomaticApprovalReviewItems.length === 0
-      ? activityItems
-      : activityItems.slice(0, activityItems.length - trailingAutomaticApprovalReviewItems.length);
-  const systemEventItem = assistantMessage === null ? extractTrailingSystemEventItem(normalizedActivityItems) : null;
-  const finalizedActivityItems =
-    systemEventItem === null ? normalizedActivityItems : normalizedActivityItems.slice(0, -1);
-  const postAssistantItems = [
-    ...pinnedPostAssistantItems,
-    ...trailingAutomaticApprovalReviewItems,
-    ...(assistantMessageIndex === -1 ? [] : nonUserItems.slice(assistantMessageIndex + 1)),
-  ];
+      ? nonUserItems
+      : nonUserItems.slice(0, nonUserItems.length - trailingAutomaticApprovalReviewItems.length);
+  const assistantMessage = extractTrailingAssistantMessage(agentItems);
+  const activityItems =
+    assistantMessage === null
+      ? [...agentItems, ...trailingAutomaticApprovalReviewItems]
+      : agentItems.slice(0, -1);
+  const systemEventItem = extractTrailingSystemEventItem(activityItems);
+  const finalizedActivityItems = collapseToolActivityItems(
+    systemEventItem === null ? activityItems : activityItems.slice(0, -1),
+  );
+  const assistantAutomationUpdateItems =
+    assistantMessage === null ? [] : automationUpdateItems;
+  const standaloneAutomationUpdateItems =
+    assistantMessage === null ? automationUpdateItems : [];
+  const postAssistantItems =
+    assistantMessage === null
+      ? collapseToolActivityItems(pinnedPostAssistantItems)
+      : collapseToolActivityItems([...pinnedPostAssistantItems, ...trailingAutomaticApprovalReviewItems]);
 
   return {
     id: turnId,
@@ -229,17 +264,19 @@ function createConversationGroup(
     userItems,
     activityItems: finalizedActivityItems,
     assistantMessage,
+    assistantAutomationUpdateItems,
+    automationUpdateItems: standaloneAutomationUpdateItems,
     toolOutputItems,
     postAssistantItems,
     systemEventItem,
     unifiedDiffItem,
     todoListItem,
     proposedPlanItem,
-    planImplementationItem: null,
-    mcpServerElicitationItems: [],
-    permissionRequestItems: [],
+    planImplementationItem,
+    mcpServerElicitationItems,
+    permissionRequestItems,
     approvalItem: null,
-    userInputItem: null,
+    userInputItem,
     remoteTaskCreatedItems,
     personalityChangedItems,
     forkedFromConversationItems,
@@ -248,18 +285,58 @@ function createConversationGroup(
   };
 }
 
-function findLastAssistantMessageIndex(items: RenderableConversationItem[]) {
+function buildHasLaterPrimaryConversationContent(items: RenderableConversationItem[]) {
+  const hasLaterPrimaryConversationContent = Array(items.length).fill(false);
+  let hasSeenLaterPrimaryConversationContent = false;
+
   for (let index = items.length - 1; index >= 0; index -= 1) {
+    hasLaterPrimaryConversationContent[index] = hasSeenLaterPrimaryConversationContent;
     const item = items[index];
-    if (
-      item?.type === "agentMessage" &&
-      item.role === "assistant" &&
-      item.text.trim().length > 0
-    ) {
-      return index;
+    if (item && (item.type === "userMessage" || isPrimaryConversationContentItem(item))) {
+      hasSeenLaterPrimaryConversationContent = true;
     }
   }
-  return -1;
+
+  return hasLaterPrimaryConversationContent;
+}
+
+function isPrimaryConversationContentItem(item: RenderableConversationItem) {
+  if (
+    item.type === "explorationGroup" ||
+    item.type === "webSearchGroup" ||
+    item.type === "multiAgentGroup" ||
+    item.type === "collapsedToolActivity"
+  ) {
+    return true;
+  }
+
+  switch (item.type) {
+    case "agentMessage":
+      return item.role === "assistant";
+    case "commandExecution":
+    case "fileChange":
+    case "mcpToolCall":
+    case "dynamicToolCall":
+    case "automaticApprovalReview":
+    case "multiAgentAction":
+    case "webSearch":
+    case "reasoning":
+    case "streamError":
+    case "systemError":
+    case "contextCompaction":
+    case "steered":
+    case "workedFor":
+    case "userInputResponse":
+    case "imageView":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function extractTrailingAssistantMessage(items: RenderableConversationItem[]) {
+  const trailingItem = items.at(-1);
+  return trailingItem !== undefined && isAssistantMessage(trailingItem) ? trailingItem : null;
 }
 
 function extractTrailingAutomaticApprovalReviewItems(items: RenderableConversationItem[]) {
@@ -280,7 +357,11 @@ function extractTrailingSystemEventItem(items: RenderableConversationItem[]) {
 }
 
 function isSystemEventItem(item: RenderableConversationItem): item is SystemEventItem {
-  return item.type === "streamError" || item.type === "systemError";
+  return item.type === "systemError";
+}
+
+function isAssistantMessage(item: RenderableConversationItem): item is AgentMessage {
+  return item.type === "agentMessage" && item.role === "assistant" && item.text.trim().length > 0;
 }
 
 function partitionTurnScopedItems<T extends { turnId: string | null }>(items: T[], knownTurnIds: Set<string>) {
@@ -302,4 +383,101 @@ function partitionTurnScopedItems<T extends { turnId: string | null }>(items: T[
 
 function takeLatestTurnScopedItem<T>(items: T[]) {
   return items.at(-1) ?? null;
+}
+
+function takeLatestApprovalItem(
+  items: PendingApproval[],
+  itemOrder: Map<string, number>,
+) {
+  let matchedItem: PendingApproval | null = null;
+  let matchedOrder = -1;
+
+  for (const item of items) {
+    const itemId = item.itemId;
+    const order = itemOrder.get(itemId);
+    if (order === undefined || order < matchedOrder) {
+      continue;
+    }
+    matchedItem = item;
+    matchedOrder = order;
+  }
+
+  if (matchedItem !== null) {
+    return matchedItem;
+  }
+
+  return takeLatestTurnScopedItem(items);
+}
+
+function collectConversationGroupItemOrder(group: RenderableConversationGroup) {
+  const itemOrder = new Map<string, number>();
+  let index = 0;
+
+  const pushItem = (item: RenderableConversationItem) => {
+    for (const itemId of collectRenderableConversationItemIds(item)) {
+      itemOrder.set(itemId, index);
+    }
+    index += 1;
+  };
+
+  for (const item of group.preUserItems) {
+    pushItem(item);
+  }
+  for (const item of group.modelChangedItems) {
+    pushItem(item);
+  }
+  for (const item of group.userItems) {
+    pushItem(item);
+  }
+  for (const item of group.modelReroutedItems) {
+    pushItem(item);
+  }
+  for (const item of group.activityItems) {
+    pushItem(item);
+  }
+  if (group.assistantMessage) {
+    pushItem(group.assistantMessage);
+  }
+  for (const item of group.toolOutputItems) {
+    pushItem(item);
+  }
+  for (const item of group.postAssistantItems) {
+    pushItem(item);
+  }
+  if (group.systemEventItem) {
+    pushItem(group.systemEventItem);
+  }
+  if (group.unifiedDiffItem) {
+    pushItem(group.unifiedDiffItem);
+  }
+  for (const item of group.remoteTaskCreatedItems) {
+    pushItem(item);
+  }
+  for (const item of group.personalityChangedItems) {
+    pushItem(item);
+  }
+  for (const item of group.forkedFromConversationItems) {
+    pushItem(item);
+  }
+  if (group.todoListItem) {
+    pushItem(group.todoListItem);
+  }
+  if (group.proposedPlanItem) {
+    pushItem(group.proposedPlanItem);
+  }
+
+  return itemOrder;
+}
+
+function collectRenderableConversationItemIds(item: RenderableConversationItem): string[] {
+  if (
+    item.type === "explorationGroup" ||
+    item.type === "webSearchGroup" ||
+    item.type === "multiAgentGroup" ||
+    item.type === "collapsedToolActivity"
+  ) {
+    return item.items.map((groupedItem) => groupedItem.id);
+  }
+
+  return [item.id];
 }

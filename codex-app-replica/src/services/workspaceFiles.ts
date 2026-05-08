@@ -11,6 +11,12 @@ export type WorkspaceFilePreviewTarget = WorkspaceFileSearchResult & {
   workspaceRoot: string;
 };
 
+export type WorkspaceDirectoryEntry = {
+  path: string;
+  name: string;
+  entryType: "file" | "directory";
+};
+
 export type WorkspaceFileDocument = {
   name: string;
   path: string;
@@ -28,6 +34,19 @@ export type WorkspaceFileMetadata = {
 
 export async function searchWorkspaceFiles(params: { workspaceRoot: string; query: string }) {
   return invoke<WorkspaceFileSearchResult[]>("search_workspace_files", { params });
+}
+
+export async function listWorkspaceDirectoryEntries(params: {
+  workspaceRoot: string;
+  directoryPath?: string | null;
+  includeHidden?: boolean;
+}) {
+  return invoke<WorkspaceDirectoryEntry[]>("list_workspace_directory_entries", {
+    params: {
+      includeHidden: false,
+      ...params,
+    },
+  });
 }
 
 export async function readWorkspaceFile(params: { workspaceRoot: string; relativePath: string }) {

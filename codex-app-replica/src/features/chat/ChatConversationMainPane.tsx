@@ -1,27 +1,33 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import type { RefObject } from "react";
 import {
+  CheckIcon,
   CloudTaskIcon,
   CubeIcon,
+  CopyPathIcon,
   ForkedConversationIcon,
   InfoIcon,
+  PencilIcon,
   PersonalityChangedIcon,
 } from "../../components/AppShellIcons";
+import type { AvatarOption } from "../../components/appearance/avatarData";
+import { useI18n } from "../../i18n/i18n";
 import type { MessageKey } from "../../i18n/messages";
 import type {
   ApprovalDecision,
   CommandAction,
   McpServerElicitationRequest,
   ThreadConversation,
+  ThreadConversationMessage,
   ThreadConversationItem,
+  ThreadConversationPlanImplementation,
 } from "../../services/history";
 import type { ToolRequestUserInputQuestion } from "../../services/history";
-import type { ComposerEnterBehavior } from "../../services/settings";
+import type { ComposerEnterBehavior, FollowUpQueueMode, ReviewDelivery } from "../../services/settings";
 import type { QueuedLocalFollowUp } from "./localFollowUpQueue";
 import {
   approvalRequestKey,
   resolveApprovalDecisions,
-  keepLatestTurnScopedPendingRequests,
-  type PlanImplementationItem,
   type PendingApproval,
   type PendingImplementPlanRequest,
   type PendingMcpServerElicitationRequest,
@@ -32,16 +38,24 @@ import { renderMessageContent } from "./messageContent";
 import { LatestTurnPreview } from "./LatestTurnPreview";
 import { MultiAgentGroupSummary } from "./MultiAgentGroupSummary";
 import { PlanSummaryItemCard } from "./PlanSummaryItemCard";
+import { UserMessageCollapsibleContent } from "./UserMessageCollapsibleContent";
 import {
   attachTurnScopedItemsToRenderableConversationGroups,
   buildRenderableConversationGroups,
 } from "./renderableConversationGroups";
+import type { RenderableConversationGroup } from "./renderableConversationGroups";
 import type {
+  CollapsedToolActivityItem,
   ExplorationGroupItem,
   RenderableConversationItem,
   WebSearchGroupItem,
 } from "./renderableConversationItems";
+import {
+  buildCollapsedToolActivityDetailLines,
+  resolveCollapsedToolActivitySummaryText,
+} from "./renderableConversationItems";
 import { isMultiAgentInProgressStatus, toSingleMultiAgentGroupItem } from "./multiAgentAction";
+import { ThreadPageHeader } from "./ThreadPageHeader";
 import { ThreadComposer } from "./ThreadComposer";
 
 const approvalDecisionLabelKeys: Record<ApprovalDecision, MessageKey> = {
@@ -81,11 +95,19 @@ type CurrentPendingRequest =
     };
 
 type ChatConversationMainPaneProps = {
+  threadActionsMenuRef: RefObject<HTMLDivElement | null>;
   composerDraft: string;
   composerEnterBehavior: ComposerEnterBehavior;
+  followUpQueueMode: FollowUpQueueMode;
+  hasAttachedHeartbeatAutomation: boolean;
+  isThreadActionsMenuOpen: boolean;
+  isThreadHeartbeatAutomationActionDisabled: boolean;
+  isThreadHeartbeatAutomationActionVisible: boolean;
+  isWorktreeThread: boolean;
+  heartbeatAutomationActionLabelKey: MessageKey;
+  heartbeatAutomationButtonTooltip: string;
   currentThreadApprovals: PendingApproval[];
   currentThreadImplementPlanRequests: PendingImplementPlanRequest[];
-  currentThreadPlanImplementationItems: PlanImplementationItem[];
   currentThreadMcpServerElicitationRequest: PendingMcpServerElicitationRequest[];
   currentThreadPermissionsRequestApproval: PendingPermissionsRequestApproval[];
   currentThreadToolRequestUserInput: PendingToolRequestUserInput[];
@@ -112,12 +134,25 @@ type ChatConversationMainPaneProps = {
   ) => void;
   onComposerDraftChange: (value: string) => void;
   onOpenRemoteTask: (taskId: string) => void;
+  onArchiveThread: () => void;
+  onCopyAppLink: () => void;
+  onCopyConversationMarkdown: () => void;
+  onCopySessionId: () => void;
+  onCopyWorkingDirectory: () => void;
+  onForkSelectedThread: () => void;
+  onOpenAttachedHeartbeatAutomation: () => void;
+  onOpenThreadHeartbeatAutomationAction: () => void;
+  onOpenRenameDialog: () => void;
   onSelectThread: (threadId: string) => void;
+  onEditUserMessage: (text: string) => void | Promise<void>;
   onRemoveQueuedFollowUp: (queuedFollowUpId: string) => void;
   onStopTurn: () => void;
   onSubmitTurn: (invertFollowUpAction?: boolean) => void;
+  onToggleThreadActionsMenu: () => void;
   approvalActionErrors: Record<string, string>;
+  reviewDelivery: ReviewDelivery;
   respondingApprovalKeys: string[];
+  selectedAvatar: AvatarOption;
   submitButtonMode: "send" | "stop";
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
   threadConversation: ThreadConversation | null;
@@ -125,11 +160,19 @@ type ChatConversationMainPaneProps = {
 };
 
 export function ChatConversationMainPane({
+  threadActionsMenuRef,
   composerDraft,
   composerEnterBehavior,
+  followUpQueueMode,
+  hasAttachedHeartbeatAutomation,
+  isThreadActionsMenuOpen,
+  isThreadHeartbeatAutomationActionDisabled,
+  isThreadHeartbeatAutomationActionVisible,
+  isWorktreeThread,
+  heartbeatAutomationActionLabelKey,
+  heartbeatAutomationButtonTooltip,
   currentThreadApprovals,
   currentThreadImplementPlanRequests,
-  currentThreadPlanImplementationItems,
   currentThreadMcpServerElicitationRequest,
   currentThreadPermissionsRequestApproval,
   currentThreadToolRequestUserInput,
@@ -142,18 +185,42 @@ export function ChatConversationMainPane({
   onToolRequestUserInputSubmit,
   onComposerDraftChange,
   onOpenRemoteTask,
+  onArchiveThread,
+  onCopyAppLink,
+  onCopyConversationMarkdown,
+  onCopySessionId,
+  onCopyWorkingDirectory,
+  onForkSelectedThread,
+  onOpenAttachedHeartbeatAutomation,
+  onOpenThreadHeartbeatAutomationAction,
+  onOpenRenameDialog,
   onSelectThread,
+  onEditUserMessage,
   onRemoveQueuedFollowUp,
   onStopTurn,
   onSubmitTurn,
+  onToggleThreadActionsMenu,
   approvalActionErrors,
+  reviewDelivery,
   respondingApprovalKeys,
+  selectedAvatar,
   submitButtonMode,
   t,
   threadConversation,
   turnError,
 }: ChatConversationMainPaneProps) {
-  const baseConversationGroups = threadConversation ? buildRenderableConversationGroups(threadConversation.items) : [];
+  const userMessageSentAtMsByTurnId = useMemo(
+    () =>
+      new Map(
+        (threadConversation?.turnTimings ?? []).map((timing) => [timing.turnId, timing.turnStartedAtMs ?? null]),
+      ),
+    [threadConversation?.turnTimings],
+  );
+  const baseConversationGroups = threadConversation
+    ? buildRenderableConversationGroups(threadConversation.items, {
+        turnTimings: threadConversation.turnTimings,
+      })
+    : [];
   const turnIds = baseConversationGroups.map((group) => group.turnId);
   const footerPendingRequest = selectComposerFooterPendingRequest({
     approvals: currentThreadApprovals,
@@ -164,40 +231,66 @@ export function ChatConversationMainPane({
     userInputRequests: currentThreadToolRequestUserInput,
   });
   const bodyApprovals = filterPendingRequestsForConversationBody(currentThreadApprovals, footerPendingRequest);
-  const bodyMcpRequests = filterPendingRequestsForConversationBody(
-    currentThreadMcpServerElicitationRequest,
-    footerPendingRequest,
-  );
-  const bodyPermissionsRequests = filterPendingRequestsForConversationBody(
-    currentThreadPermissionsRequestApproval,
-    footerPendingRequest,
-  );
   const bodyUserInputRequests = filterPendingRequestsForConversationBody(
     currentThreadToolRequestUserInput,
     footerPendingRequest,
   );
   const groupedConversation = attachTurnScopedItemsToRenderableConversationGroups(baseConversationGroups, {
-    approvalItems: keepLatestTurnScopedPendingRequests(bodyApprovals),
-    mcpServerElicitationItems: bodyMcpRequests,
-    permissionRequestItems: bodyPermissionsRequests,
-    planImplementationItems: currentThreadPlanImplementationItems,
-    userInputItems: keepLatestTurnScopedPendingRequests(bodyUserInputRequests),
+    approvalItems: bodyApprovals,
   });
   const conversationGroups = groupedConversation.groups;
   const latestConversationGroup = conversationGroups.at(-1) ?? null;
   const latestConversationGroupTurnId = conversationGroups.at(-1)?.turnId ?? null;
   const hasTurnContent = threadConversation !== null && conversationGroups.length > 0;
   const hasUnmatchedBodyContent =
-    groupedConversation.unmatchedMcpServerElicitationItems.length > 0 ||
     groupedConversation.unmatchedApprovalItems.length > 0 ||
-    groupedConversation.unmatchedPermissionRequestItems.length > 0 ||
-    groupedConversation.unmatchedUserInputItems.length > 0 ||
-    groupedConversation.unmatchedPlanImplementationItems.length > 0 ||
     currentThreadQueuedFollowUps.length > 0;
   const showBlankConversationBody = !hasTurnContent && !hasUnmatchedBodyContent;
+  const latestTurnPreviewContent =
+    latestConversationGroup !== null ? (
+      <ConversationGroupContent
+        group={latestConversationGroup}
+        approvalActionErrors={approvalActionErrors}
+        onApprovalDecision={onApprovalDecision}
+        onMcpServerElicitationRequestSubmit={onMcpServerElicitationRequestSubmit}
+        onOpenRemoteTask={onOpenRemoteTask}
+        onPermissionsRequestApprovalSubmit={onPermissionsRequestApprovalSubmit}
+        onEditUserMessage={onEditUserMessage}
+        onSelectThread={onSelectThread}
+        onToolRequestUserInputSubmit={onToolRequestUserInputSubmit}
+        planSummaryIsWriting={submitButtonMode === "stop" && latestConversationGroup.assistantMessage === null}
+        respondingApprovalKeys={respondingApprovalKeys}
+        t={t}
+        userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId}
+      />
+    ) : null;
 
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col">
+      <ThreadPageHeader
+        actionsMenuRef={threadActionsMenuRef}
+        hasAttachedHeartbeatAutomation={hasAttachedHeartbeatAutomation}
+        heartbeatAutomationActionLabelKey={heartbeatAutomationActionLabelKey}
+        heartbeatAutomationButtonTooltip={heartbeatAutomationButtonTooltip}
+        isThreadActionsMenuOpen={isThreadActionsMenuOpen}
+        isThreadHeartbeatAutomationActionDisabled={isThreadHeartbeatAutomationActionDisabled}
+        isThreadHeartbeatAutomationActionVisible={isThreadHeartbeatAutomationActionVisible}
+        isTurnInProgress={submitButtonMode === "stop"}
+        isWorktreeThread={isWorktreeThread}
+        onArchive={onArchiveThread}
+        onCopyAppLink={onCopyAppLink}
+        onCopyConversationMarkdown={onCopyConversationMarkdown}
+        onCopySessionId={onCopySessionId}
+        onCopyWorkingDirectory={onCopyWorkingDirectory}
+        onForkThread={onForkSelectedThread}
+        onOpenAttachedHeartbeatAutomation={onOpenAttachedHeartbeatAutomation}
+        onOpenThreadHeartbeatAutomationAction={onOpenThreadHeartbeatAutomationAction}
+        onOpenRenameDialog={onOpenRenameDialog}
+        onToggleThreadActionsMenu={onToggleThreadActionsMenu}
+        t={t}
+        threadConversation={threadConversation}
+      />
+
       {showBlankConversationBody ? (
         <div
           className="[container-type:size] relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden"
@@ -213,246 +306,33 @@ export function ChatConversationMainPane({
           <div className="mx-auto flex max-w-[820px] flex-col gap-4">
             {hasTurnContent
               ? conversationGroups.map((group) => (
-                  <div key={group.id} className="space-y-3">
-                    {group.preUserItems.length > 0 ? (
-                      <div className="space-y-3">
-                        {group.preUserItems.map((item) => (
-                          <ConversationItemCard
-                            key={item.id}
-                            item={item}
-                            onOpenRemoteTask={onOpenRemoteTask}
-                            onSelectThread={onSelectThread}
-                            t={t}
-                          />
-                        ))}
-                      </div>
-                    ) : null}
-                    {group.modelChangedItems.length > 0 ? (
-                      <div className="space-y-3">
-                        {group.modelChangedItems.map((item) => (
-                          <ConversationItemCard
-                            key={item.id}
-                            item={item}
-                            onOpenRemoteTask={onOpenRemoteTask}
-                            onSelectThread={onSelectThread}
-                            t={t}
-                          />
-                        ))}
-                      </div>
-                    ) : null}
-                    {group.userItems.length > 0 ? (
-                      <div className="space-y-3">
-                        {group.userItems.map((item) => (
-                          <ConversationItemCard
-                            key={item.id}
-                            item={item}
-                            onOpenRemoteTask={onOpenRemoteTask}
-                            onSelectThread={onSelectThread}
-                            t={t}
-                          />
-                        ))}
-                      </div>
-                    ) : null}
-                    {group.modelReroutedItems.length > 0 ? (
-                      <div className="space-y-3">
-                        {group.modelReroutedItems.map((item) => (
-                          <ConversationItemCard
-                            key={item.id}
-                            item={item}
-                            onOpenRemoteTask={onOpenRemoteTask}
-                            onSelectThread={onSelectThread}
-                            t={t}
-                          />
-                        ))}
-                      </div>
-                    ) : null}
-                    {group.activityItems.length > 0 ? (
-                      <div className="space-y-3">
-                        {group.activityItems.map((item) => (
-                          <ConversationItemCard
-                            key={item.id}
-                            item={item}
-                            onOpenRemoteTask={onOpenRemoteTask}
-                            onSelectThread={onSelectThread}
-                            t={t}
-                          />
-                        ))}
-                      </div>
-                    ) : null}
-                    {group.assistantMessage ? (
-                      <ConversationItemCard
-                        item={group.assistantMessage}
-                        onOpenRemoteTask={onOpenRemoteTask}
-                        onSelectThread={onSelectThread}
-                        t={t}
-                      />
-                    ) : null}
-                    {group.toolOutputItems.length > 0 ? (
-                      <div className="space-y-3">
-                        {group.toolOutputItems.map((item) => (
-                          <ConversationItemCard
-                            key={item.id}
-                            item={item}
-                            onOpenRemoteTask={onOpenRemoteTask}
-                            onSelectThread={onSelectThread}
-                            t={t}
-                          />
-                        ))}
-                      </div>
-                    ) : null}
-                    {group.postAssistantItems.length > 0 ? (
-                      <div className="space-y-3">
-                        {group.postAssistantItems.map((item) => (
-                          <ConversationItemCard
-                            key={item.id}
-                            item={item}
-                            onOpenRemoteTask={onOpenRemoteTask}
-                            onSelectThread={onSelectThread}
-                            t={t}
-                          />
-                        ))}
-                      </div>
-                    ) : null}
-                    {group.systemEventItem ? (
-                      <ConversationItemCard
-                        item={group.systemEventItem}
-                        onOpenRemoteTask={onOpenRemoteTask}
-                        onSelectThread={onSelectThread}
-                        t={t}
-                      />
-                    ) : null}
-                    {group.unifiedDiffItem ? (
-                      <ConversationItemCard
-                        item={group.unifiedDiffItem}
-                        onOpenRemoteTask={onOpenRemoteTask}
-                        onSelectThread={onSelectThread}
-                        t={t}
-                      />
-                    ) : null}
-                    {group.remoteTaskCreatedItems.length > 0 ? (
-                      <div className="space-y-3">
-                        {group.remoteTaskCreatedItems.map((item) => (
-                          <ConversationItemCard
-                            key={item.id}
-                            item={item}
-                            onOpenRemoteTask={onOpenRemoteTask}
-                            onSelectThread={onSelectThread}
-                            t={t}
-                          />
-                        ))}
-                      </div>
-                    ) : null}
-                    {group.personalityChangedItems.length > 0 ? (
-                      <div className="space-y-3">
-                        {group.personalityChangedItems.map((item) => (
-                          <ConversationItemCard
-                            key={item.id}
-                            item={item}
-                            onOpenRemoteTask={onOpenRemoteTask}
-                            onSelectThread={onSelectThread}
-                            t={t}
-                          />
-                        ))}
-                      </div>
-                    ) : null}
-                    {group.forkedFromConversationItems.length > 0 ? (
-                      <div className="space-y-3">
-                        {group.forkedFromConversationItems.map((item) => (
-                          <ConversationItemCard
-                            key={item.id}
-                            item={item}
-                            onOpenRemoteTask={onOpenRemoteTask}
-                            onSelectThread={onSelectThread}
-                            t={t}
-                          />
-                        ))}
-                      </div>
-                    ) : null}
-                    {group.todoListItem ? (
-                      <ConversationItemCard
-                        item={group.todoListItem}
-                        onOpenRemoteTask={onOpenRemoteTask}
-                        onSelectThread={onSelectThread}
-                        t={t}
-                      />
-                    ) : null}
-                    {group.proposedPlanItem ? (
-                      <ConversationItemCard
-                        key={group.proposedPlanItem.id}
-                        item={group.proposedPlanItem}
-                        planSummaryIsWriting={
-                          submitButtonMode === "stop" &&
-                          latestConversationGroupTurnId === group.turnId &&
-                          group.assistantMessage === null
-                        }
-                        onOpenRemoteTask={onOpenRemoteTask}
-                        onSelectThread={onSelectThread}
-                        t={t}
-                      />
-                    ) : null}
-                    <ConversationTurnPlanImplementationItems
-                      items={group.planImplementationItem ? [group.planImplementationItem] : []}
-                      t={t}
-                    />
-                    <ConversationTurnMcpRequests
-                      mcpRequests={group.mcpServerElicitationItems}
-                      approvalActionErrors={approvalActionErrors}
-                      respondingApprovalKeys={respondingApprovalKeys}
-                      onMcpServerElicitationRequestSubmit={onMcpServerElicitationRequestSubmit}
-                      t={t}
-                    />
-                    <ConversationTurnPermissionRequests
-                      permissionsRequests={group.permissionRequestItems}
-                      approvalActionErrors={approvalActionErrors}
-                      respondingApprovalKeys={respondingApprovalKeys}
-                      onPermissionsRequestApprovalSubmit={onPermissionsRequestApprovalSubmit}
-                      t={t}
-                    />
-                    <ConversationTurnApprovalRequests
-                      approvals={group.approvalItem ? [group.approvalItem] : []}
-                      approvalActionErrors={approvalActionErrors}
-                      respondingApprovalKeys={respondingApprovalKeys}
-                      onApprovalDecision={onApprovalDecision}
-                      t={t}
-                    />
-                    <ConversationTurnUserInputRequests
-                      userInputRequests={group.userInputItem ? [group.userInputItem] : []}
-                      approvalActionErrors={approvalActionErrors}
-                      respondingApprovalKeys={respondingApprovalKeys}
-                      onToolRequestUserInputSubmit={onToolRequestUserInputSubmit}
-                      t={t}
-                    />
-                  </div>
+                  <ConversationGroupContent
+                    key={group.id}
+                    group={group}
+                    approvalActionErrors={approvalActionErrors}
+                    onApprovalDecision={onApprovalDecision}
+                    onMcpServerElicitationRequestSubmit={onMcpServerElicitationRequestSubmit}
+                    onOpenRemoteTask={onOpenRemoteTask}
+                    onPermissionsRequestApprovalSubmit={onPermissionsRequestApprovalSubmit}
+                    onEditUserMessage={onEditUserMessage}
+                    onSelectThread={onSelectThread}
+                    onToolRequestUserInputSubmit={onToolRequestUserInputSubmit}
+                    planSummaryIsWriting={
+                      submitButtonMode === "stop" &&
+                      latestConversationGroupTurnId === group.turnId &&
+                      group.assistantMessage === null
+                    }
+                    respondingApprovalKeys={respondingApprovalKeys}
+                    t={t}
+                    userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId}
+                  />
                 ))
               : null}
-
-            <ConversationTurnPlanImplementationItems items={groupedConversation.unmatchedPlanImplementationItems} t={t} />
-            <ConversationTurnMcpRequests
-              mcpRequests={groupedConversation.unmatchedMcpServerElicitationItems}
-              approvalActionErrors={approvalActionErrors}
-              respondingApprovalKeys={respondingApprovalKeys}
-              onMcpServerElicitationRequestSubmit={onMcpServerElicitationRequestSubmit}
-              t={t}
-            />
-            <ConversationTurnPermissionRequests
-              permissionsRequests={groupedConversation.unmatchedPermissionRequestItems}
-              approvalActionErrors={approvalActionErrors}
-              respondingApprovalKeys={respondingApprovalKeys}
-              onPermissionsRequestApprovalSubmit={onPermissionsRequestApprovalSubmit}
-              t={t}
-            />
             <ConversationTurnApprovalRequests
               approvals={groupedConversation.unmatchedApprovalItems}
               approvalActionErrors={approvalActionErrors}
               respondingApprovalKeys={respondingApprovalKeys}
               onApprovalDecision={onApprovalDecision}
-              t={t}
-            />
-            <ConversationTurnUserInputRequests
-              userInputRequests={groupedConversation.unmatchedUserInputItems}
-              approvalActionErrors={approvalActionErrors}
-              respondingApprovalKeys={respondingApprovalKeys}
-              onToolRequestUserInputSubmit={onToolRequestUserInputSubmit}
               t={t}
             />
 
@@ -496,6 +376,7 @@ export function ChatConversationMainPane({
               <LatestTurnPreview
                 group={latestConversationGroup}
                 isTurnInProgress={submitButtonMode === "stop"}
+                previewContent={latestTurnPreviewContent}
                 t={t}
               />
             </div>
@@ -518,101 +399,23 @@ export function ChatConversationMainPane({
             <ThreadComposer
               composerDraft={composerDraft}
               composerEnterBehavior={composerEnterBehavior}
+              followUpQueueMode={followUpQueueMode}
+              isWorktreeThread={isWorktreeThread}
               onComposerDraftChange={onComposerDraftChange}
               onStopTurn={onStopTurn}
               onSubmitTurn={onSubmitTurn}
+              queuedFollowUpCount={currentThreadQueuedFollowUps.length}
+              reviewDelivery={reviewDelivery}
+              selectedAvatar={selectedAvatar}
               submitButtonMode={submitButtonMode}
               t={t}
+              threadCwd={threadConversation?.cwd ?? null}
               turnError={turnError}
             />
           )}
         </div>
       </div>
     </section>
-  );
-}
-
-function ConversationTurnMcpRequests({
-  mcpRequests,
-  approvalActionErrors,
-  respondingApprovalKeys,
-  onMcpServerElicitationRequestSubmit,
-  t,
-}: {
-  mcpRequests: PendingMcpServerElicitationRequest[];
-  approvalActionErrors: Record<string, string>;
-  respondingApprovalKeys: string[];
-  onMcpServerElicitationRequestSubmit: (
-    request: PendingMcpServerElicitationRequest,
-    action: "accept" | "decline" | "cancel",
-    content: unknown | null,
-  ) => void;
-  t: (key: MessageKey, values?: Record<string, number | string>) => string;
-}) {
-  if (mcpRequests.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="space-y-3">
-      {mcpRequests.map((request) => {
-        const requestKey = approvalRequestKey(request.requestId);
-        const isResponding = respondingApprovalKeys.includes(requestKey);
-        const requestError = approvalActionErrors[requestKey] ?? null;
-        return (
-          <McpServerElicitationRequestCard
-            key={requestKey}
-            request={request}
-            isResponding={isResponding}
-            requestError={requestError}
-            onSubmit={onMcpServerElicitationRequestSubmit}
-            t={t}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-function ConversationTurnPermissionRequests({
-  permissionsRequests,
-  approvalActionErrors,
-  respondingApprovalKeys,
-  onPermissionsRequestApprovalSubmit,
-  t,
-}: {
-  permissionsRequests: PendingPermissionsRequestApproval[];
-  approvalActionErrors: Record<string, string>;
-  respondingApprovalKeys: string[];
-  onPermissionsRequestApprovalSubmit: (
-    request: PendingPermissionsRequestApproval,
-    grantMode: "deny" | "turn" | "session",
-    strictAutoReview: boolean,
-  ) => void;
-  t: (key: MessageKey, values?: Record<string, number | string>) => string;
-}) {
-  if (permissionsRequests.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="space-y-3">
-      {permissionsRequests.map((request) => {
-        const requestKey = approvalRequestKey(request.requestId);
-        const isResponding = respondingApprovalKeys.includes(requestKey);
-        const requestError = approvalActionErrors[requestKey] ?? null;
-        return (
-          <PermissionsRequestApprovalCard
-            key={requestKey}
-            request={request}
-            isResponding={isResponding}
-            requestError={requestError}
-            onSubmit={onPermissionsRequestApprovalSubmit}
-            t={t}
-          />
-        );
-      })}
-    </div>
   );
 }
 
@@ -654,52 +457,11 @@ function ConversationTurnApprovalRequests({
   );
 }
 
-function ConversationTurnUserInputRequests({
-  userInputRequests,
-  approvalActionErrors,
-  respondingApprovalKeys,
-  onToolRequestUserInputSubmit,
-  t,
-}: {
-  userInputRequests: PendingToolRequestUserInput[];
-  approvalActionErrors: Record<string, string>;
-  respondingApprovalKeys: string[];
-  onToolRequestUserInputSubmit: (
-    request: PendingToolRequestUserInput,
-    values: Record<string, string>,
-  ) => void;
-  t: (key: MessageKey, values?: Record<string, number | string>) => string;
-}) {
-  if (userInputRequests.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="space-y-3">
-      {userInputRequests.map((request) => {
-        const requestKey = approvalRequestKey(request.requestId);
-        const isResponding = respondingApprovalKeys.includes(requestKey);
-        const requestError = approvalActionErrors[requestKey] ?? null;
-        return (
-          <ToolRequestUserInputCard
-            key={requestKey}
-            request={request}
-            isResponding={isResponding}
-            requestError={requestError}
-            onSubmit={onToolRequestUserInputSubmit}
-            t={t}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
 function ConversationTurnPlanImplementationItems({
   items,
   t,
 }: {
-  items: PlanImplementationItem[];
+  items: ThreadConversationPlanImplementation[];
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
 }) {
   if (items.length === 0) {
@@ -820,7 +582,7 @@ function PlanImplementationItemCard({
   item,
   t,
 }: {
-  item: PlanImplementationItem;
+  item: ThreadConversationPlanImplementation;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
 }) {
   return (
@@ -1126,27 +888,163 @@ function ApprovalRequestCard({
   );
 }
 
-function ConversationItemCard({
-  item,
+function ConversationGroupContent({
+  group,
+  approvalActionErrors,
+  onApprovalDecision,
+  onEditUserMessage,
+  onMcpServerElicitationRequestSubmit,
+  onOpenRemoteTask,
+  onPermissionsRequestApprovalSubmit,
+  onSelectThread,
+  onToolRequestUserInputSubmit,
   planSummaryIsWriting = false,
+  respondingApprovalKeys,
+  t,
+  userMessageSentAtMsByTurnId,
+}: {
+  group: RenderableConversationGroup;
+  approvalActionErrors: Record<string, string>;
+  onApprovalDecision: (approval: PendingApproval, decision: ApprovalDecision) => void;
+  onEditUserMessage: (text: string) => void | Promise<void>;
+  onMcpServerElicitationRequestSubmit: (
+    request: PendingMcpServerElicitationRequest,
+    action: "accept" | "decline" | "cancel",
+    content: unknown | null,
+  ) => void;
+  onOpenRemoteTask: (taskId: string) => void;
+  onPermissionsRequestApprovalSubmit: (
+    request: PendingPermissionsRequestApproval,
+    grantMode: "deny" | "turn" | "session",
+    strictAutoReview: boolean,
+  ) => void;
+  onSelectThread: (threadId: string) => void;
+  onToolRequestUserInputSubmit: (
+    request: PendingToolRequestUserInput,
+    values: Record<string, string>,
+  ) => void;
+  planSummaryIsWriting?: boolean;
+  respondingApprovalKeys: string[];
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+  userMessageSentAtMsByTurnId: Map<string, number | null>;
+}) {
+  return (
+    <div className="space-y-3">
+      <ConversationItemList items={group.preUserItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList items={group.modelChangedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList items={group.userItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList items={group.modelReroutedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList items={group.activityItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      {group.assistantMessage ? (
+        <ConversationItemCard item={group.assistantMessage} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      ) : null}
+      <ConversationItemList
+        items={group.assistantAutomationUpdateItems}
+        onEditUserMessage={onEditUserMessage}
+        onOpenRemoteTask={onOpenRemoteTask}
+        onSelectThread={onSelectThread}
+        t={t}
+        userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId}
+      />
+      <ConversationItemList items={group.automationUpdateItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList items={group.toolOutputItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList items={group.postAssistantItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      {group.systemEventItem ? (
+        <ConversationItemCard item={group.systemEventItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      ) : null}
+      {group.unifiedDiffItem ? (
+        <ConversationItemCard item={group.unifiedDiffItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      ) : null}
+      <ConversationItemList items={group.remoteTaskCreatedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList items={group.personalityChangedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList items={group.forkedFromConversationItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      {group.todoListItem ? (
+        <ConversationItemCard item={group.todoListItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      ) : null}
+      {group.proposedPlanItem ? (
+        <ConversationItemCard
+          item={group.proposedPlanItem}
+          planSummaryIsWriting={planSummaryIsWriting}
+          onEditUserMessage={onEditUserMessage}
+          onOpenRemoteTask={onOpenRemoteTask}
+          onSelectThread={onSelectThread}
+          t={t}
+          userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId}
+        />
+      ) : null}
+      <ConversationTurnPlanImplementationItems items={group.planImplementationItem ? [group.planImplementationItem] : []} t={t} />
+      <ConversationItemList items={group.mcpServerElicitationItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList items={group.permissionRequestItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationTurnApprovalRequests
+        approvals={group.approvalItem ? [group.approvalItem] : []}
+        approvalActionErrors={approvalActionErrors}
+        respondingApprovalKeys={respondingApprovalKeys}
+        onApprovalDecision={onApprovalDecision}
+        t={t}
+      />
+      {group.userInputItem ? (
+        <ConversationItemCard item={group.userInputItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      ) : null}
+    </div>
+  );
+}
+
+function ConversationItemList({
+  items,
+  onEditUserMessage,
   onOpenRemoteTask,
   onSelectThread,
   t,
+  userMessageSentAtMsByTurnId,
 }: {
-  item: RenderableConversationItem;
-  planSummaryIsWriting?: boolean;
+  items: RenderableConversationItem[];
+  onEditUserMessage: (text: string) => void | Promise<void>;
   onOpenRemoteTask: (taskId: string) => void;
   onSelectThread: (threadId: string) => void;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
+  userMessageSentAtMsByTurnId: Map<string, number | null>;
+}) {
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-3">
+      {items.map((item) => (
+        <ConversationItemCard key={item.id} item={item} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      ))}
+    </div>
+  );
+}
+
+function ConversationItemCard({
+  item,
+  planSummaryIsWriting = false,
+  onEditUserMessage,
+  onOpenRemoteTask,
+  onSelectThread,
+  t,
+  userMessageSentAtMsByTurnId,
+}: {
+  item: RenderableConversationItem;
+  planSummaryIsWriting?: boolean;
+  onEditUserMessage: (text: string) => void | Promise<void>;
+  onOpenRemoteTask: (taskId: string) => void;
+  onSelectThread: (threadId: string) => void;
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+  userMessageSentAtMsByTurnId: Map<string, number | null>;
 }) {
   if (item.type === "userMessage" || item.type === "agentMessage") {
-    const isUser = item.role === "user";
+    if (item.type === "userMessage") {
+      return <UserConversationMessageCard item={item} onEditMessage={onEditUserMessage} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />;
+    }
+
     return (
-      <div className={isUser ? "flex justify-end" : "rounded-[18px]"}>
+      <div className="rounded-[18px]">
         <div
           className={[
             "max-w-[620px] rounded-[18px] px-4 py-3 shadow-[0_1px_0_rgba(0,0,0,0.02)]",
-            isUser ? "app-segmented-option-active" : "app-card",
+            "app-card",
           ].join(" ")}
         >
           {renderMessageContent(item.text)}
@@ -1165,6 +1063,10 @@ function ConversationItemCard({
 
   if (item.type === "multiAgentGroup") {
     return <MultiAgentGroupSummary item={item} t={t} />;
+  }
+
+  if (item.type === "collapsedToolActivity") {
+    return <CollapsedToolActivitySummaryCard item={item} />;
   }
 
   if (item.type === "plan") {
@@ -1227,18 +1129,45 @@ function ConversationItemCard({
     return <RemoteTaskCreatedInlineStatus item={item} onOpenRemoteTask={onOpenRemoteTask} t={t} />;
   }
 
-  if (item.type === "hookPrompt") {
-    const fragments = item.fragments.filter((fragment) => fragment.text.trim().length > 0);
+  if (item.type === "hook") {
+    const nonEmptyEntries = item.entries.filter((entry) => entry.text.trim().length > 0);
+    const eventName = t(resolveHookEventNameKey(item.eventName));
+    const summary =
+      item.statusMessage && item.statusMessage.trim().length > 0
+        ? t("localConversation.hookItem.summary.withStatusMessage", {
+            eventName,
+            statusMessage: item.statusMessage.trim(),
+          })
+        : eventName;
     return (
       <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="app-title text-[14px] font-medium">{t("app.chat.hookPrompt")}</div>
-        <div className="mt-3 space-y-2">
-          {fragments.map((fragment, index) => (
-            <div key={`${item.id}:fragment:${fragment.hookRunId || index}`} className="app-text-muted text-[13px] leading-6 whitespace-pre-wrap">
-              {fragment.text}
-            </div>
-          ))}
+        <div className="flex items-center justify-between gap-3">
+          <div
+            aria-label={t("localConversation.hookItem.summary.ariaLabel", {
+              summary,
+              status: item.status,
+            })}
+            className="app-title text-[14px] font-medium"
+          >
+            {summary}
+          </div>
+          <StatusBadge status={normalizeHookStatus(item.status)} t={t} />
         </div>
+        {item.sourcePath ? (
+          <LabeledValue label={t("localConversation.hookItem.hookContext")} value={item.sourcePath} className="mt-3" />
+        ) : null}
+        {nonEmptyEntries.length > 0 ? (
+          <div className="mt-3 space-y-2">
+            {nonEmptyEntries.map((entry, index) => (
+              <div key={`${item.id}:entry:${entry.kind}:${index}`} className="app-card-muted rounded-[14px] px-4 py-3">
+                <div className="app-text-subtle text-[12px] font-medium tracking-[0.08em]">
+                  {resolveHookEntryLabel(entry.kind, t)}
+                </div>
+                <div className="mt-2 text-[13px] leading-6 whitespace-pre-wrap">{entry.text}</div>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -1355,6 +1284,10 @@ function ConversationItemCard({
     return <DynamicToolCallInlineStatus item={item} t={t} />;
   }
 
+  if (item.type === "automationUpdate") {
+    return <AutomationUpdateCard item={item} />;
+  }
+
   if (item.type === "automaticApprovalReview") {
     return <AutomaticApprovalReviewCard item={item} t={t} />;
   }
@@ -1383,6 +1316,63 @@ function ConversationItemCard({
     );
   }
 
+  if (item.type === "mcpServerElicitation") {
+    return <McpServerElicitationConversationItemCard item={item} t={t} />;
+  }
+
+  if (item.type === "permissionRequest") {
+    return <PermissionRequestConversationItemCard item={item} t={t} />;
+  }
+
+  if (item.type === "userInput") {
+    return <UserInputConversationItemCard item={item} t={t} />;
+  }
+
+  if (item.type === "userInputResponse") {
+    const populatedQuestions = item.questionsAndAnswers.filter(
+      (entry) =>
+        entry.header.trim().length > 0 ||
+        entry.question.trim().length > 0 ||
+        entry.answers.some((answer) => answer.trim().length > 0),
+    );
+
+    if (populatedQuestions.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="app-card rounded-[18px] px-5 py-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="app-title text-[14px] font-medium">User input response</div>
+          <StatusBadge status={item.completed ? "completed" : "inProgress"} t={t} />
+        </div>
+        <div className="mt-3 space-y-3">
+          {populatedQuestions.map((entry, index) => {
+            const questionLabel = entry.header.trim() || entry.question.trim() || entry.id.trim() || `Question ${index + 1}`;
+            const answers = entry.answers.map((answer) => answer.trim()).filter((answer) => answer.length > 0);
+            return (
+              <div key={`${item.id}:${entry.id || index}`} className="app-card-muted rounded-[14px] px-4 py-3">
+                <div className="app-text-subtle text-[12px] font-medium tracking-[0.08em]">{questionLabel}</div>
+                {entry.question.trim().length > 0 ? (
+                  <div className="mt-2 text-[13px] leading-6 whitespace-pre-wrap">{entry.question}</div>
+                ) : null}
+                {answers.length > 0 ? (
+                  <div className="mt-2 space-y-1">
+                    {answers.map((answer, answerIndex) => (
+                      <div key={`${item.id}:${entry.id || index}:answer:${answerIndex}`} className="app-text-muted text-[13px] leading-6 whitespace-pre-wrap">
+                        {answer}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   if (item.type === "fileChange") {
     return (
       <div className="app-card rounded-[18px] px-5 py-4">
@@ -1399,21 +1389,266 @@ function ConversationItemCard({
     );
   }
 
-  if (item.type === "enteredReviewMode" || item.type === "exitedReviewMode") {
-    return (
-      <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="app-title text-[14px] font-medium">{t("composer.reviewMode.title")}</div>
-          <StatusBadge status={item.type === "enteredReviewMode" ? "inProgress" : "completed"} t={t} />
+  return null;
+}
+
+function UserConversationMessageCard({
+  item,
+  onEditMessage,
+  t,
+  userMessageSentAtMsByTurnId,
+}: {
+  item: ThreadConversationMessage;
+  onEditMessage: (text: string) => void | Promise<void>;
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+  userMessageSentAtMsByTurnId: Map<string, number | null>;
+}) {
+  const { locale } = useI18n();
+  const [copied, setCopied] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState(item.text);
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+  const normalizedText = item.text.trim();
+  const commentCount = Array.isArray(item.comments) ? item.comments.length : 0;
+  const pullRequestCheckCount =
+    typeof item.pullRequestCheckCount === "number" && Number.isFinite(item.pullRequestCheckCount)
+      ? item.pullRequestCheckCount
+      : 0;
+  const hasVisibleText = normalizedText.length > 0;
+  const visibleText = normalizedText.startsWith("PLEASE IMPLEMENT THIS PLAN:")
+    ? t("app.chat.userMessage.implementPlan")
+    : item.text;
+  const hasVisibleMessageText = visibleText.trim().length > 0;
+  const chips = [
+    item.referencesPriorConversation
+      ? { key: "referencesPriorConversation", label: t("app.chat.userMessage.referencesPriorConversation") }
+      : null,
+    item.reviewMode ? { key: "reviewMode", label: t("app.chat.userMessage.reviewMode") } : null,
+    item.pullRequestFixMode ? { key: "pullRequestFixMode", label: t("app.chat.userMessage.pullRequestFixMode") } : null,
+    item.autoResolveSync ? { key: "autoResolveSync", label: t("app.chat.userMessage.autoResolveSync") } : null,
+    commentCount > 0
+      ? {
+          key: "commentCount",
+          label: t("app.chat.userMessage.commentCount", { count: commentCount }),
+        }
+      : null,
+    pullRequestCheckCount > 0
+      ? {
+          key: "pullRequestCheckCount",
+          label: t("app.chat.userMessage.pullRequestCheckCount", { count: pullRequestCheckCount }),
+        }
+      : null,
+  ].filter((chip): chip is { key: string; label: string } => chip !== null);
+  const sentAtMs = resolveUserMessageSentAtMs(item.turnId, userMessageSentAtMsByTurnId);
+  const sentAtLabel = useMemo(() => {
+    if (sentAtMs === null) {
+      return null;
+    }
+    return formatUserMessageTimestamp(sentAtMs, locale);
+  }, [locale, sentAtMs]);
+  const messageStatusLabel = resolveUserMessageStatusLabel(item, t);
+  const canEdit = !normalizedText.startsWith("PLEASE IMPLEMENT THIS PLAN:");
+
+  const handleCopy = async () => {
+    if (!hasVisibleText) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(normalizedText);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Keep the conversation visible even if clipboard access is unavailable.
+    }
+  };
+
+  const handleEditSubmit = async () => {
+    const nextText = draft.trim();
+    if (nextText.length === 0 || isSubmittingEdit) {
+      return;
+    }
+    setIsSubmittingEdit(true);
+    try {
+      await onEditMessage(nextText);
+      setIsEditing(false);
+    } finally {
+      setIsSubmittingEdit(false);
+    }
+  };
+
+  const shouldRenderBubble = hasVisibleText || chips.length === 0;
+
+  return (
+    <div className="group flex w-full flex-col items-end justify-end gap-1">
+      {shouldRenderBubble && messageStatusLabel !== null ? (
+        <div className="app-text-muted mr-1 ml-1 flex items-center gap-2">
+          <UserMessageStatusIcon className="h-[13px] w-[13px] shrink-0" />
+          <span className="text-[12px]">{messageStatusLabel}</span>
         </div>
-        <div className="app-text-muted mt-3 whitespace-pre-wrap text-[13px] leading-6">
-          {item.type === "enteredReviewMode" ? formatReviewModeLabel(item.review, t) : item.review}
+      ) : null}
+      {shouldRenderBubble ? (
+        <div className="flex justify-end">
+          {isEditing ? (
+            <form
+              className="app-card w-full max-w-[620px] rounded-[18px] p-1"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleEditSubmit();
+              }}
+            >
+              <textarea
+                aria-label={t("app.chat.userMessage.editTextareaAriaLabel")}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                placeholder={t("app.chat.userMessage.editPlaceholder")}
+                rows={4}
+                className="app-text-input min-h-[112px] w-full resize-none rounded-[16px] border-0 bg-transparent px-3 py-3 text-[14px] leading-6 outline-none"
+              />
+              <div className="flex justify-end gap-1.5 px-2 pb-2">
+                <button
+                  type="button"
+                  disabled={isSubmittingEdit}
+                  onClick={() => {
+                    setDraft(item.text);
+                    setIsEditing(false);
+                  }}
+                  className="app-control-weak rounded-full px-3 py-1.5 text-[13px]"
+                >
+                  {t("app.chat.userMessage.cancelEditMessage")}
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingEdit || draft.trim().length === 0}
+                  className="app-button-primary rounded-full px-4 py-1.5 text-[13px]"
+                >
+                  {t("app.chat.userMessage.sendEditedMessage")}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="app-segmented-option-active max-w-[620px] rounded-[18px] px-4 py-3 shadow-[0_1px_0_rgba(0,0,0,0.02)]">
+              {hasVisibleText ? (
+                <UserMessageCollapsibleContent text={visibleText} t={t} />
+              ) : (
+                <div className="app-text-subtle text-[13px] leading-6">{t("app.chat.userMessage.noContent")}</div>
+              )}
+            </div>
+          )}
         </div>
+      ) : null}
+      <div className="flex flex-row-reverse items-center gap-1">
+        {chips.map((chip) => (
+          <UserMessageChip key={`${item.id}:${chip.key}`} label={chip.label} />
+        ))}
+        {hasVisibleMessageText && !isEditing ? (
+          <div className="ml-1 flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+            {sentAtLabel ? (
+              <span className="app-text-muted text-[12px]">{sentAtLabel}</span>
+            ) : null}
+            <button
+              type="button"
+              aria-label={copied ? t("app.chat.userMessage.copyCopiedAriaLabel") : t("app.chat.userMessage.copyAriaLabel")}
+              onClick={() => void handleCopy()}
+              className="app-control-weak inline-flex h-7 w-7 items-center justify-center rounded-full px-0 py-0"
+              title={copied ? t("app.chat.userMessage.copyCopiedTooltip") : t("app.chat.userMessage.copyTooltip")}
+            >
+              {copied ? <CheckIcon className="h-[14px] w-[14px]" /> : <CopyPathIcon className="h-[14px] w-[14px]" />}
+            </button>
+            {canEdit ? (
+              <button
+                type="button"
+                aria-label={t("app.chat.userMessage.editAriaLabel")}
+                onClick={() => {
+                  setDraft(item.text);
+                  setIsEditing(true);
+                }}
+                className="app-control-weak inline-flex h-7 w-7 items-center justify-center rounded-full px-0 py-0"
+                title={t("app.chat.userMessage.editTooltip")}
+              >
+                <PencilIcon className="h-[14px] w-[14px]" />
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
-    );
+    </div>
+  );
+}
+
+function UserMessageChip({ label }: { label: string }) {
+  return <span className="app-text-muted text-[12px]">{label}</span>;
+}
+
+function resolveUserMessageStatusLabel(
+  item: ThreadConversationMessage,
+  t: (key: MessageKey, values?: Record<string, number | string>) => string,
+) {
+  if (item.steeringStatus === "pending") {
+    return t("app.chat.status.inProgress");
+  }
+  if (item.steeringStatus === "accepted") {
+    return t("app.chat.status.completed");
+  }
+  return null;
+}
+
+function UserMessageStatusIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 21 21"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      className={className}
+    >
+      <path
+        d="M13.1293 7.34753C13.3565 7.12027 13.7081 7.09207 13.9662 7.26257L14.0707 7.34753L18.0707 11.3475C18.3304 11.6072 18.3304 12.0292 18.0707 12.2889L14.0707 16.2889C13.811 16.5486 13.389 16.5486 13.1293 16.2889C12.8696 16.0292 12.8696 15.6072 13.1293 15.3475L15.9935 12.4833H6.59998C4.57585 12.4833 2.93494 10.8424 2.93494 8.81824V5.31824C2.93494 4.95097 3.23271 4.6532 3.59998 4.6532C3.96724 4.6532 4.26501 4.95097 4.26501 5.31824V8.81824C4.26501 10.1078 5.31039 11.1532 6.59998 11.1532H15.9935L13.1293 8.28894L13.0443 8.18445C12.8738 7.92632 12.902 7.5748 13.1293 7.34753Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function resolveUserMessageSentAtMs(turnId: string, userMessageSentAtMsByTurnId: Map<string, number | null>) {
+  const sentAtMs = userMessageSentAtMsByTurnId.get(turnId) ?? null;
+  return typeof sentAtMs === "number" && Number.isFinite(sentAtMs) ? sentAtMs : null;
+}
+
+const USER_MESSAGE_RECENT_DAY_WINDOW = 7;
+
+function formatUserMessageTimestamp(sentAtMs: number, locale: string) {
+  const sentAt = new Date(sentAtMs);
+  const now = new Date();
+  const dayDelta = resolveCalendarDayDelta(sentAt, now);
+
+  if (dayDelta === 0) {
+    return new Intl.DateTimeFormat(locale, {
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(sentAt);
   }
 
-  return null;
+  if (dayDelta < 0 && dayDelta > -USER_MESSAGE_RECENT_DAY_WINDOW) {
+    return new Intl.DateTimeFormat(locale, {
+      weekday: "long",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(sentAt);
+  }
+
+  return new Intl.DateTimeFormat(locale, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(sentAt);
+}
+
+function resolveCalendarDayDelta(date: Date, now: Date) {
+  const dateAtMidnight = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const nowAtMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((dateAtMidnight.getTime() - nowAtMidnight.getTime()) / 86400000);
 }
 
 function ConversationRuntimeErrorCard({
@@ -1521,6 +1756,39 @@ function InlineConversationStatusRow({
       </div>
       <div className="h-px flex-1 border-t border-current/20" />
     </div>
+  );
+}
+
+function CollapsedToolActivitySummaryCard({
+  item,
+}: {
+  item: CollapsedToolActivityItem;
+}) {
+  const summary = resolveCollapsedToolActivitySummaryText(item.summary);
+  const detailLines = buildCollapsedToolActivityDetailLines(item);
+
+  return (
+    <details open={item.isInProgress} className="app-card rounded-[18px] px-5 py-4">
+      <summary className="list-none cursor-interaction [&::-webkit-details-marker]:hidden">
+        <InlineConversationStatusRow
+          className="my-0"
+          message={
+            <span className={item.isInProgress ? "loading-shimmer-pure-text" : undefined}>
+              {summary}
+            </span>
+          }
+        />
+      </summary>
+      {detailLines.length > 0 ? (
+        <div className="mt-3 space-y-1 pl-4">
+          {detailLines.map((line, index) => (
+            <div key={`${item.id}:detail:${index}`} className="app-text-muted text-[12px] leading-5">
+              {line}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </details>
   );
 }
 
@@ -1636,18 +1904,49 @@ function DynamicToolCallInlineStatus({
   item: Extract<ThreadConversationItem, { type: "dynamicToolCall" }>;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
 }) {
-  const isCompleted = item.status !== "inProgress";
-  const label = resolveDynamicToolCallLabel(item.tool, isCompleted);
-  const message = t("localConversation.dynamicToolCall", { toolName: label });
+  const summary = resolveDynamicToolCallSummary(item, t);
+  if (summary === null) {
+    return null;
+  }
 
   return (
     <InlineConversationStatusRow
+      icon={summary.icon}
       message={
-        <span className={isCompleted ? undefined : "loading-shimmer-pure-text"}>
-          {message}
+        <span className={summary.isInProgress ? "loading-shimmer-pure-text" : undefined}>
+          {summary.message}
         </span>
       }
     />
+  );
+}
+
+function AutomationUpdateCard({
+  item,
+}: {
+  item: Extract<ThreadConversationItem, { type: "automationUpdate" }>;
+}) {
+  const mode = item.result?.mode ?? normalizeAutomationUpdateModeLabel(item.arguments?.mode) ?? "pending";
+  const automationId = item.result?.automationId ?? item.arguments?.id ?? "pending";
+  const kind = item.result?.snapshot?.kind ?? item.arguments?.kind ?? null;
+  const name = item.result?.snapshot?.name ?? item.arguments?.name ?? null;
+  const rrule = item.result?.snapshot?.rrule ?? item.arguments?.rrule ?? null;
+
+  return (
+    <div className="app-card rounded-[18px] px-5 py-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="app-title text-[14px] font-medium">Automation update</div>
+        <div className="app-text-muted text-[12px]">completed</div>
+      </div>
+      <LabeledValue label="Mode" value={mode} className="mt-3" />
+      <LabeledValue label="Automation ID" value={automationId} className="mt-3" mono />
+      {kind ? <LabeledValue label="Kind" value={kind} className="mt-3" /> : null}
+      {name ? <LabeledValue label="Name" value={name} className="mt-3" /> : null}
+      {rrule ? <LabeledValue label="Schedule" value={rrule} className="mt-3" mono /> : null}
+      {item.result?.deleteStatus ? (
+        <LabeledValue label="Delete status" value={item.result.deleteStatus} className="mt-3" />
+      ) : null}
+    </div>
   );
 }
 
@@ -2006,16 +2305,57 @@ function resolveWebSearchSummaryDetails(item: Extract<ThreadConversationItem, { 
 }
 
 const dynamicToolCallCompletedLabels: Record<string, string> = {
-  automation_update: "Automation updated",
   load_workspace_dependencies: "Loaded workspace dependencies",
   read_thread_terminal: "Read thread terminal",
 };
 
 const dynamicToolCallInProgressLabels: Record<string, string> = {
-  automation_update: "Updating automation",
   load_workspace_dependencies: "Loading workspace dependencies",
   read_thread_terminal: "Reading thread terminal",
 };
+
+const appControlToolCallInProgressLabelKeys = {
+  "app.help": "localConversation.appControlToolCall.appHelp.active",
+  "threads.create": "localConversation.appControlToolCall.threadsCreate.active",
+  "threads.create_in_worktree": "localConversation.appControlToolCall.threadsCreateInWorktree.active",
+  "threads.list": "localConversation.appControlToolCall.threadsList.active",
+  "threads.read": "localConversation.appControlToolCall.threadsRead.active",
+  "threads.send_message": "localConversation.appControlToolCall.threadsSendMessage.active",
+  "threads.set_archived": "localConversation.appControlToolCall.threadsSetArchived.active",
+  "threads.set_pinned": "localConversation.appControlToolCall.threadsSetPinned.active",
+  "threads.set_title": "localConversation.appControlToolCall.threadsSetTitle.active",
+} as const satisfies Record<string, MessageKey>;
+
+const appControlToolCallCompletedLabelKeys = {
+  "app.help": "localConversation.appControlToolCall.appHelp.completed",
+  "threads.create": "localConversation.appControlToolCall.threadsCreate.completed",
+  "threads.create_in_worktree": "localConversation.appControlToolCall.threadsCreateInWorktree.completed",
+  "threads.list": "localConversation.appControlToolCall.threadsList.completed",
+  "threads.read": "localConversation.appControlToolCall.threadsRead.completed",
+  "threads.send_message": "localConversation.appControlToolCall.threadsSendMessage.completed",
+  "threads.set_archived": "localConversation.appControlToolCall.threadsSetArchived.completed",
+  "threads.set_pinned": "localConversation.appControlToolCall.threadsSetPinned.completed",
+  "threads.set_title": "localConversation.appControlToolCall.threadsSetTitle.completed",
+} as const satisfies Record<string, MessageKey>;
+
+type AppControlToolCallType = keyof typeof appControlToolCallInProgressLabelKeys;
+
+function normalizeAutomationUpdateModeLabel(mode: "view" | "create" | "update" | "delete" | "suggested_create" | "suggested_update" | undefined) {
+  switch (mode) {
+    case "create":
+    case "suggested_create":
+      return "create";
+    case "update":
+    case "suggested_update":
+      return "update";
+    case "delete":
+      return "delete";
+    case "view":
+      return "view";
+    default:
+      return null;
+  }
+}
 
 function resolveDynamicToolCallLabel(toolName: string, isCompleted: boolean) {
   const mappedLabel = isCompleted
@@ -2032,15 +2372,48 @@ function resolveDynamicToolCallLabel(toolName: string, isCompleted: boolean) {
   return normalizedToolName.replaceAll(/\b\w/g, (character) => character.toUpperCase());
 }
 
-function formatReviewModeLabel(
-  review: string,
+function resolveDynamicToolCallSummary(
+  item: Extract<ThreadConversationItem, { type: "dynamicToolCall" }>,
   t: (key: MessageKey, values?: Record<string, number | string>) => string,
 ) {
-  const normalized = review.trim().toLowerCase();
-  if (normalized === "current changes" || normalized === "uncommitted changes") {
-    return t("composer.reviewMode.option.unstaged.simple");
+  const appControlMessageKey = resolveAppControlToolCallMessageKey(item);
+  const isInProgress = item.status === "inProgress";
+
+  if (appControlMessageKey !== null) {
+    return {
+      icon: <CopyPathIcon className="h-3.5 w-3.5 shrink-0" />,
+      isInProgress,
+      message: t(appControlMessageKey),
+    };
   }
-  return review;
+
+  const label = resolveDynamicToolCallLabel(item.tool, !isInProgress);
+  return {
+    icon: undefined,
+    isInProgress,
+    message: t("localConversation.dynamicToolCall", { toolName: label }),
+  };
+}
+
+function resolveAppControlToolCallMessageKey(
+  item: Extract<ThreadConversationItem, { type: "dynamicToolCall" }>,
+): MessageKey | null {
+  if (item.tool !== "manage_codex_threads" || !item.arguments || typeof item.arguments !== "object") {
+    return null;
+  }
+
+  const typeValue = "type" in item.arguments ? item.arguments.type : null;
+  if (!isAppControlToolCallType(typeValue)) {
+    return null;
+  }
+
+  return item.status === "inProgress"
+    ? appControlToolCallInProgressLabelKeys[typeValue] ?? null
+    : appControlToolCallCompletedLabelKeys[typeValue] ?? null;
+}
+
+function isAppControlToolCallType(value: unknown): value is AppControlToolCallType {
+  return typeof value === "string" && value in appControlToolCallInProgressLabelKeys;
 }
 
 function todoListStepCheckmark(status: string) {
@@ -2151,6 +2524,55 @@ function StatusBadge({
   );
 }
 
+function normalizeHookStatus(status: string) {
+  if (status === "completed" || status === "failed") {
+    return status;
+  }
+  if (status === "running") {
+    return "inProgress";
+  }
+  if (status === "blocked" || status === "stopped") {
+    return "declined";
+  }
+  return "inProgress";
+}
+
+function resolveHookEventNameKey(eventName: string): MessageKey {
+  switch (eventName) {
+    case "preToolUse":
+      return "localConversation.hookItem.eventName.preToolUse";
+    case "permissionRequest":
+      return "localConversation.hookItem.eventName.permissionRequest";
+    case "postToolUse":
+      return "localConversation.hookItem.eventName.postToolUse";
+    case "sessionStart":
+      return "localConversation.hookItem.eventName.sessionStart";
+    case "userPromptSubmit":
+      return "localConversation.hookItem.eventName.userPromptSubmit";
+    case "stop":
+      return "localConversation.hookItem.eventName.stop";
+    default:
+      return "localConversation.hookItem.eventName.stop";
+  }
+}
+
+function resolveHookEntryLabel(kind: string, t: (key: MessageKey, values?: Record<string, number | string>) => string) {
+  switch (kind) {
+    case "feedback":
+      return t("localConversation.hookItem.feedback");
+    case "warning":
+      return t("localConversation.hookItem.warning");
+    case "error":
+      return t("localConversation.hookItem.error");
+    case "context":
+      return t("localConversation.hookItem.hookContext");
+    case "stop":
+      return t("localConversation.hookItem.stop");
+    default:
+      return kind;
+  }
+}
+
 function LabeledValue({
   label,
   value,
@@ -2243,6 +2665,38 @@ function ToolRequestUserInputCard({
           <div className="app-text-warning-muted text-[12px]">{t("app.chat.approval.submitting")}</div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function McpServerElicitationConversationItemCard({
+  item,
+  t,
+}: {
+  item: Extract<ThreadConversationItem, { type: "mcpServerElicitation" }>;
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+}) {
+  const serverTitle = item.serverName.trim().length > 0 ? item.serverName : "MCP";
+
+  return (
+    <div className="app-card rounded-[18px] px-5 py-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="app-title text-[14px] font-medium">{t("app.chat.mcpElicitation.title", { serverName: serverTitle })}</div>
+        <StatusBadge status={item.completed ? "completed" : "inProgress"} t={t} />
+      </div>
+      <div className="mt-3 text-[13px] leading-6 whitespace-pre-wrap">{item.request.message}</div>
+      {item.request.mode === "url" ? (
+        <LabeledValue label={t("app.chat.mcpElicitation.url")} value={item.request.url} className="mt-3" />
+      ) : (
+        <div className="app-text-muted mt-3 text-[12px] leading-5">
+          {Object.keys(item.request.requestedSchema.properties ?? {}).length} fields requested
+        </div>
+      )}
+      {item.completed ? (
+        <div className="app-text-muted mt-3 text-[12px] leading-5">
+          Action: {item.action ?? "none"}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -2614,6 +3068,33 @@ function ToolRequestUserInputQuestionField({
   );
 }
 
+function UserInputConversationItemCard({
+  item,
+  t,
+}: {
+  item: Extract<ThreadConversationItem, { type: "userInput" }>;
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+}) {
+  return (
+    <div className="app-card rounded-[18px] px-5 py-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="app-title text-[14px] font-medium">{t("app.chat.userInput.title")}</div>
+        <StatusBadge status={item.completed ? "completed" : "inProgress"} t={t} />
+      </div>
+      <div className="mt-3 space-y-3">
+        {item.questions.map((question, index) => (
+          <div key={`${item.id}:${question.id || index}`} className="app-card-muted rounded-[14px] px-4 py-3">
+            <div className="app-text-subtle text-[12px] font-medium tracking-[0.08em]">
+              {question.header || question.id || `Question ${index + 1}`}
+            </div>
+            <div className="mt-2 text-[13px] leading-6 whitespace-pre-wrap">{question.question}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PermissionsRequestApprovalCard({
   request,
   isResponding,
@@ -2721,6 +3202,32 @@ function PermissionsRequestApprovalCard({
           <div className="app-text-warning-muted text-[12px]">{t("app.chat.approval.submitting")}</div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function PermissionRequestConversationItemCard({
+  item,
+  t,
+}: {
+  item: Extract<ThreadConversationItem, { type: "permissionRequest" }>;
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+}) {
+  return (
+    <div className="app-card rounded-[18px] px-5 py-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="app-title text-[14px] font-medium">{t("app.chat.permissions.title")}</div>
+        <StatusBadge status={item.completed ? "completed" : "inProgress"} t={t} />
+      </div>
+      {item.reason ? (
+        <LabeledValue label={t("app.chat.approval.reason")} value={item.reason} className="mt-3" />
+      ) : null}
+      <LabeledValue label={t("app.chat.approval.workingDirectory")} value={item.cwd} className="mt-3" />
+      {item.completed ? (
+        <div className="app-text-muted mt-3 text-[12px] leading-5">
+          Scope: {item.response?.scope ?? "none"}
+        </div>
+      ) : null}
     </div>
   );
 }

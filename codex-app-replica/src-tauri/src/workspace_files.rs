@@ -22,12 +22,35 @@ pub struct ReadWorkspaceFileParams {
     pub relative_path: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListWorkspaceDirectoryEntriesParams {
+    pub workspace_root: String,
+    pub directory_path: Option<String>,
+    pub include_hidden: bool,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceFileSearchResult {
     pub name: String,
     pub path: String,
     pub relative_path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceDirectoryEntryResponse {
+    pub path: String,
+    pub name: String,
+    pub entry_type: WorkspaceDirectoryEntryType,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WorkspaceDirectoryEntryType {
+    File,
+    Directory,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -108,6 +131,99 @@ pub fn read_workspace_file(
         mime_type,
         is_binary,
     })
+}
+
+#[tauri::command]
+pub fn list_workspace_directory_entries(
+    params: ListWorkspaceDirectoryEntriesParams,
+) -> Result<Vec<WorkspaceDirectoryEntryResponse>, String> {
+    let workspace_root = resolve_workspace_root(&params.workspace_root)?;
+    let relative_directory_path = params
+        .directory_path
+        .as_deref()
+        .map(normalize_relative_path)
+        .transpose()?;
+    let target_directory = match &relative_directory_path {
+        Some(path) => workspace_root.join(path),
+        None => workspace_root.clone(),
+    };
+    if !target_directory.exists() {
+        return Err(format!(
+            "workspace directory does not exist: {}",
+            target_directory.display()
+        ));
+    }
+    if !target_directory.is_dir() {
+        return Err(format!(
+            "workspace path is not a directory: {}",
+            target_directory.display()
+        ));
+    }
+
+    let canonical_root = workspace_root
+        .canonicalize()
+        .map_err(|err| format!("failed to resolve workspace root: {err}"))?;
+    let canonical_target_directory = target_directory
+        .canonicalize()
+        .map_err(|err| format!("failed to resolve workspace directory: {err}"))?;
+    if canonical_target_directory
+        .strip_prefix(&canonical_root)
+        .is_err()
+    {
+        return Err(format!(
+            "workspace directory is outside workspace root: {}",
+            canonical_target_directory.display()
+        ));
+    }
+
+    let entries = fs::read_dir(&canonical_target_directory)
+        .map_err(|err| format!("failed to read workspace directory: {err}"))?;
+    let mut results = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|err| format!("failed to read workspace entry: {err}"))?;
+        let file_name = entry.file_name();
+        if file_name == OsStr::new(".git") {
+            continue;
+        }
+        if !params.include_hidden && file_name.to_str().is_some_and(|name| name.starts_with('.')) {
+            continue;
+        }
+
+        let file_type = entry
+            .file_type()
+            .map_err(|err| format!("failed to inspect workspace entry: {err}"))?;
+        let entry_type = if file_type.is_dir() {
+            WorkspaceDirectoryEntryType::Directory
+        } else if file_type.is_file() {
+            WorkspaceDirectoryEntryType::File
+        } else {
+            continue;
+        };
+
+        let path = entry.path();
+        let relative_path = path
+            .strip_prefix(&workspace_root)
+            .map_err(|err| format!("failed to compute workspace-relative file path: {err}"))?
+            .to_string_lossy()
+            .replace('\\', "/");
+        results.push(WorkspaceDirectoryEntryResponse {
+            path: relative_path,
+            name: file_name.to_string_lossy().to_string(),
+            entry_type,
+        });
+    }
+
+    results.sort_by(|left, right| match (&left.entry_type, &right.entry_type) {
+        (WorkspaceDirectoryEntryType::Directory, WorkspaceDirectoryEntryType::File) => {
+            std::cmp::Ordering::Less
+        }
+        (WorkspaceDirectoryEntryType::File, WorkspaceDirectoryEntryType::Directory) => {
+            std::cmp::Ordering::Greater
+        }
+        _ => left.path.cmp(&right.path),
+    });
+
+    Ok(results)
 }
 
 fn collect_workspace_files(

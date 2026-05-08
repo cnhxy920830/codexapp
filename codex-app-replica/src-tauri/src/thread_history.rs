@@ -8,7 +8,34 @@ pub struct ThreadConversation {
     pub id: String,
     pub title: String,
     pub cwd: String,
+    pub turns: Vec<ThreadConversationTurn>,
+    pub turn_timings: Vec<ThreadConversationTurnTiming>,
     pub items: Vec<ThreadConversationItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadConversationTurn {
+    pub id: String,
+    pub status: String,
+    pub input: Vec<ThreadConversationUserInput>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadConversationTurnTiming {
+    pub turn_id: String,
+    pub status: String,
+    pub turn_started_at_ms: Option<i64>,
+    pub final_assistant_started_at_ms: Option<i64>,
+    pub first_turn_work_item_started_at_ms: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(untagged)]
+pub enum ThreadConversationJsonRpcId {
+    Integer(i64),
+    String(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -19,12 +46,34 @@ pub enum ThreadConversationItem {
         turn_id: String,
         role: String,
         text: String,
+        completed: bool,
+        images: Vec<String>,
+        attachments: Vec<ThreadConversationUserAttachment>,
+        comments: Vec<ThreadConversationUserComment>,
+        references_prior_conversation: bool,
+        review_mode: bool,
+        pull_request_fix_mode: bool,
+        auto_resolve_sync: bool,
+        pull_request_check_count: Option<u32>,
     },
     AgentMessage {
         id: String,
         turn_id: String,
         role: String,
         text: String,
+        completed: bool,
+    },
+    Hook {
+        id: String,
+        turn_id: String,
+        event_name: String,
+        status: String,
+        status_message: Option<String>,
+        source_path: Option<String>,
+        started_at: Option<i64>,
+        completed_at: Option<i64>,
+        duration_ms: Option<i64>,
+        entries: Vec<ThreadConversationHookOutputEntry>,
     },
     HookPrompt {
         id: String,
@@ -127,6 +176,9 @@ pub enum ThreadConversationItem {
         server: String,
         tool: String,
         status: String,
+        arguments: serde_json::Value,
+        result: Option<serde_json::Value>,
+        error: Option<serde_json::Value>,
         result_summary: Option<String>,
         error_message: Option<String>,
     },
@@ -138,6 +190,8 @@ pub enum ThreadConversationItem {
         status: String,
         result_summary: Option<String>,
         success: Option<bool>,
+        arguments: Option<serde_json::Value>,
+        content_items: Vec<serde_json::Value>,
     },
     CollabAgentToolCall {
         id: String,
@@ -175,6 +229,20 @@ pub enum ThreadConversationItem {
         id: String,
         turn_id: String,
         is_completed: bool,
+        source: String,
+    },
+    PlanImplementation {
+        id: String,
+        turn_id: String,
+        plan_content: String,
+        is_completed: bool,
+    },
+    UserInputResponse {
+        id: String,
+        turn_id: String,
+        request_id: Option<ThreadConversationJsonRpcId>,
+        questions_and_answers: Vec<ThreadConversationQuestionAndAnswer>,
+        completed: bool,
     },
     EnteredReviewMode {
         id: String,
@@ -186,6 +254,43 @@ pub enum ThreadConversationItem {
         turn_id: String,
         review: String,
     },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ThreadConversationUserInput {
+    Text {
+        text: String,
+        text_elements: Vec<ThreadConversationTextElement>,
+    },
+    Image {
+        url: String,
+    },
+    LocalImage {
+        path: String,
+    },
+    Skill {
+        name: String,
+        path: String,
+    },
+    Mention {
+        name: String,
+        path: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadConversationTextElement {
+    pub byte_range: ThreadConversationByteRange,
+    pub placeholder: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadConversationByteRange {
+    pub start: usize,
+    pub end: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -228,6 +333,13 @@ pub struct ThreadCollabAgentState {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct ThreadConversationHookOutputEntry {
+    pub kind: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct HookPromptFragment {
     pub text: String,
     pub hook_run_id: String,
@@ -238,6 +350,30 @@ pub struct HookPromptFragment {
 pub struct TodoListStep {
     pub step: String,
     pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadConversationQuestionAndAnswer {
+    pub id: String,
+    pub header: String,
+    pub question: String,
+    pub answers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadConversationUserAttachment {
+    pub label: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadConversationUserComment {
+    pub path: String,
+    pub line_range: Option<String>,
+    pub body: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -266,14 +402,27 @@ pub fn map_thread_item(
     match item_type {
         "userMessage" => {
             let id = value.get("id")?.as_str()?.to_string();
-            let text = value
+            let content = value
                 .get("content")
                 .and_then(serde_json::Value::as_array)
-                .map(|content| extract_user_text(content.as_slice()))
-                .unwrap_or_default()
-                .trim()
-                .to_string();
-            if text.is_empty() {
+                .cloned()
+                .unwrap_or_default();
+            let raw_text = extract_raw_user_text(content.as_slice());
+            let text = extract_user_visible_text(&raw_text);
+            let images = extract_user_images(content.as_slice());
+            let attachments = extract_user_attachments(value.get("attachments"));
+            let comments = extract_user_comments(value.get("commentAttachments"), &raw_text);
+            let review_mode = has_user_message_heading(&raw_text, USER_MESSAGE_REVIEW_MODE_HEADING);
+            let pull_request_fix_mode =
+                has_user_message_heading(&raw_text, USER_MESSAGE_PULL_REQUEST_FIX_HEADING);
+            let auto_resolve_sync =
+                has_user_message_heading(&raw_text, USER_MESSAGE_AUTO_RESOLVE_MERGE_HEADING);
+            let references_prior_conversation = !review_mode
+                && !pull_request_fix_mode
+                && raw_text.contains(USER_MESSAGE_PRIOR_CONVERSATION_HEADING);
+            let pull_request_check_count = extract_pull_request_check_count(&raw_text);
+            if text.is_empty() && images.is_empty() && attachments.is_empty() && comments.is_empty()
+            {
                 return None;
             }
             Some(ThreadConversationItem::UserMessage {
@@ -281,6 +430,15 @@ pub fn map_thread_item(
                 turn_id: turn_id.to_string(),
                 role: "user".to_string(),
                 text,
+                completed: item_completed.unwrap_or(true),
+                images,
+                attachments,
+                comments,
+                references_prior_conversation,
+                review_mode,
+                pull_request_fix_mode,
+                auto_resolve_sync,
+                pull_request_check_count,
             })
         }
         "agentMessage" => {
@@ -294,8 +452,10 @@ pub fn map_thread_item(
                 turn_id: turn_id.to_string(),
                 role: "assistant".to_string(),
                 text,
+                completed: item_completed.unwrap_or(true),
             })
         }
+        "hook" => build_hook_item(turn_id, value),
         "hookPrompt" => {
             let id = value.get("id")?.as_str()?.to_string();
             let fragments = value
@@ -343,6 +503,27 @@ pub fn map_thread_item(
                 id,
                 turn_id: turn_id.to_string(),
                 text,
+            })
+        }
+        "planImplementation" => {
+            let id = value.get("id")?.as_str()?.to_string();
+            let plan_content = value
+                .get("planContent")
+                .and_then(serde_json::Value::as_str)?
+                .trim()
+                .to_string();
+            if plan_content.is_empty() {
+                return None;
+            }
+            Some(ThreadConversationItem::PlanImplementation {
+                id,
+                turn_id: turn_id.to_string(),
+                plan_content,
+                is_completed: value
+                    .get("isCompleted")
+                    .and_then(serde_json::Value::as_bool)
+                    .or(item_completed)
+                    .unwrap_or(true),
             })
         }
         "personalityChanged" => build_personality_changed_item(
@@ -542,6 +723,12 @@ pub fn map_thread_item(
             server: value.get("server")?.as_str()?.trim().to_string(),
             tool: value.get("tool")?.as_str()?.trim().to_string(),
             status: value.get("status")?.as_str()?.to_string(),
+            arguments: value
+                .get("arguments")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
+            result: value.get("result").cloned(),
+            error: value.get("error").cloned(),
             result_summary: summarize_mcp_tool_result(value.get("result")),
             error_message: value
                 .get("error")
@@ -564,6 +751,12 @@ pub fn map_thread_item(
             status: value.get("status")?.as_str()?.to_string(),
             result_summary: summarize_dynamic_tool_output(value.get("contentItems")),
             success: value.get("success").and_then(serde_json::Value::as_bool),
+            arguments: value.get("arguments").cloned(),
+            content_items: value
+                .get("contentItems")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default(),
         }),
         "collabAgentToolCall" => {
             let id = value.get("id")?.as_str()?.to_string();
@@ -718,7 +911,43 @@ pub fn map_thread_item(
             id: value.get("id")?.as_str()?.to_string(),
             turn_id: turn_id.to_string(),
             is_completed: item_completed.unwrap_or(true),
+            source: value
+                .get("source")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|source| !source.is_empty())
+                .unwrap_or("automatic")
+                .to_string(),
         }),
+        "userInputResponse" => {
+            let id = value.get("id")?.as_str()?.to_string();
+            let questions_and_answers = value
+                .get("questions")
+                .and_then(serde_json::Value::as_array)
+                .map(|questions| {
+                    questions
+                        .iter()
+                        .filter_map(|question| map_user_input_question_and_answer(question, value))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            if questions_and_answers.is_empty() {
+                return None;
+            }
+            Some(ThreadConversationItem::UserInputResponse {
+                id,
+                turn_id: turn_id.to_string(),
+                request_id: value.get("requestId").cloned().and_then(|request_id| {
+                    serde_json::from_value::<ThreadConversationJsonRpcId>(request_id).ok()
+                }),
+                questions_and_answers,
+                completed: value
+                    .get("completed")
+                    .and_then(serde_json::Value::as_bool)
+                    .or(item_completed)
+                    .unwrap_or(true),
+            })
+        }
         "enteredReviewMode" => Some(ThreadConversationItem::EnteredReviewMode {
             id: format!("reviewMode:{}", value.get("id")?.as_str()?),
             turn_id: turn_id.to_string(),
@@ -733,10 +962,15 @@ pub fn map_thread_item(
     }
 }
 
+pub fn map_turn_input(value: &[serde_json::Value]) -> Vec<ThreadConversationUserInput> {
+    value.iter().filter_map(map_user_input_item).collect()
+}
+
 pub fn thread_item_id(item: &ThreadConversationItem) -> &str {
     match item {
         ThreadConversationItem::UserMessage { id, .. }
         | ThreadConversationItem::AgentMessage { id, .. }
+        | ThreadConversationItem::Hook { id, .. }
         | ThreadConversationItem::HookPrompt { id, .. }
         | ThreadConversationItem::TodoList { id, .. }
         | ThreadConversationItem::TurnDiff { id, .. }
@@ -760,6 +994,8 @@ pub fn thread_item_id(item: &ThreadConversationItem) -> &str {
         | ThreadConversationItem::ImageView { id, .. }
         | ThreadConversationItem::ImageGeneration { id, .. }
         | ThreadConversationItem::ContextCompaction { id, .. }
+        | ThreadConversationItem::PlanImplementation { id, .. }
+        | ThreadConversationItem::UserInputResponse { id, .. }
         | ThreadConversationItem::EnteredReviewMode { id, .. }
         | ThreadConversationItem::ExitedReviewMode { id, .. } => id,
     }
@@ -1121,6 +1357,65 @@ pub fn map_todo_list_step(value: &serde_json::Value) -> Option<TodoListStep> {
     Some(TodoListStep { step, status })
 }
 
+pub fn build_hook_item(turn_id: &str, value: &serde_json::Value) -> Option<ThreadConversationItem> {
+    let id = value.get("id")?.as_str()?.trim().to_string();
+    let event_name = value.get("eventName")?.as_str()?.trim().to_string();
+    let status = value.get("status")?.as_str()?.trim().to_string();
+    if id.is_empty() || event_name.is_empty() || status.is_empty() {
+        return None;
+    }
+
+    let status_message = value
+        .get("statusMessage")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|message| !message.is_empty())
+        .map(str::to_string);
+    let source_path = value
+        .get("sourcePath")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(str::to_string);
+    let entries = value
+        .get("entries")
+        .and_then(serde_json::Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(map_hook_output_entry)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    Some(ThreadConversationItem::Hook {
+        id,
+        turn_id: turn_id.to_string(),
+        event_name,
+        status,
+        status_message,
+        source_path,
+        started_at: value.get("startedAt").and_then(serde_json::Value::as_i64),
+        completed_at: value.get("completedAt").and_then(serde_json::Value::as_i64),
+        duration_ms: value.get("durationMs").and_then(serde_json::Value::as_i64),
+        entries,
+    })
+}
+
+fn map_hook_output_entry(value: &serde_json::Value) -> Option<ThreadConversationHookOutputEntry> {
+    let kind = value.get("kind")?.as_str()?.trim().to_string();
+    let text = value
+        .get("text")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_string();
+    if kind.is_empty() && text.is_empty() {
+        return None;
+    }
+    Some(ThreadConversationHookOutputEntry { kind, text })
+}
+
 fn map_hook_prompt_fragment(value: &serde_json::Value) -> Option<HookPromptFragment> {
     let text = value.get("text")?.as_str()?.trim().to_string();
     let hook_run_id = value.get("hookRunId")?.as_str()?.trim().to_string();
@@ -1130,7 +1425,14 @@ fn map_hook_prompt_fragment(value: &serde_json::Value) -> Option<HookPromptFragm
     Some(HookPromptFragment { text, hook_run_id })
 }
 
-fn extract_user_text(content: &[serde_json::Value]) -> String {
+const USER_MESSAGE_REVIEW_MODE_HEADING: &str = "## Code review guidelines:";
+const USER_MESSAGE_PULL_REQUEST_FIX_HEADING: &str = "## Pull request fix:";
+const USER_MESSAGE_AUTO_RESOLVE_MERGE_HEADING: &str = "## Auto resolve merge:";
+const USER_MESSAGE_PRIOR_CONVERSATION_HEADING: &str = "## Prior conversation with Codex:";
+const USER_MESSAGE_REQUEST_HEADING: &str = "## My request for Codex:";
+const USER_MESSAGE_FAILING_PR_CHECKS_HEADING: &str = "# Failing PR checks:";
+
+fn extract_raw_user_text(content: &[serde_json::Value]) -> String {
     content
         .iter()
         .filter_map(|item| {
@@ -1144,6 +1446,327 @@ fn extract_user_text(content: &[serde_json::Value]) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn extract_user_visible_text(raw_text: &str) -> String {
+    let trimmed = raw_text.trim();
+    let last_section = trimmed
+        .rsplit(USER_MESSAGE_REQUEST_HEADING)
+        .next()
+        .unwrap_or(trimmed)
+        .trim();
+    if last_section.is_empty() {
+        trimmed.to_string()
+    } else {
+        last_section.to_string()
+    }
+}
+
+fn has_user_message_heading(raw_text: &str, heading: &str) -> bool {
+    let trimmed = raw_text.trim();
+    let prefix = trimmed
+        .find(USER_MESSAGE_REQUEST_HEADING)
+        .map_or(trimmed, |index| &trimmed[..index]);
+    prefix.contains(heading)
+}
+
+fn extract_pull_request_check_count(raw_text: &str) -> Option<u32> {
+    let start = raw_text.find(USER_MESSAGE_FAILING_PR_CHECKS_HEADING)?;
+    let after_heading = &raw_text[start + USER_MESSAGE_FAILING_PR_CHECKS_HEADING.len()..];
+    let before_request = after_heading
+        .find(USER_MESSAGE_REQUEST_HEADING)
+        .map_or(after_heading, |index| &after_heading[..index]);
+    let count = before_request
+        .lines()
+        .filter(|line| line.trim_start().starts_with("## Check "))
+        .count();
+    u32::try_from(count).ok().filter(|count| *count > 0)
+}
+
+fn extract_user_images(content: &[serde_json::Value]) -> Vec<String> {
+    content
+        .iter()
+        .filter_map(|item| {
+            let item_type = item.get("type")?.as_str()?;
+            match item_type {
+                "image" => item
+                    .get("url")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string),
+                "localImage" => item
+                    .get("path")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+fn extract_user_attachments(
+    value: Option<&serde_json::Value>,
+) -> Vec<ThreadConversationUserAttachment> {
+    value
+        .and_then(serde_json::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    let label = item
+                        .get("label")
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_string)?;
+                    let path = item
+                        .get("fsPath")
+                        .or_else(|| item.get("path"))
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_string)?;
+                    Some(ThreadConversationUserAttachment { label, path })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn map_user_input_item(value: &serde_json::Value) -> Option<ThreadConversationUserInput> {
+    let item_type = value.get("type")?.as_str()?;
+    match item_type {
+        "text" => Some(ThreadConversationUserInput::Text {
+            text: value.get("text")?.as_str()?.to_string(),
+            text_elements: value
+                .get("textElements")
+                .and_then(serde_json::Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(map_text_element)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default(),
+        }),
+        "image" => Some(ThreadConversationUserInput::Image {
+            url: value
+                .get("url")
+                .or_else(|| value.get("imageUrl"))?
+                .as_str()?
+                .to_string(),
+        }),
+        "localImage" => Some(ThreadConversationUserInput::LocalImage {
+            path: value.get("path")?.as_str()?.to_string(),
+        }),
+        "skill" => Some(ThreadConversationUserInput::Skill {
+            name: value.get("name")?.as_str()?.to_string(),
+            path: value.get("path")?.as_str()?.to_string(),
+        }),
+        "mention" => Some(ThreadConversationUserInput::Mention {
+            name: value.get("name")?.as_str()?.to_string(),
+            path: value.get("path")?.as_str()?.to_string(),
+        }),
+        _ => None,
+    }
+}
+
+fn map_text_element(value: &serde_json::Value) -> Option<ThreadConversationTextElement> {
+    let byte_range = value.get("byteRange")?;
+    let start = byte_range.get("start")?.as_u64()? as usize;
+    let end = byte_range.get("end")?.as_u64()? as usize;
+    Some(ThreadConversationTextElement {
+        byte_range: ThreadConversationByteRange { start, end },
+        placeholder: value
+            .get("placeholder")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+    })
+}
+
+fn extract_user_comments(
+    value: Option<&serde_json::Value>,
+    raw_text: &str,
+) -> Vec<ThreadConversationUserComment> {
+    if let Some(comments) = extract_user_comment_attachments(value) {
+        return comments;
+    }
+
+    extract_user_comments_from_raw_text(raw_text)
+}
+
+fn extract_user_comment_attachments(
+    value: Option<&serde_json::Value>,
+) -> Option<Vec<ThreadConversationUserComment>> {
+    value.and_then(serde_json::Value::as_array).map(|items| {
+        items
+            .iter()
+            .filter_map(|item| {
+                let path = item
+                    .get("position")
+                    .and_then(|position| position.get("path"))
+                    .or_else(|| item.get("path"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)?;
+                let body = extract_text_from_json(item.get("body")?)?;
+                let line_range = extract_comment_line_range(item);
+                Some(ThreadConversationUserComment {
+                    path,
+                    line_range,
+                    body,
+                })
+            })
+            .collect::<Vec<_>>()
+    })
+}
+
+fn extract_user_comments_from_raw_text(raw_text: &str) -> Vec<ThreadConversationUserComment> {
+    let comments_start = raw_text.find("# Diff comments:");
+    let Some(start) = comments_start else {
+        return Vec::new();
+    };
+    let after_heading = &raw_text[start + "# Diff comments:".len()..];
+    let comments_block = after_heading
+        .find(USER_MESSAGE_REQUEST_HEADING)
+        .map_or(after_heading, |index| &after_heading[..index]);
+    let lines = comments_block
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>();
+
+    let mut comment_ranges = Vec::new();
+    let mut current_start = None;
+    for (index, line) in lines.iter().enumerate() {
+        if line.starts_with("## Comment") {
+            if let Some(start_index) = current_start.replace(index) {
+                comment_ranges.push((start_index, index));
+            }
+        }
+    }
+    if let Some(start_index) = current_start {
+        comment_ranges.push((start_index, lines.len()));
+    }
+
+    comment_ranges
+        .into_iter()
+        .filter_map(|(start_index, end_index)| {
+            parse_user_comment_lines(&lines[start_index..end_index])
+        })
+        .collect()
+}
+
+fn parse_user_comment_lines(lines: &[&str]) -> Option<ThreadConversationUserComment> {
+    let header = lines.first()?.trim();
+    if !header.starts_with("## Comment") {
+        return None;
+    }
+
+    if let Some((path, line_range)) = parse_inline_user_comment_header(header) {
+        let body = lines
+            .iter()
+            .skip(1)
+            .copied()
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string();
+        if body.is_empty() {
+            return None;
+        }
+        return Some(ThreadConversationUserComment {
+            path,
+            line_range,
+            body,
+        });
+    }
+
+    let path = find_comment_metadata_value(lines, "File:")?
+        .trim()
+        .to_string();
+    let line_range = find_comment_metadata_value(lines, "Lines:")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+    let comment_index = lines.iter().position(|line| line.trim() == "Comment:");
+    let body_lines = match comment_index {
+        Some(index) => &lines[index + 1..],
+        None => &lines[1..],
+    };
+    let body = body_lines.join("\n").trim().to_string();
+    if body.is_empty() {
+        return None;
+    }
+
+    Some(ThreadConversationUserComment {
+        path,
+        line_range,
+        body,
+    })
+}
+
+fn parse_inline_user_comment_header(header: &str) -> Option<(String, Option<String>)> {
+    let suffix_start = header.find(" (")?;
+    if !header.ends_with(')') {
+        return None;
+    }
+    let suffix = &header[suffix_start + 2..header.len() - 1];
+    let separator = suffix.rfind(':')?;
+    let path = suffix[..separator].trim();
+    if path.is_empty() {
+        return None;
+    }
+    let line_range = suffix[separator + 1..].trim();
+    Some((
+        path.to_string(),
+        (!line_range.is_empty()).then(|| line_range.to_string()),
+    ))
+}
+
+fn find_comment_metadata_value<'a>(lines: &'a [&str], prefix: &str) -> Option<&'a str> {
+    lines
+        .iter()
+        .find_map(|line| line.strip_prefix(prefix))
+        .map(str::trim)
+}
+
+fn extract_comment_line_range(value: &serde_json::Value) -> Option<String> {
+    if let Some(line) = value
+        .get("position")
+        .and_then(|position| position.get("line"))
+        .and_then(serde_json::Value::as_i64)
+    {
+        return Some(line.to_string());
+    }
+
+    let start_line = value
+        .get("startLine")
+        .and_then(serde_json::Value::as_i64)
+        .or_else(|| {
+            value
+                .get("position")
+                .and_then(|position| position.get("startLine"))
+                .and_then(serde_json::Value::as_i64)
+        });
+    let end_line = value
+        .get("endLine")
+        .and_then(serde_json::Value::as_i64)
+        .or_else(|| {
+            value
+                .get("position")
+                .and_then(|position| position.get("endLine"))
+                .and_then(serde_json::Value::as_i64)
+        });
+
+    match (start_line, end_line) {
+        (Some(start), Some(end)) if start != end => Some(format!("{start}-{end}")),
+        (Some(start), _) => Some(start.to_string()),
+        _ => None,
+    }
 }
 
 fn extract_string_array(value: Option<&serde_json::Value>) -> Vec<String> {
@@ -1237,6 +1860,72 @@ fn summarize_dynamic_tool_output(value: Option<&serde_json::Value>) -> Option<St
         }
         Some(text.to_string())
     })
+}
+
+fn map_user_input_question_and_answer(
+    question: &serde_json::Value,
+    item: &serde_json::Value,
+) -> Option<ThreadConversationQuestionAndAnswer> {
+    let question_id = question.get("id")?.as_str()?.to_string();
+    let header = question
+        .get("header")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_string();
+    let question_text = question
+        .get("question")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_string();
+    let answers = item
+        .get("answers")
+        .and_then(|answers| answers.get(&question_id))
+        .and_then(extract_user_input_response_answers)
+        .unwrap_or_default();
+    if question_id.is_empty() && header.is_empty() && question_text.is_empty() && answers.is_empty()
+    {
+        return None;
+    }
+    Some(ThreadConversationQuestionAndAnswer {
+        id: question_id,
+        header,
+        question: question_text,
+        answers,
+    })
+}
+
+fn extract_user_input_response_answers(value: &serde_json::Value) -> Option<Vec<String>> {
+    let answers = if let Some(entries) = value.as_array() {
+        entries
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|entry| !entry.is_empty())
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    } else {
+        value
+            .get("answers")
+            .and_then(serde_json::Value::as_array)
+            .map(|entries| {
+                entries
+                    .iter()
+                    .filter_map(serde_json::Value::as_str)
+                    .map(str::trim)
+                    .filter(|entry| !entry.is_empty())
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    };
+
+    if answers.is_empty() {
+        return None;
+    }
+
+    Some(answers)
 }
 
 fn normalize_todo_list_status(status: Option<&str>) -> String {
