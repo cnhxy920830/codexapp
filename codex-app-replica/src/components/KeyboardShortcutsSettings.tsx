@@ -1,6 +1,7 @@
 import {
   Fragment,
   useEffect,
+  useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent,
@@ -8,13 +9,20 @@ import {
 } from "react";
 import { useI18n } from "../i18n/i18n";
 import {
+  acceleratorsMatch,
   buildAcceleratorFromKeyboardEvent,
+  buildModifierOnlyAccelerator,
+  commandAllowsBareModifiers,
+  findConflictingKeyboardShortcutCommandTitle,
   getCommandKeymapState,
   getCommandShortcutEntries,
+  getFilteredKeyboardShortcutCommands,
+  getKeyboardShortcutCommandDescription,
   getKeyboardShortcutCommandTitle,
   getResetRowIndex,
-  KEYBOARD_SHORTCUT_COMMANDS,
   setCommandKeybinding,
+  supportsShortcutAppend,
+  type CommandKeybindingUpdate,
 } from "../services/keyboardShortcuts";
 
 type CaptureMode = "append" | "replace" | "set";
@@ -22,6 +30,7 @@ type CaptureMode = "append" | "replace" | "set";
 type CaptureState = {
   commandId: string;
   accelerator: string | null;
+  conflictingCommandTitle: string | null;
   mode: CaptureMode;
 };
 
@@ -33,6 +42,7 @@ export function KeyboardShortcutsSettings() {
   const [isSaving, setIsSaving] = useState(false);
   const [keymapState, setKeymapState] = useState<Awaited<ReturnType<typeof getCommandKeymapState>> | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [searchText, setSearchText] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -74,15 +84,7 @@ export function KeyboardShortcutsSettings() {
     });
   };
 
-  const updateCommandShortcut = async (
-    commandId: string,
-    update:
-      | { type: "set"; accelerator: string }
-      | { type: "append"; accelerator: string }
-      | { type: "replace"; previousAccelerator: string; accelerator: string }
-      | { type: "remove"; accelerator: string }
-      | { type: "reset" },
-  ) => {
+  const updateCommandShortcut = async (commandId: string, update: CommandKeybindingUpdate) => {
     clearCommandError(commandId);
     setIsSaving(true);
     try {
@@ -91,45 +93,47 @@ export function KeyboardShortcutsSettings() {
     } catch (error) {
       setErrorByCommandId((current) => ({
         ...current,
-        [commandId]:
-          error instanceof Error
-            ? error.message
-            : t("settings.keyboardShortcuts.updateError"),
+        [commandId]: error instanceof Error ? error.message : t("settings.keyboardShortcuts.updateError"),
       }));
     } finally {
       setIsSaving(false);
     }
   };
 
-  const startCapture = (
-    commandId: string,
-    mode: CaptureMode,
-    accelerator: string | null,
-  ) => {
+  const startCapture = (commandId: string, mode: CaptureMode, accelerator: string | null) => {
     clearCommandError(commandId);
     setCaptureState({
       commandId,
       accelerator,
+      conflictingCommandTitle: null,
       mode,
     });
   };
+
+  const filteredCommands = getFilteredKeyboardShortcutCommands(searchText, locale);
 
   return (
     <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-5 py-5">
       <div className="app-card rounded-[18px] px-5 py-4">
         <div className="app-title text-[14px] font-medium">{t("settings.section.keyboard-shortcuts")}</div>
-        <div className="app-text-muted mt-1 text-[13px] leading-6">
-          {t("settings.keyboardShortcuts.subtitle.electron")}
-        </div>
       </div>
 
       <div className="app-card overflow-hidden rounded-[18px] px-0 py-0">
+        {isLoading || loadError ? null : (
+          <div className="border-b border-[var(--app-shell-border)] px-4 py-3">
+            <input
+              className="w-full rounded-[10px] border border-[var(--app-shell-border)] bg-transparent px-3 py-2 text-sm text-[var(--app-shell-text)] outline-none placeholder:text-[var(--app-shell-subtle)]"
+              aria-label={t("settings.keyboardShortcuts.search.ariaLabel")}
+              placeholder={t("settings.keyboardShortcuts.search.placeholder")}
+              value={searchText}
+              onChange={(event) => setSearchText(event.currentTarget.value)}
+            />
+          </div>
+        )}
         {isLoading ? (
           <KeyboardShortcutStateRow label={t("settings.keyboardShortcuts.loading")} />
         ) : loadError ? (
-          <div className="app-card-error rounded-none border-0 px-5 py-4 text-[13px]">
-            {loadError}
-          </div>
+          <div className="app-card-error rounded-none border-0 px-5 py-4 text-[13px]">{loadError}</div>
         ) : (
           <table className="w-full table-fixed border-collapse text-sm">
             <colgroup>
@@ -147,8 +151,16 @@ export function KeyboardShortcutsSettings() {
               </tr>
             </thead>
             <tbody>
-              {KEYBOARD_SHORTCUT_COMMANDS.map((command, commandIndex) => {
+              {filteredCommands.length === 0 ? (
+                <tr>
+                  <td className="px-4 py-3 text-[var(--app-shell-subtle)]" colSpan={3}>
+                    {t("settings.keyboardShortcuts.noMatches")}
+                  </td>
+                </tr>
+              ) : null}
+              {filteredCommands.map((command, commandIndex) => {
                 const commandTitle = getKeyboardShortcutCommandTitle(command, locale);
+                const commandDescription = getKeyboardShortcutCommandDescription(command, locale);
                 const shortcutEntries = getCommandShortcutEntries(command.id, keymapState);
                 const hasCustomBinding =
                   keymapState?.bindings.some((binding) => binding.command === command.id) === true;
@@ -181,12 +193,21 @@ export function KeyboardShortcutsSettings() {
                       return (
                         <tr
                           key={`${command.id}-${entry?.accelerator ?? "unassigned"}-${rowIndex}`}
-                          className={isPrimaryRow && commandIndex > 0 ? "group border-t border-[var(--app-shell-border)] align-middle" : "group align-middle"}
+                          className={
+                            isPrimaryRow && commandIndex > 0
+                              ? "group border-t border-[var(--app-shell-border)] align-middle"
+                              : "group align-middle"
+                          }
                         >
                           <td className={rowPaddingClass}>
                             {isPrimaryRow ? (
                               <>
                                 <span className="block truncate text-[var(--app-shell-text)]">{commandTitle}</span>
+                                {commandDescription ? (
+                                  <span className="mt-0.5 block truncate text-xs text-[var(--app-shell-subtle)]">
+                                    {commandDescription}
+                                  </span>
+                                ) : null}
                                 {errorByCommandId[command.id] ? (
                                   <span className="mt-0.5 block text-xs text-[var(--app-shell-error-text)]">
                                     {errorByCommandId[command.id]}
@@ -195,15 +216,41 @@ export function KeyboardShortcutsSettings() {
                               </>
                             ) : null}
                           </td>
-                          <td className={rowPaddingClass}>
+                          <td className={rowPaddingClass} colSpan={isCapturing ? 2 : undefined}>
                             {isCapturing ? (
                               <ShortcutCaptureField
+                                allowsBareModifiers={commandAllowsBareModifiers(command)}
                                 commandTitle={commandTitle}
+                                conflictingCommandTitle={activeCapture?.conflictingCommandTitle ?? null}
                                 onCancel={() => setCaptureState(null)}
                                 onCapture={(accelerator) => {
                                   if (!activeCapture) {
                                     return;
                                   }
+                                  if (
+                                    activeCapture.mode !== "append" &&
+                                    entry &&
+                                    acceleratorsMatch(entry.accelerator, accelerator)
+                                  ) {
+                                    setCaptureState(null);
+                                    return;
+                                  }
+
+                                  const conflictingCommandTitle = findConflictingKeyboardShortcutCommandTitle(
+                                    accelerator,
+                                    command.id,
+                                    keymapState,
+                                    locale,
+                                  );
+                                  if (conflictingCommandTitle) {
+                                    setCaptureState((current) =>
+                                      current?.commandId === command.id
+                                        ? { ...current, conflictingCommandTitle }
+                                        : current,
+                                    );
+                                    return;
+                                  }
+
                                   setCaptureState(null);
                                   void updateCommandShortcut(
                                     command.id,
@@ -229,6 +276,7 @@ export function KeyboardShortcutsSettings() {
                               <div className="flex items-center gap-1">
                                 <ShortcutLabel shortcutLabel={entry?.label ?? null} />
                                 <ShortcutEditButton
+                                  canAppend={supportsShortcutAppend(command)}
                                   commandTitle={commandTitle}
                                   hasShortcut={entry !== null}
                                   isPending={isSaving}
@@ -243,8 +291,8 @@ export function KeyboardShortcutsSettings() {
                               </div>
                             )}
                           </td>
-                          <td className={rowPaddingClass}>
-                            {isCapturing ? null : (
+                          {isCapturing ? null : (
+                            <td className={rowPaddingClass}>
                               <ShortcutRowActions
                                 commandTitle={commandTitle}
                                 hasCustomBinding={hasCustomBinding}
@@ -262,8 +310,8 @@ export function KeyboardShortcutsSettings() {
                                 }}
                                 onReset={() => void updateCommandShortcut(command.id, { type: "reset" })}
                               />
-                            )}
-                          </td>
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
@@ -287,15 +335,25 @@ function KeyboardShortcutStateRow({ label }: { label: string }) {
 }
 
 function ShortcutCaptureField({
+  allowsBareModifiers,
   commandTitle,
+  conflictingCommandTitle,
   onCancel,
   onCapture,
 }: {
+  allowsBareModifiers: boolean;
   commandTitle: string;
+  conflictingCommandTitle: string | null;
   onCancel: () => void;
   onCapture: (accelerator: string) => void;
 }) {
   const { t } = useI18n();
+  const pendingModifierAcceleratorRef = useRef<string | null>(null);
+
+  const cancelCapture = () => {
+    pendingModifierAcceleratorRef.current = null;
+    onCancel();
+  };
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (event.repeat) {
@@ -305,35 +363,67 @@ function ShortcutCaptureField({
     event.stopPropagation();
 
     if (event.key === "Escape") {
-      onCancel();
+      cancelCapture();
       return;
     }
 
+    if (allowsBareModifiers) {
+      const modifierOnlyAccelerator = buildModifierOnlyAccelerator(event.nativeEvent, "pressed");
+      if (modifierOnlyAccelerator) {
+        pendingModifierAcceleratorRef.current = modifierOnlyAccelerator;
+        return;
+      }
+    }
+
+    pendingModifierAcceleratorRef.current = null;
     const accelerator = buildAcceleratorFromKeyboardEvent(event.nativeEvent);
     if (accelerator) {
       onCapture(accelerator);
     }
   };
 
+  const handleKeyUp = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!allowsBareModifiers) {
+      return;
+    }
+
+    const modifierOnlyAccelerator = buildModifierOnlyAccelerator(event.nativeEvent, "released");
+    if (modifierOnlyAccelerator && pendingModifierAcceleratorRef.current === modifierOnlyAccelerator) {
+      pendingModifierAcceleratorRef.current = null;
+      onCapture(modifierOnlyAccelerator);
+    }
+  };
+
   return (
-    <div className="flex items-center gap-2">
-      <input
-        autoFocus
-        readOnly
-        value={t("settings.keyboardShortcuts.capturePrompt")}
-        onBlur={onCancel}
-        onKeyDown={handleKeyDown}
-        aria-label={t("settings.keyboardShortcuts.captureAriaLabel", { commandTitle })}
-        className="app-control h-9 w-36 rounded-[10px] px-2 text-[13px] outline-none"
-      />
-      <button
-        type="button"
-        onMouseDown={preventDefaultMouseDown}
-        onClick={onCancel}
-        className="app-control rounded-[10px] px-3 py-1.5 text-[12px]"
-      >
-        {t("settings.keyboardShortcuts.captureCancel")}
-      </button>
+    <div className="flex w-full flex-col items-start gap-1">
+      <div className="flex items-center gap-2">
+        <input
+          autoFocus
+          readOnly
+          value={t("settings.keyboardShortcuts.capturePrompt")}
+          onBlur={cancelCapture}
+          onKeyDown={handleKeyDown}
+          onKeyUp={handleKeyUp}
+          aria-label={t("settings.keyboardShortcuts.captureAriaLabel", { commandTitle })}
+          className="app-control h-9 w-36 rounded-[10px] px-2 text-[13px] outline-none"
+        />
+        <button
+          type="button"
+          onMouseDown={preventDefaultMouseDown}
+          onClick={cancelCapture}
+          className="app-control rounded-[10px] px-3 py-1.5 text-[12px]"
+        >
+          {t("settings.keyboardShortcuts.captureCancel")}
+        </button>
+      </div>
+      {conflictingCommandTitle ? (
+        <span className="text-xs text-[var(--app-shell-warning-text)]">
+          {t("settings.keyboardShortcuts.captureConflict", { commandTitle: conflictingCommandTitle })}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -398,11 +488,13 @@ function ShortcutRowActions({
 }
 
 function ShortcutEditButton({
+  canAppend,
   commandTitle,
   hasShortcut,
   isPending,
   onStartCapture,
 }: {
+  canAppend: boolean;
   commandTitle: string;
   hasShortcut: boolean;
   isPending: boolean;
@@ -423,11 +515,12 @@ function ShortcutEditButton({
       className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
       disabled={isPending}
       onClick={(event) => {
-        const mode: CaptureMode = hasShortcut ? (event.shiftKey ? "append" : "replace") : "set";
+        const mode: CaptureMode =
+          hasShortcut && canAppend && event.shiftKey ? "append" : hasShortcut ? "replace" : "set";
         onStartCapture(mode);
       }}
-      onMouseEnter={(event) => setIsAppendIntent(hasShortcut && event.shiftKey)}
-      onMouseMove={(event) => setIsAppendIntent(hasShortcut && event.shiftKey)}
+      onMouseEnter={(event) => setIsAppendIntent(canAppend && hasShortcut && event.shiftKey)}
+      onMouseMove={(event) => setIsAppendIntent(canAppend && hasShortcut && event.shiftKey)}
       onMouseLeave={() => setIsAppendIntent(false)}
     >
       <PencilIcon className="size-4" />
@@ -446,7 +539,7 @@ function IconButton({
   onMouseMove,
 }: {
   ariaLabel: string;
-  children: React.ReactNode;
+  children: ReactNode;
   className?: string;
   disabled?: boolean;
   onClick: (event: MouseEvent<HTMLButtonElement>) => void;

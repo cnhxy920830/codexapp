@@ -22,9 +22,18 @@ pub struct CommandKeybinding {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct PlatformDefaultKeybindings {
+    default: Option<Vec<String>>,
+    #[serde(rename = "macOS")]
+    mac_os: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct CommandInventoryEntry {
     id: String,
     default_keybindings: Vec<String>,
+    platform_default_keybindings: Option<PlatformDefaultKeybindings>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -162,12 +171,37 @@ fn command_keymap_state_path(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn default_keybindings_for_command(command_id: &str) -> Result<Vec<String>, String> {
-    let commands = serde_json::from_str::<Vec<CommandInventoryEntry>>(COMMAND_INVENTORY_JSON)
+    default_keybindings_for_command_from_inventory(command_id, COMMAND_INVENTORY_JSON)
+}
+
+fn default_keybindings_for_command_from_inventory(
+    command_id: &str,
+    command_inventory_json: &str,
+) -> Result<Vec<String>, String> {
+    let commands = serde_json::from_str::<Vec<CommandInventoryEntry>>(command_inventory_json)
         .map_err(|err| format!("failed to parse keyboard shortcut inventory: {err}"))?;
     commands
         .into_iter()
         .find(|command| command.id == command_id)
-        .map(|command| command.default_keybindings)
+        .map(|command| {
+            if cfg!(target_os = "macos") {
+                if let Some(mac_os_default_keybindings) =
+                    command.platform_default_keybindings.as_ref().and_then(
+                        |platform_default_keybindings| platform_default_keybindings.mac_os.clone(),
+                    )
+                {
+                    return mac_os_default_keybindings;
+                }
+            } else if let Some(default_keybindings) =
+                command.platform_default_keybindings.as_ref().and_then(
+                    |platform_default_keybindings| platform_default_keybindings.default.clone(),
+                )
+            {
+                return default_keybindings;
+            }
+
+            command.default_keybindings
+        })
         .ok_or_else(|| format!("unsupported keyboard shortcut command: {command_id}"))
 }
 
@@ -231,4 +265,44 @@ fn normalize_accelerators(accelerators: Vec<String>) -> Vec<String> {
         normalized.push(trimmed.to_string());
     }
     normalized
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{default_keybindings_for_command_from_inventory, COMMAND_INVENTORY_JSON};
+
+    #[test]
+    fn find_in_thread_uses_platform_specific_default_keybinding() {
+        let expected = if cfg!(target_os = "macos") {
+            vec!["Command+F".to_string()]
+        } else {
+            vec!["Ctrl+F".to_string()]
+        };
+
+        assert_eq!(
+            expected,
+            default_keybindings_for_command_from_inventory("findInThread", COMMAND_INVENTORY_JSON,)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn upstream_keyboard_shortcut_commands_are_supported() {
+        assert_eq!(
+            Vec::<String>::new(),
+            default_keybindings_for_command_from_inventory(
+                "openThreadInNewWindow",
+                COMMAND_INVENTORY_JSON,
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            Vec::<String>::new(),
+            default_keybindings_for_command_from_inventory(
+                "globalDictationHold",
+                COMMAND_INVENTORY_JSON,
+            )
+            .unwrap()
+        );
+    }
 }

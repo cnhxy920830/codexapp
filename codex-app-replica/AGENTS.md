@@ -24,6 +24,22 @@ This directory is for building a Windows Codex App replica with Tauri + React.
 - Only re-baseline to a newer upstream version after the user explicitly requests it.
 - Use the currently installed version on this computer as the baseline until the user explicitly announces an update.
 
+## Rebaseline Workflow
+
+- When the user states that the installed original Codex App has been updated, treat that as an explicit re-baseline request.
+- On re-baseline, immediately treat all prior version progress, `done` states, partial gap notes, and blockers as non-authoritative until re-proven against the new installed version.
+- Discover the new installed package version first, then extract the current `app/resources/app.asar` with the official `@electron/asar` toolchain.
+- For every new baseline version, capture at minimum:
+  - `compare/resources/<target-version>/app.asar.extracted/`
+  - `compare/resources/<target-version>/app.asar.list.txt`
+  - `compare/resources/<target-version>/AppxManifest.xml`
+  - `compare/resources/<target-version>/icon.ico`
+  - `compare/resources/<target-version>/THIRD_PARTY_NOTICES.txt`
+  - `compare/resources/<target-version>/app-version.txt` from the extracted `package.json` when available
+- Create or refresh versioned compare roots for the new baseline under `compare/resources/`, `compare/baselines/`, and later `compare/network/` / `compare/protocol/` as evidence is captured.
+- Reset `compare/tracker.md` to a fresh discovery-and-gap-tracking state for the new version. Do not carry forward old-version completion percentages or page statuses.
+- Older version artifacts may remain on disk for history, but they are archival only and cannot justify implementation for the new baseline without explicit revalidation.
+
 ## Parity Standard
 
 - `Close enough` is not acceptable unless the user explicitly approves it.
@@ -78,11 +94,10 @@ This directory is for building a Windows Codex App replica with Tauri + React.
 - Keep artifact subdirectories stable across sessions to avoid directory drift and duplicate work.
 - Use the same comparison artifact locations for repeated captures of the same target version unless the user explicitly requests a new baseline.
 - Use stable subdirectories under `compare/` for `resources/`, `network/`, `protocol/`, and `baselines/<target-version>/`.
-- Maintain a single living tracker at `codex-app-replica/compare/tracker.md` for the full feature list, open TODOs, blocked items, and verification status.
+- Maintain a single living tracker at `codex-app-replica/compare/tracker.md` for the current page, that page's feature points, blocked pages, completed pages, and verification status.
 - The tracker format is a single Markdown file.
 - Track entries must use stable fields: `ID`, `Status`, `Priority`, `Blocked Reason`, `Evidence`, and `Notes`.
-- The tracker is organized in two layers: module entries at the top level, then page / flow entries nested under the module they belong to.
-- The tracker must include foundation, scaffolding, build, and packaging work, not only user-facing product features.
+- The tracker is page-first. The working unit is one page at a time, then the feature points inside that page.
 - Every implementation, reverse-engineering, and parity-validation task must map to an item in the tracker before work starts.
 - Do not start implementation, reverse-engineering, or parity-validation work that is not represented in the tracker.
 
@@ -90,23 +105,49 @@ This directory is for building a Windows Codex App replica with Tauri + React.
 
 - Do not create tracker entries for AGENTS-only governance, policy, or working-contract edits unless the user explicitly requests it.
 - For tracker-scoped work, update `compare/tracker.md` before starting work, when status changes, when new evidence is captured, and when work is blocked or verified.
-- Create new tracker entries as soon as reverse-engineering reveals a new module, page, flow, system behavior, or foundation task that matters for parity.
-- Keep module IDs stable as `M-###`.
-- Keep page / flow IDs stable under their owning module, using a consistent suffix scheme.
-- Keep standalone TODO items stable as `T-###`.
+- Create new tracker entries only for the current confirmed page and the feature points that belong to that page.
+- Keep page IDs stable as `P-###`.
+- Keep feature-point IDs stable under their owning page, such as `P-###-F##`.
 - Do not renumber existing entries unless the user explicitly requests tracker reorganization.
 - Use `todo` for discovered work that has not started.
-- Use `in_progress` for the single task currently being worked on, unless parallel work is explicitly justified in the tracker notes.
+- Use `in_progress` for the single current page only. Do not run multiple pages in parallel.
 - Use `blocked` when progress cannot continue without user resolution or when constraints prohibit a compliant implementation.
 - Use `done` only after the work and its required evidence are both complete.
 - When an item becomes `blocked`, fill `Blocked Reason` with the concrete blocker and mirror the item in the tracker `Blocked Items` section.
 - When an item is completed, add or update its evidence path or evidence summary in `Evidence`.
-- Use `Notes` for scope boundaries, implementation decisions, reverse-engineering observations, and links to related tracker IDs.
+- Use `Notes` for scope boundaries, implementation decisions, reverse-engineering observations, current-page dependencies, and links to related tracker IDs.
 - For implementation or parity-correction items, record the exact upstream extracted artifact path or paths before code changes begin.
 - For implementation or parity-correction items, `Notes` must make the mapping explicit: upstream source path, replica target path, and the concrete gap being closed.
 - Keep `Open TODOs` focused on near-term executable work.
 - Keep `Verification Log` focused on completed checks and their evidence.
-- If a tracker item splits into multiple concrete tasks, create child or sibling entries instead of overloading one row with unrelated work.
+- If a current page splits into multiple concrete tasks, create feature-point child entries under that page instead of starting another page.
+
+## Single-Page Tracker Execution
+
+- After a re-baseline, rebuild the tracker from the current extracted artifact set instead of editing the previous version's tracker in place.
+- Discover the next page only from the current extracted artifact set.
+- Use extracted page-owner files first, especially bundles named like `*-page-*`, `*-settings-*`, `*-route-*`, `*-preview-*`, `*-conversation-*`, and page-owning shell bundles that clearly render a standalone surface.
+- Do not bulk-register the whole app into the tracker before work begins.
+- Do not copy old tracker rows verbatim just because bundle names look similar. Re-prove every current page against the new extracted version.
+- For the selected current page, record:
+  - exact upstream extracted source path or paths
+  - current replica target path or paths in `src/` and `src-tauri/src/`
+  - the page-level scope boundary
+- After the page row exists, read the extracted owner files for that page and add only that page's feature points.
+- Every feature point must belong to the current page. Do not create free-floating feature tasks.
+- The required working order is:
+  1. derive one page from extracted artifacts
+  2. register that page in the tracker
+  3. enumerate only that page's feature points
+  4. map that page and its feature points to current replica files
+  5. record the concrete gaps
+  6. implement only that page
+  7. verify only that page
+  8. then move to the next page
+- If a current baseline page cannot yet be mapped to a replica target file, keep that page in discovery state instead of writing speculative implementation tasks.
+- Do not leave the current page half-finished just because another page looks easier or related.
+- Do not widen current-page work into neighboring pages unless the extracted evidence proves the behavior is owned by the current page.
+- Previous-version protocol notes, runtime observations, and tracker claims may be used only as hints for where to look. They are not evidence for the current baseline until revalidated.
 
 ## Delivery Path
 

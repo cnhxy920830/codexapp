@@ -3,9 +3,15 @@ use serde::Serialize;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+#[cfg(target_os = "macos")]
+use std::process::Command;
 
 const COMPUTER_USE_APPROVALS_FILE: &str = "ComputerUseAppApprovals.json";
 const COMPUTER_USE_GROUP_CONTAINER: &str = "2DC432GLL2.com.openai.sky.CUAService";
+#[cfg(target_os = "macos")]
+const COMPUTER_USE_SERVICE_BUNDLE_IDENTIFIER: &str = "com.openai.sky.CUAService";
+#[cfg(target_os = "macos")]
+const COMPUTER_USE_SOUND_MODE_KEY: &str = "computerUseSoundMode";
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -29,10 +35,28 @@ pub struct ComputerUseApprovalsState {
     pub approved_bundle_identifiers: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ComputerUseSoundModeReadResponse {
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ComputerUseSoundModeWriteResponse {
+    pub value: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ComputerUseApprovalRemoveParams {
     pub bundle_identifier: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComputerUseSoundModeWriteParams {
+    pub value: String,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -44,13 +68,61 @@ struct ComputerUseApprovalStoreFile {
 
 #[tauri::command]
 pub fn read_computer_use_approvals_visibility() -> Result<ComputerUseVisibilityState, String> {
+    read_computer_use_approvals_visibility_state()
+}
+
+#[tauri::command(rename = "computer-use-app-approvals-visibility")]
+pub fn computer_use_app_approvals_visibility() -> Result<ComputerUseVisibilityState, String> {
+    read_computer_use_approvals_visibility_state()
+}
+
+#[tauri::command]
+pub fn read_computer_use_approvals() -> Result<Option<ComputerUseApprovalsState>, String> {
+    read_computer_use_approvals_state()
+}
+
+#[tauri::command(rename = "computer-use-app-approvals-read")]
+pub fn computer_use_app_approvals_read() -> Result<Option<ComputerUseApprovalsState>, String> {
+    read_computer_use_approvals_state()
+}
+
+#[tauri::command]
+pub fn remove_computer_use_approval(
+    params: ComputerUseApprovalRemoveParams,
+) -> Result<Option<ComputerUseApprovalsState>, String> {
+    remove_computer_use_approval_state(params)
+}
+
+#[tauri::command(rename = "computer-use-app-approval-remove")]
+pub fn computer_use_app_approval_remove(
+    params: ComputerUseApprovalRemoveParams,
+) -> Result<Option<ComputerUseApprovalsState>, String> {
+    remove_computer_use_approval_state(params)
+}
+
+#[tauri::command(rename = "computer-use-sound-mode-read")]
+pub fn computer_use_sound_mode_read() -> Result<ComputerUseSoundModeReadResponse, String> {
+    Ok(ComputerUseSoundModeReadResponse {
+        value: read_computer_use_sound_mode()?,
+    })
+}
+
+#[tauri::command(rename = "computer-use-sound-mode-write")]
+pub fn computer_use_sound_mode_write(
+    params: ComputerUseSoundModeWriteParams,
+) -> Result<ComputerUseSoundModeWriteResponse, String> {
+    Ok(ComputerUseSoundModeWriteResponse {
+        value: write_computer_use_sound_mode(&params.value)?,
+    })
+}
+
+fn read_computer_use_approvals_visibility_state() -> Result<ComputerUseVisibilityState, String> {
     Ok(ComputerUseVisibilityState {
         has_approval_store: computer_use_approval_store_path()?.exists(),
     })
 }
 
-#[tauri::command]
-pub fn read_computer_use_approvals() -> Result<Option<ComputerUseApprovalsState>, String> {
+fn read_computer_use_approvals_state() -> Result<Option<ComputerUseApprovalsState>, String> {
     let Some(bundle_identifiers) = read_computer_use_approval_store()? else {
         return Ok(None);
     };
@@ -58,8 +130,7 @@ pub fn read_computer_use_approvals() -> Result<Option<ComputerUseApprovalsState>
     Ok(Some(computer_use_approvals_state(bundle_identifiers)))
 }
 
-#[tauri::command]
-pub fn remove_computer_use_approval(
+fn remove_computer_use_approval_state(
     params: ComputerUseApprovalRemoveParams,
 ) -> Result<Option<ComputerUseApprovalsState>, String> {
     let Some(bundle_identifiers) = read_computer_use_approval_store()? else {
@@ -78,6 +149,69 @@ pub fn remove_computer_use_approval(
     }
 
     Ok(Some(computer_use_approvals_state(next_bundle_identifiers)))
+}
+
+#[cfg(target_os = "macos")]
+fn read_computer_use_sound_mode() -> Result<Option<String>, String> {
+    let output = match Command::new("/usr/bin/defaults")
+        .args([
+            "read",
+            COMPUTER_USE_SERVICE_BUNDLE_IDENTIFIER,
+            COMPUTER_USE_SOUND_MODE_KEY,
+        ])
+        .output()
+    {
+        Ok(output) => output,
+        Err(_) => return Ok(None),
+    };
+
+    if !output.status.success() {
+        return Ok(None);
+    }
+
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if value.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(value))
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn read_computer_use_sound_mode() -> Result<Option<String>, String> {
+    Ok(None)
+}
+
+#[cfg(target_os = "macos")]
+fn write_computer_use_sound_mode(value: &str) -> Result<String, String> {
+    let output = Command::new("/usr/bin/defaults")
+        .args([
+            "write",
+            COMPUTER_USE_SERVICE_BUNDLE_IDENTIFIER,
+            COMPUTER_USE_SOUND_MODE_KEY,
+            value,
+        ])
+        .output()
+        .map_err(|err| format!("failed to write computer use sound mode: {err}"))?;
+
+    if output.status.success() {
+        Ok(value.to_string())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.is_empty() {
+            Err(format!(
+                "failed to write computer use sound mode: defaults exited with {}",
+                output.status
+            ))
+        } else {
+            Err(format!("failed to write computer use sound mode: {stderr}"))
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn write_computer_use_sound_mode(value: &str) -> Result<String, String> {
+    Ok(value.to_string())
 }
 
 fn read_computer_use_approval_store() -> Result<Option<Vec<String>>, String> {
@@ -198,6 +332,10 @@ fn non_empty_env_path(name: &str) -> Option<PathBuf> {
 mod tests {
     use super::computer_use_approvals_state;
     use super::normalized_bundle_identifiers;
+    use super::read_computer_use_sound_mode;
+    use super::write_computer_use_sound_mode;
+    use super::ComputerUseApprovalsState;
+    use super::ComputerUseApprovedApp;
 
     #[test]
     fn normalized_bundle_identifiers_trims_and_deduplicates() {
@@ -222,12 +360,30 @@ mod tests {
         let state = computer_use_approvals_state(vec!["com.example.app".to_string()]);
 
         assert_eq!(
-            state.approved_bundle_identifiers,
-            vec!["com.example.app".to_string()]
+            state,
+            ComputerUseApprovalsState {
+                approved_apps: vec![ComputerUseApprovedApp {
+                    bundle_identifier: "com.example.app".to_string(),
+                    display_name: "com.example.app".to_string(),
+                    icon_data_url: None,
+                }],
+                approved_bundle_identifiers: vec!["com.example.app".to_string()],
+            }
         );
-        assert_eq!(state.approved_apps.len(), 1);
-        assert_eq!(state.approved_apps[0].bundle_identifier, "com.example.app");
-        assert_eq!(state.approved_apps[0].display_name, "com.example.app");
-        assert_eq!(state.approved_apps[0].icon_data_url, None);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn sound_mode_read_returns_none_off_macos() {
+        assert_eq!(read_computer_use_sound_mode().unwrap(), None);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn sound_mode_write_echoes_value_off_macos() {
+        assert_eq!(
+            write_computer_use_sound_mode("foregroundClicks").unwrap(),
+            "foregroundClicks".to_string()
+        );
     }
 }

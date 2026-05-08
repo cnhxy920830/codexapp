@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use serde::Serialize;
+use std::env;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::Component;
@@ -8,6 +9,7 @@ use std::path::PathBuf;
 
 const LOCAL_ENVIRONMENTS_DIR: &str = ".codex/environments";
 const DEFAULT_ENVIRONMENT_FILE_NAME: &str = "environment.toml";
+const LOCAL_HOST_ID: &str = "local";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -28,6 +30,28 @@ pub struct WriteLocalEnvironmentConfigParams {
     pub workspace_root: String,
     pub config_path: String,
     pub environment: LocalEnvironmentDocument,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpstreamLocalEnvironmentsParams {
+    pub host_id: Option<String>,
+    pub workspace_root: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpstreamLocalEnvironmentParams {
+    pub host_id: Option<String>,
+    pub config_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpstreamLocalEnvironmentConfigSaveParams {
+    pub host_id: Option<String>,
+    pub config_path: String,
+    pub raw: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -62,6 +86,58 @@ pub struct LocalEnvironmentConfigResponse {
     pub exists: bool,
     pub environment: LocalEnvironmentDocument,
     pub parse_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpstreamLocalEnvironmentsResponse {
+    pub environments: Vec<UpstreamLocalEnvironmentEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpstreamLocalEnvironmentResponse {
+    pub environment: UpstreamLocalEnvironmentEntry,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpstreamLocalEnvironmentConfigResponse {
+    pub config_path: String,
+    pub exists: bool,
+    pub raw: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpstreamLocalEnvironmentConfigSaveResponse {
+    pub config_path: String,
+    pub success: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpstreamLocalEnvironmentEntry {
+    pub config_path: String,
+    #[serde(flatten)]
+    pub state: UpstreamLocalEnvironmentState,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpstreamLocalEnvironmentError {
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum UpstreamLocalEnvironmentState {
+    Success {
+        environment: LocalEnvironmentDocument,
+    },
+    Error {
+        error: UpstreamLocalEnvironmentError,
+    },
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -186,6 +262,46 @@ pub fn write_local_environment_config(
     })
 }
 
+#[tauri::command(rename = "local-environments")]
+pub fn upstream_local_environments(
+    params: UpstreamLocalEnvironmentsParams,
+) -> Result<UpstreamLocalEnvironmentsResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "local-environments")?;
+    let workspace_root = resolve_workspace_root(Some(&params.workspace_root))?;
+    Ok(UpstreamLocalEnvironmentsResponse {
+        environments: collect_upstream_local_environment_entries(&workspace_root)?,
+    })
+}
+
+#[tauri::command(rename = "local-environment")]
+pub fn upstream_local_environment(
+    params: UpstreamLocalEnvironmentParams,
+) -> Result<UpstreamLocalEnvironmentResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "local-environment")?;
+    let config_path = normalize_upstream_local_environment_config_path(&params.config_path)?;
+    Ok(UpstreamLocalEnvironmentResponse {
+        environment: read_upstream_local_environment_entry(&config_path)?,
+    })
+}
+
+#[tauri::command(rename = "local-environment-config")]
+pub fn upstream_local_environment_config(
+    params: UpstreamLocalEnvironmentParams,
+) -> Result<UpstreamLocalEnvironmentConfigResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "local-environment-config")?;
+    let config_path = normalize_upstream_local_environment_config_path(&params.config_path)?;
+    read_upstream_local_environment_config(&config_path)
+}
+
+#[tauri::command(rename = "local-environment-config-save")]
+pub fn upstream_local_environment_config_save(
+    params: UpstreamLocalEnvironmentConfigSaveParams,
+) -> Result<UpstreamLocalEnvironmentConfigSaveResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "local-environment-config-save")?;
+    let config_path = normalize_upstream_local_environment_config_path(&params.config_path)?;
+    write_upstream_local_environment_config(&config_path, &params.raw)
+}
+
 fn collect_local_environment_entries(
     root_path: &Path,
 ) -> Result<Vec<LocalEnvironmentConfigEntry>, String> {
@@ -228,6 +344,34 @@ fn collect_local_environment_entries(
     Ok(entries)
 }
 
+fn collect_upstream_local_environment_entries(
+    root_path: &Path,
+) -> Result<Vec<UpstreamLocalEnvironmentEntry>, String> {
+    let environments_dir = root_path.join(LOCAL_ENVIRONMENTS_DIR);
+    if !environments_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let mut paths = Vec::new();
+    for entry in fs::read_dir(&environments_dir)
+        .map_err(|err| format!("failed to read local environments directory: {err}"))?
+    {
+        let entry =
+            entry.map_err(|err| format!("failed to read local environment entry: {err}"))?;
+        let path = entry.path();
+        if !path.is_file() || path.extension() != Some(OsStr::new("toml")) {
+            continue;
+        }
+        paths.push(path);
+    }
+    paths.sort();
+
+    paths
+        .iter()
+        .map(|path| read_upstream_local_environment_entry(path))
+        .collect()
+}
+
 fn resolve_workspace_root(workspace_root: Option<&str>) -> Result<PathBuf, String> {
     let trimmed = workspace_root.map(str::trim).unwrap_or_default();
     if trimmed.is_empty() {
@@ -247,6 +391,25 @@ fn resolve_workspace_root(workspace_root: Option<&str>) -> Result<PathBuf, Strin
 
     path.canonicalize()
         .map_err(|err| format!("failed to resolve workspace root: {err}"))
+}
+
+fn normalize_upstream_local_environment_config_path(config_path: &str) -> Result<PathBuf, String> {
+    let trimmed = config_path.trim();
+    if trimmed.is_empty() {
+        return Err("local environment config path is empty".to_string());
+    }
+
+    let path = Path::new(trimmed);
+    let candidate = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        let current_dir = env::current_dir()
+            .map_err(|err| format!("failed to resolve current directory: {err}"))?;
+        current_dir.join(path)
+    };
+    let candidate = normalize_path_lexically(&candidate);
+    let _ = local_environment_owner_root_from_config_path(&candidate)?;
+    Ok(candidate)
 }
 
 fn normalize_local_environment_config_path(
@@ -539,4 +702,233 @@ fn file_name_label(path: &Path) -> String {
 
 fn default_local_environment_version() -> u64 {
     1
+}
+
+fn read_upstream_local_environment_entry(
+    path: &Path,
+) -> Result<UpstreamLocalEnvironmentEntry, String> {
+    if !path.is_file() {
+        return Err(format!(
+            "local environment config does not exist: {}",
+            path.display()
+        ));
+    }
+
+    let owner_root = local_environment_owner_root_from_config_path(path)?;
+    let contents = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read local environment config: {err}"))?;
+
+    let state = match parse_local_environment_document(&contents, &owner_root) {
+        Ok(environment) => UpstreamLocalEnvironmentState::Success { environment },
+        Err(message) => UpstreamLocalEnvironmentState::Error {
+            error: UpstreamLocalEnvironmentError { message },
+        },
+    };
+
+    Ok(UpstreamLocalEnvironmentEntry {
+        config_path: path.display().to_string(),
+        state,
+    })
+}
+
+fn read_upstream_local_environment_config(
+    path: &Path,
+) -> Result<UpstreamLocalEnvironmentConfigResponse, String> {
+    if !path.is_file() {
+        return Ok(UpstreamLocalEnvironmentConfigResponse {
+            config_path: path.display().to_string(),
+            exists: false,
+            raw: None,
+        });
+    }
+
+    let raw = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read local environment config: {err}"))?;
+    Ok(UpstreamLocalEnvironmentConfigResponse {
+        config_path: path.display().to_string(),
+        exists: true,
+        raw: Some(raw),
+    })
+}
+
+fn write_upstream_local_environment_config(
+    path: &Path,
+    raw: &str,
+) -> Result<UpstreamLocalEnvironmentConfigSaveResponse, String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "local environment config path has no parent directory".to_string())?;
+    fs::create_dir_all(parent)
+        .map_err(|err| format!("failed to create local environment directory: {err}"))?;
+    fs::write(path, raw.as_bytes())
+        .map_err(|err| format!("failed to write local environment config: {err}"))?;
+
+    Ok(UpstreamLocalEnvironmentConfigSaveResponse {
+        config_path: path.display().to_string(),
+        success: true,
+    })
+}
+
+fn ensure_supported_host_id(host_id: Option<&str>, command_name: &str) -> Result<(), String> {
+    match host_id.map(str::trim).filter(|value| !value.is_empty()) {
+        None | Some(LOCAL_HOST_ID) => Ok(()),
+        Some(host_id) => Err(format!(
+            "{command_name} does not support host id: {host_id}"
+        )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn upstream_local_environments_returns_success_and_error_entries() {
+        let workspace_root = temp_workspace_root("list");
+        let environments_dir = workspace_root.join(LOCAL_ENVIRONMENTS_DIR);
+        fs::create_dir_all(&environments_dir).expect("environments directory should be created");
+        let valid_path = environments_dir.join("environment.toml");
+        let invalid_path = environments_dir.join("broken.toml");
+        fs::write(&valid_path, "version = 1\nname = \"demo\"\n")
+            .expect("valid environment should be written");
+        fs::write(&invalid_path, "not valid toml").expect("invalid environment should be written");
+
+        let environments = collect_upstream_local_environment_entries(&workspace_root)
+            .expect("list should succeed");
+
+        assert_eq!(
+            environments,
+            vec![
+                UpstreamLocalEnvironmentEntry {
+                    config_path: invalid_path.display().to_string(),
+                    state: UpstreamLocalEnvironmentState::Error {
+                        error: UpstreamLocalEnvironmentError {
+                            message:
+                                "failed to parse local environment config: TOML parse error at line 1, column 5\n  |\n1 | not valid toml\n  |     ^\nexpected `.`, `=`\n"
+                                    .to_string(),
+                        },
+                    },
+                },
+                UpstreamLocalEnvironmentEntry {
+                    config_path: valid_path.display().to_string(),
+                    state: UpstreamLocalEnvironmentState::Success {
+                        environment: LocalEnvironmentDocument {
+                            version: 1,
+                            name: "demo".to_string(),
+                            setup: LocalEnvironmentScriptSection::default(),
+                            cleanup: LocalEnvironmentScriptSection::default(),
+                            actions: Vec::new(),
+                        },
+                    },
+                },
+            ]
+        );
+
+        let _ = fs::remove_dir_all(&workspace_root);
+    }
+
+    #[test]
+    fn upstream_local_environment_config_reports_missing_file() {
+        let path = temp_workspace_root("missing")
+            .join(".codex")
+            .join("environments")
+            .join("environment.toml");
+
+        let response = read_upstream_local_environment_config(&path).expect("read should succeed");
+
+        assert_eq!(
+            response,
+            UpstreamLocalEnvironmentConfigResponse {
+                config_path: path.display().to_string(),
+                exists: false,
+                raw: None,
+            }
+        );
+    }
+
+    #[test]
+    fn upstream_local_environment_config_save_writes_raw_contents() {
+        let path = temp_workspace_root("save")
+            .join(".codex")
+            .join("environments")
+            .join("environment.toml");
+        let raw = "version = 1\nname = \"demo\"\n";
+
+        let response =
+            write_upstream_local_environment_config(&path, raw).expect("save should succeed");
+
+        assert_eq!(
+            response,
+            UpstreamLocalEnvironmentConfigSaveResponse {
+                config_path: path.display().to_string(),
+                success: true,
+            }
+        );
+        assert_eq!(
+            fs::read_to_string(&path).expect("saved config should be readable"),
+            raw
+        );
+
+        let workspace_root = path
+            .ancestors()
+            .nth(3)
+            .expect("workspace root ancestor should exist");
+        let _ = fs::remove_dir_all(workspace_root);
+    }
+
+    #[test]
+    fn upstream_local_environment_reads_parsed_success_state() {
+        let workspace_root = temp_workspace_root("single");
+        let path = workspace_root
+            .join(".codex")
+            .join("environments")
+            .join("environment.toml");
+        fs::create_dir_all(path.parent().expect("path should have parent"))
+            .expect("environments directory should be created");
+        fs::write(&path, "version = 1\nname = \"demo\"\n").expect("environment should be written");
+
+        let entry =
+            read_upstream_local_environment_entry(&path).expect("environment read should succeed");
+
+        assert_eq!(
+            entry,
+            UpstreamLocalEnvironmentEntry {
+                config_path: path.display().to_string(),
+                state: UpstreamLocalEnvironmentState::Success {
+                    environment: LocalEnvironmentDocument {
+                        version: 1,
+                        name: "demo".to_string(),
+                        setup: LocalEnvironmentScriptSection::default(),
+                        cleanup: LocalEnvironmentScriptSection::default(),
+                        actions: Vec::new(),
+                    },
+                },
+            }
+        );
+
+        let _ = fs::remove_dir_all(&workspace_root);
+    }
+
+    #[test]
+    fn upstream_local_environment_commands_only_accept_local_host() {
+        assert!(ensure_supported_host_id(None, "local-environments").is_ok());
+        assert!(ensure_supported_host_id(Some(""), "local-environments").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "local-environments").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "local-environments")
+                .expect_err("non-local host id should be rejected"),
+            "local-environments does not support host id: remote"
+        );
+    }
+
+    fn temp_workspace_root(case_name: &str) -> PathBuf {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be valid")
+            .as_nanos();
+        env::temp_dir().join(format!(
+            "codex-app-replica-local-environments-{case_name}-{unique_suffix}"
+        ))
+    }
 }

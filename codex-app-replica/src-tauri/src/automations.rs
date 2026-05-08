@@ -15,6 +15,8 @@ use crate::codex_home::resolve_codex_home;
 
 const AUTOMATIONS_DIR: &str = "automations";
 const AUTOMATION_FILE_NAME: &str = "automation.toml";
+const AUTOMATION_UPDATE_MISSING_MESSAGE: &str =
+    "Automation does not exist in the app and could not be updated. It may have been deleted manually by the user.";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -29,6 +31,37 @@ pub enum AutomationStatus {
 pub struct AutomationThreadRunResult {
     pub thread_id: String,
     pub turn_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationItemResponse {
+    pub item: AutomationRecord,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AutomationDeleteStatus {
+    Deleted,
+    NotFound,
+    InvalidId,
+    StoreUnavailable,
+    StateCleanupFailed,
+    RemoveFailed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationDeleteResponse {
+    pub item: Option<AutomationRecord>,
+    pub success: bool,
+    pub status: AutomationDeleteStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomationRunNowResponse {
+    pub success: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -142,6 +175,11 @@ pub fn list_automations() -> Result<AutomationsListResponse, String> {
     Ok(AutomationsListResponse { items })
 }
 
+#[tauri::command(rename = "list-automations")]
+pub fn list_automations_command() -> Result<AutomationsListResponse, String> {
+    list_automations()
+}
+
 #[tauri::command]
 pub fn read_automation(params: AutomationIdParams) -> Result<Option<AutomationRecord>, String> {
     let file_path = automation_file_path(&params.id)?;
@@ -153,12 +191,23 @@ pub fn read_automation(params: AutomationIdParams) -> Result<Option<AutomationRe
 
 #[tauri::command]
 pub fn save_automation(params: SaveAutomationParams) -> Result<AutomationRecord, String> {
-    let automation = normalize_automation_record(params.automation)?;
-    let existing = read_automation(AutomationIdParams {
-        id: automation.id().to_string(),
-    })?;
-    let now = current_timestamp_ms()?;
-    persist_automation(automation, existing, now)
+    save_automation_inner(params.automation)
+}
+
+#[tauri::command(rename = "automation-create")]
+pub fn automation_create_command(
+    params: AutomationRecord,
+) -> Result<AutomationItemResponse, String> {
+    let item = save_automation_inner(params)?;
+    Ok(AutomationItemResponse { item })
+}
+
+#[tauri::command(rename = "automation-update")]
+pub fn automation_update_command(
+    params: AutomationRecord,
+) -> Result<AutomationItemResponse, String> {
+    let item = update_automation_inner(params)?;
+    Ok(AutomationItemResponse { item })
 }
 
 #[tauri::command]
@@ -189,9 +238,88 @@ pub fn delete_automation(params: AutomationIdParams) -> Result<(), String> {
     fs::remove_dir_all(automation_dir).map_err(|err| format!("failed to delete automation: {err}"))
 }
 
+#[tauri::command(rename = "automation-delete")]
+pub fn automation_delete_command(
+    params: AutomationIdParams,
+) -> Result<AutomationDeleteResponse, String> {
+    let item = match read_automation(AutomationIdParams {
+        id: params.id.clone(),
+    }) {
+        Ok(item) => item,
+        Err(err) if is_invalid_automation_id_error(&err) => {
+            return Ok(automation_delete_response(
+                None,
+                AutomationDeleteStatus::InvalidId,
+            ));
+        }
+        Err(_) => {
+            return Ok(automation_delete_response(
+                None,
+                AutomationDeleteStatus::StoreUnavailable,
+            ));
+        }
+    };
+
+    match delete_automation(params) {
+        Ok(()) => {
+            let status = if item.is_some() {
+                AutomationDeleteStatus::Deleted
+            } else {
+                AutomationDeleteStatus::NotFound
+            };
+            Ok(automation_delete_response(item, status))
+        }
+        Err(err) if is_invalid_automation_id_error(&err) => Ok(automation_delete_response(
+            item,
+            AutomationDeleteStatus::InvalidId,
+        )),
+        Err(_) => Ok(automation_delete_response(
+            item,
+            AutomationDeleteStatus::RemoveFailed,
+        )),
+    }
+}
+
 #[tauri::command]
 pub async fn run_automation_now(
     state: State<'_, Arc<AuthBridgeState>>,
+    params: AutomationIdParams,
+) -> Result<AutomationThreadRunResult, String> {
+    run_automation_now_inner(state.inner(), params).await
+}
+
+#[tauri::command(rename = "automation-run-now")]
+pub async fn automation_run_now_command(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: AutomationIdParams,
+) -> Result<AutomationRunNowResponse, String> {
+    run_automation_now_inner(state.inner(), params).await?;
+    Ok(AutomationRunNowResponse { success: true })
+}
+
+fn save_automation_inner(automation: AutomationRecord) -> Result<AutomationRecord, String> {
+    let automation = normalize_automation_record(automation)?;
+    let existing = read_automation(AutomationIdParams {
+        id: automation.id().to_string(),
+    })?;
+    let now = current_timestamp_ms()?;
+    persist_automation(automation, existing, now)
+}
+
+fn update_automation_inner(automation: AutomationRecord) -> Result<AutomationRecord, String> {
+    let automation = normalize_automation_record(automation)?;
+    let Some(existing) = read_automation(AutomationIdParams {
+        id: automation.id().to_string(),
+    })?
+    else {
+        return Err(AUTOMATION_UPDATE_MISSING_MESSAGE.to_string());
+    };
+    let now = current_timestamp_ms()?;
+    persist_automation(automation, Some(existing), now)
+}
+
+async fn run_automation_now_inner(
+    state: &Arc<AuthBridgeState>,
     params: AutomationIdParams,
 ) -> Result<AutomationThreadRunResult, String> {
     let Some(automation) = read_automation(params)? else {
@@ -206,7 +334,7 @@ pub async fn run_automation_now(
             ..
         } => {
             let turn_id = start_turn_with_personality(
-                state.inner(),
+                state,
                 target_thread_id.clone(),
                 prompt.clone(),
                 None,
@@ -221,10 +349,9 @@ pub async fn run_automation_now(
         AutomationRecord::Cron { cwds, prompt, .. } => {
             let cwd = cwds.first().cloned();
             let thread_id =
-                start_thread_with_personality(state.inner(), cwd.clone(), personality.clone())
-                    .await?;
+                start_thread_with_personality(state, cwd.clone(), personality.clone()).await?;
             let turn_id = start_turn_with_personality(
-                state.inner(),
+                state,
                 thread_id.clone(),
                 prompt.clone(),
                 cwd,
@@ -509,6 +636,20 @@ fn write_automation_file(automation: &AutomationRecord) -> Result<(), String> {
     fs::write(&file_path, contents).map_err(|err| format!("failed to write automation file: {err}"))
 }
 
+fn automation_delete_response(
+    item: Option<AutomationRecord>,
+    status: AutomationDeleteStatus,
+) -> AutomationDeleteResponse {
+    AutomationDeleteResponse {
+        item,
+        success: matches!(
+            status,
+            AutomationDeleteStatus::Deleted | AutomationDeleteStatus::NotFound
+        ),
+        status,
+    }
+}
+
 fn current_timestamp_ms() -> Result<u64, String> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -580,6 +721,10 @@ fn normalize_optional_field(value: &str) -> Option<String> {
     Some(normalized.to_string())
 }
 
+fn is_invalid_automation_id_error(err: &str) -> bool {
+    err == "automation id is empty" || err == "automation id must not contain path separators"
+}
+
 fn automations_root_path() -> Result<PathBuf, String> {
     Ok(resolve_codex_home()?.join(AUTOMATIONS_DIR))
 }
@@ -599,5 +744,55 @@ fn ensure_trailing_newline(contents: String) -> String {
         contents
     } else {
         format!("{contents}\n")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::automation_delete_command;
+    use super::automation_delete_response;
+    use super::AutomationDeleteResponse;
+    use super::AutomationDeleteStatus;
+    use super::AutomationIdParams;
+    use super::AUTOMATION_UPDATE_MISSING_MESSAGE;
+    use serde_json::json;
+
+    #[test]
+    fn automation_delete_response_uses_upstream_status_names() {
+        assert_eq!(
+            serde_json::to_value(automation_delete_response(
+                None,
+                AutomationDeleteStatus::NotFound,
+            ))
+            .expect("response should serialize"),
+            json!({
+                "item": null,
+                "success": true,
+                "status": "not_found",
+            })
+        );
+    }
+
+    #[test]
+    fn automation_delete_command_maps_invalid_ids_to_upstream_failure_status() {
+        assert_eq!(
+            automation_delete_command(AutomationIdParams {
+                id: "bad/id".to_string(),
+            })
+            .expect("invalid id response should not hard-fail"),
+            AutomationDeleteResponse {
+                item: None,
+                success: false,
+                status: AutomationDeleteStatus::InvalidId,
+            }
+        );
+    }
+
+    #[test]
+    fn automation_update_missing_message_matches_upstream_constant() {
+        assert_eq!(
+            AUTOMATION_UPDATE_MISSING_MESSAGE,
+            "Automation does not exist in the app and could not be updated. It may have been deleted manually by the user."
+        );
     }
 }

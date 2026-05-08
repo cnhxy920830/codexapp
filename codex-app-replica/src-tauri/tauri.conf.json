@@ -25,6 +25,9 @@
   "bundle": {
     "active": true,
     "targets": "nsis",
+    "resources": {
+      "resources/THIRD_PARTY_NOTICES.txt": "THIRD_PARTY_NOTICES.txt"
+    },
     "icon": ["icons/icon.ico"],
     "windows": {
       "nsis": {

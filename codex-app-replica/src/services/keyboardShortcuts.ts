@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import commandInventoryData from "../assets/keyboard-shortcuts/commandInventory.json";
 import { normalizeLocaleCode } from "../i18n/messages";
+import { scoreQueryMatch } from "../lib/scoreQueryMatch";
 
 export type CommandKeymapState = {
   bindings: CommandKeybinding[];
@@ -23,15 +24,30 @@ export type KeyboardShortcutEntry = {
   label: string;
 };
 
+type ShortcutScope = "app" | "os-global" | null;
+
+type PlatformDefaultKeybindings = {
+  default?: string[];
+  macOS?: string[];
+} | null;
+
 export type KeyboardShortcutCommand = {
   id: string;
   titleEn: string;
   titleZhCn?: string;
+  descriptionEn: string | null;
+  descriptionZhCn?: string | null;
   defaultKeybindings: string[];
+  platformDefaultKeybindings: PlatformDefaultKeybindings;
+  shortcutScope: ShortcutScope;
+  allowsBareModifiers: boolean;
+  commandMenuGroupKey: string | null;
 };
 
 type AcceleratorLocation = "standard" | "left" | "right";
 
+const COMMAND_MENU_GROUP_ORDER = ["thread", "navigation", "panels", "workspace", "skills", "configure", "app"];
+const GATE_CONTROLLED_COMMAND_IDS = new Set(["hotkeyWindow", "globalDictationHold", "globalDictationToggle"]);
 const MODIFIER_KEYS = new Set(["Meta", "Control", "Alt", "AltGraph", "Shift"]);
 const KEY_LABEL_BY_EVENT_KEY = new Map<string, string>([
   ["Escape", "Esc"],
@@ -41,7 +57,14 @@ const KEY_LABEL_BY_EVENT_KEY = new Map<string, string>([
   ["ArrowRight", "Right"],
 ]);
 
-export const KEYBOARD_SHORTCUT_COMMANDS = commandInventoryData as KeyboardShortcutCommand[];
+export const KEYBOARD_SHORTCUT_COMMANDS = [...(commandInventoryData as KeyboardShortcutCommand[])].sort(
+  compareKeyboardShortcutCommands,
+);
+const DISPLAYABLE_KEYBOARD_SHORTCUT_COMMANDS = KEYBOARD_SHORTCUT_COMMANDS.filter(
+  (command) => !GATE_CONTROLLED_COMMAND_IDS.has(command.id),
+);
+
+const KEYBOARD_SHORTCUT_COMMAND_BY_ID = new Map(KEYBOARD_SHORTCUT_COMMANDS.map((command) => [command.id, command]));
 
 export async function getCommandKeymapState() {
   return invoke<CommandKeymapState>("get_command_keymap_state");
@@ -58,6 +81,25 @@ export async function setCommandKeybinding(commandId: string, update: CommandKey
 
 export function getKeyboardShortcutCommandTitle(command: KeyboardShortcutCommand, locale: string) {
   return normalizeLocaleCode(locale).startsWith("zh") ? command.titleZhCn ?? command.titleEn : command.titleEn;
+}
+
+export function getKeyboardShortcutCommandDescription(command: KeyboardShortcutCommand, locale: string) {
+  return normalizeLocaleCode(locale).startsWith("zh")
+    ? command.descriptionZhCn ?? command.descriptionEn
+    : command.descriptionEn;
+}
+
+export function getFilteredKeyboardShortcutCommands(query: string, locale: string) {
+  const trimmedQuery = query.trim();
+  if (trimmedQuery.length === 0) {
+    return DISPLAYABLE_KEYBOARD_SHORTCUT_COMMANDS;
+  }
+
+  return DISPLAYABLE_KEYBOARD_SHORTCUT_COMMANDS.filter((command) => {
+    const title = getKeyboardShortcutCommandTitle(command, locale);
+    const description = getKeyboardShortcutCommandDescription(command, locale) ?? "";
+    return [command.id, title, description].some((candidate) => scoreQueryMatch(candidate, trimmedQuery) > 0);
+  });
 }
 
 export function getCommandShortcutEntries(commandId: string, keymapState: CommandKeymapState | null) {
@@ -79,7 +121,19 @@ export function getCommandShortcutAccelerators(commandId: string, keymapState: C
 }
 
 export function getDefaultKeybindings(commandId: string) {
-  return KEYBOARD_SHORTCUT_COMMANDS.find((command) => command.id === commandId)?.defaultKeybindings ?? [];
+  const command = KEYBOARD_SHORTCUT_COMMAND_BY_ID.get(commandId);
+  if (!command) {
+    return [];
+  }
+
+  const platformDefaultKeybindings = command.platformDefaultKeybindings;
+  if (isMacOs() && platformDefaultKeybindings?.macOS) {
+    return platformDefaultKeybindings.macOS;
+  }
+  if (!isMacOs() && platformDefaultKeybindings?.default) {
+    return platformDefaultKeybindings.default;
+  }
+  return command.defaultKeybindings;
 }
 
 export function getResetRowIndex(
@@ -96,6 +150,40 @@ export function getResetRowIndex(
     (entry, index) => entry.accelerator !== defaultKeybindings[index],
   );
   return firstDifferenceIndex === -1 ? 0 : firstDifferenceIndex;
+}
+
+export function supportsShortcutAppend(command: KeyboardShortcutCommand) {
+  return command.shortcutScope !== "os-global";
+}
+
+export function commandAllowsBareModifiers(command: KeyboardShortcutCommand) {
+  return command.allowsBareModifiers;
+}
+
+export function findConflictingKeyboardShortcutCommandTitle(
+  accelerator: string,
+  commandId: string,
+  keymapState: CommandKeymapState | null,
+  locale: string,
+) {
+  for (const command of DISPLAYABLE_KEYBOARD_SHORTCUT_COMMANDS) {
+    if (command.id === commandId) {
+      continue;
+    }
+    if (
+      getCommandShortcutEntries(command.id, keymapState).some((entry) =>
+        acceleratorsMatch(entry.accelerator, accelerator),
+      )
+    ) {
+      return getKeyboardShortcutCommandTitle(command, locale);
+    }
+  }
+
+  return null;
+}
+
+export function acceleratorsMatch(left: string, right: string) {
+  return formatAcceleratorLabel(left) === formatAcceleratorLabel(right);
 }
 
 export function formatAcceleratorLabel(accelerator: string) {
@@ -301,4 +389,15 @@ export function buildModifierOnlyAccelerator(event: KeyboardEvent, state: "press
     default:
       return null;
   }
+}
+
+function compareKeyboardShortcutCommands(left: KeyboardShortcutCommand, right: KeyboardShortcutCommand) {
+  const leftGroupIndex = left.commandMenuGroupKey ? COMMAND_MENU_GROUP_ORDER.indexOf(left.commandMenuGroupKey) : -1;
+  const rightGroupIndex = right.commandMenuGroupKey ? COMMAND_MENU_GROUP_ORDER.indexOf(right.commandMenuGroupKey) : -1;
+  const normalizedLeftGroupIndex = leftGroupIndex === -1 ? COMMAND_MENU_GROUP_ORDER.length : leftGroupIndex;
+  const normalizedRightGroupIndex = rightGroupIndex === -1 ? COMMAND_MENU_GROUP_ORDER.length : rightGroupIndex;
+  if (normalizedLeftGroupIndex === normalizedRightGroupIndex) {
+    return left.id.localeCompare(right.id);
+  }
+  return normalizedLeftGroupIndex - normalizedRightGroupIndex;
 }

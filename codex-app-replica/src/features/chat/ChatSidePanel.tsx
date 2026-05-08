@@ -1,6 +1,5 @@
 import type { MessageKey } from "../../i18n/messages";
 import type { FileChangeSummary } from "../../services/history";
-import type { WorkspaceFilePreviewTarget } from "../../services/workspaceFiles";
 import { isWorkspaceFileRightPanelTab, type RightPanelTab } from "./rightPanelTabs";
 import { countFileChangeDiffLines, type ThreadDiffSummary } from "./threadConversationState";
 import { WorkspaceFilePreviewPanel } from "./WorkspaceFilePreviewPanel";
@@ -8,7 +7,6 @@ import { WorkspaceFilePreviewPanel } from "./WorkspaceFilePreviewPanel";
 type ChatSidePanelProps = {
   activeTab: RightPanelTab | null;
   onOpenReviewFile: (change: FileChangeSummary) => void;
-  onSelectWorkspaceFile: (file: WorkspaceFilePreviewTarget) => void;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
   threadDiffSummary: ThreadDiffSummary;
 };
@@ -16,7 +14,6 @@ type ChatSidePanelProps = {
 export function ChatSidePanel({
   activeTab,
   onOpenReviewFile,
-  onSelectWorkspaceFile,
   t,
   threadDiffSummary,
 }: ChatSidePanelProps) {
@@ -24,11 +21,7 @@ export function ChatSidePanel({
     <aside className="flex min-h-0 min-w-0 flex-1 flex-col border-l border-[var(--app-shell-border)] bg-[var(--app-shell-right)] px-4 py-4">
       <div className="min-h-0 flex-1 overflow-y-auto">
         {activeTab && isWorkspaceFileRightPanelTab(activeTab) ? (
-          <WorkspaceFilePreviewPanel
-            selectedFileTarget={activeTab.file}
-            onSelectWorkspaceFile={onSelectWorkspaceFile}
-            t={t}
-          />
+          <WorkspaceFilePreviewPanel selectedFileTarget={activeTab.file} t={t} />
         ) : activeTab?.kind === "review" ? (
           <ReviewPanel onOpenReviewFile={onOpenReviewFile} threadDiffSummary={threadDiffSummary} t={t} />
         ) : activeTab?.kind === "browser" ? (

@@ -2,6 +2,8 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 use std::fs;
 use std::path::PathBuf;
+#[cfg(target_os = "windows")]
+use std::process::Command;
 use tauri::{AppHandle, Manager};
 
 const GLOBAL_SETTINGS_FILE_NAME: &str = "global-settings.json";
@@ -10,6 +12,13 @@ const GLOBAL_SETTINGS_FILE_NAME: &str = "global-settings.json";
 #[serde(rename_all = "camelCase")]
 pub struct GlobalStateResponse {
     pub value: Value,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WslBashAvailabilityResponse {
+    pub available: bool,
+    pub distro: Option<String>,
 }
 
 #[tauri::command]
@@ -21,12 +30,30 @@ pub fn get_global_state(app: AppHandle, key: String) -> Result<GlobalStateRespon
     })
 }
 
+#[tauri::command(rename = "get-global-state")]
+pub fn get_global_state_command(
+    app: AppHandle,
+    key: String,
+) -> Result<GlobalStateResponse, String> {
+    get_global_state(app, key)
+}
+
 #[tauri::command]
 pub fn set_global_state(app: AppHandle, key: String, value: Value) -> Result<(), String> {
     ensure_supported_key(&key)?;
     let mut settings = read_global_settings(&app)?;
     settings.insert(key, value);
     write_global_settings(&app, &settings)
+}
+
+#[tauri::command(rename = "set-global-state")]
+pub fn set_global_state_command(app: AppHandle, key: String, value: Value) -> Result<(), String> {
+    set_global_state(app, key, value)
+}
+
+#[tauri::command(rename = "wsl-bash-availability")]
+pub fn wsl_bash_availability() -> Result<WslBashAvailabilityResponse, String> {
+    Ok(read_wsl_bash_availability())
 }
 
 fn ensure_supported_key(key: &str) -> Result<(), String> {
@@ -40,10 +67,16 @@ fn ensure_supported_key(key: &str) -> Result<(), String> {
         | "appearanceDarkChromeTheme"
         | "appearanceLightCodeThemeId"
         | "appearanceDarkCodeThemeId"
+        | "useFontSmoothing"
         | "selected-avatar-id"
         | "composerEnterBehavior"
         | "followUpQueueMode"
         | "reviewDelivery"
+        | "dictationDictionary"
+        | "conversationDetailMode"
+        | "integratedTerminalShell"
+        | "preventSleepWhileRunning"
+        | "runCodexInWindowsSubsystemForLinux"
         | "git-branch-prefix"
         | "git-always-force-push"
         | "git-create-pull-request-as-draft"
@@ -94,4 +127,154 @@ fn global_settings_path(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|err| format!("failed to resolve app config dir: {err}"))?;
     path.push(GLOBAL_SETTINGS_FILE_NAME);
     Ok(path)
+}
+
+#[cfg(target_os = "windows")]
+fn read_wsl_bash_availability() -> WslBashAvailabilityResponse {
+    WslBashAvailabilityResponse {
+        available: default_wsl_bash_is_available(),
+        distro: default_wsl_distro_name(),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn read_wsl_bash_availability() -> WslBashAvailabilityResponse {
+    WslBashAvailabilityResponse {
+        available: false,
+        distro: None,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn default_wsl_bash_is_available() -> bool {
+    match Command::new("wsl.exe")
+        .args(["--", "/usr/bin/bash", "-lc", "exit 0"])
+        .output()
+    {
+        Ok(output) => output.status.success(),
+        Err(_) => false,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn default_wsl_distro_name() -> Option<String> {
+    let output = Command::new("wsl.exe").args(["-l", "-v"]).output().ok()?;
+    parse_default_wsl_distro(&decode_wsl_command_output(&output.stdout))
+}
+
+#[cfg(target_os = "windows")]
+fn decode_wsl_command_output(stdout: &[u8]) -> String {
+    if stdout.len() >= 2
+        && stdout.len() % 2 == 0
+        && stdout.chunks_exact(2).any(|chunk| chunk[1] == 0)
+    {
+        let utf16 = stdout
+            .chunks_exact(2)
+            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect::<Vec<_>>();
+        return String::from_utf16_lossy(&utf16)
+            .trim_start_matches('\u{feff}')
+            .to_string();
+    }
+
+    String::from_utf8_lossy(stdout).into_owned()
+}
+
+#[cfg(target_os = "windows")]
+fn parse_default_wsl_distro(output: &str) -> Option<String> {
+    output.lines().find_map(|line| {
+        let remainder = line.trim_start().strip_prefix('*')?.trim_start();
+        let distro = first_wsl_table_column(remainder).trim();
+        if distro.is_empty() {
+            None
+        } else {
+            Some(distro.to_string())
+        }
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn first_wsl_table_column(line: &str) -> &str {
+    let mut whitespace_run_start = None;
+    let mut whitespace_run_len = 0;
+
+    for (index, character) in line.char_indices() {
+        if character.is_whitespace() {
+            whitespace_run_start.get_or_insert(index);
+            whitespace_run_len += 1;
+            if whitespace_run_len >= 2 {
+                return line[..whitespace_run_start.unwrap()].trim_end();
+            }
+        } else {
+            whitespace_run_start = None;
+            whitespace_run_len = 0;
+        }
+    }
+
+    line.trim_end()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_supported_key;
+    #[cfg(not(target_os = "windows"))]
+    use super::read_wsl_bash_availability;
+    #[cfg(not(target_os = "windows"))]
+    use super::WslBashAvailabilityResponse;
+    #[cfg(target_os = "windows")]
+    use super::{decode_wsl_command_output, parse_default_wsl_distro};
+
+    #[test]
+    fn general_settings_keys_are_supported() {
+        for key in [
+            "useFontSmoothing",
+            "dictationDictionary",
+            "conversationDetailMode",
+            "integratedTerminalShell",
+            "preventSleepWhileRunning",
+            "runCodexInWindowsSubsystemForLinux",
+        ] {
+            assert!(
+                ensure_supported_key(key).is_ok(),
+                "{key} should be supported"
+            );
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn wsl_bash_availability_is_unavailable_off_windows() {
+        assert_eq!(
+            read_wsl_bash_availability(),
+            WslBashAvailabilityResponse {
+                available: false,
+                distro: None,
+            }
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn decode_wsl_command_output_supports_utf16le() {
+        let encoded = "  NAME\r\n* Ubuntu 22.04  Running  2\r\n"
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            decode_wsl_command_output(&encoded),
+            "  NAME\r\n* Ubuntu 22.04  Running  2\r\n".to_string()
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn parse_default_wsl_distro_reads_starred_row() {
+        let output = "  NAME                   STATE           VERSION\r\n* Ubuntu 22.04          Running         2\r\n  docker-desktop        Running         2\r\n";
+
+        assert_eq!(
+            parse_default_wsl_distro(output),
+            Some("Ubuntu 22.04".to_string())
+        );
+    }
 }

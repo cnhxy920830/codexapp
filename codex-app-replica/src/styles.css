@@ -218,6 +218,42 @@ pre,
   }
 }
 
+@keyframes codex-logo-shimmer {
+  0% {
+    background-position: 140% 0;
+  }
+
+  to {
+    background-position: -120% 0;
+  }
+}
+
+.codex-logo-shimmer-base {
+  color: #adadad;
+}
+
+.codex-logo-shimmer-overlay {
+  background-image: linear-gradient(112deg, #0000 22%, #ffffff05 38%, #ffffff75 49%, #ffffff0f 56%, #0000 74%);
+  background-position: 140% 0;
+  background-repeat: no-repeat;
+  background-size: 220% 100%;
+  animation: 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite codex-logo-shimmer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .codex-logo-shimmer-overlay {
+    animation: none;
+  }
+}
+
+html.electron-dark .codex-logo-shimmer-base {
+  color: #686868;
+}
+
+html.electron-dark .codex-logo-shimmer-overlay {
+  background-image: linear-gradient(112deg, #0000 22%, #ffffff06 38%, #fff3 49%, #ffffff0d 56%, #0000 74%);
+}
+
 .app-control,
 .app-control-weak {
   border: 1px solid var(--app-shell-control-border);

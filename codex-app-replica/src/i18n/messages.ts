@@ -89,6 +89,7 @@ export type MessageKey =
   | "skills.appsPage.empty.plugins"
   | "skills.appsPage.pluginsUnsupportedHost.title"
   | "skills.appsPage.pluginsUnsupportedHost.description"
+  | "skills.page.heading"
   | "skills.page.subheading"
   | "skills.page.loading"
   | "skills.page.empty"
@@ -97,12 +98,19 @@ export type MessageKey =
   | "skills.page.search"
   | "skills.page.search.label"
   | "skills.page.refreshSkills"
+  | "skills.page.refreshSkillsToUseNew"
   | "skills.page.refreshFailed"
   | "skills.section.installed"
+  | "skills.section.recommended"
   | "settings.nav.skills-settings"
   | "settings.section.skills-settings"
   | "skills.card.enabledStatus"
   | "skills.card.disabledStatus"
+  | "skills.recommended.error"
+  | "skills.scope.builtIn"
+  | "skills.scope.team"
+  | "skills.scope.personal"
+  | "skills.scope.adminInstalled"
   | "app.shell.appMenu"
   | "app.shell.back"
   | "app.shell.forward"
@@ -665,25 +673,48 @@ export type MessageKey =
   | "plugins.installModal.metadata.category"
   | "plugins.installModal.title"
   | "settings.localEnvironments.workspaceSelect.description"
+  | "settings.localEnvironments.workspaceSelect.title"
+  | "settings.localEnvironments.workspaceSelect.learnMore"
+  | "settings.localEnvironments.workspaceSelect.loading"
+  | "settings.localEnvironments.workspaceSelect.empty"
+  | "settings.localEnvironments.workspaceSelect.listLabel"
+  | "settings.localEnvironments.workspaceSelect.addLabel"
+  | "settings.localEnvironments.workspaceSelect.loadingLabel"
+  | "settings.localEnvironments.workspaceSelect.errorLabel"
   | "settings.localEnvironments.workspaceSelect.inherited"
   | "settings.localEnvironments.workspaceSelect.viewAction"
+  | "settings.localEnvironments.workspace.add"
   | "settings.localEnvironments.workspace.title"
   | "settings.localEnvironments.breadcrumb.back"
+  | "settings.localEnvironments.breadcrumb.root"
+  | "settings.localEnvironments.breadcrumb.edit"
   | "settings.localEnvironments.editor.title"
   | "settings.localEnvironments.editor.setup.description"
   | "settings.localEnvironments.environment.create"
+  | "settings.localEnvironments.environment.edit"
+  | "settings.localEnvironments.environment.defaultName"
   | "settings.localEnvironments.environment.empty"
+  | "settings.localEnvironments.environment.title"
   | "settings.localEnvironments.environment.name"
   | "settings.localEnvironments.environment.setup"
+  | "settings.localEnvironments.environment.setup.description"
   | "settings.localEnvironments.environment.setup.platformSelector"
+  | "settings.localEnvironments.environment.setup.platformOverrides"
+  | "settings.localEnvironments.environment.setup.platformOverrides.description"
   | "settings.localEnvironments.environment.setup.envVars.button"
   | "settings.localEnvironments.environment.setup.envVars.title"
   | "settings.localEnvironments.environment.setup.envVars.sourcePath.description"
   | "settings.localEnvironments.environment.setup.envVars.worktreePath.description"
   | "settings.localEnvironments.environment.cleanup.title"
   | "settings.localEnvironments.environment.cleanup.description"
+  | "settings.localEnvironments.environment.cleanup.summaryTitle"
+  | "settings.localEnvironments.environment.cleanup.summaryDescription"
+  | "settings.localEnvironments.environment.cleanup.empty"
   | "settings.localEnvironments.environment.cleanup.platformSelector"
+  | "settings.localEnvironments.environment.cleanup.platformOverrides"
+  | "settings.localEnvironments.environment.cleanup.platformOverrides.description"
   | "settings.localEnvironments.environment.actions.description"
+  | "settings.localEnvironments.environment.actionsLabel"
   | "settings.localEnvironments.environment.script.default"
   | "settings.localEnvironments.actions.title"
   | "settings.localEnvironments.actions.add"
@@ -691,6 +722,10 @@ export type MessageKey =
   | "settings.localEnvironments.actions.item.name"
   | "settings.localEnvironments.actions.item.command"
   | "settings.localEnvironments.actions.item.button.delete"
+  | "settings.localEnvironments.actions.item.tooltip.delete"
+  | "settings.localEnvironments.actions.item.platforms"
+  | "settings.localEnvironments.actions.item.platforms.selector"
+  | "settings.localEnvironments.actions.item.platforms.specific"
   | "settings.localEnvironments.actions.item.platforms.help"
   | "settings.localEnvironments.actions.item.platforms.macos"
   | "settings.localEnvironments.actions.item.platforms.linux"
@@ -700,6 +735,7 @@ export type MessageKey =
   | "settings.localEnvironments.actions.icon.debug"
   | "settings.localEnvironments.actions.icon.test"
   | "settings.localEnvironments.preview.save"
+  | "settings.localEnvironments.preview.saveError"
   | "settings.localEnvironments.save.success"
   | "settings.localEnvironments.save.disabled.name"
   | "settings.localEnvironments.save.disabled.noChanges"
@@ -712,13 +748,17 @@ export type MessageKey =
   | "settings.localEnvironments.unavailable.body"
   | "settings.keyboardShortcuts.subtitle.electron"
   | "settings.keyboardShortcuts.loading"
+  | "settings.keyboardShortcuts.search.ariaLabel"
+  | "settings.keyboardShortcuts.search.placeholder"
   | "settings.keyboardShortcuts.table.command"
   | "settings.keyboardShortcuts.table.keybinding"
   | "settings.keyboardShortcuts.table.actions"
+  | "settings.keyboardShortcuts.noMatches"
   | "settings.keyboardShortcuts.unassigned"
   | "settings.keyboardShortcuts.capturePrompt"
   | "settings.keyboardShortcuts.captureCancel"
   | "settings.keyboardShortcuts.captureAriaLabel"
+  | "settings.keyboardShortcuts.captureConflict"
   | "settings.keyboardShortcuts.setAriaLabel"
   | "settings.keyboardShortcuts.changeAriaLabel"
   | "settings.keyboardShortcuts.createAriaLabel"
@@ -729,12 +769,20 @@ export type MessageKey =
   | "settings.git.branchPrefix.description"
   | "settings.git.branchPrefix.placeholder"
   | "settings.git.branchPrefix.ariaLabel"
+  | "settings.git.branchPrefix.save.success"
+  | "settings.git.branchPrefix.save.error"
   | "settings.git.forcePush.label"
   | "settings.git.forcePush.description"
   | "settings.git.forcePush.ariaLabel"
+  | "settings.git.forcePush.save.enabled"
+  | "settings.git.forcePush.save.disabled"
+  | "settings.git.forcePush.save.error"
   | "settings.git.createDraftPullRequest.label"
   | "settings.git.createDraftPullRequest.description"
   | "settings.git.createDraftPullRequest.ariaLabel"
+  | "settings.git.createDraftPullRequest.save.enabled"
+  | "settings.git.createDraftPullRequest.save.disabled"
+  | "settings.git.createDraftPullRequest.save.error"
   | "settings.git.pullRequestMergeMethod.label"
   | "settings.git.pullRequestMergeMethod.description"
   | "settings.git.pullRequestMergeMethod.ariaLabel"
@@ -748,18 +796,27 @@ export type MessageKey =
   | "settings.git.commitInstructions.save"
   | "settings.git.commitInstructions.placeholder"
   | "settings.git.commitInstructions.ariaLabel"
+  | "settings.git.commitInstructions.save.success"
+  | "settings.git.commitInstructions.save.error"
   | "settings.git.prInstructions.label"
   | "settings.git.prInstructions.description"
   | "settings.git.prInstructions.save"
   | "settings.git.prInstructions.placeholder"
   | "settings.git.prInstructions.ariaLabel"
+  | "settings.git.prInstructions.save.success"
+  | "settings.git.prInstructions.save.error"
   | "settings.worktrees.autoCleanup.label"
   | "settings.worktrees.autoCleanup.description"
   | "settings.worktrees.autoCleanup.ariaLabel"
+  | "settings.worktrees.autoCleanup.save.enabled"
+  | "settings.worktrees.autoCleanup.save.disabled"
+  | "settings.worktrees.autoCleanup.save.error"
   | "settings.worktrees.keepCount.label"
   | "settings.worktrees.keepCount.description"
   | "settings.worktrees.keepCount.description.disabled"
   | "settings.worktrees.keepCount.ariaLabel"
+  | "settings.worktrees.keepCount.save.success"
+  | "settings.worktrees.keepCount.save.error"
   | "settings.worktrees.autoCleanup.confirm.title"
   | "settings.worktrees.autoCleanup.confirm.body"
   | "settings.worktrees.autoCleanup.confirm.cancel"
@@ -774,6 +831,7 @@ export type MessageKey =
   | "settings.dataControls.archivedChats.unarchiveSuccessPlain"
   | "settings.dataControls.archivedChats.untitled"
   | "settings.dataControls.archivedChats.viewNow"
+  | "settings.usage.access.loading"
   | "settings.usage.load.loading"
   | "settings.usage.load.error"
   | "settings.usage.load.retry"
@@ -875,11 +933,18 @@ export type MessageKey =
   | "settings.openSourceLicenses.rowLabel"
   | "settings.openSourceLicenses.rowDescription"
   | "settings.openSourceLicenses.view"
+  | "settings.openSourceLicenses.back"
+  | "settings.openSourceLicenses.title"
+  | "settings.openSourceLicenses.subtitle"
+  | "settings.openSourceLicenses.loading"
+  | "settings.openSourceLicenses.missing"
   | "settings.mcp.loading"
   | "settings.mcp.loadError.title"
   | "settings.mcp.loadError.retry"
   | "settings.mcp.empty"
   | "settings.mcp.addServer"
+  | "settings.mcp.myServers"
+  | "settings.mcp.restartApp"
   | "settings.mcp.server.login"
   | "settings.mcp.server.settings"
   | "settings.mcp.server.enable"
@@ -889,8 +954,11 @@ export type MessageKey =
   | "settings.mcp.detail.titleExisting"
   | "settings.mcp.detail.titleNew"
   | "settings.mcp.detail.back"
+  | "settings.mcp.detail.docs"
+  | "settings.mcp.detail.docs.link"
   | "settings.mcp.detail.uninstall"
   | "settings.mcp.detail.name"
+  | "settings.mcp.detail.switchTransportNotice"
   | "settings.mcp.detail.transport.label"
   | "settings.mcp.detail.transport.stdio"
   | "settings.mcp.detail.transport.http"
@@ -910,6 +978,9 @@ export type MessageKey =
   | "settings.mcp.detail.http.addEnvHeader"
   | "settings.mcp.detail.save"
   | "settings.mcp.detail.remove"
+  | "settings.editRow.headerPlaceholder"
+  | "settings.editRow.valuePlaceholder"
+  | "settings.editRow.removeEntry"
   | "settings.agent.approval.untrusted"
   | "settings.agent.approval.onFailure"
   | "settings.agent.approval.onRequest"
@@ -1045,6 +1116,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "skills.appsPage.empty.plugins": "No plugins found",
     "skills.appsPage.pluginsUnsupportedHost.title": "Plugins are not available for this host",
     "skills.appsPage.pluginsUnsupportedHost.description": "Choose another host to browse and manage plugins",
+    "skills.page.heading": "Skills",
     "skills.page.subheading": "Give Codex superpowers. <a>Learn more</a>",
     "skills.page.loading": "Loading skills...",
     "skills.page.empty": "No skills found",
@@ -1053,11 +1125,18 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "skills.page.search": "Search skills",
     "skills.page.search.label": "Search skills",
     "skills.page.refreshSkills": "Refresh",
+    "skills.page.refreshSkillsToUseNew": "Refresh to use new skill(s)",
     "skills.page.refreshFailed": "Unable to load skills",
     "skills.section.installed": "Installed",
+    "skills.section.recommended": "Recommended",
     "settings.nav.skills-settings": "Skills",
     "skills.card.enabledStatus": "Enabled",
     "skills.card.disabledStatus": "Disabled",
+    "skills.recommended.error": "Unable to load recommended skills",
+    "skills.scope.builtIn": "System",
+    "skills.scope.team": "Team",
+    "skills.scope.personal": "Personal",
+    "skills.scope.adminInstalled": "Admin installed",
     "plugins.installModal.about": "About",
     "plugins.installModal.capabilities": "Capabilities",
     "plugins.installModal.developedBy": "Developed by {developerName}",
@@ -1642,17 +1721,37 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.computerUse.allowedApps.saveError": "Unable to save allowed apps",
     "settings.localEnvironments.workspaceSelect.description":
       "Local environments tell Codex how to set up worktrees for a project. <a>Learn more.</a>",
-    "settings.localEnvironments.workspaceSelect.inherited": "{count} environments in parent folders",
+    "settings.localEnvironments.workspaceSelect.title": "Select a project",
+    "settings.localEnvironments.workspaceSelect.learnMore": "Learn more.",
+    "settings.localEnvironments.workspaceSelect.loading": "Loading projects.",
+    "settings.localEnvironments.workspaceSelect.empty":
+      "No projects yet. Add one to configure local environments.",
+    "settings.localEnvironments.workspaceSelect.listLabel": "Available projects",
+    "settings.localEnvironments.workspaceSelect.addLabel": "Add environment",
+    "settings.localEnvironments.workspaceSelect.loadingLabel": "Loading environment",
+    "settings.localEnvironments.workspaceSelect.errorLabel": "Environment needs attention",
+    "settings.localEnvironments.workspaceSelect.inherited":
+      "{count, plural, one {# environment in a parent folder} other {# environments in parent folders}}",
     "settings.localEnvironments.workspaceSelect.viewAction": "View",
+    "settings.localEnvironments.workspace.add": "Add project",
     "settings.localEnvironments.workspace.title": "Project",
     "settings.localEnvironments.breadcrumb.back": "Back",
+    "settings.localEnvironments.breadcrumb.root": "Environments",
+    "settings.localEnvironments.breadcrumb.edit": "edit",
     "settings.localEnvironments.editor.title": "Local environment",
     "settings.localEnvironments.editor.setup.description": "Runs at the project root on worktree creation",
     "settings.localEnvironments.environment.create": "Create local environment",
+    "settings.localEnvironments.environment.edit": "Edit local environment",
+    "settings.localEnvironments.environment.defaultName": "local",
     "settings.localEnvironments.environment.empty": "No local environment is configured for this project yet.",
+    "settings.localEnvironments.environment.title": "Environment details",
     "settings.localEnvironments.environment.name": "Name",
     "settings.localEnvironments.environment.setup": "Setup script",
+    "settings.localEnvironments.environment.setup.description": "This script will run on worktree creation.",
     "settings.localEnvironments.environment.setup.platformSelector": "Setup script platform",
+    "settings.localEnvironments.environment.setup.platformOverrides": "Platform overrides",
+    "settings.localEnvironments.environment.setup.platformOverrides.description":
+      "Overrides the default script for specific OSes.",
     "settings.localEnvironments.environment.setup.envVars.button": "Variables",
     "settings.localEnvironments.environment.setup.envVars.title": "Setup script environment variables",
     "settings.localEnvironments.environment.setup.envVars.sourcePath.description": "Source workspace path",
@@ -1660,9 +1759,17 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.localEnvironments.environment.cleanup.title": "Cleanup script",
     "settings.localEnvironments.environment.cleanup.description":
       "Runs at the project root before worktree cleanup",
+    "settings.localEnvironments.environment.cleanup.summaryTitle": "Cleanup script",
+    "settings.localEnvironments.environment.cleanup.summaryDescription":
+      "This script will run before a worktree is deleted.",
+    "settings.localEnvironments.environment.cleanup.empty": "No cleanup script configured.",
     "settings.localEnvironments.environment.cleanup.platformSelector": "Cleanup script platform",
+    "settings.localEnvironments.environment.cleanup.platformOverrides": "Platform overrides",
+    "settings.localEnvironments.environment.cleanup.platformOverrides.description":
+      "Overrides the default cleanup script for specific OSes.",
     "settings.localEnvironments.environment.actions.description":
       "These actions can run any command and will be displayed in the header.",
+    "settings.localEnvironments.environment.actionsLabel": "Actions",
     "settings.localEnvironments.environment.script.default": "Default",
     "settings.localEnvironments.actions.title": "Actions",
     "settings.localEnvironments.actions.add": "Add action",
@@ -1670,7 +1777,11 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.localEnvironments.actions.item.name": "Name",
     "settings.localEnvironments.actions.item.command": "Action script",
     "settings.localEnvironments.actions.item.button.delete": "Delete",
-    "settings.localEnvironments.actions.item.platforms.help": "Run only on a specific operating system.",
+    "settings.localEnvironments.actions.item.tooltip.delete": "Delete",
+    "settings.localEnvironments.actions.item.platforms": "Platforms",
+    "settings.localEnvironments.actions.item.platforms.selector": "Platform selection",
+    "settings.localEnvironments.actions.item.platforms.specific": "Platform specific",
+    "settings.localEnvironments.actions.item.platforms.help": "Only run on a specific OS.",
     "settings.localEnvironments.actions.item.platforms.macos": "macOS",
     "settings.localEnvironments.actions.item.platforms.linux": "Linux",
     "settings.localEnvironments.actions.item.platforms.windows": "Windows",
@@ -1679,6 +1790,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.localEnvironments.actions.icon.debug": "Debug",
     "settings.localEnvironments.actions.icon.test": "Test",
     "settings.localEnvironments.preview.save": "Save",
+    "settings.localEnvironments.preview.saveError": "Failed to save the file. ({error})",
     "settings.localEnvironments.save.success": "Saved local environment",
     "settings.localEnvironments.save.disabled.name": "Add an environment name to save.",
     "settings.localEnvironments.save.disabled.noChanges": "No changes to save.",
@@ -1693,13 +1805,17 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
       "We could not load local environment settings for this project.",
     "settings.keyboardShortcuts.subtitle.electron": "Customize app shortcuts",
     "settings.keyboardShortcuts.loading": "Loading shortcuts…",
+    "settings.keyboardShortcuts.search.ariaLabel": "Search keyboard shortcuts",
+    "settings.keyboardShortcuts.search.placeholder": "Search shortcuts",
     "settings.keyboardShortcuts.table.command": "Command",
     "settings.keyboardShortcuts.table.keybinding": "Keybinding",
     "settings.keyboardShortcuts.table.actions": "Actions",
+    "settings.keyboardShortcuts.noMatches": "No matching shortcuts",
     "settings.keyboardShortcuts.unassigned": "Unassigned",
     "settings.keyboardShortcuts.capturePrompt": "Press shortcut",
     "settings.keyboardShortcuts.captureCancel": "Cancel",
     "settings.keyboardShortcuts.captureAriaLabel": "Shortcut capture for {commandTitle}",
+    "settings.keyboardShortcuts.captureConflict": "Used by {commandTitle}",
     "settings.keyboardShortcuts.setAriaLabel": "Set shortcut for {commandTitle}",
     "settings.keyboardShortcuts.changeAriaLabel": "Change shortcut for {commandTitle}",
     "settings.keyboardShortcuts.createAriaLabel": "Create new shortcut for {commandTitle}",
@@ -1710,12 +1826,20 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.git.branchPrefix.description": "Prefix used when creating new branches in Codex",
     "settings.git.branchPrefix.placeholder": "codex/",
     "settings.git.branchPrefix.ariaLabel": "Branch prefix",
+    "settings.git.branchPrefix.save.success": "Saved branch prefix",
+    "settings.git.branchPrefix.save.error": "Failed to save branch prefix",
     "settings.git.forcePush.label": "Always force push",
     "settings.git.forcePush.description": "Use --force-with-lease when pushing from Codex",
     "settings.git.forcePush.ariaLabel": "Always force push",
+    "settings.git.forcePush.save.enabled": "Always force push enabled",
+    "settings.git.forcePush.save.disabled": "Always force push disabled",
+    "settings.git.forcePush.save.error": "Failed to save force push setting",
     "settings.git.createDraftPullRequest.label": "Create draft pull requests",
     "settings.git.createDraftPullRequest.description": "Use draft pull requests by default when creating PRs from Codex",
     "settings.git.createDraftPullRequest.ariaLabel": "Create draft pull requests",
+    "settings.git.createDraftPullRequest.save.enabled": "Create draft pull requests enabled",
+    "settings.git.createDraftPullRequest.save.disabled": "Create draft pull requests disabled",
+    "settings.git.createDraftPullRequest.save.error": "Failed to save draft pull request setting",
     "settings.git.pullRequestMergeMethod.label": "Pull request merge method",
     "settings.git.pullRequestMergeMethod.description": "Choose how Codex merges pull requests",
     "settings.git.pullRequestMergeMethod.ariaLabel": "Pull request merge method",
@@ -1729,21 +1853,30 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.git.commitInstructions.save": "Save",
     "settings.git.commitInstructions.placeholder": "Add commit message guidance…",
     "settings.git.commitInstructions.ariaLabel": "Commit instructions",
+    "settings.git.commitInstructions.save.success": "Saved commit instructions",
+    "settings.git.commitInstructions.save.error": "Failed to save commit instructions",
     "settings.git.prInstructions.label": "Pull request instructions",
     "settings.git.prInstructions.description": "Added to PR title/description generation prompts",
     "settings.git.prInstructions.save": "Save",
     "settings.git.prInstructions.placeholder": "Add pull request guidance…",
     "settings.git.prInstructions.ariaLabel": "Pull request instructions",
+    "settings.git.prInstructions.save.success": "Saved pull request instructions",
+    "settings.git.prInstructions.save.error": "Failed to save pull request instructions",
     "settings.worktrees.autoCleanup.label": "Automatically delete old worktrees",
     "settings.worktrees.autoCleanup.description":
       "Recommended for most users. Turn this off only if you want to manage old worktrees and disk usage yourself.",
     "settings.worktrees.autoCleanup.ariaLabel": "Automatically delete old worktrees",
+    "settings.worktrees.autoCleanup.save.enabled": "Automatic deletion enabled",
+    "settings.worktrees.autoCleanup.save.disabled": "Automatic deletion disabled",
+    "settings.worktrees.autoCleanup.save.error": "Failed to save automatic deletion setting",
     "settings.worktrees.keepCount.label": "Auto-delete limit",
     "settings.worktrees.keepCount.description":
       "Number of Codex worktrees to keep before older ones are pruned automatically. Codex snapshots worktrees before deleting, so pruned worktrees should always be restorable.",
     "settings.worktrees.keepCount.description.disabled":
       "Automatic deletion is disabled. Codex will not prune old worktrees automatically. Re-enable it to use this saved limit again.",
     "settings.worktrees.keepCount.ariaLabel": "Auto-delete limit",
+    "settings.worktrees.keepCount.save.success": "Saved auto-delete limit",
+    "settings.worktrees.keepCount.save.error": "Failed to save auto-delete limit",
     "settings.worktrees.autoCleanup.confirm.title": "Disable automatic worktree deletion?",
     "settings.worktrees.autoCleanup.confirm.body":
       "We highly recommend keeping automatic deletion on so old worktrees do not build up and use unnecessary disk space. If you prefer to manage old worktrees yourself, you can turn this off and Codex will stop deleting them automatically.",
@@ -1759,8 +1892,9 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.dataControls.archivedChats.unarchiveSuccessPlain": "Unarchived chat",
     "settings.dataControls.archivedChats.untitled": "Untitled chat",
     "settings.dataControls.archivedChats.viewNow": "View now",
-    "settings.usage.load.loading": "Loading usage limits…",
-    "settings.usage.load.error": "Could not load usage limits.",
+    "settings.usage.access.loading": "Checking subscription…",
+    "settings.usage.load.loading": "Loading usage settings…",
+    "settings.usage.load.error": "Could not load usage settings.",
     "settings.usage.load.retry": "Retry",
     "settings.usage.credit.title": "Credit",
     "settings.usage.credit.remaining.description": "Use credit to send messages when you reach usage limits. <a>Doc</a>",
@@ -1862,11 +1996,18 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.openSourceLicenses.rowLabel": "Open source licenses",
     "settings.openSourceLicenses.rowDescription": "Third-party notices for bundled dependencies",
     "settings.openSourceLicenses.view": "View",
+    "settings.openSourceLicenses.back": "Back",
+    "settings.openSourceLicenses.title": "Open source licenses",
+    "settings.openSourceLicenses.subtitle": "Third-party notices for dependencies included in this app",
+    "settings.openSourceLicenses.loading": "Loading…",
+    "settings.openSourceLicenses.missing": "No third-party notices were found.",
     "settings.mcp.loading": "Loading MCP servers…",
     "settings.mcp.loadError.title": "Unable to load MCP servers",
     "settings.mcp.loadError.retry": "Retry",
     "settings.mcp.empty": "No MCP servers connected",
     "settings.mcp.addServer": "Add server",
+    "settings.mcp.myServers": "Servers",
+    "settings.mcp.restartApp": "Restart",
     "settings.mcp.server.login": "Authenticate",
     "settings.mcp.server.settings": "Settings",
     "settings.mcp.server.enable": "Enable",
@@ -1876,8 +2017,11 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.mcp.detail.titleExisting": "Update {name} MCP",
     "settings.mcp.detail.titleNew": "Connect to a custom MCP",
     "settings.mcp.detail.back": "Back",
+    "settings.mcp.detail.docs": "Open MCP documentation",
+    "settings.mcp.detail.docs.link": "Docs",
     "settings.mcp.detail.uninstall": "Uninstall",
     "settings.mcp.detail.name": "Name",
+    "settings.mcp.detail.switchTransportNotice": "If you would like to switch MCP server type, please uninstall first.",
     "settings.mcp.detail.transport.label": "Transport",
     "settings.mcp.detail.transport.stdio": "STDIO",
     "settings.mcp.detail.transport.http": "Streamable HTTP",
@@ -1897,6 +2041,9 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.mcp.detail.http.addEnvHeader": "Add variable",
     "settings.mcp.detail.save": "Save",
     "settings.mcp.detail.remove": "Remove",
+    "settings.editRow.headerPlaceholder": "Key",
+    "settings.editRow.valuePlaceholder": "Value",
+    "settings.editRow.removeEntry": "Remove entry",
     "settings.agent.approval.untrusted": "Untrusted",
     "settings.agent.approval.onFailure": "On failure",
     "settings.agent.approval.onRequest": "On request",
@@ -1986,6 +2133,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "skills.appsPage.empty.plugins": "未找到插件",
     "skills.appsPage.pluginsUnsupportedHost.title": "此主机不支持插件",
     "skills.appsPage.pluginsUnsupportedHost.description": "请选择其他主机以浏览和管理插件",
+    "skills.page.heading": "技能",
     "skills.page.subheading": "赋予 Codex 更强大的能力。<a>了解更多</a>",
     "skills.page.loading": "正在加载技能…",
     "skills.page.empty": "找不到技能",
@@ -1994,11 +2142,18 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "skills.page.search": "搜索技能",
     "skills.page.search.label": "搜索技能",
     "skills.page.refreshSkills": "刷新",
+    "skills.page.refreshSkillsToUseNew": "刷新以使用新技能",
     "skills.page.refreshFailed": "无法加载技能",
     "skills.section.installed": "已安装",
+    "skills.section.recommended": "推荐",
     "settings.nav.skills-settings": "技能",
     "skills.card.enabledStatus": "已启用",
     "skills.card.disabledStatus": "已禁用",
+    "skills.recommended.error": "无法加载推荐技能",
+    "skills.scope.builtIn": "系统",
+    "skills.scope.team": "团队",
+    "skills.scope.personal": "个人",
+    "skills.scope.adminInstalled": "管理员安装",
     "plugins.installModal.about": "关于",
     "plugins.installModal.capabilities": "能力",
     "plugins.installModal.developedBy": "由 {developerName} 开发",
@@ -2578,26 +2733,51 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.computerUse.allowedApps.saveError": "无法保存允许使用的应用",
     "settings.localEnvironments.workspaceSelect.description":
       "本地环境用于指示 Codex 如何为项目设置工作树。<a>了解更多。</a>",
+    "settings.localEnvironments.workspaceSelect.title": "选择项目",
+    "settings.localEnvironments.workspaceSelect.learnMore": "了解更多。",
+    "settings.localEnvironments.workspaceSelect.loading": "正在加载项目。",
+    "settings.localEnvironments.workspaceSelect.empty": "还没有项目。添加一个项目以配置本地环境。",
+    "settings.localEnvironments.workspaceSelect.listLabel": "可用项目",
+    "settings.localEnvironments.workspaceSelect.addLabel": "添加环境",
+    "settings.localEnvironments.workspaceSelect.loadingLabel": "正在加载环境",
+    "settings.localEnvironments.workspaceSelect.errorLabel": "环境需要处理",
     "settings.localEnvironments.workspaceSelect.inherited": "父文件夹中的 {count} 个环境",
     "settings.localEnvironments.workspaceSelect.viewAction": "查看",
+    "settings.localEnvironments.workspace.add": "添加项目",
     "settings.localEnvironments.workspace.title": "项目",
     "settings.localEnvironments.breadcrumb.back": "返回",
+    "settings.localEnvironments.breadcrumb.root": "环境",
+    "settings.localEnvironments.breadcrumb.edit": "编辑",
     "settings.localEnvironments.editor.title": "本地环境",
     "settings.localEnvironments.editor.setup.description": "创建工作树时在项目根目录下运行",
     "settings.localEnvironments.environment.create": "创建本地环境",
+    "settings.localEnvironments.environment.edit": "编辑本地环境",
+    "settings.localEnvironments.environment.defaultName": "local",
     "settings.localEnvironments.environment.empty": "尚未针对此项目配置任何本地环境。",
+    "settings.localEnvironments.environment.title": "环境详情",
     "settings.localEnvironments.environment.name": "名称",
     "settings.localEnvironments.environment.setup": "设置脚本",
+    "settings.localEnvironments.environment.setup.description": "此脚本会在创建工作树时运行。",
     "settings.localEnvironments.environment.setup.platformSelector": "设置脚本平台",
+    "settings.localEnvironments.environment.setup.platformOverrides": "平台覆盖",
+    "settings.localEnvironments.environment.setup.platformOverrides.description":
+      "为特定操作系统覆盖默认脚本。",
     "settings.localEnvironments.environment.setup.envVars.button": "变量",
     "settings.localEnvironments.environment.setup.envVars.title": "设置脚本环境变量",
     "settings.localEnvironments.environment.setup.envVars.sourcePath.description": "源工作空间路径",
     "settings.localEnvironments.environment.setup.envVars.worktreePath.description": "新工作树路径",
     "settings.localEnvironments.environment.cleanup.title": "清理脚本",
     "settings.localEnvironments.environment.cleanup.description": "清理工作树之前在项目根目录下运行",
+    "settings.localEnvironments.environment.cleanup.summaryTitle": "清理脚本",
+    "settings.localEnvironments.environment.cleanup.summaryDescription": "此脚本会在删除工作树前运行。",
+    "settings.localEnvironments.environment.cleanup.empty": "未配置清理脚本。",
     "settings.localEnvironments.environment.cleanup.platformSelector": "清理脚本平台",
+    "settings.localEnvironments.environment.cleanup.platformOverrides": "平台覆盖",
+    "settings.localEnvironments.environment.cleanup.platformOverrides.description":
+      "为特定操作系统覆盖默认清理脚本。",
     "settings.localEnvironments.environment.actions.description":
       "这些操作可以运行任意命令并将显示在标头中。",
+    "settings.localEnvironments.environment.actionsLabel": "操作",
     "settings.localEnvironments.environment.script.default": "默认",
     "settings.localEnvironments.actions.title": "操作",
     "settings.localEnvironments.actions.add": "添加操作",
@@ -2605,6 +2785,10 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.localEnvironments.actions.item.name": "名称",
     "settings.localEnvironments.actions.item.command": "操作脚本",
     "settings.localEnvironments.actions.item.button.delete": "删除",
+    "settings.localEnvironments.actions.item.tooltip.delete": "删除",
+    "settings.localEnvironments.actions.item.platforms": "平台",
+    "settings.localEnvironments.actions.item.platforms.selector": "平台选择",
+    "settings.localEnvironments.actions.item.platforms.specific": "特定平台",
     "settings.localEnvironments.actions.item.platforms.help": "仅在特定操作系统上运行。",
     "settings.localEnvironments.actions.item.platforms.macos": "macOS",
     "settings.localEnvironments.actions.item.platforms.linux": "Linux",
@@ -2614,6 +2798,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.localEnvironments.actions.icon.debug": "调试",
     "settings.localEnvironments.actions.icon.test": "测试",
     "settings.localEnvironments.preview.save": "保存",
+    "settings.localEnvironments.preview.saveError": "保存文件失败。（{error}）",
     "settings.localEnvironments.save.success": "已保存本地环境",
     "settings.localEnvironments.save.disabled.name": "添加环境名称以保存。",
     "settings.localEnvironments.save.disabled.noChanges": "没有可保存的更改。",
@@ -2626,13 +2811,17 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.localEnvironments.unavailable.body": "我们无法加载此项目的本地环境设置。",
     "settings.keyboardShortcuts.subtitle.electron": "自定义应用快捷键",
     "settings.keyboardShortcuts.loading": "正在加载快捷键…",
+    "settings.keyboardShortcuts.search.ariaLabel": "搜索键盘快捷键",
+    "settings.keyboardShortcuts.search.placeholder": "搜索快捷键",
     "settings.keyboardShortcuts.table.command": "命令",
     "settings.keyboardShortcuts.table.keybinding": "按键绑定",
     "settings.keyboardShortcuts.table.actions": "操作",
+    "settings.keyboardShortcuts.noMatches": "没有匹配的快捷键",
     "settings.keyboardShortcuts.unassigned": "未分配",
     "settings.keyboardShortcuts.capturePrompt": "按下快捷键",
     "settings.keyboardShortcuts.captureCancel": "取消",
     "settings.keyboardShortcuts.captureAriaLabel": "为 {commandTitle} 录入快捷键",
+    "settings.keyboardShortcuts.captureConflict": "已被 {commandTitle} 使用",
     "settings.keyboardShortcuts.setAriaLabel": "为 {commandTitle} 设置快捷键",
     "settings.keyboardShortcuts.changeAriaLabel": "更改 {commandTitle} 的快捷键",
     "settings.keyboardShortcuts.createAriaLabel": "为 {commandTitle} 创建新快捷键",
@@ -2643,12 +2832,20 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.git.branchPrefix.description": "在 Codex 中创建新分支时使用的前缀",
     "settings.git.branchPrefix.placeholder": "codex/",
     "settings.git.branchPrefix.ariaLabel": "分支前缀",
+    "settings.git.branchPrefix.save.success": "已保存分支前缀",
+    "settings.git.branchPrefix.save.error": "保存分支前缀失败",
     "settings.git.forcePush.label": "始终强制推送",
     "settings.git.forcePush.description": "从 Codex 推送时使用 --force-with-lease 参数",
     "settings.git.forcePush.ariaLabel": "始终强制推送",
+    "settings.git.forcePush.save.enabled": "已启用始终强制推送",
+    "settings.git.forcePush.save.disabled": "已禁用始终强制推送",
+    "settings.git.forcePush.save.error": "保存强制推送设置失败",
     "settings.git.createDraftPullRequest.label": "创建草稿拉取请求",
     "settings.git.createDraftPullRequest.description": "从 Codex 创建 PR 时默认使用草稿拉取请求",
     "settings.git.createDraftPullRequest.ariaLabel": "创建草稿拉取请求",
+    "settings.git.createDraftPullRequest.save.enabled": "已启用创建草稿拉取请求",
+    "settings.git.createDraftPullRequest.save.disabled": "已禁用创建草稿拉取请求",
+    "settings.git.createDraftPullRequest.save.error": "保存草稿拉取请求设置失败",
     "settings.git.pullRequestMergeMethod.label": "拉取请求合并方法",
     "settings.git.pullRequestMergeMethod.description": "选择 Codex 合并拉取请求的方法",
     "settings.git.pullRequestMergeMethod.ariaLabel": "拉取请求合并方法",
@@ -2662,18 +2859,27 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.git.commitInstructions.save": "保存",
     "settings.git.commitInstructions.placeholder": "添加提交消息指引…",
     "settings.git.commitInstructions.ariaLabel": "提交指令",
+    "settings.git.commitInstructions.save.success": "已保存提交指令",
+    "settings.git.commitInstructions.save.error": "保存提交指令失败",
     "settings.git.prInstructions.label": "拉取请求指令",
     "settings.git.prInstructions.description": "已添加到 PR 标题/描述生成提示中",
     "settings.git.prInstructions.save": "保存",
     "settings.git.prInstructions.placeholder": "添加拉取请求指引…",
     "settings.git.prInstructions.ariaLabel": "拉取请求指令",
+    "settings.git.prInstructions.save.success": "已保存拉取请求指令",
+    "settings.git.prInstructions.save.error": "保存拉取请求指令失败",
     "settings.worktrees.autoCleanup.label": "自动删除旧工作树",
     "settings.worktrees.autoCleanup.description": "推荐大多数用户启用。仅当你需要手动管理旧工作树和磁盘使用空间时，再关闭此功能。",
     "settings.worktrees.autoCleanup.ariaLabel": "自动删除旧工作树",
+    "settings.worktrees.autoCleanup.save.enabled": "已启用自动删除",
+    "settings.worktrees.autoCleanup.save.disabled": "已禁用自动删除",
+    "settings.worktrees.autoCleanup.save.error": "保存自动删除设置失败",
     "settings.worktrees.keepCount.label": "自动删除限制",
     "settings.worktrees.keepCount.description": "自动清理较旧工作树前保留的 Codex 工作树数量。Codex 会在删除前为工作树创建快照，因此被清理的工作树应始终可恢复。",
     "settings.worktrees.keepCount.description.disabled": "自动删除功能已禁用。Codex 不会自动清理旧工作树。重新启用该功能即可再次使用已保存的限制。",
     "settings.worktrees.keepCount.ariaLabel": "自动删除限制",
+    "settings.worktrees.keepCount.save.success": "已保存自动删除限制",
+    "settings.worktrees.keepCount.save.error": "保存自动删除限制失败",
     "settings.worktrees.autoCleanup.confirm.title": "禁用工作树自动删除功能？",
     "settings.worktrees.autoCleanup.confirm.body": "我们强烈建议启用自动删除功能，以免旧工作树堆积，占用不必要的磁盘空间。若你希望自行管理旧工作树，可关闭此功能，Codex 将停止自动删除操作。",
     "settings.worktrees.autoCleanup.confirm.cancel": "启用自动删除功能",
@@ -2688,8 +2894,9 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.dataControls.archivedChats.unarchiveSuccessPlain": "对话已取消归档。",
     "settings.dataControls.archivedChats.untitled": "无标题聊天",
     "settings.dataControls.archivedChats.viewNow": "立即查看",
-    "settings.usage.load.loading": "正在加载用量限制…",
-    "settings.usage.load.error": "无法加载用量限制。",
+    "settings.usage.access.loading": "正在检查订阅…",
+    "settings.usage.load.loading": "正在加载用量设置…",
+    "settings.usage.load.error": "无法加载用量设置。",
     "settings.usage.load.retry": "重试",
     "settings.usage.credit.title": "额度",
     "settings.usage.credit.remaining.description": "在达到用量限制时使用额度发送消息。<a>文档</a>",
@@ -2790,11 +2997,18 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.openSourceLicenses.rowLabel": "打开源许可证",
     "settings.openSourceLicenses.rowDescription": "捆绑依赖项的第三方声明",
     "settings.openSourceLicenses.view": "查看",
+    "settings.openSourceLicenses.back": "返回",
+    "settings.openSourceLicenses.title": "打开源许可证",
+    "settings.openSourceLicenses.subtitle": "本应用所含依赖项的第三方声明",
+    "settings.openSourceLicenses.loading": "正在加载…",
+    "settings.openSourceLicenses.missing": "找不到第三方声明。",
     "settings.mcp.loading": "正在加载 MCP 服务器…",
     "settings.mcp.loadError.title": "无法加载 MCP 服务器",
     "settings.mcp.loadError.retry": "重试",
     "settings.mcp.empty": "未连接任何 MCP 服务器",
     "settings.mcp.addServer": "添加服务器",
+    "settings.mcp.myServers": "服务器",
+    "settings.mcp.restartApp": "重启",
     "settings.mcp.server.login": "验证",
     "settings.mcp.server.settings": "设置",
     "settings.mcp.server.enable": "启用",
@@ -2804,8 +3018,11 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.mcp.detail.titleExisting": "更新 {name} MCP",
     "settings.mcp.detail.titleNew": "连接自定义 MCP",
     "settings.mcp.detail.back": "返回",
+    "settings.mcp.detail.docs": "打开 MCP 文档",
+    "settings.mcp.detail.docs.link": "文档",
     "settings.mcp.detail.uninstall": "卸载",
     "settings.mcp.detail.name": "名称",
+    "settings.mcp.detail.switchTransportNotice": "如需切换 MCP 服务器类型，请先卸载当前配置。",
     "settings.mcp.detail.transport.label": "传输方式",
     "settings.mcp.detail.transport.stdio": "STDIO",
     "settings.mcp.detail.transport.http": "Streamable HTTP",
@@ -2825,6 +3042,9 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.mcp.detail.http.addEnvHeader": "添加变量",
     "settings.mcp.detail.save": "保存",
     "settings.mcp.detail.remove": "移除",
+    "settings.editRow.headerPlaceholder": "键",
+    "settings.editRow.valuePlaceholder": "值",
+    "settings.editRow.removeEntry": "移除条目",
     "settings.agent.approval.untrusted": "不受信任",
     "settings.agent.approval.onFailure": "失败时",
     "settings.agent.approval.onRequest": "按需",

@@ -41,6 +41,7 @@ const MCP_OAUTH_EVENT: &str = "mcp-oauth-login-completed";
 const APPS_LIST_UPDATED_EVENT: &str = "apps-list-updated";
 const CLIENT_NAME: &str = "codex-app-replica";
 const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+const LOCAL_HOST_ID: &str = "local";
 const AUTO_REVIEW_INTERRUPTION_WARNING_MESSAGE_PREFIX: &str =
     "Automatic approval review rejected too many approval requests for this turn";
 
@@ -52,6 +53,8 @@ pub struct AuthState {
     pub open_ai_auth: Option<String>,
     pub requires_auth: bool,
     pub email: Option<String>,
+    pub account_id: Option<String>,
+    pub user_id: Option<String>,
     pub plan_at_login: Option<String>,
 }
 
@@ -88,6 +91,12 @@ pub struct SendAddCreditsNudgeEmailResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct HostScopedParams {
+    pub host_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct ThreadHistoryEntry {
     pub id: String,
     pub preview: String,
@@ -111,6 +120,31 @@ pub struct ConfigReadResponse {
     pub config: ConfigSnapshot,
     pub origins: HashMap<String, ConfigLayerMetadata>,
     pub layers: Option<Vec<ConfigLayer>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigReadForHostParams {
+    pub host_id: Option<String>,
+    pub cwd: Option<String>,
+    #[serde(default)]
+    pub include_layers: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigRequirementsReadResponse {
+    pub requirements: Option<ConfigRequirements>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigRequirements {
+    pub allowed_approval_policies: Option<Vec<serde_json::Value>>,
+    pub allowed_sandbox_modes: Option<Vec<String>>,
+    pub allowed_web_search_modes: Option<Vec<String>>,
+    pub feature_requirements: Option<HashMap<String, bool>>,
+    pub enforce_residency: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -170,6 +204,7 @@ pub struct ConfigLayer {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigValueWriteParams {
+    pub host_id: Option<String>,
     pub key_path: String,
     pub value: serde_json::Value,
     pub merge_strategy: String,
@@ -197,7 +232,16 @@ pub struct ConfigBatchWriteParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct ConfigBatchWriteForHostParams {
+    pub host_id: Option<String>,
+    #[serde(flatten)]
+    pub write: ConfigBatchWriteParams,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct ApiKeyLoginParams {
+    pub host_id: Option<String>,
     pub api_key: String,
 }
 
@@ -256,6 +300,9 @@ struct ExperimentalFeatureListResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillsListParams {
+    pub host_id: Option<String>,
+    #[serde(default)]
+    pub cwds: Vec<String>,
     pub cwd: Option<String>,
     #[serde(default)]
     pub force_reload: bool,
@@ -315,6 +362,55 @@ pub struct SkillErrorInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct HooksListParams {
+    pub host_id: Option<String>,
+    pub cwds: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HooksListResponse {
+    pub data: Vec<HooksListEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HooksListEntry {
+    pub cwd: String,
+    pub hooks: Vec<HookMetadata>,
+    pub warnings: Vec<String>,
+    pub errors: Vec<HookLoadErrorInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HookMetadata {
+    pub key: String,
+    pub event_name: String,
+    pub handler_type: String,
+    pub matcher: Option<String>,
+    pub command: Option<String>,
+    pub timeout_sec: i64,
+    pub status_message: Option<String>,
+    pub source_path: String,
+    pub source: String,
+    pub plugin_id: Option<String>,
+    pub display_order: i64,
+    pub enabled: bool,
+    pub is_managed: bool,
+    pub current_hash: String,
+    pub trust_status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HookLoadErrorInfo {
+    pub path: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct AppsListParams {
     pub cursor: Option<String>,
     pub limit: Option<u32>,
@@ -349,6 +445,9 @@ pub struct AppInfo {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginListParams {
+    pub host_id: Option<String>,
+    #[serde(default)]
+    pub cwds: Vec<String>,
     pub cwd: Option<String>,
 }
 
@@ -437,6 +536,60 @@ pub struct PluginUninstallParams {
 #[serde(rename_all = "camelCase")]
 pub struct PluginUninstallResponse {}
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginShareListParams {
+    pub host_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginShareListResponse {
+    pub data: Vec<PluginShareListItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginShareListItem {
+    pub plugin: PluginSummary,
+    pub share_url: String,
+    pub local_plugin_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginShareSaveParams {
+    pub host_id: Option<String>,
+    pub plugin_path: String,
+    pub remote_plugin_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginShareSaveResponse {
+    pub remote_plugin_id: String,
+    pub share_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginShareDeleteParams {
+    pub host_id: Option<String>,
+    pub remote_plugin_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginShareDeleteResponse {}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveConversationParams {
+    pub conversation_id: String,
+    #[serde(default)]
+    pub cleanup_worktree: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginMarketplaceEntry {
@@ -505,6 +658,7 @@ pub struct ExperimentalFeature {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct McpServerStatusListParams {
+    pub host_id: Option<String>,
     pub cursor: Option<String>,
     pub limit: Option<u32>,
     pub detail: Option<String>,
@@ -527,6 +681,7 @@ pub struct McpServerStatusEntry {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct McpServerOauthLoginParams {
+    pub host_id: Option<String>,
     pub name: String,
 }
 
@@ -636,6 +791,8 @@ impl Default for AuthState {
             open_ai_auth: None,
             requires_auth: true,
             email: None,
+            account_id: None,
+            user_id: None,
             plan_at_login: None,
         }
     }
@@ -931,6 +1088,15 @@ struct AccountReadResponse {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct AccountInfoResponse {
+    pub email: Option<String>,
+    pub account_id: Option<String>,
+    pub user_id: Option<String>,
+    pub plan: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct GetAccountRateLimitsResponse {
     pub rate_limits: RateLimitSnapshot,
     pub rate_limits_by_limit_id: Option<HashMap<String, RateLimitSnapshot>>,
@@ -1035,6 +1201,7 @@ enum AppServerRequestKind {
     CancelLogin,
     Logout,
     ConfigRead,
+    ConfigRequirementsRead,
     ConfigValueWrite,
     ConfigBatchWrite,
     ExperimentalFeatureList,
@@ -1044,8 +1211,12 @@ enum AppServerRequestKind {
     McpServerStatusList,
     ReloadMcpServerConfig,
     SkillsList,
+    HooksList,
     PluginList,
     PluginRead,
+    PluginShareList,
+    PluginShareSave,
+    PluginShareDelete,
     PluginInstall,
     PluginUninstall,
     ThreadList,
@@ -1088,6 +1259,23 @@ pub fn get_auth_state(state: State<'_, Arc<AuthBridgeState>>) -> AuthSnapshot {
         .clone()
 }
 
+#[tauri::command(rename = "account-info")]
+pub async fn read_account_info(
+    state: State<'_, Arc<AuthBridgeState>>,
+) -> Result<AccountInfoResponse, String> {
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::AccountRead,
+        serde_json::json!({
+            "refreshToken": false,
+        }),
+    )
+    .await?;
+    let response = serde_json::from_value::<AccountReadResponse>(value)
+        .map_err(|err| format!("failed to decode account info response: {err}"))?;
+    Ok(map_account_info_response(response))
+}
+
 #[tauri::command]
 pub async fn read_account_rate_limits(
     state: State<'_, Arc<AuthBridgeState>>,
@@ -1125,19 +1313,38 @@ pub async fn login_api_key(
     state: State<'_, Arc<AuthBridgeState>>,
     params: ApiKeyLoginParams,
 ) -> Result<(), String> {
-    clear_login_error(&app, state.inner());
+    ensure_supported_host_id(params.host_id.as_deref(), "login_api_key")?;
+    login_api_key_inner(&app, state.inner(), params.api_key).await
+}
+
+#[tauri::command(rename = "login-with-api-key-for-host")]
+pub async fn login_api_key_for_host_command(
+    app: AppHandle,
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: ApiKeyLoginParams,
+) -> Result<(), String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "login-with-api-key-for-host")?;
+    login_api_key_inner(&app, state.inner(), params.api_key).await
+}
+
+async fn login_api_key_inner(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    api_key: String,
+) -> Result<(), String> {
+    clear_login_error(app, state);
     send_request(
-        state.inner(),
+        state,
         AppServerRequestKind::LoginApiKey,
         serde_json::json!({
             "type": "apiKey",
-            "apiKey": params.api_key,
+            "apiKey": api_key,
         }),
     )
     .await
     .map(|_| ())
     .map_err(|error| {
-        set_login_error(&app, state.inner(), error.clone());
+        set_login_error(app, state, error.clone());
         error
     })
 }
@@ -1259,7 +1466,15 @@ pub async fn cancel_login(
 }
 
 #[tauri::command]
-pub async fn logout(app: AppHandle, state: State<'_, Arc<AuthBridgeState>>) -> Result<(), String> {
+pub async fn logout(
+    app: AppHandle,
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: Option<HostScopedParams>,
+) -> Result<(), String> {
+    ensure_supported_host_id(
+        params.as_ref().and_then(|params| params.host_id.as_deref()),
+        "logout",
+    )?;
     send_request(
         state.inner(),
         AppServerRequestKind::Logout,
@@ -1279,11 +1494,64 @@ pub async fn read_config(
     state: State<'_, Arc<AuthBridgeState>>,
     cwd: Option<String>,
 ) -> Result<ConfigReadResponse, String> {
+    read_config_inner(state.inner(), cwd, true).await
+}
+
+#[tauri::command(rename = "read-config-for-host")]
+pub async fn read_config_for_host(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: ConfigReadForHostParams,
+) -> Result<ConfigReadResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "read-config-for-host")?;
+    read_config_inner(state.inner(), params.cwd, params.include_layers).await
+}
+
+#[tauri::command]
+pub async fn write_config_value(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: ConfigValueWriteParams,
+) -> Result<(), String> {
+    write_config_value_inner(state.inner(), params).await
+}
+
+#[tauri::command(rename = "write-config-value")]
+pub async fn write_config_value_command(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: ConfigValueWriteParams,
+) -> Result<(), String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "write-config-value")?;
+    write_config_value_inner(state.inner(), params).await
+}
+
+#[tauri::command(rename = "get-config-requirements-for-host")]
+pub async fn get_config_requirements_for_host(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: HostScopedParams,
+) -> Result<ConfigRequirementsReadResponse, String> {
+    ensure_supported_host_id(
+        params.host_id.as_deref(),
+        "get-config-requirements-for-host",
+    )?;
     let value = send_request(
         state.inner(),
+        AppServerRequestKind::ConfigRequirementsRead,
+        serde_json::json!({}),
+    )
+    .await?;
+    serde_json::from_value::<ConfigRequirementsReadResponse>(value)
+        .map_err(|err| format!("failed to decode config requirements response: {err}"))
+}
+
+async fn read_config_inner(
+    state: &Arc<AuthBridgeState>,
+    cwd: Option<String>,
+    include_layers: bool,
+) -> Result<ConfigReadResponse, String> {
+    let value = send_request(
+        state,
         AppServerRequestKind::ConfigRead,
         serde_json::json!({
-            "includeLayers": true,
+            "includeLayers": include_layers,
             "cwd": cwd,
         }),
     )
@@ -1292,13 +1560,12 @@ pub async fn read_config(
         .map_err(|err| format!("failed to decode config read response: {err}"))
 }
 
-#[tauri::command]
-pub async fn write_config_value(
-    state: State<'_, Arc<AuthBridgeState>>,
+async fn write_config_value_inner(
+    state: &Arc<AuthBridgeState>,
     params: ConfigValueWriteParams,
 ) -> Result<(), String> {
     send_request(
-        state.inner(),
+        state,
         AppServerRequestKind::ConfigValueWrite,
         serde_json::json!({
             "keyPath": params.key_path,
@@ -1317,6 +1584,22 @@ pub async fn batch_write_config_values(
     state: State<'_, Arc<AuthBridgeState>>,
     params: ConfigBatchWriteParams,
 ) -> Result<(), String> {
+    batch_write_config_values_inner(state.inner(), params).await
+}
+
+#[tauri::command(rename = "batch-write-config-value")]
+pub async fn batch_write_config_value_command(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: ConfigBatchWriteForHostParams,
+) -> Result<(), String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "batch-write-config-value")?;
+    batch_write_config_values_inner(state.inner(), params.write).await
+}
+
+async fn batch_write_config_values_inner(
+    state: &Arc<AuthBridgeState>,
+    params: ConfigBatchWriteParams,
+) -> Result<(), String> {
     let edits = params
         .edits
         .into_iter()
@@ -1329,7 +1612,7 @@ pub async fn batch_write_config_values(
         })
         .collect::<Vec<_>>();
     send_request(
-        state.inner(),
+        state,
         AppServerRequestKind::ConfigBatchWrite,
         serde_json::json!({
             "edits": edits,
@@ -1391,8 +1674,21 @@ pub async fn set_experimental_feature_enablement(
 
 #[tauri::command]
 pub async fn reset_memories(state: State<'_, Arc<AuthBridgeState>>) -> Result<(), String> {
+    reset_memories_inner(state.inner()).await
+}
+
+#[tauri::command(rename = "reset-memories-for-host")]
+pub async fn reset_memories_for_host(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: HostScopedParams,
+) -> Result<(), String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "reset-memories-for-host")?;
+    reset_memories_inner(state.inner()).await
+}
+
+async fn reset_memories_inner(state: &Arc<AuthBridgeState>) -> Result<(), String> {
     send_request(
-        state.inner(),
+        state,
         AppServerRequestKind::MemoryReset,
         serde_json::json!({}),
     )
@@ -1400,15 +1696,42 @@ pub async fn reset_memories(state: State<'_, Arc<AuthBridgeState>>) -> Result<()
     .map(|_| ())
 }
 
+fn ensure_supported_host_id(host_id: Option<&str>, command_name: &str) -> Result<(), String> {
+    match host_id.map(str::trim).filter(|value| !value.is_empty()) {
+        None | Some(LOCAL_HOST_ID) => Ok(()),
+        Some(host_id) => Err(format!(
+            "{command_name} does not support host id: {host_id}"
+        )),
+    }
+}
+
+fn plugin_list_cwds(params: &PluginListParams) -> Vec<String> {
+    if !params.cwds.is_empty() {
+        return params.cwds.clone();
+    }
+    match params.cwd.clone() {
+        Some(cwd) => vec![cwd],
+        None => Vec::new(),
+    }
+}
+
+fn skills_list_cwds(params: &SkillsListParams) -> Vec<String> {
+    if !params.cwds.is_empty() {
+        return params.cwds.clone();
+    }
+    match params.cwd.clone() {
+        Some(cwd) => vec![cwd],
+        None => Vec::new(),
+    }
+}
+
 #[tauri::command]
 pub async fn list_skills(
     state: State<'_, Arc<AuthBridgeState>>,
     params: SkillsListParams,
 ) -> Result<SkillsListResponse, String> {
-    let mut cwds = Vec::new();
-    if let Some(cwd) = params.cwd {
-        cwds.push(cwd);
-    }
+    ensure_supported_host_id(params.host_id.as_deref(), "list-skills-for-host")?;
+    let cwds = skills_list_cwds(&params);
     let value = send_request(
         state.inner(),
         AppServerRequestKind::SkillsList,
@@ -1420,6 +1743,32 @@ pub async fn list_skills(
     .await?;
     serde_json::from_value::<SkillsListResponse>(value)
         .map_err(|err| format!("failed to decode skills list response: {err}"))
+}
+
+#[tauri::command(rename = "list-skills-for-host")]
+pub async fn list_skills_for_host(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: SkillsListParams,
+) -> Result<SkillsListResponse, String> {
+    list_skills(state, params).await
+}
+
+#[tauri::command(rename = "list-hooks-for-host")]
+pub async fn list_hooks_for_host(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: HooksListParams,
+) -> Result<HooksListResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "list-hooks-for-host")?;
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::HooksList,
+        serde_json::json!({
+            "cwds": params.cwds,
+        }),
+    )
+    .await?;
+    serde_json::from_value::<HooksListResponse>(value)
+        .map_err(|err| format!("failed to decode hooks list response: {err}"))
 }
 
 #[tauri::command]
@@ -1447,7 +1796,8 @@ pub async fn list_plugins(
     state: State<'_, Arc<AuthBridgeState>>,
     params: PluginListParams,
 ) -> Result<PluginListResponse, String> {
-    let cwds = params.cwd.map(|cwd| vec![cwd]);
+    ensure_supported_host_id(params.host_id.as_deref(), "list-plugins")?;
+    let cwds = plugin_list_cwds(&params);
     let value = send_request(
         state.inner(),
         AppServerRequestKind::PluginList,
@@ -1458,6 +1808,14 @@ pub async fn list_plugins(
     .await?;
     serde_json::from_value::<PluginListResponse>(value)
         .map_err(|err| format!("failed to decode plugin list response: {err}"))
+}
+
+#[tauri::command(rename = "list-plugins")]
+pub async fn list_plugins_command(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: PluginListParams,
+) -> Result<PluginListResponse, String> {
+    list_plugins(state, params).await
 }
 
 #[tauri::command]
@@ -1536,10 +1894,87 @@ pub async fn uninstall_plugin(
 }
 
 #[tauri::command]
+pub async fn list_plugin_shares(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: PluginShareListParams,
+) -> Result<PluginShareListResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "list-plugin-shares")?;
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::PluginShareList,
+        serde_json::json!({}),
+    )
+    .await?;
+    serde_json::from_value::<PluginShareListResponse>(value)
+        .map_err(|err| format!("failed to decode plugin share list response: {err}"))
+}
+
+#[tauri::command(rename = "list-plugin-shares")]
+pub async fn list_plugin_shares_command(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: PluginShareListParams,
+) -> Result<PluginShareListResponse, String> {
+    list_plugin_shares(state, params).await
+}
+
+#[tauri::command]
+pub async fn save_plugin_share(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: PluginShareSaveParams,
+) -> Result<PluginShareSaveResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "save-plugin-share")?;
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::PluginShareSave,
+        serde_json::json!({
+            "pluginPath": params.plugin_path,
+            "remotePluginId": params.remote_plugin_id,
+        }),
+    )
+    .await?;
+    serde_json::from_value::<PluginShareSaveResponse>(value)
+        .map_err(|err| format!("failed to decode plugin share save response: {err}"))
+}
+
+#[tauri::command(rename = "save-plugin-share")]
+pub async fn save_plugin_share_command(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: PluginShareSaveParams,
+) -> Result<PluginShareSaveResponse, String> {
+    save_plugin_share(state, params).await
+}
+
+#[tauri::command]
+pub async fn delete_plugin_share(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: PluginShareDeleteParams,
+) -> Result<PluginShareDeleteResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "delete-plugin-share")?;
+    send_request(
+        state.inner(),
+        AppServerRequestKind::PluginShareDelete,
+        serde_json::json!({
+            "remotePluginId": params.remote_plugin_id,
+        }),
+    )
+    .await
+    .map(|_| PluginShareDeleteResponse {})
+}
+
+#[tauri::command(rename = "delete-plugin-share")]
+pub async fn delete_plugin_share_command(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: PluginShareDeleteParams,
+) -> Result<PluginShareDeleteResponse, String> {
+    delete_plugin_share(state, params).await
+}
+
+#[tauri::command]
 pub async fn list_mcp_server_status(
     state: State<'_, Arc<AuthBridgeState>>,
     params: McpServerStatusListParams,
 ) -> Result<McpServerStatusListResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "list-mcp-server-status")?;
     let value = send_request(
         state.inner(),
         AppServerRequestKind::McpServerStatusList,
@@ -1554,11 +1989,20 @@ pub async fn list_mcp_server_status(
         .map_err(|err| format!("failed to decode MCP server status list response: {err}"))
 }
 
+#[tauri::command(rename = "list-mcp-server-status")]
+pub async fn list_mcp_server_status_command(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: McpServerStatusListParams,
+) -> Result<McpServerStatusListResponse, String> {
+    list_mcp_server_status(state, params).await
+}
+
 #[tauri::command]
 pub async fn login_mcp_server(
     state: State<'_, Arc<AuthBridgeState>>,
     params: McpServerOauthLoginParams,
 ) -> Result<McpServerOauthLoginResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "login-mcp-server")?;
     let value = send_request(
         state.inner(),
         AppServerRequestKind::McpServerOauthLogin,
@@ -1569,6 +2013,14 @@ pub async fn login_mcp_server(
     .await?;
     serde_json::from_value::<McpServerOauthLoginResponse>(value)
         .map_err(|err| format!("failed to decode MCP server oauth login response: {err}"))
+}
+
+#[tauri::command(rename = "login-mcp-server")]
+pub async fn login_mcp_server_command(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: McpServerOauthLoginParams,
+) -> Result<McpServerOauthLoginResponse, String> {
+    login_mcp_server(state, params).await
 }
 
 #[tauri::command]
@@ -1730,6 +2182,15 @@ pub async fn archive_thread(
     )
     .await
     .map(|_| ())
+}
+
+#[tauri::command(rename = "archive-conversation")]
+pub async fn archive_conversation_command(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: ArchiveConversationParams,
+) -> Result<(), String> {
+    let _ = params.cleanup_worktree;
+    archive_thread(state, params.conversation_id).await
 }
 
 #[tauri::command]
@@ -2673,6 +3134,7 @@ fn request_method(kind: &AppServerRequestKind) -> &'static str {
         AppServerRequestKind::CancelLogin => "account/login/cancel",
         AppServerRequestKind::Logout => "account/logout",
         AppServerRequestKind::ConfigRead => "config/read",
+        AppServerRequestKind::ConfigRequirementsRead => "configRequirements/read",
         AppServerRequestKind::ConfigValueWrite => "config/value/write",
         AppServerRequestKind::ConfigBatchWrite => "config/batchWrite",
         AppServerRequestKind::ExperimentalFeatureList => "experimentalFeature/list",
@@ -2684,8 +3146,12 @@ fn request_method(kind: &AppServerRequestKind) -> &'static str {
         AppServerRequestKind::McpServerStatusList => "mcpServerStatus/list",
         AppServerRequestKind::ReloadMcpServerConfig => "config/mcpServer/reload",
         AppServerRequestKind::SkillsList => "skills/list",
+        AppServerRequestKind::HooksList => "hooks/list",
         AppServerRequestKind::PluginList => "plugin/list",
         AppServerRequestKind::PluginRead => "plugin/read",
+        AppServerRequestKind::PluginShareList => "plugin/share/list",
+        AppServerRequestKind::PluginShareSave => "plugin/share/save",
+        AppServerRequestKind::PluginShareDelete => "plugin/share/delete",
         AppServerRequestKind::PluginInstall => "plugin/install",
         AppServerRequestKind::PluginUninstall => "plugin/uninstall",
         AppServerRequestKind::ThreadList => "thread/list",
@@ -3945,6 +4411,27 @@ fn map_account(response: AccountReadResponse) -> AuthState {
     state
 }
 
+fn map_account_info_response(response: AccountReadResponse) -> AccountInfoResponse {
+    match response.account {
+        Some(Account {
+            account_type,
+            email,
+            plan_type,
+        }) if account_type == "chatgpt" => AccountInfoResponse {
+            email,
+            account_id: None,
+            user_id: None,
+            plan: plan_type,
+        },
+        _ => AccountInfoResponse {
+            email: None,
+            account_id: None,
+            user_id: None,
+            plan: None,
+        },
+    }
+}
+
 fn update_snapshot(app: &AppHandle, state: &Arc<AuthBridgeState>, snapshot: AuthSnapshot) {
     *state.snapshot.lock().expect("snapshot mutex poisoned") = snapshot.clone();
     let _ = app.emit(AUTH_EVENT, snapshot);
@@ -4081,4 +4568,681 @@ async fn write_json(stdin: &mut ChildStdin, value: &serde_json::Value) -> Result
         .flush()
         .await
         .map_err(|err| format!("failed to flush app-server json: {err}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_supported_host_id;
+    use super::map_account;
+    use super::map_account_info_response;
+    use super::plugin_list_cwds;
+    use super::skills_list_cwds;
+    use super::Account;
+    use super::AccountInfoResponse;
+    use super::AccountReadResponse;
+    use super::ApiKeyLoginParams;
+    use super::ArchiveConversationParams;
+    use super::AuthState;
+    use super::ConfigBatchWriteForHostParams;
+    use super::ConfigReadForHostParams;
+    use super::ConfigRequirements;
+    use super::ConfigRequirementsReadResponse;
+    use super::ConfigValueWriteParams;
+    use super::HookLoadErrorInfo;
+    use super::HookMetadata;
+    use super::HooksListEntry;
+    use super::HooksListParams;
+    use super::HooksListResponse;
+    use super::HostScopedParams;
+    use super::McpServerOauthLoginParams;
+    use super::McpServerStatusListParams;
+    use super::PluginListParams;
+    use super::PluginShareDeleteParams;
+    use super::PluginShareListParams;
+    use super::PluginShareSaveParams;
+    use super::SkillsListParams;
+    use serde_json::json;
+
+    #[test]
+    fn archive_conversation_params_accept_page_owned_shape() {
+        let params: ArchiveConversationParams = serde_json::from_value(json!({
+            "conversationId": "thr_123",
+            "cleanupWorktree": false
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            ArchiveConversationParams {
+                conversation_id: "thr_123".to_string(),
+                cleanup_worktree: false,
+            }
+        );
+    }
+
+    #[test]
+    fn archive_conversation_params_default_cleanup_worktree_to_false() {
+        let params: ArchiveConversationParams = serde_json::from_value(json!({
+            "conversationId": "thr_123"
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            ArchiveConversationParams {
+                conversation_id: "thr_123".to_string(),
+                cleanup_worktree: false,
+            }
+        );
+    }
+
+    #[test]
+    fn api_key_login_params_accept_upstream_host_shape() {
+        let params: ApiKeyLoginParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "apiKey": "sk-test"
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            ApiKeyLoginParams {
+                host_id: Some("local".to_string()),
+                api_key: "sk-test".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn api_key_login_params_keep_legacy_shape_without_host_id() {
+        let params: ApiKeyLoginParams = serde_json::from_value(json!({
+            "apiKey": "sk-test"
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            ApiKeyLoginParams {
+                host_id: None,
+                api_key: "sk-test".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn host_scoped_params_accept_logout_host_id() {
+        let params: HostScopedParams = serde_json::from_value(json!({
+            "hostId": "local"
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            HostScopedParams {
+                host_id: Some("local".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn remote_connections_auth_host_scoped_commands_only_accept_local_host() {
+        assert!(ensure_supported_host_id(None, "login-with-api-key-for-host").is_ok());
+        assert!(ensure_supported_host_id(Some(""), "login-with-api-key-for-host").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "login-with-api-key-for-host").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "login-with-api-key-for-host")
+                .expect_err("non-local host id should be rejected"),
+            "login-with-api-key-for-host does not support host id: remote"
+        );
+
+        assert!(ensure_supported_host_id(None, "logout").is_ok());
+        assert!(ensure_supported_host_id(Some(""), "logout").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "logout").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "logout")
+                .expect_err("non-local host id should be rejected"),
+            "logout does not support host id: remote"
+        );
+    }
+
+    #[test]
+    fn reset_memories_for_host_only_accepts_local_host() {
+        assert!(ensure_supported_host_id(None, "reset-memories-for-host").is_ok());
+        assert!(ensure_supported_host_id(Some(""), "reset-memories-for-host").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "reset-memories-for-host").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "reset-memories-for-host")
+                .expect_err("non-local host id should be rejected"),
+            "reset-memories-for-host does not support host id: remote"
+        );
+    }
+
+    #[test]
+    fn read_config_for_host_params_accept_upstream_shape() {
+        let params: ConfigReadForHostParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "cwd": "D:/repo",
+            "includeLayers": true
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            ConfigReadForHostParams {
+                host_id: Some("local".to_string()),
+                cwd: Some("D:/repo".to_string()),
+                include_layers: true,
+            }
+        );
+    }
+
+    #[test]
+    fn write_config_value_params_accept_host_id() {
+        let params: ConfigValueWriteParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "keyPath": "approval_policy",
+            "value": "never",
+            "mergeStrategy": "upsert",
+            "filePath": "D:/repo/.codex/config.toml",
+            "expectedVersion": "version-1"
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            ConfigValueWriteParams {
+                host_id: Some("local".to_string()),
+                key_path: "approval_policy".to_string(),
+                value: json!("never"),
+                merge_strategy: "upsert".to_string(),
+                file_path: Some("D:/repo/.codex/config.toml".to_string()),
+                expected_version: Some("version-1".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn config_requirements_response_deserializes_required_fields() {
+        let response: ConfigRequirementsReadResponse = serde_json::from_value(json!({
+            "requirements": {
+                "allowedApprovalPolicies": ["on-request", "never"],
+                "allowedSandboxModes": ["read-only", "workspace-write"],
+                "allowedWebSearchModes": null,
+                "featureRequirements": {
+                    "plugins": true
+                },
+                "enforceResidency": null
+            }
+        }))
+        .expect("response should deserialize");
+
+        assert_eq!(
+            response,
+            ConfigRequirementsReadResponse {
+                requirements: Some(ConfigRequirements {
+                    allowed_approval_policies: Some(vec![json!("on-request"), json!("never"),]),
+                    allowed_sandbox_modes: Some(vec![
+                        "read-only".to_string(),
+                        "workspace-write".to_string(),
+                    ]),
+                    allowed_web_search_modes: None,
+                    feature_requirements: Some(std::collections::HashMap::from([(
+                        "plugins".to_string(),
+                        true,
+                    )])),
+                    enforce_residency: None,
+                }),
+            }
+        );
+    }
+
+    #[test]
+    fn config_host_scoped_commands_only_accept_local_host() {
+        assert!(ensure_supported_host_id(None, "read-config-for-host").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "read-config-for-host").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "read-config-for-host")
+                .expect_err("non-local host id should be rejected"),
+            "read-config-for-host does not support host id: remote"
+        );
+
+        assert!(ensure_supported_host_id(None, "write-config-value").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "write-config-value").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "write-config-value")
+                .expect_err("non-local host id should be rejected"),
+            "write-config-value does not support host id: remote"
+        );
+
+        assert!(ensure_supported_host_id(None, "get-config-requirements-for-host").is_ok());
+        assert!(
+            ensure_supported_host_id(Some("local"), "get-config-requirements-for-host").is_ok()
+        );
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "get-config-requirements-for-host")
+                .expect_err("non-local host id should be rejected"),
+            "get-config-requirements-for-host does not support host id: remote"
+        );
+
+        assert!(ensure_supported_host_id(None, "batch-write-config-value").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "batch-write-config-value").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "batch-write-config-value")
+                .expect_err("non-local host id should be rejected"),
+            "batch-write-config-value does not support host id: remote"
+        );
+    }
+
+    #[test]
+    fn batch_write_config_value_params_accept_host_id() {
+        let params: ConfigBatchWriteForHostParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "edits": [{
+                "keyPath": "hooks.state",
+                "value": {
+                    "hook-key": {
+                        "enabled": false
+                    }
+                },
+                "mergeStrategy": "upsert"
+            }],
+            "filePath": null,
+            "expectedVersion": null,
+            "reloadUserConfig": true
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            ConfigBatchWriteForHostParams {
+                host_id: Some("local".to_string()),
+                write: super::ConfigBatchWriteParams {
+                    edits: vec![super::ConfigEditParams {
+                        key_path: "hooks.state".to_string(),
+                        value: json!({
+                            "hook-key": {
+                                "enabled": false
+                            }
+                        }),
+                        merge_strategy: "upsert".to_string(),
+                    }],
+                    file_path: None,
+                    expected_version: None,
+                    reload_user_config: true,
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn mcp_server_status_list_params_accept_host_id() {
+        let params: McpServerStatusListParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "cursor": null,
+            "limit": 100,
+            "detail": "full"
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            McpServerStatusListParams {
+                host_id: Some("local".to_string()),
+                cursor: None,
+                limit: Some(100),
+                detail: Some("full".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn mcp_server_oauth_login_params_accept_host_id() {
+        let params: McpServerOauthLoginParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "name": "demo-server"
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            McpServerOauthLoginParams {
+                host_id: Some("local".to_string()),
+                name: "demo-server".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn mcp_host_scoped_commands_only_accept_local_host() {
+        assert!(ensure_supported_host_id(None, "list-mcp-server-status").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "list-mcp-server-status").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "list-mcp-server-status")
+                .expect_err("non-local host id should be rejected"),
+            "list-mcp-server-status does not support host id: remote"
+        );
+
+        assert!(ensure_supported_host_id(None, "login-mcp-server").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "login-mcp-server").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "login-mcp-server")
+                .expect_err("non-local host id should be rejected"),
+            "login-mcp-server does not support host id: remote"
+        );
+    }
+
+    #[test]
+    fn skills_list_params_accept_upstream_host_and_cwds_shape() {
+        let params: SkillsListParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "cwds": ["D:/repo-a", "D:/repo-b"],
+            "forceReload": true
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            SkillsListParams {
+                host_id: Some("local".to_string()),
+                cwds: vec!["D:/repo-a".to_string(), "D:/repo-b".to_string()],
+                cwd: None,
+                force_reload: true,
+            }
+        );
+    }
+
+    #[test]
+    fn skills_list_cwds_prefer_upstream_array_over_legacy_cwd() {
+        let upstream = SkillsListParams {
+            host_id: Some("local".to_string()),
+            cwds: vec!["D:/repo-a".to_string(), "D:/repo-b".to_string()],
+            cwd: Some("D:/legacy".to_string()),
+            force_reload: false,
+        };
+        let legacy = SkillsListParams {
+            host_id: None,
+            cwds: Vec::new(),
+            cwd: Some("D:/legacy".to_string()),
+            force_reload: false,
+        };
+
+        assert_eq!(
+            skills_list_cwds(&upstream),
+            vec!["D:/repo-a".to_string(), "D:/repo-b".to_string()]
+        );
+        assert_eq!(skills_list_cwds(&legacy), vec!["D:/legacy".to_string()]);
+    }
+
+    #[test]
+    fn hooks_list_params_accept_upstream_host_and_cwds_shape() {
+        let params: HooksListParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "cwds": ["D:/repo-a", "D:/repo-b"]
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            HooksListParams {
+                host_id: Some("local".to_string()),
+                cwds: vec!["D:/repo-a".to_string(), "D:/repo-b".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn hooks_list_response_deserializes_upstream_shape() {
+        let response: HooksListResponse = serde_json::from_value(json!({
+            "data": [{
+                "cwd": "D:/repo-a",
+                "hooks": [{
+                    "key": "D:/Users/demo/.codex/config.toml:preToolUse:0:0",
+                    "eventName": "preToolUse",
+                    "handlerType": "command",
+                    "matcher": "Bash",
+                    "command": "python hook.py",
+                    "timeoutSec": 5,
+                    "statusMessage": "running hook",
+                    "sourcePath": "D:/Users/demo/.codex/config.toml",
+                    "source": "user",
+                    "pluginId": null,
+                    "displayOrder": 0,
+                    "enabled": true,
+                    "isManaged": false,
+                    "currentHash": "sha256:abc",
+                    "trustStatus": "untrusted"
+                }],
+                "warnings": ["warning text"],
+                "errors": [{
+                    "path": "D:/repo-a/.codex/config.toml",
+                    "message": "bad hook config"
+                }]
+            }]
+        }))
+        .expect("response should deserialize");
+
+        assert_eq!(
+            response,
+            HooksListResponse {
+                data: vec![HooksListEntry {
+                    cwd: "D:/repo-a".to_string(),
+                    hooks: vec![HookMetadata {
+                        key: "D:/Users/demo/.codex/config.toml:preToolUse:0:0".to_string(),
+                        event_name: "preToolUse".to_string(),
+                        handler_type: "command".to_string(),
+                        matcher: Some("Bash".to_string()),
+                        command: Some("python hook.py".to_string()),
+                        timeout_sec: 5,
+                        status_message: Some("running hook".to_string()),
+                        source_path: "D:/Users/demo/.codex/config.toml".to_string(),
+                        source: "user".to_string(),
+                        plugin_id: None,
+                        display_order: 0,
+                        enabled: true,
+                        is_managed: false,
+                        current_hash: "sha256:abc".to_string(),
+                        trust_status: "untrusted".to_string(),
+                    }],
+                    warnings: vec!["warning text".to_string()],
+                    errors: vec![HookLoadErrorInfo {
+                        path: "D:/repo-a/.codex/config.toml".to_string(),
+                        message: "bad hook config".to_string(),
+                    }],
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn list_hooks_only_accepts_local_host() {
+        assert!(ensure_supported_host_id(None, "list-hooks-for-host").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "list-hooks-for-host").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "list-hooks-for-host")
+                .expect_err("non-local host id should be rejected"),
+            "list-hooks-for-host does not support host id: remote"
+        );
+    }
+
+    #[test]
+    fn plugin_list_params_accept_upstream_host_and_cwds_shape() {
+        let params: PluginListParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "cwds": ["D:/repo-a", "D:/repo-b"]
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            PluginListParams {
+                host_id: Some("local".to_string()),
+                cwds: vec!["D:/repo-a".to_string(), "D:/repo-b".to_string()],
+                cwd: None,
+            }
+        );
+    }
+
+    #[test]
+    fn plugin_list_cwds_prefer_upstream_array_over_legacy_cwd() {
+        let upstream = PluginListParams {
+            host_id: Some("local".to_string()),
+            cwds: vec!["D:/repo-a".to_string(), "D:/repo-b".to_string()],
+            cwd: Some("D:/legacy".to_string()),
+        };
+        let legacy = PluginListParams {
+            host_id: None,
+            cwds: Vec::new(),
+            cwd: Some("D:/legacy".to_string()),
+        };
+
+        assert_eq!(
+            plugin_list_cwds(&upstream),
+            vec!["D:/repo-a".to_string(), "D:/repo-b".to_string()]
+        );
+        assert_eq!(plugin_list_cwds(&legacy), vec!["D:/legacy".to_string()]);
+    }
+
+    #[test]
+    fn list_plugins_only_accepts_local_host() {
+        assert!(ensure_supported_host_id(None, "list-plugins").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "list-plugins").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "list-plugins")
+                .expect_err("non-local host id should be rejected"),
+            "list-plugins does not support host id: remote"
+        );
+    }
+
+    #[test]
+    fn plugin_share_params_accept_upstream_host_shape() {
+        let list_params: PluginShareListParams = serde_json::from_value(json!({
+            "hostId": "local"
+        }))
+        .expect("list params should deserialize");
+        let save_params: PluginShareSaveParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "pluginPath": "D:/repo/.codex/plugins/demo",
+            "remotePluginId": "plugin-123"
+        }))
+        .expect("save params should deserialize");
+        let delete_params: PluginShareDeleteParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "remotePluginId": "plugin-123"
+        }))
+        .expect("delete params should deserialize");
+
+        assert_eq!(
+            list_params,
+            PluginShareListParams {
+                host_id: Some("local".to_string()),
+            }
+        );
+        assert_eq!(
+            save_params,
+            PluginShareSaveParams {
+                host_id: Some("local".to_string()),
+                plugin_path: "D:/repo/.codex/plugins/demo".to_string(),
+                remote_plugin_id: Some("plugin-123".to_string()),
+            }
+        );
+        assert_eq!(
+            delete_params,
+            PluginShareDeleteParams {
+                host_id: Some("local".to_string()),
+                remote_plugin_id: "plugin-123".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn plugin_share_save_params_allow_missing_remote_plugin_id() {
+        let params: PluginShareSaveParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "pluginPath": "D:/repo/.codex/plugins/demo"
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            PluginShareSaveParams {
+                host_id: Some("local".to_string()),
+                plugin_path: "D:/repo/.codex/plugins/demo".to_string(),
+                remote_plugin_id: None,
+            }
+        );
+    }
+
+    #[test]
+    fn plugin_share_commands_only_accept_local_host() {
+        assert!(ensure_supported_host_id(None, "list-plugin-shares").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "list-plugin-shares").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "list-plugin-shares")
+                .expect_err("non-local host id should be rejected"),
+            "list-plugin-shares does not support host id: remote"
+        );
+
+        assert!(ensure_supported_host_id(None, "save-plugin-share").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "save-plugin-share").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "save-plugin-share")
+                .expect_err("non-local host id should be rejected"),
+            "save-plugin-share does not support host id: remote"
+        );
+
+        assert!(ensure_supported_host_id(None, "delete-plugin-share").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "delete-plugin-share").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "delete-plugin-share")
+                .expect_err("non-local host id should be rejected"),
+            "delete-plugin-share does not support host id: remote"
+        );
+    }
+
+    #[test]
+    fn map_account_keeps_account_owned_ids_nullable() {
+        let auth_state = map_account(AccountReadResponse {
+            account: Some(Account {
+                account_type: "chatgpt".to_string(),
+                email: Some("user@example.com".to_string()),
+                plan_type: Some("pro".to_string()),
+            }),
+            requires_openai_auth: true,
+        });
+
+        assert_eq!(
+            auth_state,
+            AuthState {
+                auth_method: Some("chatgpt".to_string()),
+                open_ai_auth: Some("chatgpt".to_string()),
+                requires_auth: true,
+                email: Some("user@example.com".to_string()),
+                account_id: None,
+                user_id: None,
+                plan_at_login: Some("pro".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn map_account_info_response_uses_only_desktop_proven_fields() {
+        let account_info = map_account_info_response(AccountReadResponse {
+            account: Some(Account {
+                account_type: "chatgpt".to_string(),
+                email: Some("user@example.com".to_string()),
+                plan_type: Some("pro".to_string()),
+            }),
+            requires_openai_auth: true,
+        });
+
+        assert_eq!(
+            account_info,
+            AccountInfoResponse {
+                email: Some("user@example.com".to_string()),
+                account_id: None,
+                user_id: None,
+                plan: Some("pro".to_string()),
+            }
+        );
+    }
 }

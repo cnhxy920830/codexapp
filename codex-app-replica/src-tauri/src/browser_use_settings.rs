@@ -10,7 +10,11 @@ const BROWSER_USE_DIR: &str = "browser";
 const BROWSER_USE_CONFIG_FILE: &str = "config.toml";
 const APPROVAL_MODE_KEY: &str = "approval_mode";
 const HISTORY_APPROVAL_MODE_KEY: &str = "history_approval_mode";
+const DOWNLOAD_APPROVAL_MODE_KEY: &str = "download_approval_mode";
+const UPLOAD_APPROVAL_MODE_KEY: &str = "upload_approval_mode";
 const ORIGINS_KEY: &str = "origins";
+const DOWNLOADS_KEY: &str = "downloads";
+const UPLOADS_KEY: &str = "uploads";
 const ALLOWED_ORIGINS_KEY: &str = "allowed";
 const DENIED_ORIGINS_KEY: &str = "denied";
 
@@ -26,8 +30,14 @@ pub enum BrowserUseApprovalMode {
 pub struct BrowserUseSettingsState {
     pub approval_mode: BrowserUseApprovalMode,
     pub history_approval_mode: BrowserUseApprovalMode,
+    pub download_approval_mode: BrowserUseApprovalMode,
+    pub upload_approval_mode: BrowserUseApprovalMode,
     pub allowed_origins: Vec<String>,
     pub denied_origins: Vec<String>,
+    pub allowed_download_origins: Vec<String>,
+    pub denied_download_origins: Vec<String>,
+    pub allowed_upload_origins: Vec<String>,
+    pub denied_upload_origins: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -43,11 +53,35 @@ pub enum BrowserUseOriginKind {
     Denied,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum BrowserUseFileTransferKind {
+    Download,
+    Upload,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserUseOriginMutationParams {
     pub kind: BrowserUseOriginKind,
-    pub origin: String,
+    #[serde(alias = "origin")]
+    pub target_origin: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserUseFileTransferApprovalModeWriteParams {
+    pub approval_mode: BrowserUseApprovalMode,
+    pub kind: BrowserUseFileTransferKind,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserUseFileTransferOriginMutationParams {
+    pub kind: BrowserUseOriginKind,
+    pub transfer_kind: BrowserUseFileTransferKind,
+    #[serde(alias = "origin")]
+    pub target_origin: String,
 }
 
 impl Default for BrowserUseSettingsState {
@@ -55,55 +89,148 @@ impl Default for BrowserUseSettingsState {
         Self {
             approval_mode: BrowserUseApprovalMode::AlwaysAsk,
             history_approval_mode: BrowserUseApprovalMode::AlwaysAsk,
+            download_approval_mode: BrowserUseApprovalMode::AlwaysAsk,
+            upload_approval_mode: BrowserUseApprovalMode::AlwaysAsk,
             allowed_origins: Vec::new(),
             denied_origins: Vec::new(),
+            allowed_download_origins: Vec::new(),
+            denied_download_origins: Vec::new(),
+            allowed_upload_origins: Vec::new(),
+            denied_upload_origins: Vec::new(),
         }
     }
 }
 
 #[tauri::command]
 pub fn read_browser_use_settings() -> Result<BrowserUseSettingsState, String> {
-    Ok(browser_use_settings_state_from_table(
-        &read_browser_use_settings_table()?,
-    ))
+    read_browser_use_settings_state()
+}
+
+#[tauri::command(rename = "browser-use-origin-state-read")]
+pub fn browser_use_origin_state_read() -> Result<BrowserUseSettingsState, String> {
+    read_browser_use_settings_state()
 }
 
 #[tauri::command]
 pub fn write_browser_use_approval_mode(
     params: BrowserUseApprovalModeWriteParams,
 ) -> Result<BrowserUseSettingsState, String> {
-    mutate_browser_use_settings_table(|table| {
-        table.insert(
-            APPROVAL_MODE_KEY.to_string(),
-            toml::Value::String(approval_mode_to_config_value(params.approval_mode).to_string()),
-        );
-        Ok(true)
-    })
+    write_browser_use_approval_mode_for_key(APPROVAL_MODE_KEY, params.approval_mode)
+}
+
+#[tauri::command(rename = "browser-use-approval-mode-write")]
+pub fn browser_use_approval_mode_write(
+    params: BrowserUseApprovalModeWriteParams,
+) -> Result<BrowserUseSettingsState, String> {
+    write_browser_use_approval_mode_for_key(APPROVAL_MODE_KEY, params.approval_mode)
 }
 
 #[tauri::command]
 pub fn write_browser_use_history_approval_mode(
     params: BrowserUseApprovalModeWriteParams,
 ) -> Result<BrowserUseSettingsState, String> {
-    mutate_browser_use_settings_table(|table| {
-        table.insert(
-            HISTORY_APPROVAL_MODE_KEY.to_string(),
-            toml::Value::String(approval_mode_to_config_value(params.approval_mode).to_string()),
-        );
-        Ok(true)
-    })
+    write_browser_use_approval_mode_for_key(HISTORY_APPROVAL_MODE_KEY, params.approval_mode)
+}
+
+#[tauri::command(rename = "browser-use-history-approval-mode-write")]
+pub fn browser_use_history_approval_mode_write(
+    params: BrowserUseApprovalModeWriteParams,
+) -> Result<BrowserUseSettingsState, String> {
+    write_browser_use_approval_mode_for_key(HISTORY_APPROVAL_MODE_KEY, params.approval_mode)
+}
+
+#[tauri::command(rename = "browser-use-file-transfer-approval-mode-write")]
+pub fn write_browser_use_file_transfer_approval_mode(
+    params: BrowserUseFileTransferApprovalModeWriteParams,
+) -> Result<BrowserUseSettingsState, String> {
+    write_browser_use_approval_mode_for_key(
+        params.kind.approval_mode_config_key(),
+        params.approval_mode,
+    )
 }
 
 #[tauri::command]
 pub fn add_browser_use_origin(
     params: BrowserUseOriginMutationParams,
 ) -> Result<BrowserUseSettingsState, String> {
-    let normalized_origin = normalize_browser_use_origin(&params.origin)
+    add_browser_use_origin_for_table(ORIGINS_KEY, params.kind, &params.target_origin)
+}
+
+#[tauri::command(rename = "browser-use-origin-add")]
+pub fn browser_use_origin_add(
+    params: BrowserUseOriginMutationParams,
+) -> Result<BrowserUseSettingsState, String> {
+    add_browser_use_origin_for_table(ORIGINS_KEY, params.kind, &params.target_origin)
+}
+
+#[tauri::command(rename = "browser-use-file-transfer-origin-add")]
+pub fn add_browser_use_file_transfer_origin(
+    params: BrowserUseFileTransferOriginMutationParams,
+) -> Result<BrowserUseSettingsState, String> {
+    add_browser_use_origin_for_table(
+        params.transfer_kind.origins_config_key(),
+        params.kind,
+        &params.target_origin,
+    )
+}
+
+#[tauri::command]
+pub fn remove_browser_use_origin(
+    params: BrowserUseOriginMutationParams,
+) -> Result<BrowserUseSettingsState, String> {
+    remove_browser_use_origin_for_table(ORIGINS_KEY, params.kind, &params.target_origin)
+}
+
+#[tauri::command(rename = "browser-use-origin-remove")]
+pub fn browser_use_origin_remove(
+    params: BrowserUseOriginMutationParams,
+) -> Result<BrowserUseSettingsState, String> {
+    remove_browser_use_origin_for_table(ORIGINS_KEY, params.kind, &params.target_origin)
+}
+
+#[tauri::command(rename = "browser-use-file-transfer-origin-remove")]
+pub fn remove_browser_use_file_transfer_origin(
+    params: BrowserUseFileTransferOriginMutationParams,
+) -> Result<BrowserUseSettingsState, String> {
+    remove_browser_use_origin_for_table(
+        params.transfer_kind.origins_config_key(),
+        params.kind,
+        &params.target_origin,
+    )
+}
+
+fn read_browser_use_settings_state() -> Result<BrowserUseSettingsState, String> {
+    Ok(browser_use_settings_state_from_table(
+        &read_browser_use_settings_table()?,
+    ))
+}
+
+fn write_browser_use_approval_mode_for_key(
+    config_key: &str,
+    approval_mode: BrowserUseApprovalMode,
+) -> Result<BrowserUseSettingsState, String> {
+    mutate_browser_use_settings_table(|table| {
+        table.insert(
+            config_key.to_string(),
+            toml::Value::String(approval_mode_to_config_value(approval_mode).to_string()),
+        );
+        Ok(true)
+    })
+}
+
+fn add_browser_use_origin_for_table(
+    table_key: &str,
+    kind: BrowserUseOriginKind,
+    target_origin: &str,
+) -> Result<BrowserUseSettingsState, String> {
+    let normalized_origin = normalize_browser_use_origin(target_origin)
         .ok_or_else(|| "Invalid Browser Use origin".to_string())?;
 
     mutate_browser_use_settings_table(|table| {
-        let origins_table = ensure_origins_table(table);
-        let mut next_origins = normalized_origin_list(origins_table.get(params.kind.config_key()));
+        let origins_table = ensure_nested_table(table, table_key);
+        let mut next_origins = normalized_origin_list(origins_table.get(kind.config_key()));
+        let current_opposite_origins =
+            normalized_origin_list(origins_table.get(kind.opposite_config_key()));
         let mut did_change = false;
 
         if !next_origins
@@ -114,43 +241,37 @@ pub fn add_browser_use_origin(
             did_change = true;
         }
 
-        let opposite_origins =
-            normalized_origin_list(origins_table.get(params.kind.opposite_config_key()))
-                .into_iter()
-                .filter(|origin| origin != &normalized_origin)
-                .collect::<Vec<_>>();
-        let opposite_key = params.kind.opposite_config_key();
-        if opposite_origins != normalized_origin_list(origins_table.get(opposite_key)) {
+        let opposite_key = kind.opposite_config_key();
+        let opposite_origins = current_opposite_origins
+            .into_iter()
+            .filter(|origin| origin != &normalized_origin)
+            .collect::<Vec<_>>();
+        if opposite_origins != normalized_origin_list(origins_table.get(kind.opposite_config_key()))
+        {
             did_change = true;
         }
 
-        set_origin_list(origins_table, params.kind.config_key(), next_origins);
+        set_origin_list(origins_table, kind.config_key(), next_origins);
         set_origin_list(origins_table, opposite_key, opposite_origins);
 
         Ok(did_change)
     })
 }
 
-#[tauri::command]
-pub fn remove_browser_use_origin(
-    params: BrowserUseOriginMutationParams,
+fn remove_browser_use_origin_for_table(
+    table_key: &str,
+    kind: BrowserUseOriginKind,
+    target_origin: &str,
 ) -> Result<BrowserUseSettingsState, String> {
-    let target_origin = params.origin.trim().to_string();
-    if target_origin.is_empty() {
-        return read_browser_use_settings();
-    }
-
     mutate_browser_use_settings_table(|table| {
-        let Some(origins_table) = table
-            .get_mut(ORIGINS_KEY)
-            .and_then(toml::Value::as_table_mut)
+        let Some(origins_table) = table.get_mut(table_key).and_then(toml::Value::as_table_mut)
         else {
             return Ok(false);
         };
-        let current_origins = normalized_origin_list(origins_table.get(params.kind.config_key()));
+        let current_origins = normalized_origin_list(origins_table.get(kind.config_key()));
         let next_origins = current_origins
             .iter()
-            .filter(|origin| *origin != &target_origin)
+            .filter(|origin| origin.as_str() != target_origin)
             .cloned()
             .collect::<Vec<_>>();
 
@@ -158,7 +279,7 @@ pub fn remove_browser_use_origin(
             return Ok(false);
         }
 
-        set_origin_list(origins_table, params.kind.config_key(), next_origins);
+        set_origin_list(origins_table, kind.config_key(), next_origins);
         Ok(true)
     })
 }
@@ -210,8 +331,6 @@ fn write_browser_use_settings_table(table: &toml::Table) -> Result<(), String> {
 }
 
 fn browser_use_settings_state_from_table(table: &toml::Table) -> BrowserUseSettingsState {
-    let origins_table = table.get(ORIGINS_KEY).and_then(toml::Value::as_table);
-
     BrowserUseSettingsState {
         approval_mode: approval_mode_from_config_value(
             table.get(APPROVAL_MODE_KEY).and_then(toml::Value::as_str),
@@ -221,18 +340,56 @@ fn browser_use_settings_state_from_table(table: &toml::Table) -> BrowserUseSetti
                 .get(HISTORY_APPROVAL_MODE_KEY)
                 .and_then(toml::Value::as_str),
         ),
-        allowed_origins: origins_table.map_or_else(Vec::new, |origins| {
-            normalized_origin_list(origins.get(ALLOWED_ORIGINS_KEY))
-        }),
-        denied_origins: origins_table.map_or_else(Vec::new, |origins| {
-            normalized_origin_list(origins.get(DENIED_ORIGINS_KEY))
-        }),
+        download_approval_mode: approval_mode_from_config_value(
+            table
+                .get(DOWNLOAD_APPROVAL_MODE_KEY)
+                .and_then(toml::Value::as_str),
+        ),
+        upload_approval_mode: approval_mode_from_config_value(
+            table
+                .get(UPLOAD_APPROVAL_MODE_KEY)
+                .and_then(toml::Value::as_str),
+        ),
+        allowed_origins: origin_list_from_table(
+            nested_table(table, ORIGINS_KEY),
+            BrowserUseOriginKind::Allowed,
+        ),
+        denied_origins: origin_list_from_table(
+            nested_table(table, ORIGINS_KEY),
+            BrowserUseOriginKind::Denied,
+        ),
+        allowed_download_origins: origin_list_from_table(
+            nested_table(table, DOWNLOADS_KEY),
+            BrowserUseOriginKind::Allowed,
+        ),
+        denied_download_origins: origin_list_from_table(
+            nested_table(table, DOWNLOADS_KEY),
+            BrowserUseOriginKind::Denied,
+        ),
+        allowed_upload_origins: origin_list_from_table(
+            nested_table(table, UPLOADS_KEY),
+            BrowserUseOriginKind::Allowed,
+        ),
+        denied_upload_origins: origin_list_from_table(
+            nested_table(table, UPLOADS_KEY),
+            BrowserUseOriginKind::Denied,
+        ),
     }
 }
 
-fn ensure_origins_table(table: &mut toml::Table) -> &mut toml::Table {
+fn nested_table<'a>(table: &'a toml::Table, key: &str) -> Option<&'a toml::Table> {
+    table.get(key).and_then(toml::Value::as_table)
+}
+
+fn origin_list_from_table(table: Option<&toml::Table>, kind: BrowserUseOriginKind) -> Vec<String> {
+    table.map_or_else(Vec::new, |table| {
+        normalized_origin_list(table.get(kind.config_key()))
+    })
+}
+
+fn ensure_nested_table<'a>(table: &'a mut toml::Table, key: &str) -> &'a mut toml::Table {
     let origins_entry = table
-        .entry(ORIGINS_KEY.to_string())
+        .entry(key.to_string())
         .or_insert_with(|| toml::Value::Table(toml::Table::new()));
     if !origins_entry.is_table() {
         *origins_entry = toml::Value::Table(toml::Table::new());
@@ -338,12 +495,37 @@ impl BrowserUseOriginKind {
     }
 }
 
+impl BrowserUseFileTransferKind {
+    fn approval_mode_config_key(self) -> &'static str {
+        match self {
+            BrowserUseFileTransferKind::Download => DOWNLOAD_APPROVAL_MODE_KEY,
+            BrowserUseFileTransferKind::Upload => UPLOAD_APPROVAL_MODE_KEY,
+        }
+    }
+
+    fn origins_config_key(self) -> &'static str {
+        match self {
+            BrowserUseFileTransferKind::Download => DOWNLOADS_KEY,
+            BrowserUseFileTransferKind::Upload => UPLOADS_KEY,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::approval_mode_from_config_value;
+    use super::browser_use_settings_state_from_table;
     use super::normalize_browser_use_origin;
     use super::normalized_origin_list;
     use super::BrowserUseApprovalMode;
+    use super::BrowserUseFileTransferKind;
+    use super::BrowserUseOriginKind;
+    use super::BrowserUseSettingsState;
+    use super::DOWNLOADS_KEY;
+    use super::DOWNLOAD_APPROVAL_MODE_KEY;
+    use super::ORIGINS_KEY;
+    use super::UPLOADS_KEY;
+    use super::UPLOAD_APPROVAL_MODE_KEY;
 
     #[test]
     fn approval_mode_defaults_to_always_ask() {
@@ -354,6 +536,95 @@ mod tests {
         assert_eq!(
             approval_mode_from_config_value(None),
             BrowserUseApprovalMode::AlwaysAsk
+        );
+    }
+
+    #[test]
+    fn browser_use_settings_state_defaults_when_table_is_empty() {
+        assert_eq!(
+            browser_use_settings_state_from_table(&toml::Table::new()),
+            BrowserUseSettingsState::default()
+        );
+    }
+
+    #[test]
+    fn browser_use_settings_state_reads_file_transfer_settings() {
+        let mut table = toml::Table::new();
+        table.insert(
+            "approval_mode".to_string(),
+            toml::Value::String("never_ask".to_string()),
+        );
+        table.insert(
+            "history_approval_mode".to_string(),
+            toml::Value::String("always_ask".to_string()),
+        );
+        table.insert(
+            DOWNLOAD_APPROVAL_MODE_KEY.to_string(),
+            toml::Value::String("never_ask".to_string()),
+        );
+        table.insert(
+            UPLOAD_APPROVAL_MODE_KEY.to_string(),
+            toml::Value::String("always_ask".to_string()),
+        );
+        table.insert(
+            ORIGINS_KEY.to_string(),
+            toml::Value::Table(origin_table(
+                vec![
+                    " https://example.com ".to_string(),
+                    "https://example.com".to_string(),
+                ],
+                vec!["https://blocked.com".to_string()],
+            )),
+        );
+        table.insert(
+            DOWNLOADS_KEY.to_string(),
+            toml::Value::Table(origin_table(
+                vec!["https://download.example.com".to_string()],
+                vec!["https://download.blocked.com".to_string()],
+            )),
+        );
+        table.insert(
+            UPLOADS_KEY.to_string(),
+            toml::Value::Table(origin_table(
+                vec!["https://upload.example.com".to_string()],
+                vec!["https://upload.blocked.com".to_string()],
+            )),
+        );
+
+        assert_eq!(
+            browser_use_settings_state_from_table(&table),
+            BrowserUseSettingsState {
+                approval_mode: BrowserUseApprovalMode::NeverAsk,
+                history_approval_mode: BrowserUseApprovalMode::AlwaysAsk,
+                download_approval_mode: BrowserUseApprovalMode::NeverAsk,
+                upload_approval_mode: BrowserUseApprovalMode::AlwaysAsk,
+                allowed_origins: vec!["https://example.com".to_string()],
+                denied_origins: vec!["https://blocked.com".to_string()],
+                allowed_download_origins: vec!["https://download.example.com".to_string()],
+                denied_download_origins: vec!["https://download.blocked.com".to_string()],
+                allowed_upload_origins: vec!["https://upload.example.com".to_string()],
+                denied_upload_origins: vec!["https://upload.blocked.com".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn file_transfer_kind_uses_upstream_config_keys() {
+        assert_eq!(
+            BrowserUseFileTransferKind::Download.approval_mode_config_key(),
+            DOWNLOAD_APPROVAL_MODE_KEY
+        );
+        assert_eq!(
+            BrowserUseFileTransferKind::Upload.approval_mode_config_key(),
+            UPLOAD_APPROVAL_MODE_KEY
+        );
+        assert_eq!(
+            BrowserUseFileTransferKind::Download.origins_config_key(),
+            DOWNLOADS_KEY
+        );
+        assert_eq!(
+            BrowserUseFileTransferKind::Upload.origins_config_key(),
+            UPLOADS_KEY
         );
     }
 
@@ -391,5 +662,28 @@ mod tests {
                 "https://openai.com".to_string()
             ]
         );
+    }
+
+    fn origin_table(allowed: Vec<String>, denied: Vec<String>) -> toml::Table {
+        let mut table = toml::Table::new();
+        table.insert(
+            BrowserUseOriginKind::Allowed.config_key().to_string(),
+            toml::Value::Array(
+                allowed
+                    .into_iter()
+                    .map(toml::Value::String)
+                    .collect::<Vec<_>>(),
+            ),
+        );
+        table.insert(
+            BrowserUseOriginKind::Denied.config_key().to_string(),
+            toml::Value::Array(
+                denied
+                    .into_iter()
+                    .map(toml::Value::String)
+                    .collect::<Vec<_>>(),
+            ),
+        );
+        table
     }
 }

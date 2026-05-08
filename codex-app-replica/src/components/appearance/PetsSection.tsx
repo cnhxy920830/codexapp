@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useI18n } from "../../i18n/i18n";
+import { ChevronDownIcon } from "../AppShellIcons";
 import { readSelectedAvatarId, setSelectedAvatarId } from "../../services/settings";
 import { AvatarSprite } from "./AvatarSprite";
 import { BUILTIN_AVATARS, DEFAULT_AVATAR_ID, type AvatarOption, type BuiltInAvatarId } from "./avatarData";
 
-export function PetsSection() {
+export function PetsSection({ defaultExpanded = false }: { defaultExpanded?: boolean }) {
   const { t } = useI18n();
   const [selectedAvatarId, setSelectedAvatarIdState] = useState<BuiltInAvatarId>(DEFAULT_AVATAR_ID);
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -18,11 +19,10 @@ export function PetsSection() {
         const value = await readSelectedAvatarId();
         if (!cancelled) {
           setSelectedAvatarIdState(normalizeAvatarId(value));
-          setError(null);
         }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
+      } catch {
+        if (cancelled) {
+          return;
         }
       } finally {
         if (!cancelled) {
@@ -44,56 +44,100 @@ export function PetsSection() {
   );
 
   const handleSelectAvatar = async (avatar: AvatarOption) => {
-    setError(null);
     try {
       await setSelectedAvatarId(avatar.id);
       setSelectedAvatarIdState(avatar.id);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+    } catch {
+      return;
     }
   };
 
   return (
-    <div className="app-card rounded-[18px] px-5 py-4">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="app-title text-[14px] font-medium">{t("settings.personalization.pets.title")}</div>
-          <div className="app-text-muted mt-1 text-[12px] leading-5">
-            {t("settings.personalization.pets.current", { petName: selectedAvatar.displayName })}
+    <section className="flex flex-col">
+      <div
+        className="border-token-border flex flex-col divide-y-[0.5px] divide-token-border rounded-lg border"
+        style={{
+          backgroundColor: "var(--color-background-panel, var(--color-token-bg-fog))",
+        }}
+      >
+        <button
+          type="button"
+          aria-expanded={isExpanded}
+          onClick={() => setIsExpanded((value) => !value)}
+          className={[
+            "flex w-full items-center justify-between gap-4 p-3 text-left hover:bg-token-list-hover-background",
+            isExpanded ? "rounded-t-lg" : "rounded-lg",
+          ].join(" ")}
+        >
+          <span className="flex min-w-0 flex-col gap-1">
+            <span className="min-w-0 text-sm text-token-text-primary">{t("settings.personalization.pets.title")}</span>
+            <span className="min-w-0 text-sm text-token-text-secondary">
+              {t("settings.personalization.pets.current", { petName: selectedAvatar.displayName })}
+            </span>
+          </span>
+          <ChevronDownIcon
+            className={[
+              "h-4 w-4 shrink-0 text-token-text-secondary transition-transform",
+              isExpanded ? "rotate-180" : "",
+            ].join(" ")}
+          />
+        </button>
+
+        {isExpanded ? (
+          <div className="flex flex-col divide-y divide-token-border bg-token-bg-secondary/20">
+            {BUILTIN_AVATARS.map((avatar) => (
+              <PetRow
+                key={avatar.id}
+                avatar={avatar}
+                disabled={isLoading}
+                isSelected={avatar.id === selectedAvatarId}
+                onSelect={() => void handleSelectAvatar(avatar)}
+              />
+            ))}
           </div>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function PetRow({
+  avatar,
+  disabled,
+  isSelected,
+  onSelect,
+}: {
+  avatar: AvatarOption;
+  disabled: boolean;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <div className="flex items-center justify-between gap-4 p-3 max-sm:flex-col max-sm:items-stretch">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="shrink-0">
+          <AvatarSprite avatar={avatar} size="sm" />
+        </span>
+        <div className="flex min-w-0 flex-col gap-1">
+          <div className="min-w-0 text-sm text-token-text-primary">{avatar.displayName}</div>
+          <div className="min-w-0 text-sm text-token-text-secondary">{avatar.description}</div>
         </div>
-        {error ? <div className="app-card-error rounded-[12px] px-3 py-2 text-[12px]">{error}</div> : null}
       </div>
 
-      <div className="mt-4 space-y-2">
-        {BUILTIN_AVATARS.map((avatar) => {
-          const isSelected = avatar.id === selectedAvatarId;
-          return (
-            <div
-              key={avatar.id}
-              className="flex items-start justify-between gap-3 rounded-[12px] px-3 py-3 transition hover:bg-token-list-hover-background"
-            >
-              <div className="flex min-w-0 flex-1 items-start gap-3">
-                <AvatarSprite avatar={avatar} size="sm" />
-                <div className="min-w-0">
-                  <div className="text-[14px] font-medium text-token-text-primary">{avatar.displayName}</div>
-                  <div className="app-text-muted mt-0.5 text-[12px] leading-5">{avatar.description}</div>
-                </div>
-              </div>
-              <button
-                type="button"
-                disabled={isLoading || isSelected}
-                onClick={() => void handleSelectAvatar(avatar)}
-                className={[
-                  "mt-0.5 rounded-[10px] px-3 py-1.5 text-[12px] transition",
-                  isSelected ? "app-control" : "app-control-weak",
-                ].join(" ")}
-              >
-                {t(isSelected ? "settings.personalization.avatars.selected" : "settings.personalization.avatars.select")}
-              </button>
-            </div>
-          );
-        })}
+      <div className="flex shrink-0 items-center gap-2 max-sm:justify-end">
+        <button
+          type="button"
+          disabled={disabled || isSelected}
+          onClick={onSelect}
+          className={[
+            "rounded-[10px] px-3 py-1.5 text-[12px] transition",
+            isSelected ? "app-control" : "app-control-weak",
+          ].join(" ")}
+        >
+          {t(isSelected ? "settings.personalization.avatars.selected" : "settings.personalization.avatars.select")}
+        </button>
       </div>
     </div>
   );

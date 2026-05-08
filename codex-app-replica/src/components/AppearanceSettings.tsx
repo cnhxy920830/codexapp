@@ -20,6 +20,7 @@ import {
 } from "../services/appearanceThemes";
 import type { AppToast } from "./AppToastRegion";
 import { ToggleSwitch } from "./ToggleSwitch";
+import { PetsSection } from "./appearance/PetsSection";
 import { ThemeEditorCard } from "./appearance/ThemeEditorCard";
 import { ThemePreviewCard } from "./appearance/ThemePreviewCard";
 
@@ -34,7 +35,6 @@ export function AppearanceSettings({
   const [state, setState] = useState<AppearanceSettingsSnapshot>(DEFAULT_APPEARANCE_SETTINGS);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const stateRef = useRef(state);
   const previewVariant = useResolvedPreviewVariant(state.appearanceTheme);
 
@@ -53,10 +53,9 @@ export function AppearanceSettings({
         }
         stateRef.current = snapshot;
         setState(snapshot);
-        setError(null);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
+      } catch {
+        if (cancelled) {
+          return;
         }
       } finally {
         if (!cancelled) {
@@ -88,7 +87,6 @@ export function AppearanceSettings({
     persist: (next: AppearanceSettingsSnapshot) => Promise<void>,
   ) => {
     const previousState = stateRef.current;
-    setError(null);
     setIsSaving(true);
 
     try {
@@ -97,11 +95,10 @@ export function AppearanceSettings({
       setState(nextState);
       await persist(nextState);
       return nextState;
-    } catch (err) {
+    } catch {
       stateRef.current = previousState;
       setState(previousState);
-      setError(err instanceof Error ? err.message : String(err));
-      throw err;
+      throw new Error("Failed to persist appearance settings");
     } finally {
       setIsSaving(false);
     }
@@ -251,104 +248,112 @@ export function AppearanceSettings({
   ];
 
   return (
-    <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-5 py-5">
-      <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="app-title text-[14px] font-medium">{t("settings.section.appearance")}</div>
-      </div>
-
-      <div className="app-card rounded-[18px] px-5 py-4">
-        <SettingRow
-          label={t("settings.general.appearance.theme")}
-          description={t("settings.general.appearance.theme.description")}
-        >
-          <div className="app-segmented inline-flex rounded-[12px] p-1">
-            {themeOptions.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                aria-label={option.ariaLabel}
-                disabled={isLoading || isSaving}
-                onClick={() => void persistTheme(option.value)}
-                className={[
-                  "rounded-[9px] px-3 py-1.5 text-[13px] transition",
-                  option.value === state.appearanceTheme ? "app-segmented-option-active" : "app-segmented-option-idle",
-                ].join(" ")}
-              >
-                {option.label}
-              </button>
-            ))}
+    <div className="main-surface flex h-full min-h-0 flex-col">
+      <div className="scrollbar-stable flex-1 overflow-y-auto p-5">
+        <div className="mx-auto flex w-full max-w-2xl flex-col">
+          <div className="flex items-center justify-between gap-3 pb-5">
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+              <h1 className="text-[20px] font-medium leading-7 text-token-text-primary">
+                {t("settings.section.appearance")}
+              </h1>
+            </div>
           </div>
-        </SettingRow>
-      </div>
 
-      <ThemePreviewCard theme={previewTheme} variant={previewVariant} />
+          <div className="flex flex-col gap-5">
+            <SettingsSurface>
+              <SettingsRow
+                label={t("settings.general.appearance.theme")}
+                description={t("settings.general.appearance.theme.description")}
+              >
+                <div className="inline-flex rounded-lg border border-token-border bg-token-input-background p-1 shadow-sm">
+                  {themeOptions.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      aria-label={option.ariaLabel}
+                      disabled={isLoading || isSaving}
+                      onClick={() => void persistTheme(option.value)}
+                      className={[
+                        "rounded-md px-3 py-1.5 text-sm transition",
+                        option.value === state.appearanceTheme
+                          ? "bg-token-main-surface-primary text-token-text-primary shadow-sm"
+                          : "text-token-text-secondary hover:bg-token-list-hover-background",
+                      ].join(" ")}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </SettingsRow>
+            </SettingsSurface>
 
-      {editorVariants.map((variant) => (
-        <ThemeEditorCard
-          key={variant}
-          codeThemeId={readCodeThemeId(state, variant)}
-          disabled={isLoading || isSaving}
-          theme={readChromeTheme(state, variant)}
-          variant={variant}
-          onCodeThemeChange={(value) => void persistCodeThemeSelection(variant, value)}
-          onCopyTheme={() => copyTheme(variant)}
-          onFontsPatchChange={(patch) => void persistThemeFontsPatch(variant, patch)}
-          onImportTheme={(value) => importTheme(variant, value)}
-          onThemePatchChange={(patch) => void persistChromeThemePatch(variant, patch)}
-        />
-      ))}
+            <ThemePreviewCard theme={previewTheme} variant={previewVariant} />
 
-      <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="space-y-4 text-[14px]">
-          <SettingRow
-            label={t("settings.general.appearance.usePointerCursors.label")}
-            description={t("settings.general.appearance.usePointerCursors.description")}
-          >
-            <ToggleSwitch
-              checked={state.usePointerCursors}
-              disabled={isLoading || isSaving}
-              ariaLabel={t("settings.general.appearance.usePointerCursors.label")}
-              onChange={(checked) => void persistPointerCursors(checked)}
-            />
-          </SettingRow>
+            <div className="flex flex-col gap-2">
+              {editorVariants.map((variant) => (
+                <ThemeEditorCard
+                  key={variant}
+                  codeThemeId={readCodeThemeId(state, variant)}
+                  disabled={isLoading || isSaving}
+                  theme={readChromeTheme(state, variant)}
+                  variant={variant}
+                  onCodeThemeChange={(value) => void persistCodeThemeSelection(variant, value)}
+                  onCopyTheme={() => copyTheme(variant)}
+                  onFontsPatchChange={(patch) => void persistThemeFontsPatch(variant, patch)}
+                  onImportTheme={(value) => importTheme(variant, value)}
+                  onThemePatchChange={(patch) => void persistChromeThemePatch(variant, patch)}
+                />
+              ))}
+            </div>
 
-          <SettingRow
-            label={t("settings.general.appearance.sansFontSize.row")}
-            description={t("settings.general.appearance.sansFontSize.row.description")}
-          >
-            <NumberInput
-              ariaLabel={t("settings.general.appearance.sansFontSize")}
-              disabled={isLoading || isSaving}
-              max={16}
-              min={11}
-              unitLabel={t("settings.general.appearance.sansFontSize.units")}
-              value={state.uiFontSize}
-              onCommit={(value) => void persistNumber("uiFontSize", value)}
-            />
-          </SettingRow>
+            <SettingsSurface>
+              <SettingsRow
+                label={t("settings.general.appearance.usePointerCursors.label")}
+                description={t("settings.general.appearance.usePointerCursors.description")}
+              >
+                <ToggleSwitch
+                  checked={state.usePointerCursors}
+                  disabled={isLoading || isSaving}
+                  ariaLabel={t("settings.general.appearance.usePointerCursors.label")}
+                  onChange={(checked) => void persistPointerCursors(checked)}
+                />
+              </SettingsRow>
 
-          <SettingRow
-            label={t("settings.general.appearance.codeFontSize.row")}
-            description={t("settings.general.appearance.codeFontSize.row.description")}
-          >
-            <NumberInput
-              ariaLabel={t("settings.general.appearance.codeFontSize")}
-              disabled={isLoading || isSaving}
-              max={24}
-              min={8}
-              unitLabel={t("settings.general.appearance.codeFontSize.units")}
-              value={state.codeFontSize}
-              onCommit={(value) => void persistNumber("codeFontSize", value)}
-            />
-          </SettingRow>
+              <SettingsRow
+                label={t("settings.general.appearance.sansFontSize.row")}
+                description={t("settings.general.appearance.sansFontSize.row.description")}
+              >
+                <NumberInput
+                  ariaLabel={t("settings.general.appearance.sansFontSize")}
+                  disabled={isLoading || isSaving}
+                  max={16}
+                  min={11}
+                  unitLabel={t("settings.general.appearance.sansFontSize.units")}
+                  value={state.uiFontSize}
+                  onCommit={(value) => void persistNumber("uiFontSize", value)}
+                />
+              </SettingsRow>
+
+              <SettingsRow
+                label={t("settings.general.appearance.codeFontSize.row")}
+                description={t("settings.general.appearance.codeFontSize.row.description")}
+              >
+                <NumberInput
+                  ariaLabel={t("settings.general.appearance.codeFontSize")}
+                  disabled={isLoading || isSaving}
+                  max={24}
+                  min={8}
+                  unitLabel={t("settings.general.appearance.codeFontSize.units")}
+                  value={state.codeFontSize}
+                  onCommit={(value) => void persistNumber("codeFontSize", value)}
+                />
+              </SettingsRow>
+            </SettingsSurface>
+
+            <PetsSection />
+          </div>
         </div>
       </div>
-
-      {error ? (
-        <div className="app-card-error rounded-[18px] px-5 py-4 text-[13px]">
-          {error}
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -452,7 +457,20 @@ function resolveSystemAppearanceVariant(): AppearanceVariant {
   return window.matchMedia(SYSTEM_APPEARANCE_MEDIA_QUERY).matches ? "dark" : "light";
 }
 
-function SettingRow({
+function SettingsSurface({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="border-token-border flex flex-col divide-y-[0.5px] divide-token-border rounded-lg border"
+      style={{
+        backgroundColor: "var(--color-background-panel, var(--color-token-bg-fog))",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function SettingsRow({
   label,
   description,
   children,
@@ -462,10 +480,10 @@ function SettingRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 max-sm:flex-col max-sm:items-stretch">
+    <div className="flex items-center justify-between gap-4 p-3 max-sm:flex-col max-sm:items-stretch">
       <div className="min-w-0 flex-1">
-        <div>{label}</div>
-        {description ? <div className="app-text-muted mt-1 text-[12px] leading-5">{description}</div> : null}
+        <div className="text-sm text-token-text-primary">{label}</div>
+        {description ? <div className="mt-1 text-sm text-token-text-secondary">{description}</div> : null}
       </div>
       {children}
     </div>
@@ -522,9 +540,9 @@ function NumberInput({
             commitNumberValue(draft, value, min, max, onCommit, setDraft);
           }
         }}
-        className="app-control h-9 w-16 rounded-[10px] px-2 py-0 text-right text-[13px]"
+        className="focus-visible:ring-token-focus h-token-button-composer w-16 rounded-lg border border-token-border bg-token-input-background px-2 py-0 text-right text-sm text-token-text-primary shadow-sm outline-none focus-visible:ring-2"
       />
-      <span className="app-text-muted text-[13px]">{unitLabel}</span>
+      <span className="text-sm text-token-text-secondary">{unitLabel}</span>
     </div>
   );
 }

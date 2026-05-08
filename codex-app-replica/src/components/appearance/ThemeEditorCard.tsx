@@ -60,10 +60,10 @@ export function ThemeEditorCard({
 
   return (
     <>
-      <div className="app-card overflow-hidden rounded-[18px]">
-        <div className="flex items-center justify-between gap-2 px-4 py-3 max-sm:flex-col max-sm:items-stretch">
+      <div className="overflow-hidden rounded-2xl border border-token-border bg-token-input-background shadow-sm">
+        <div className="flex items-center justify-between gap-2 px-4 py-2 max-sm:flex-col max-sm:items-stretch">
           <div className="min-w-0">
-            <div className="app-title text-[15px] font-medium">
+            <div className="text-base font-medium text-token-text-secondary">
               {variant === "light"
                 ? t("settings.general.appearance.lightChromeTheme")
                 : t("settings.general.appearance.darkChromeTheme")}
@@ -193,8 +193,8 @@ function EditorRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3 max-sm:flex-col max-sm:items-stretch">
-      <div className="text-[13px]">{label}</div>
+    <div className="flex min-h-10 items-center justify-between gap-3 px-4 py-0.5 max-sm:min-h-0 max-sm:flex-col max-sm:items-stretch">
+      <div className="text-sm text-token-text-primary">{label}</div>
       <div className="max-sm:w-full">{children}</div>
     </div>
   );
@@ -231,7 +231,7 @@ function FontFamilyInput({
   return (
     <input
       aria-label={ariaLabel}
-      className="app-control h-7 w-full max-w-[16rem] rounded-[10px] px-2 text-[12px] shadow-sm outline-none max-sm:max-w-none"
+      className="focus-visible:ring-token-focus h-7 w-full max-w-[8.5rem] rounded-lg border border-token-border bg-token-input-background px-2 text-xs text-token-text-primary shadow-sm outline-none focus-visible:ring-2 max-sm:max-w-none"
       disabled={disabled}
       placeholder={placeholder}
       spellCheck={false}
@@ -316,14 +316,16 @@ function ThemeImportDialog({
 
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
-      <div className="app-card w-full max-w-[480px] rounded-[18px] px-5 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
-        <div className="app-title text-[15px] font-medium">{t("settings.general.appearance.chromeTheme.import.dialog.title")}</div>
+      <div className="w-full max-w-[480px] rounded-[18px] border border-token-border bg-token-main-surface-primary px-5 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
+        <div className="text-base font-medium text-token-text-primary">
+          {t("settings.general.appearance.chromeTheme.import.dialog.title")}
+        </div>
         <input
           aria-label={t("settings.general.appearance.chromeTheme.import.dialog.ariaLabel", {
             variant: variantLabel,
           })}
           autoFocus
-          className="app-control mt-4 h-9 w-full rounded-[12px] px-3 font-mono text-[12px] outline-none"
+          className="focus-visible:ring-token-focus mt-4 h-9 w-full rounded-xl border border-token-input-border bg-token-input-background px-3 font-mono text-sm text-token-input-foreground outline-none placeholder:text-token-input-placeholder-foreground focus-visible:ring-2"
           disabled={isDisabled}
           placeholder={exampleValue}
           spellCheck={false}

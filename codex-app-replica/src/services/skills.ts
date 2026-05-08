@@ -7,6 +7,7 @@ export type SkillSummary = {
   description: string;
   shortDescription: string | null;
   path: string;
+  scope: string;
   enabled: boolean;
 };
 
@@ -48,6 +49,7 @@ export async function readSkillsSnapshot(cwd: string | null, forceReload = false
         description: skill.description,
         shortDescription: skill.shortDescription,
         path: skill.path,
+        scope: skill.scope,
         enabled: skill.enabled,
       })),
     )

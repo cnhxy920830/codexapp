@@ -2,268 +2,720 @@
   {
     "id": "newThread",
     "titleEn": "New chat",
-    "defaultKeybindings": ["CmdOrCtrl+N", "CmdOrCtrl+Shift+O"]
+    "descriptionEn": "Start a new chat",
+    "defaultKeybindings": [
+      "CmdOrCtrl+N",
+      "CmdOrCtrl+Shift+O"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "thread"
   },
   {
     "id": "quickChat",
     "titleEn": "New quick chat",
-    "defaultKeybindings": ["CmdOrCtrl+Alt+N"]
+    "descriptionEn": "Start a lightweight chat in the quick composer",
+    "defaultKeybindings": [
+      "CmdOrCtrl+Alt+N"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "thread"
   },
   {
-    "id": "openThreadOverlay",
-    "titleEn": "Open in mini window",
-    "defaultKeybindings": []
+    "id": "openThreadInNewWindow",
+    "titleEn": "Open in new window",
+    "descriptionEn": "Open the current chat in a new window",
+    "defaultKeybindings": [],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "thread"
   },
   {
     "id": "archiveThread",
     "titleEn": "Archive chat",
-    "defaultKeybindings": ["CmdOrCtrl+Shift+A"]
+    "descriptionEn": "Archive the current chat",
+    "defaultKeybindings": [
+      "CmdOrCtrl+Shift+A"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "thread"
   },
   {
     "id": "toggleThreadPin",
     "titleEn": "Toggle pin",
-    "defaultKeybindings": ["CmdOrCtrl+Alt+P"]
+    "descriptionEn": "Pin or unpin the current chat",
+    "defaultKeybindings": [
+      "CmdOrCtrl+Alt+P"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "thread"
+  },
+  {
+    "id": "copyConversationMarkdown",
+    "titleEn": "Copy as Markdown",
+    "descriptionEn": "Copy the current chat as Markdown",
+    "defaultKeybindings": [],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
+  },
+  {
+    "id": "openSideChat",
+    "titleEn": "Open side chat",
+    "descriptionEn": "Open the current chat in a side chat",
+    "defaultKeybindings": [],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "openControlWindow",
     "titleEn": "Open control window",
-    "defaultKeybindings": []
+    "descriptionEn": "Open the voice control window",
+    "defaultKeybindings": [],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "app"
+  },
+  {
+    "id": "composer.openModelPicker",
+    "titleEn": "Open model picker",
+    "descriptionEn": "Open the composer model picker",
+    "defaultKeybindings": [
+      "Ctrl+Shift+M"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": "app",
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
+  },
+  {
+    "id": "composer.startVoiceMode",
+    "titleEn": "Toggle voice mode",
+    "descriptionEn": "Start or stop voice mode",
+    "defaultKeybindings": [
+      "Ctrl+Shift+V"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": "app",
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
+  },
+  {
+    "id": "composer.startDictation",
+    "titleEn": "Start dictation",
+    "descriptionEn": "Start dictation in the current composer",
+    "defaultKeybindings": [
+      "Ctrl+Shift+D"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": "app",
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "openAvatarOverlay",
     "titleEn": "Wake Pet",
-    "defaultKeybindings": []
+    "descriptionEn": "Open the pet overlay",
+    "defaultKeybindings": [],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "app"
   },
   {
     "id": "previousThread",
     "titleEn": "Previous chat",
-    "defaultKeybindings": ["CmdOrCtrl+Shift+["]
+    "descriptionEn": "Switch to the previous chat",
+    "defaultKeybindings": [
+      "CmdOrCtrl+Shift+["
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "navigation"
+  },
+  {
+    "id": "previousRecentThread",
+    "titleEn": "Previous recently viewed chat",
+    "descriptionEn": "Cycle to the previous recently viewed chat",
+    "defaultKeybindings": [
+      "Ctrl+Shift+Tab"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "nextThread",
     "titleEn": "Next chat",
-    "defaultKeybindings": ["CmdOrCtrl+Shift+]"]
+    "descriptionEn": "Switch to the next chat",
+    "defaultKeybindings": [
+      "CmdOrCtrl+Shift+]"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "navigation"
+  },
+  {
+    "id": "nextRecentThread",
+    "titleEn": "Next recently viewed chat",
+    "descriptionEn": "Cycle to the next recently viewed chat",
+    "defaultKeybindings": [
+      "Ctrl+Tab"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "settings",
     "titleEn": "Settings",
-    "defaultKeybindings": ["CmdOrCtrl+,"]
+    "descriptionEn": "Open Codex settings",
+    "defaultKeybindings": [
+      "CmdOrCtrl+,"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "app"
   },
   {
     "id": "mcpSettings",
     "titleEn": "MCP",
-    "defaultKeybindings": []
+    "descriptionEn": "Configure MCP servers",
+    "defaultKeybindings": [],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "configure"
   },
   {
     "id": "personalitySettings",
     "titleEn": "Personality",
-    "defaultKeybindings": []
+    "descriptionEn": "Adjust tone and response style",
+    "defaultKeybindings": [],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "configure"
   },
   {
     "id": "keyboardShortcuts",
     "titleEn": "Keyboard shortcuts",
-    "defaultKeybindings": []
+    "descriptionEn": "Customize keyboard shortcuts",
+    "defaultKeybindings": [],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "configure"
   },
   {
     "id": "manageTasks",
     "titleEn": "Manage automations",
-    "defaultKeybindings": []
+    "descriptionEn": "Create or manage automations from the current page",
+    "defaultKeybindings": [],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "app"
   },
   {
     "id": "forceReloadSkills",
     "titleEn": "Force reload skills",
-    "defaultKeybindings": []
+    "descriptionEn": "Refresh the skill catalog for the current context",
+    "defaultKeybindings": [],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "skills"
   },
   {
     "id": "installPrimaryRuntime",
     "titleEn": "Install Codex Workspace",
-    "defaultKeybindings": []
+    "descriptionEn": "Install dependencies for advanced local features",
+    "defaultKeybindings": [],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "configure"
   },
   {
     "id": "openSkills",
     "titleEn": "Go to skills",
-    "defaultKeybindings": []
+    "descriptionEn": "Browse installed and recommended skills",
+    "defaultKeybindings": [],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "skills"
   },
   {
     "id": "openFolder",
     "titleEn": "Open folder",
-    "defaultKeybindings": ["CmdOrCtrl+O"]
+    "descriptionEn": "Add a local project to Codex",
+    "defaultKeybindings": [
+      "CmdOrCtrl+O"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "workspace"
   },
   {
     "id": "toggleSidebar",
     "titleEn": "Toggle sidebar",
-    "defaultKeybindings": ["CmdOrCtrl+B"]
+    "descriptionEn": "Show or hide the sidebar",
+    "defaultKeybindings": [
+      "CmdOrCtrl+B"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "panels"
   },
   {
     "id": "toggleTerminal",
     "titleEn": "Toggle terminal",
-    "defaultKeybindings": ["CmdOrCtrl+J"]
+    "descriptionEn": "Show or hide the terminal panel",
+    "defaultKeybindings": [
+      "CmdOrCtrl+J"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "panels"
   },
   {
     "id": "openBrowserTab",
     "titleEn": "Open browser tab",
-    "defaultKeybindings": ["CmdOrCtrl+T"]
+    "descriptionEn": "Open a browser tab",
+    "defaultKeybindings": [
+      "CmdOrCtrl+T"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "panels"
   },
   {
     "id": "toggleBrowserPanel",
     "titleEn": "Toggle browser panel",
-    "defaultKeybindings": ["CmdOrCtrl+Shift+B"]
+    "descriptionEn": "Show or hide the browser panel",
+    "defaultKeybindings": [
+      "CmdOrCtrl+Shift+B"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "panels"
   },
   {
     "id": "toggleDiffPanel",
     "titleEn": "Toggle diff panel",
-    "defaultKeybindings": ["CmdOrCtrl+Alt+B"]
+    "descriptionEn": "Show or hide the diff panel",
+    "defaultKeybindings": [
+      "CmdOrCtrl+Alt+B"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "panels"
   },
   {
     "id": "findInThread",
     "titleEn": "Find",
-    "defaultKeybindings": ["Ctrl+F"]
+    "descriptionEn": "Search the current chat",
+    "defaultKeybindings": [
+      "CmdOrCtrl+F"
+    ],
+    "platformDefaultKeybindings": {
+      "macOS": [
+        "Command+F"
+      ],
+      "default": [
+        "Ctrl+F"
+      ]
+    },
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "navigation"
   },
   {
     "id": "focusBrowserAddressBar",
     "titleEn": "Focus browser address bar",
-    "defaultKeybindings": ["CmdOrCtrl+L"]
+    "descriptionEn": "Focus the in-app browser address bar",
+    "defaultKeybindings": [
+      "CmdOrCtrl+L"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "navigation"
   },
   {
     "id": "navigateBack",
     "titleEn": "Back",
-    "titleZhCn": "返回",
-    "defaultKeybindings": ["CmdOrCtrl+["]
+    "descriptionEn": "Go back in navigation history",
+    "defaultKeybindings": [
+      "CmdOrCtrl+["
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "navigation"
   },
   {
     "id": "navigateForward",
     "titleEn": "Forward",
-    "titleZhCn": "前进",
-    "defaultKeybindings": ["CmdOrCtrl+]"]
+    "descriptionEn": "Go forward in navigation history",
+    "defaultKeybindings": [
+      "CmdOrCtrl+]"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "navigation"
   },
   {
     "id": "logOut",
     "titleEn": "Log out",
-    "defaultKeybindings": []
+    "descriptionEn": "Sign out of Codex",
+    "defaultKeybindings": [],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "app"
   },
   {
     "id": "feedback",
     "titleEn": "Feedback",
-    "defaultKeybindings": []
+    "descriptionEn": "Send product feedback to the Codex team",
+    "defaultKeybindings": [],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": "app"
   },
   {
     "id": "thread1",
     "titleEn": "Go to chat 1",
-    "defaultKeybindings": ["CmdOrCtrl+1"]
+    "descriptionEn": "Open the visible chat in this shortcut slot",
+    "defaultKeybindings": [
+      "CmdOrCtrl+1"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "thread2",
     "titleEn": "Go to chat 2",
-    "defaultKeybindings": ["CmdOrCtrl+2"]
+    "descriptionEn": "Open the visible chat in this shortcut slot",
+    "defaultKeybindings": [
+      "CmdOrCtrl+2"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "thread3",
     "titleEn": "Go to chat 3",
-    "defaultKeybindings": ["CmdOrCtrl+3"]
+    "descriptionEn": "Open the visible chat in this shortcut slot",
+    "defaultKeybindings": [
+      "CmdOrCtrl+3"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "thread4",
     "titleEn": "Go to chat 4",
-    "defaultKeybindings": ["CmdOrCtrl+4"]
+    "descriptionEn": "Open the visible chat in this shortcut slot",
+    "defaultKeybindings": [
+      "CmdOrCtrl+4"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "thread5",
     "titleEn": "Go to chat 5",
-    "defaultKeybindings": ["CmdOrCtrl+5"]
+    "descriptionEn": "Open the visible chat in this shortcut slot",
+    "defaultKeybindings": [
+      "CmdOrCtrl+5"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "thread6",
     "titleEn": "Go to chat 6",
-    "defaultKeybindings": ["CmdOrCtrl+6"]
+    "descriptionEn": "Open the visible chat in this shortcut slot",
+    "defaultKeybindings": [
+      "CmdOrCtrl+6"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "thread7",
     "titleEn": "Go to chat 7",
-    "defaultKeybindings": ["CmdOrCtrl+7"]
+    "descriptionEn": "Open the visible chat in this shortcut slot",
+    "defaultKeybindings": [
+      "CmdOrCtrl+7"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "thread8",
     "titleEn": "Go to chat 8",
-    "defaultKeybindings": ["CmdOrCtrl+8"]
+    "descriptionEn": "Open the visible chat in this shortcut slot",
+    "defaultKeybindings": [
+      "CmdOrCtrl+8"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "thread9",
     "titleEn": "Go to chat 9",
-    "defaultKeybindings": ["CmdOrCtrl+9"]
+    "descriptionEn": "Open the visible chat in this shortcut slot",
+    "defaultKeybindings": [
+      "CmdOrCtrl+9"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
+  },
+  {
+    "id": "hotkeyWindow",
+    "titleEn": "Popout Window hotkey",
+    "descriptionEn": "Show or hide Popout Window from anywhere on desktop",
+    "defaultKeybindings": [],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": "os-global",
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
+  },
+  {
+    "id": "globalDictationHold",
+    "titleEn": "Hold-to-dictate hotkey",
+    "descriptionEn": "Hold anywhere on desktop to dictate where your cursor is",
+    "defaultKeybindings": [],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": "os-global",
+    "allowsBareModifiers": true,
+    "commandMenuGroupKey": null
+  },
+  {
+    "id": "globalDictationToggle",
+    "titleEn": "Toggle dictation hotkey",
+    "descriptionEn": "Press once anywhere on desktop to dictate, then press again to stop",
+    "defaultKeybindings": [],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": "os-global",
+    "allowsBareModifiers": true,
+    "commandMenuGroupKey": null
   },
   {
     "id": "copyConversationPath",
     "titleEn": "Copy conversation path",
-    "defaultKeybindings": ["CmdOrCtrl+Alt+Shift+C"]
+    "descriptionEn": "Copy the current chat path",
+    "defaultKeybindings": [
+      "CmdOrCtrl+Alt+Shift+C"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "copyDeeplink",
     "titleEn": "Copy deeplink",
-    "defaultKeybindings": ["CmdOrCtrl+Alt+L"]
+    "descriptionEn": "Copy a deeplink to the current chat",
+    "defaultKeybindings": [
+      "CmdOrCtrl+Alt+L"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "copySessionId",
     "titleEn": "Copy session id",
-    "defaultKeybindings": ["CmdOrCtrl+Alt+C"]
+    "descriptionEn": "Copy the current chat session ID",
+    "defaultKeybindings": [
+      "CmdOrCtrl+Alt+C"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "copyWorkingDirectory",
     "titleEn": "Copy working directory",
-    "defaultKeybindings": ["CmdOrCtrl+Shift+C"]
-  },
-  {
-    "id": "dictation",
-    "titleEn": "Dictation",
-    "defaultKeybindings": ["Ctrl+M"]
+    "descriptionEn": "Copy the current chat working directory",
+    "defaultKeybindings": [
+      "CmdOrCtrl+Shift+C"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "closeTabOrWindow",
     "titleEn": "Close",
-    "defaultKeybindings": ["CmdOrCtrl+W"]
+    "descriptionEn": "Close the active tab or window",
+    "defaultKeybindings": [
+      "CmdOrCtrl+W"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "reloadBrowserPage",
     "titleEn": "Reload Browser Page",
-    "defaultKeybindings": ["CmdOrCtrl+R"]
+    "descriptionEn": "Reload the active browser page",
+    "defaultKeybindings": [
+      "CmdOrCtrl+R"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "hardReloadBrowserPage",
-    "titleEn": "Hard Reload Browser Page",
-    "defaultKeybindings": ["CmdOrCtrl+Shift+R"]
+    "titleEn": "Force Reload Browser Page",
+    "descriptionEn": "Force reload the active browser page",
+    "defaultKeybindings": [
+      "CmdOrCtrl+Shift+R"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "newWindow",
     "titleEn": "New Window",
-    "defaultKeybindings": ["CmdOrCtrl+Shift+N"]
+    "descriptionEn": "Open a new window",
+    "defaultKeybindings": [
+      "CmdOrCtrl+Shift+N"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "openCommandMenu",
     "titleEn": "Open command menu",
-    "defaultKeybindings": ["CmdOrCtrl+K", "CmdOrCtrl+Shift+P"]
+    "descriptionEn": "Open the command menu",
+    "defaultKeybindings": [
+      "CmdOrCtrl+K",
+      "CmdOrCtrl+Shift+P"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "searchChats",
     "titleEn": "Search Chats…",
-    "defaultKeybindings": ["CmdOrCtrl+G"]
+    "descriptionEn": "Search chats",
+    "defaultKeybindings": [
+      "CmdOrCtrl+G"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "searchFiles",
     "titleEn": "Search Files…",
-    "defaultKeybindings": ["CmdOrCtrl+P"]
+    "descriptionEn": "Search files",
+    "defaultKeybindings": [
+      "CmdOrCtrl+P"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "renameThread",
     "titleEn": "Rename chat",
-    "defaultKeybindings": ["CmdOrCtrl+Alt+R"]
+    "descriptionEn": "Rename the current chat",
+    "defaultKeybindings": [
+      "CmdOrCtrl+Alt+R"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "toggleFileTreePanel",
     "titleEn": "Toggle File Tree",
-    "defaultKeybindings": ["CmdOrCtrl+Shift+E"]
+    "descriptionEn": "Toggle the file tree panel",
+    "defaultKeybindings": [
+      "CmdOrCtrl+Shift+E"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   },
   {
     "id": "toggleTraceRecording",
     "titleEn": "Start Trace Recording",
-    "defaultKeybindings": ["CmdOrCtrl+Shift+S"]
+    "descriptionEn": "Start or stop trace recording",
+    "defaultKeybindings": [
+      "CmdOrCtrl+Shift+S"
+    ],
+    "platformDefaultKeybindings": null,
+    "shortcutScope": null,
+    "allowsBareModifiers": false,
+    "commandMenuGroupKey": null
   }
 ]

@@ -7,6 +7,8 @@ export type AuthState = {
   openAIAuth: string | null;
   requiresAuth: boolean;
   email: string | null;
+  accountId: string | null;
+  userId: string | null;
   planAtLogin: string | null;
 };
 
@@ -44,11 +46,20 @@ export type DeviceCodeLoginStart = {
   userCode: string;
 };
 
+export type AccountInfoResponse = {
+  email: string | null;
+  accountId: string | null;
+  userId: string | null;
+  plan: string | null;
+};
+
 const DEFAULT_AUTH_STATE: AuthState = {
   authMethod: null,
   openAIAuth: null,
   requiresAuth: true,
   email: null,
+  accountId: null,
+  userId: null,
   planAtLogin: null,
 };
 
@@ -58,6 +69,10 @@ export async function getAuthSnapshot(): Promise<AuthSnapshot> {
 
 export async function getLaunchContext(): Promise<LaunchContext> {
   return invoke<LaunchContext>("get_launch_context");
+}
+
+export async function readAccountInfo(): Promise<AccountInfoResponse> {
+  return invoke<AccountInfoResponse>("account-info");
 }
 
 export async function loginApiKey(params: ApiKeyLoginParams) {
@@ -84,6 +99,15 @@ export function onAuthSnapshotChange(handler: (snapshot: AuthSnapshot) => void) 
   return listen<AuthSnapshot>("auth-state-changed", (event) => {
     handler(event.payload);
   });
+}
+
+export function isUsageSettingsPlanSupported(plan: string | null) {
+  if (plan == null) {
+    return false;
+  }
+
+  const normalizedPlan = plan.trim().toLowerCase();
+  return normalizedPlan === "plus" || normalizedPlan === "pro" || normalizedPlan === "prolite";
 }
 
 type TranslateMessage = (key: MessageKey, values?: MessageValues) => string;

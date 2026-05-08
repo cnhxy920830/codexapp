@@ -8,6 +8,7 @@ import {
   getLaunchContext,
   getAuthSnapshot,
   initialAuthSnapshot,
+  isUsageSettingsPlanSupported,
   loginApiKey,
   loginChatGpt,
   loginChatGptDeviceCode,
@@ -81,6 +82,8 @@ import { KeyboardShortcutsSettings } from "./components/KeyboardShortcutsSetting
 import { BrowserUseSettings } from "./components/BrowserUseSettings";
 import { LocalEnvironmentsSettings } from "./components/LocalEnvironmentsSettings";
 import { McpSettings } from "./components/McpSettings";
+import { LoadingPage } from "./components/LoadingPage";
+import { OpenSourceLicensesPage } from "./components/OpenSourceLicensesPage";
 import { ComputerUseSettings } from "./components/ComputerUseSettings";
 import { PersonalizationSettings } from "./components/PersonalizationSettings";
 import { PluginsSettings } from "./components/PluginsSettings";
@@ -190,6 +193,7 @@ type SettingsSection =
   | "appearance"
   | "git-settings"
   | "agent"
+  | "open-source-licenses"
   | "personalization"
   | "browser-use"
   | "computer-use"
@@ -201,6 +205,9 @@ type SettingsSection =
   | "local-environments"
   | "worktrees"
   | "data-controls";
+type SettingsSectionState = {
+  licensesBackPath?: string;
+} | null;
 type AgentConfigControlErrors = Partial<Record<"approval" | "sandbox" | "network", string>>;
 type AppRoute = "chat" | "settings" | "skills" | "scratchpad" | "automations" | "pull-requests";
 
@@ -259,6 +266,7 @@ const settingsSectionLabelKeys: Record<SettingsSection, MessageKey> = {
   appearance: "settings.section.appearance",
   "git-settings": "settings.section.git-settings",
   agent: "settings.section.agent",
+  "open-source-licenses": "settings.openSourceLicenses.title",
   personalization: "settings.section.personalization",
   "browser-use": "settings.section.browser-use",
   "computer-use": "computerUse.label",
@@ -517,9 +525,13 @@ function App() {
   const [isMaximized, setIsMaximized] = useState(false);
   const [authSnapshot, setAuthSnapshot] = useState<AuthSnapshot>(initialAuthSnapshot);
   const [launchContext, setLaunchContext] = useState<LaunchContext | null>(null);
+  const [hasLoadedAuthSnapshot, setHasLoadedAuthSnapshot] = useState(false);
+  const [hasLoadedLaunchContext, setHasLoadedLaunchContext] = useState(false);
+  const [hasLoadedInitialThreadSnapshot, setHasLoadedInitialThreadSnapshot] = useState(false);
   const [projectGroups, setProjectGroups] = useState<HistoryProjectGroup[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [threadConversation, setThreadConversation] = useState<ThreadConversation | null>(null);
+  const [isThreadConversationLoading, setIsThreadConversationLoading] = useState(false);
   const [syntheticRequestItemsByThreadId, setSyntheticRequestItemsByThreadId] = useState<
     Record<string, ThreadConversationItem[]>
   >({});
@@ -566,6 +578,7 @@ function App() {
   const [threadHeartbeatAutomationDialogMode, setThreadHeartbeatAutomationDialogMode] =
     useState<"create" | "edit">("create");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general-settings");
+  const [settingsSectionState, setSettingsSectionState] = useState<SettingsSectionState>(null);
   const [hasComputerUseApprovalStore, setHasComputerUseApprovalStore] = useState(false);
   const [codexHome, setCodexHome] = useState<string | null>(null);
   const [configSnapshot, setConfigSnapshot] = useState<ConfigSnapshot | null>(null);
@@ -583,6 +596,8 @@ function App() {
   const activeRightPanelTabIdRef = useRef<string | null>(null);
   const selectedThreadIdRef = useRef<string | null>(null);
   const threadConversationRef = useRef<ThreadConversation | null>(null);
+  const initialThreadSnapshotLoadedRef = useRef(false);
+  const threadLoadRequestIdRef = useRef(0);
   const previousSelectedThreadIdRef = useRef<string | null>(null);
   const workspaceFileTabsByThreadIdRef = useRef(new Map<string, WorkspaceFileRightPanelTabState[]>());
   const activeWorkspaceFileTabIdByThreadIdRef = useRef(new Map<string, string>());
@@ -597,7 +612,7 @@ function App() {
       : "sidebarElectron.skillsRouteNavLink";
   const showUsageSettings =
     authSnapshot.authState.authMethod === "chatgpt" &&
-    ["plus", "pro", "prolite"].includes((authSnapshot.authState.planAtLogin ?? "").toLowerCase());
+    isUsageSettingsPlanSupported(authSnapshot.authState.planAtLogin);
   const visibleSettingsGroups = settingsGroups
     .map((group) => ({
       ...group,
@@ -613,6 +628,7 @@ function App() {
   const isCurrentSettingsSectionVisible = visibleSettingsGroups.some((group) =>
     group.items.some((item) => item.id === settingsSection),
   );
+  const isCurrentSettingsSubpage = settingsSection === "open-source-licenses";
   const menuItems = [t("app.menu.file"), t("app.menu.edit"), t("app.menu.view"), t("app.menu.window"), t("app.menu.help")];
   const navItems: NavItem[] = [
     { action: "new-thread", icon: <NewChatIcon className="h-4 w-4" />, label: t("app.nav.newChat"), route: "chat" },
@@ -644,6 +660,10 @@ function App() {
         ]
       : []),
   ];
+  const selectedThreadView =
+    selectedThreadId === null
+      ? null
+      : projectGroups.flatMap((group) => group.threads).find((thread) => thread.id === selectedThreadId) ?? null;
   const threadDiffSummary = buildThreadDiffSummary(threadConversation?.items ?? []);
   const totalAdditions = threadDiffSummary.linesAdded;
   const totalDeletions = threadDiffSummary.linesDeleted;
@@ -658,7 +678,9 @@ function App() {
         ? t("sidebarElectron.scratchpadNavLink")
       : currentRoute === "skills"
         ? t(primarySkillsRouteLabelKey)
-      : threadConversation?.title || t("app.nav.newChat");
+      : threadConversation?.title || selectedThreadView?.title || t("app.nav.newChat");
+  const isAppBootstrapping =
+    !hasLoadedAuthSnapshot || !hasLoadedLaunchContext || !hasLoadedInitialThreadSnapshot;
   const isTurnInProgress = activeTurn !== null && activeTurn.threadId === selectedThreadId;
   const editableUserMessage = findLastEditableUserMessage(threadConversation, activeTurn);
   const submitButtonMode = isTurnInProgress && composerDraft.trim().length === 0 ? "stop" : "send";
@@ -780,10 +802,12 @@ function App() {
     let unlisten: (() => void) | undefined;
     void getAuthSnapshot()
       .then(setAuthSnapshot)
-      .catch(() => setAuthSnapshot(initialAuthSnapshot));
+      .catch(() => setAuthSnapshot(initialAuthSnapshot))
+      .finally(() => setHasLoadedAuthSnapshot(true));
     void getLaunchContext()
       .then(setLaunchContext)
-      .catch(() => setLaunchContext({ openProjectPath: null }));
+      .catch(() => setLaunchContext({ openProjectPath: null }))
+      .finally(() => setHasLoadedLaunchContext(true));
     void onAuthSnapshotChange(setAuthSnapshot).then((dispose) => {
       unlisten = dispose;
     });
@@ -1032,12 +1056,13 @@ function App() {
   }, [currentRoute]);
 
   useEffect(() => {
-    if (currentRoute !== "settings" || isCurrentSettingsSectionVisible) {
+    if (currentRoute !== "settings" || isCurrentSettingsSectionVisible || isCurrentSettingsSubpage) {
       return;
     }
 
     setSettingsSection(firstVisibleSettingsSection);
-  }, [currentRoute, firstVisibleSettingsSection, isCurrentSettingsSectionVisible]);
+    setSettingsSectionState(null);
+  }, [currentRoute, firstVisibleSettingsSection, isCurrentSettingsSectionVisible, isCurrentSettingsSubpage]);
 
   useEffect(() => {
     queuedFollowUpsRef.current = queuedFollowUps;
@@ -1315,37 +1340,53 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
+    const isInitialBootstrapRun = !initialThreadSnapshotLoadedRef.current;
 
     void getRecentThreads()
-      .then((threads) => {
+      .then(async (threads) => {
         if (cancelled) {
           return;
         }
         const activeThreadId = threads[0]?.id ?? null;
         syncProjectGroups(activeThreadId, threads);
         if (activeThreadId) {
-          void readThread(activeThreadId)
-            .then((thread) => {
-              if (!cancelled) {
-                setThreadConversation((current) =>
-                  mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId),
-                );
-              }
-            })
-            .catch(() => {
-              if (!cancelled) {
-                setThreadConversation(null);
-              }
-            });
+          const requestId = threadLoadRequestIdRef.current + 1;
+          threadLoadRequestIdRef.current = requestId;
+          if (isInitialBootstrapRun) {
+            setIsThreadConversationLoading(true);
+            setThreadConversation(null);
+          }
+          try {
+            const thread = await readThread(activeThreadId);
+            if (!cancelled && threadLoadRequestIdRef.current === requestId) {
+              setThreadConversation(mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId));
+            }
+          } catch {
+            if (!cancelled && threadLoadRequestIdRef.current === requestId && isInitialBootstrapRun) {
+              setThreadConversation(null);
+            }
+          } finally {
+            if (!cancelled && threadLoadRequestIdRef.current === requestId && isInitialBootstrapRun) {
+              setIsThreadConversationLoading(false);
+            }
+          }
           return;
         }
         setThreadConversation(null);
+        setIsThreadConversationLoading(false);
       })
       .catch(() => {
         if (!cancelled) {
           setProjectGroups([]);
           setSelectedThreadId(null);
           setThreadConversation(null);
+          setIsThreadConversationLoading(false);
+        }
+      })
+      .finally(() => {
+        if (!cancelled && isInitialBootstrapRun) {
+          initialThreadSnapshotLoadedRef.current = true;
+          setHasLoadedInitialThreadSnapshot(true);
         }
       });
 
@@ -1584,6 +1625,24 @@ function App() {
     );
   };
 
+  const loadThreadConversation = async (threadId: string) => {
+    const requestId = threadLoadRequestIdRef.current + 1;
+    threadLoadRequestIdRef.current = requestId;
+    setIsThreadConversationLoading(true);
+    setThreadConversation(null);
+    try {
+      const thread = await readThread(threadId);
+      if (threadLoadRequestIdRef.current === requestId) {
+        setThreadConversation(mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId));
+      }
+      return thread;
+    } finally {
+      if (threadLoadRequestIdRef.current === requestId) {
+        setIsThreadConversationLoading(false);
+      }
+    }
+  };
+
   const openArchivedChatsSettings = () => {
     setAppToast(null);
     setSettingsSection("data-controls");
@@ -1601,11 +1660,11 @@ function App() {
 
   const viewUnarchivedThread = async (threadId: string) => {
     try {
-      const [threads, thread] = await Promise.all([getRecentThreads(), readThread(threadId)]);
+      const threads = await getRecentThreads();
       syncProjectGroups(threadId, threads);
-      setThreadConversation(mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId));
       setTurnError(null);
       setCurrentRoute("chat");
+      await loadThreadConversation(threadId);
     } catch (error) {
       setAppToast({
         tone: "error",
@@ -1629,11 +1688,10 @@ function App() {
   const createAndSelectThread = async () => {
     const cwd = threadConversation?.cwd ?? openProjectPath ?? null;
     const threadId = await startThread(cwd);
-    const [threads, thread] = await Promise.all([getRecentThreads(), readThread(threadId)]);
+    const threads = await getRecentThreads();
     syncProjectGroups(threadId, threads);
-    setThreadConversation(mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId));
     setCurrentRoute("chat");
-    return thread;
+    return loadThreadConversation(threadId);
   };
 
   const startChatGptLogin = async () => {
@@ -1702,8 +1760,7 @@ function App() {
     setTurnError(null);
     setCurrentRoute("chat");
     try {
-      const thread = await readThread(threadId);
-      setThreadConversation(mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId));
+      await loadThreadConversation(threadId);
     } catch {
       setThreadConversation(null);
     }
@@ -2433,12 +2490,9 @@ function App() {
     }
   };
 
-  const openSourceLicenses = async () => {
-    try {
-      await open("D:\\autoAiProject\\codexapp\\LICENSE");
-    } catch (error) {
-      setConfigError(error instanceof Error ? error.message : String(error));
-    }
+  const openSourceLicenses = () => {
+    setSettingsSectionState({ licensesBackPath: "/settings/agent" });
+    setSettingsSection("open-source-licenses");
   };
 
   const updateConfigValue = async (keyPath: string, value: string | boolean) => {
@@ -2536,12 +2590,7 @@ function App() {
     }
 
     if (settingsSection === "usage") {
-      return (
-        <UsageSettings
-          authMethod={authSnapshot.authState.authMethod}
-          planAtLogin={authSnapshot.authState.planAtLogin}
-        />
-      );
+      return <UsageSettings authMethod={authSnapshot.authState.authMethod} />;
     }
 
     if (settingsSection === "plugins-settings") {
@@ -2559,6 +2608,7 @@ function App() {
     if (settingsSection === "local-environments") {
       return (
         <LocalEnvironmentsSettings
+          isCodexWorktree={isWorktreeThread}
           workspaceRoot={settingsWorkspaceRoot}
           onShowToast={(toast) => setAppToast(toast)}
         />
@@ -2581,11 +2631,31 @@ function App() {
     }
 
     if (settingsSection === "git-settings") {
-      return <GitSettings />;
+      return <GitSettings onShowToast={(toast) => setAppToast(toast)} />;
     }
 
     if (settingsSection === "worktrees") {
       return <WorktreesSettings />;
+    }
+
+    if (settingsSection === "open-source-licenses") {
+      const backPath =
+        settingsSectionState != null &&
+        typeof settingsSectionState === "object" &&
+        !Array.isArray(settingsSectionState) &&
+        "licensesBackPath" in settingsSectionState &&
+        typeof settingsSectionState.licensesBackPath === "string" &&
+        settingsSectionState.licensesBackPath.startsWith("/settings/")
+          ? settingsSectionState.licensesBackPath
+          : "/settings/general";
+      return (
+        <OpenSourceLicensesPage
+          onBack={() => {
+            setSettingsSection(backPath === "/settings/agent" ? "agent" : "general-settings");
+            setSettingsSectionState(null);
+          }}
+        />
+      );
     }
 
     if (settingsSection === "agent") {
@@ -2749,7 +2819,7 @@ function App() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => void openSourceLicenses()}
+                    onClick={openSourceLicenses}
                     className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
                   >
                     {t("settings.openSourceLicenses.view")}
@@ -2768,6 +2838,10 @@ function App() {
 
     return null;
   };
+
+  if (isAppBootstrapping) {
+    return <LoadingPage debugName="PersistedStateProvider" />;
+  }
 
   return (
     <main className="h-full overflow-hidden bg-[var(--app-shell-surface)] text-[13px] text-[var(--app-shell-text)]">
@@ -3091,7 +3165,10 @@ function App() {
                             key={item.id}
                             type="button"
                             disabled={item.disabled}
-                            onClick={() => setSettingsSection(item.id)}
+                            onClick={() => {
+                              setSettingsSection(item.id);
+                              setSettingsSectionState(null);
+                            }}
                             className={[
                               "flex h-10 w-full items-center gap-3 rounded-[12px] px-3.5 text-left text-[14px]",
                               settingsSection === item.id
@@ -3215,94 +3292,99 @@ function App() {
               </div>
 
               {currentRoute === "chat" ? (
-                <div className="grid min-h-0 flex-1" style={shellColumns}>
-                  <ChatConversationMainPane
-                    threadActionsMenuRef={threadActionsMenuRef}
-                    composerDraft={composerDraft}
-                    composerEnterBehavior={composerEnterBehavior}
-                    followUpQueueMode={followUpQueueMode}
-                    hasAttachedHeartbeatAutomation={selectedThreadAttachedHeartbeatAutomation !== null}
-                    isThreadActionsMenuOpen={isThreadActionsMenuOpen}
-                    isThreadHeartbeatAutomationActionDisabled={isThreadHeartbeatAutomationActionDisabled}
-                    isThreadHeartbeatAutomationActionVisible={shouldShowThreadHeartbeatAutomationAction}
-                    isWorktreeThread={isWorktreeThread}
-                    heartbeatAutomationActionLabelKey={threadHeartbeatAutomationActionLabelKey}
-                    heartbeatAutomationButtonTooltip={heartbeatAutomationOpenButtonTooltip}
-                    currentThreadApprovals={currentThreadApprovals}
-                    currentThreadImplementPlanRequests={currentThreadImplementPlanRequests}
-                    currentThreadMcpServerElicitationRequest={currentThreadMcpServerElicitationRequest}
-                    currentThreadPermissionsRequestApproval={currentThreadPermissionsRequestApproval}
-                    currentThreadToolRequestUserInput={currentThreadToolRequestUserInput}
-                    currentThreadQueuedFollowUps={currentThreadQueuedFollowUps}
-                    onApprovalDecision={(approval, decision) => void handleApprovalDecision(approval, decision)}
-                    onDismissImplementPlanRequest={dismissImplementPlanRequest}
-                    onImplementPlanRequestSubmit={(request, submission) =>
-                      void handleImplementPlanRequestSubmit(request, submission)
-                    }
-                    onMcpServerElicitationRequestSubmit={(request, action, content) =>
-                      void handleMcpServerElicitationRequestSubmit(request, action, content)
-                    }
-                    onArchiveThread={() => {
-                      setIsArchiveDialogOpen(true);
-                      setIsThreadActionsMenuOpen(false);
-                    }}
-                    onCopyAppLink={() => void copyAppLink()}
-                    onCopyConversationMarkdown={() => void copyConversationMarkdown()}
-                    onCopySessionId={() => void copySessionId()}
-                    onCopyWorkingDirectory={() => void copyWorkingDirectory()}
-                    onForkSelectedThread={() => void forkSelectedThread()}
-                    onOpenAttachedHeartbeatAutomation={() => openThreadHeartbeatAutomationDialog("edit")}
-                    onOpenThreadHeartbeatAutomationAction={openThreadHeartbeatAutomationAction}
-                    onOpenRemoteTask={(taskId) => void openRemoteTask(taskId)}
-                    onOpenRenameDialog={openRenameDialog}
-                    onSelectThread={(threadId) => void selectThread(threadId)}
-                    onEditUserMessage={(text) => void handleEditUserMessage(text)}
-                    onPermissionsRequestApprovalSubmit={(request, grantMode, strictAutoReview) =>
-                      void handlePermissionsRequestApprovalSubmit(request, grantMode, strictAutoReview)
-                    }
-                    onToolRequestUserInputSubmit={(request, values) =>
-                      void handleToolRequestUserInputSubmit(request, values)
-                    }
-                    onComposerDraftChange={setComposerDraft}
-                    onRemoveQueuedFollowUp={removeQueuedFollowUp}
-                    onStopTurn={() => void stopTurn()}
-                    onSubmitTurn={(invertFollowUpAction) => void submitTurn(invertFollowUpAction)}
-                    onToggleThreadActionsMenu={() => setIsThreadActionsMenuOpen((value) => !value)}
-                    approvalActionErrors={approvalActionErrors}
-                    reviewDelivery={reviewDelivery}
-                    respondingApprovalKeys={respondingApprovalKeys}
-                    selectedAvatar={selectedAvatar}
-                    submitButtonMode={submitButtonMode}
-                    t={t}
-                    threadConversation={threadConversation}
-                    turnError={turnError}
-                  />
+                isThreadConversationLoading ? (
+                  <div className="relative min-h-0 flex-1">
+                    <LoadingPage fillParent debugName="LocalConversationPage" />
+                  </div>
+                ) : (
+                  <div className="grid min-h-0 flex-1" style={shellColumns}>
+                    <ChatConversationMainPane
+                      threadActionsMenuRef={threadActionsMenuRef}
+                      composerDraft={composerDraft}
+                      composerEnterBehavior={composerEnterBehavior}
+                      followUpQueueMode={followUpQueueMode}
+                      hasAttachedHeartbeatAutomation={selectedThreadAttachedHeartbeatAutomation !== null}
+                      isThreadActionsMenuOpen={isThreadActionsMenuOpen}
+                      isThreadHeartbeatAutomationActionDisabled={isThreadHeartbeatAutomationActionDisabled}
+                      isThreadHeartbeatAutomationActionVisible={shouldShowThreadHeartbeatAutomationAction}
+                      isWorktreeThread={isWorktreeThread}
+                      heartbeatAutomationActionLabelKey={threadHeartbeatAutomationActionLabelKey}
+                      heartbeatAutomationButtonTooltip={heartbeatAutomationOpenButtonTooltip}
+                      currentThreadApprovals={currentThreadApprovals}
+                      currentThreadImplementPlanRequests={currentThreadImplementPlanRequests}
+                      currentThreadMcpServerElicitationRequest={currentThreadMcpServerElicitationRequest}
+                      currentThreadPermissionsRequestApproval={currentThreadPermissionsRequestApproval}
+                      currentThreadToolRequestUserInput={currentThreadToolRequestUserInput}
+                      currentThreadQueuedFollowUps={currentThreadQueuedFollowUps}
+                      onApprovalDecision={(approval, decision) => void handleApprovalDecision(approval, decision)}
+                      onDismissImplementPlanRequest={dismissImplementPlanRequest}
+                      onImplementPlanRequestSubmit={(request, submission) =>
+                        void handleImplementPlanRequestSubmit(request, submission)
+                      }
+                      onMcpServerElicitationRequestSubmit={(request, action, content) =>
+                        void handleMcpServerElicitationRequestSubmit(request, action, content)
+                      }
+                      onArchiveThread={() => {
+                        setIsArchiveDialogOpen(true);
+                        setIsThreadActionsMenuOpen(false);
+                      }}
+                      onCopyAppLink={() => void copyAppLink()}
+                      onCopyConversationMarkdown={() => void copyConversationMarkdown()}
+                      onCopySessionId={() => void copySessionId()}
+                      onCopyWorkingDirectory={() => void copyWorkingDirectory()}
+                      onForkSelectedThread={() => void forkSelectedThread()}
+                      onOpenAttachedHeartbeatAutomation={() => openThreadHeartbeatAutomationDialog("edit")}
+                      onOpenThreadHeartbeatAutomationAction={openThreadHeartbeatAutomationAction}
+                      onOpenRemoteTask={(taskId) => void openRemoteTask(taskId)}
+                      onOpenRenameDialog={openRenameDialog}
+                      onSelectThread={(threadId) => void selectThread(threadId)}
+                      onEditUserMessage={(text) => void handleEditUserMessage(text)}
+                      onPermissionsRequestApprovalSubmit={(request, grantMode, strictAutoReview) =>
+                        void handlePermissionsRequestApprovalSubmit(request, grantMode, strictAutoReview)
+                      }
+                      onToolRequestUserInputSubmit={(request, values) =>
+                        void handleToolRequestUserInputSubmit(request, values)
+                      }
+                      onComposerDraftChange={setComposerDraft}
+                      onRemoveQueuedFollowUp={removeQueuedFollowUp}
+                      onStopTurn={() => void stopTurn()}
+                      onSubmitTurn={(invertFollowUpAction) => void submitTurn(invertFollowUpAction)}
+                      onToggleThreadActionsMenu={() => setIsThreadActionsMenuOpen((value) => !value)}
+                      approvalActionErrors={approvalActionErrors}
+                      reviewDelivery={reviewDelivery}
+                      respondingApprovalKeys={respondingApprovalKeys}
+                      selectedAvatar={selectedAvatar}
+                      submitButtonMode={submitButtonMode}
+                      t={t}
+                      threadConversation={threadConversation}
+                      turnError={turnError}
+                    />
 
-                  {isRightPanelOpen ? (
-                    <div className="min-h-0 flex flex-col">
-                      <RightPanelTabStrip
-                        activeTabId={activeRightPanelTabId}
-                        openTabs={openRightPanelTabs}
-                        onActivateTab={activateRightPanelTab}
-                        onCloseTab={closeRightPanelTab}
-                        canOfferBrowserTab={canOfferBrowserRightPanelTab}
-                        canOfferReviewTab={canOfferReviewRightPanelTab}
-                        canOpenWorkspaceFileSearch={chatWorkspaceRoot !== null}
-                        onOpenBrowserTab={() => openRightPanelTab("browser")}
-                        onOpenReviewTab={() => openRightPanelTab("review")}
-                        onOpenWorkspaceFileSearch={openWorkspaceFileSearch}
-                        t={t}
-                      />
-                      <ChatSidePanel
-                        activeTab={activeRightPanelTab}
-                        onOpenReviewFile={(change) => void handleReviewFileSelected(change)}
-                        onSelectWorkspaceFile={handleWorkspaceFileSelected}
-                        t={t}
-                        threadDiffSummary={threadDiffSummary}
-                      />
-                    </div>
-                  ) : null}
-                </div>
+                    {isRightPanelOpen ? (
+                      <div className="min-h-0 flex flex-col">
+                        <RightPanelTabStrip
+                          activeTabId={activeRightPanelTabId}
+                          openTabs={openRightPanelTabs}
+                          onActivateTab={activateRightPanelTab}
+                          onCloseTab={closeRightPanelTab}
+                          canOfferBrowserTab={canOfferBrowserRightPanelTab}
+                          canOfferReviewTab={canOfferReviewRightPanelTab}
+                          canOpenWorkspaceFileSearch={chatWorkspaceRoot !== null}
+                          onOpenBrowserTab={() => openRightPanelTab("browser")}
+                          onOpenReviewTab={() => openRightPanelTab("review")}
+                          onOpenWorkspaceFileSearch={openWorkspaceFileSearch}
+                          t={t}
+                        />
+                        <ChatSidePanel
+                          activeTab={activeRightPanelTab}
+                          onOpenReviewFile={(change) => void handleReviewFileSelected(change)}
+                          t={t}
+                          threadDiffSummary={threadDiffSummary}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                )
               ) : currentRoute === "scratchpad" ? (
                 <div className="min-h-0 flex-1 overflow-y-auto">
                   <ScratchpadPage />

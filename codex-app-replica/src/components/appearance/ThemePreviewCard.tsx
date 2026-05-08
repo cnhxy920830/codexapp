@@ -37,7 +37,7 @@ export function ThemePreviewCard({
     <div
       ref={rootRef}
       data-testid="theme-preview"
-      className="overflow-hidden rounded-[18px] border border-[var(--color-border)] bg-[var(--color-background-surface)] shadow-[0_1px_0_rgba(0,0,0,0.04)]"
+      className="overflow-hidden rounded-xl border border-token-border bg-token-main-surface-primary"
       style={{
         colorScheme: variant,
         fontFamily: "var(--app-shell-ui-font-family)",

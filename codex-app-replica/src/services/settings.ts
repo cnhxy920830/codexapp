@@ -145,6 +145,19 @@ export type ConfigScopeOption = {
   config: ConfigSnapshot | null;
 };
 
+export type ThirdPartyNoticesResponse = {
+  text: string | null;
+};
+
+const THIRD_PARTY_NOTICES_STALE_MS = 60_000;
+
+let thirdPartyNoticesCache:
+  | {
+      response: ThirdPartyNoticesResponse;
+      loadedAt: number;
+    }
+  | null = null;
+
 export async function readConfig(cwd: string | null = null) {
   return invoke<ConfigReadResponse>("read_config", { cwd });
 }
@@ -174,6 +187,31 @@ export async function batchWriteConfigValues(params: {
 
 export async function setPersonality(personality: ConfigPersonality | null) {
   return invoke<void>("set_personality", { personality });
+}
+
+export function peekThirdPartyNotices() {
+  if (
+    thirdPartyNoticesCache == null ||
+    Date.now() - thirdPartyNoticesCache.loadedAt >= THIRD_PARTY_NOTICES_STALE_MS
+  ) {
+    return null;
+  }
+
+  return thirdPartyNoticesCache.response;
+}
+
+export async function readThirdPartyNotices() {
+  const cached = peekThirdPartyNotices();
+  if (cached != null) {
+    return cached;
+  }
+
+  const response = await invoke<ThirdPartyNoticesResponse>("third-party-notices");
+  thirdPartyNoticesCache = {
+    response,
+    loadedAt: Date.now(),
+  };
+  return response;
 }
 
 export function buildConfigScopeOptions(response: ConfigReadResponse) {

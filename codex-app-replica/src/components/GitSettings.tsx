@@ -5,205 +5,372 @@ import {
   readGitSettingsSnapshot,
   setGitAlwaysForcePush,
   setGitBranchPrefix,
-  setGitCreateDraftPullRequest,
   setGitCommitInstructions,
-  setGitPullRequestMergeMethod,
+  setGitCreateDraftPullRequest,
   setGitPullRequestInstructions,
-  setGitShowSidebarPrIcons,
-  type GitMergeMethod,
 } from "../services/gitSettings";
+import {
+  DEFAULT_WORKTREES_SETTINGS,
+  readWorktreesSettingsSnapshot,
+  setWorktreesAutoCleanupEnabled,
+  setWorktreesKeepCount,
+} from "../services/worktrees";
+import type { AppToast } from "./AppToastRegion";
 import { ToggleSwitch } from "./ToggleSwitch";
 
-export function GitSettings() {
+type SaveState = {
+  branchPrefix: boolean;
+  alwaysForcePush: boolean;
+  createDraftPullRequest: boolean;
+  commitInstructions: boolean;
+  pullRequestInstructions: boolean;
+  worktreeAutoCleanup: boolean;
+  worktreeKeepCount: boolean;
+};
+
+const DEFAULT_SAVE_STATE: SaveState = {
+  branchPrefix: false,
+  alwaysForcePush: false,
+  createDraftPullRequest: false,
+  commitInstructions: false,
+  pullRequestInstructions: false,
+  worktreeAutoCleanup: false,
+  worktreeKeepCount: false,
+};
+
+export function GitSettings({
+  onShowToast,
+}: {
+  onShowToast?: (toast: AppToast) => void;
+}) {
   const { t } = useI18n();
-  const [state, setState] = useState(DEFAULT_GIT_SETTINGS);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [branchPrefixDraft, setBranchPrefixDraft] = useState(DEFAULT_GIT_SETTINGS.branchPrefix);
-  const [commitInstructionsDraft, setCommitInstructionsDraft] = useState(
-    DEFAULT_GIT_SETTINGS.commitInstructions,
-  );
-  const [pullRequestInstructionsDraft, setPullRequestInstructionsDraft] = useState(
-    DEFAULT_GIT_SETTINGS.pullRequestInstructions,
-  );
+  const [gitState, setGitState] = useState(DEFAULT_GIT_SETTINGS);
+  const [worktreeState, setWorktreeState] = useState(DEFAULT_WORKTREES_SETTINGS);
+  const [isGitLoading, setIsGitLoading] = useState(true);
+  const [isWorktreeLoading, setIsWorktreeLoading] = useState(true);
+  const [saving, setSaving] = useState(DEFAULT_SAVE_STATE);
+  const [branchPrefixDraft, setBranchPrefixDraft] = useState<string | null>(null);
+  const [commitInstructionsDraft, setCommitInstructionsDraft] = useState<string | null>(null);
+  const [pullRequestInstructionsDraft, setPullRequestInstructionsDraft] = useState<string | null>(null);
+  const [keepCountDraft, setKeepCountDraft] = useState<string | null>(null);
+  const [isDisableAutoCleanupConfirmOpen, setIsDisableAutoCleanupConfirmOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
-    const load = async () => {
+    const loadGitSettings = async () => {
       try {
         const snapshot = await readGitSettingsSnapshot();
-        if (cancelled) {
-          return;
+        if (!cancelled) {
+          setGitState(snapshot);
+          setBranchPrefixDraft(null);
+          setCommitInstructionsDraft(null);
+          setPullRequestInstructionsDraft(null);
         }
-        setState(snapshot);
-        setBranchPrefixDraft(snapshot.branchPrefix);
-        setCommitInstructionsDraft(snapshot.commitInstructions);
-        setPullRequestInstructionsDraft(snapshot.pullRequestInstructions);
       } finally {
         if (!cancelled) {
-          setIsLoading(false);
+          setIsGitLoading(false);
         }
       }
     };
 
-    void load();
+    const loadWorktreeSettings = async () => {
+      try {
+        const snapshot = await readWorktreesSettingsSnapshot();
+        if (!cancelled) {
+          setWorktreeState(snapshot);
+          setKeepCountDraft(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsWorktreeLoading(false);
+        }
+      }
+    };
+
+    void Promise.all([loadGitSettings(), loadWorktreeSettings()]);
 
     return () => {
       cancelled = true;
     };
   }, []);
 
-  useEffect(() => {
-    setBranchPrefixDraft(state.branchPrefix);
-  }, [state.branchPrefix]);
+  const setSavingFlag = (key: keyof SaveState, value: boolean) => {
+    setSaving((current) => ({ ...current, [key]: value }));
+  };
 
-  useEffect(() => {
-    setCommitInstructionsDraft(state.commitInstructions);
-  }, [state.commitInstructions]);
+  const showToast = (tone: AppToast["tone"], messageKey: Parameters<typeof t>[0]) => {
+    onShowToast?.({
+      tone,
+      message: t(messageKey),
+    });
+  };
 
-  useEffect(() => {
-    setPullRequestInstructionsDraft(state.pullRequestInstructions);
-  }, [state.pullRequestInstructions]);
+  const branchPrefixValue = branchPrefixDraft ?? gitState.branchPrefix;
+  const isBranchPrefixDirty =
+    branchPrefixDraft !== null && branchPrefixDraft !== gitState.branchPrefix;
+  const isBranchPrefixDisabled = isGitLoading || saving.branchPrefix;
 
-  const persistBranchPrefix = async (value: string) => {
-    setIsSaving(true);
+  const commitInstructionsValue = commitInstructionsDraft ?? gitState.commitInstructions;
+  const isCommitInstructionsDirty =
+    commitInstructionsDraft !== null && commitInstructionsDraft !== gitState.commitInstructions;
+  const isCommitInstructionsDisabled = isGitLoading || saving.commitInstructions;
+
+  const pullRequestInstructionsValue =
+    pullRequestInstructionsDraft ?? gitState.pullRequestInstructions;
+  const isPullRequestInstructionsDirty =
+    pullRequestInstructionsDraft !== null &&
+    pullRequestInstructionsDraft !== gitState.pullRequestInstructions;
+  const isPullRequestInstructionsDisabled = isGitLoading || saving.pullRequestInstructions;
+
+  const keepCountValue = keepCountDraft ?? String(worktreeState.keepCount);
+  const isWorktreeAutoCleanupDisabled = isWorktreeLoading || saving.worktreeAutoCleanup;
+  const isKeepCountDisabled =
+    isWorktreeLoading ||
+    saving.worktreeKeepCount ||
+    isWorktreeAutoCleanupDisabled ||
+    !worktreeState.autoCleanupEnabled;
+
+  const saveBranchPrefixIfDirty = async () => {
+    if (!isBranchPrefixDirty || isBranchPrefixDisabled) {
+      return;
+    }
+
+    setSavingFlag("branchPrefix", true);
     try {
-      await setGitBranchPrefix(value);
-      setState((current) => ({ ...current, branchPrefix: value }));
-      setBranchPrefixDraft(value);
+      await setGitBranchPrefix(branchPrefixValue);
+      setGitState((current) => ({ ...current, branchPrefix: branchPrefixValue }));
+      setBranchPrefixDraft(null);
+      showToast("success", "settings.git.branchPrefix.save.success");
+    } catch {
+      showToast("error", "settings.git.branchPrefix.save.error");
     } finally {
-      setIsSaving(false);
+      setSavingFlag("branchPrefix", false);
     }
   };
 
-  const persistBooleanSetting = async (key: "alwaysForcePush" | "createDraftPullRequest" | "showSidebarPrIcons", value: boolean) => {
-    setIsSaving(true);
+  const saveAlwaysForcePush = async (value: boolean) => {
+    if (isGitLoading || saving.alwaysForcePush) {
+      return;
+    }
+
+    setSavingFlag("alwaysForcePush", true);
     try {
-      switch (key) {
-        case "alwaysForcePush":
-          await setGitAlwaysForcePush(value);
-          break;
-        case "createDraftPullRequest":
-          await setGitCreateDraftPullRequest(value);
-          break;
-        case "showSidebarPrIcons":
-          await setGitShowSidebarPrIcons(value);
-          break;
+      await setGitAlwaysForcePush(value);
+      setGitState((current) => ({ ...current, alwaysForcePush: value }));
+      showToast(
+        "success",
+        value
+          ? "settings.git.forcePush.save.enabled"
+          : "settings.git.forcePush.save.disabled",
+      );
+    } catch {
+      showToast("error", "settings.git.forcePush.save.error");
+    } finally {
+      setSavingFlag("alwaysForcePush", false);
+    }
+  };
+
+  const saveCreateDraftPullRequest = async (value: boolean) => {
+    if (isGitLoading || saving.createDraftPullRequest) {
+      return;
+    }
+
+    setSavingFlag("createDraftPullRequest", true);
+    try {
+      await setGitCreateDraftPullRequest(value);
+      setGitState((current) => ({ ...current, createDraftPullRequest: value }));
+      showToast(
+        "success",
+        value
+          ? "settings.git.createDraftPullRequest.save.enabled"
+          : "settings.git.createDraftPullRequest.save.disabled",
+      );
+    } catch {
+      showToast("error", "settings.git.createDraftPullRequest.save.error");
+    } finally {
+      setSavingFlag("createDraftPullRequest", false);
+    }
+  };
+
+  const saveCommitInstructionsIfDirty = async () => {
+    if (!isCommitInstructionsDirty || isCommitInstructionsDisabled) {
+      return;
+    }
+
+    setSavingFlag("commitInstructions", true);
+    try {
+      await setGitCommitInstructions(commitInstructionsValue);
+      setGitState((current) => ({
+        ...current,
+        commitInstructions: commitInstructionsValue,
+      }));
+      setCommitInstructionsDraft(null);
+      showToast("success", "settings.git.commitInstructions.save.success");
+    } catch {
+      showToast("error", "settings.git.commitInstructions.save.error");
+    } finally {
+      setSavingFlag("commitInstructions", false);
+    }
+  };
+
+  const savePullRequestInstructionsIfDirty = async () => {
+    if (!isPullRequestInstructionsDirty || isPullRequestInstructionsDisabled) {
+      return;
+    }
+
+    setSavingFlag("pullRequestInstructions", true);
+    try {
+      await setGitPullRequestInstructions(pullRequestInstructionsValue);
+      setGitState((current) => ({
+        ...current,
+        pullRequestInstructions: pullRequestInstructionsValue,
+      }));
+      setPullRequestInstructionsDraft(null);
+      showToast("success", "settings.git.prInstructions.save.success");
+    } catch {
+      showToast("error", "settings.git.prInstructions.save.error");
+    } finally {
+      setSavingFlag("pullRequestInstructions", false);
+    }
+  };
+
+  const saveWorktreeAutoCleanup = async (value: boolean) => {
+    if (isWorktreeLoading || saving.worktreeAutoCleanup) {
+      return;
+    }
+
+    setSavingFlag("worktreeAutoCleanup", true);
+    try {
+      await setWorktreesAutoCleanupEnabled(value);
+      setWorktreeState((current) => ({ ...current, autoCleanupEnabled: value }));
+      showToast(
+        "success",
+        value
+          ? "settings.worktrees.autoCleanup.save.enabled"
+          : "settings.worktrees.autoCleanup.save.disabled",
+      );
+    } catch {
+      showToast("error", "settings.worktrees.autoCleanup.save.error");
+    } finally {
+      setSavingFlag("worktreeAutoCleanup", false);
+    }
+  };
+
+  const saveWorktreeKeepCountIfDirty = async () => {
+    if (isKeepCountDisabled || keepCountDraft === null) {
+      return;
+    }
+
+    const trimmed = keepCountDraft.trim();
+    const parsed = Number.parseInt(trimmed, 10);
+
+    if (trimmed.length === 0 || Number.isNaN(parsed)) {
+      setKeepCountDraft(null);
+      return;
+    }
+
+    const nextValue = Math.max(1, Math.trunc(parsed));
+    if (nextValue === worktreeState.keepCount) {
+      setKeepCountDraft(null);
+      return;
+    }
+
+    setSavingFlag("worktreeKeepCount", true);
+    try {
+      await setWorktreesKeepCount(nextValue);
+      setWorktreeState((current) => ({ ...current, keepCount: nextValue }));
+      setKeepCountDraft(null);
+      showToast("success", "settings.worktrees.keepCount.save.success");
+    } catch {
+      showToast("error", "settings.worktrees.keepCount.save.error");
+    } finally {
+      setSavingFlag("worktreeKeepCount", false);
+    }
+  };
+
+  useEffect(() => {
+    const canSaveWithHotkey =
+      (isBranchPrefixDirty && !isBranchPrefixDisabled) ||
+      (isCommitInstructionsDirty && !isCommitInstructionsDisabled) ||
+      (isPullRequestInstructionsDirty && !isPullRequestInstructionsDisabled);
+
+    if (!canSaveWithHotkey) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") {
+        return;
       }
-      setState((current) => ({ ...current, [key]: value }));
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
-  const persistMergeMethod = async (value: GitMergeMethod) => {
-    setIsSaving(true);
-    try {
-      await setGitPullRequestMergeMethod(value);
-      setState((current) => ({ ...current, pullRequestMergeMethod: value }));
-    } finally {
-      setIsSaving(false);
-    }
-  };
+      event.preventDefault();
+      void Promise.allSettled([
+        saveBranchPrefixIfDirty(),
+        saveCommitInstructionsIfDirty(),
+        savePullRequestInstructionsIfDirty(),
+      ]);
+    };
 
-  const persistCommitInstructions = async (value: string) => {
-    setIsSaving(true);
-    try {
-      await setGitCommitInstructions(value);
-      setState((current) => ({ ...current, commitInstructions: value }));
-      setCommitInstructionsDraft(value);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const persistPullRequestInstructions = async (value: string) => {
-    setIsSaving(true);
-    try {
-      await setGitPullRequestInstructions(value);
-      setState((current) => ({ ...current, pullRequestInstructions: value }));
-      setPullRequestInstructionsDraft(value);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const commitBranchPrefix = () => {
-    if (isLoading || isSaving) {
-      setBranchPrefixDraft(state.branchPrefix);
-      return;
-    }
-
-    const nextValue = branchPrefixDraft;
-    if (nextValue === state.branchPrefix) {
-      setBranchPrefixDraft(nextValue);
-      return;
-    }
-
-    void persistBranchPrefix(nextValue).catch(() => {
-      setBranchPrefixDraft(state.branchPrefix);
-    });
-  };
-
-  const commitCommitInstructions = () => {
-    if (isLoading || isSaving) {
-      setCommitInstructionsDraft(state.commitInstructions);
-      return;
-    }
-    if (commitInstructionsDraft === state.commitInstructions) {
-      return;
-    }
-    void persistCommitInstructions(commitInstructionsDraft).catch(() => {
-      setCommitInstructionsDraft(state.commitInstructions);
-    });
-  };
-
-  const commitPullRequestInstructions = () => {
-    if (isLoading || isSaving) {
-      setPullRequestInstructionsDraft(state.pullRequestInstructions);
-      return;
-    }
-    if (pullRequestInstructionsDraft === state.pullRequestInstructions) {
-      return;
-    }
-    void persistPullRequestInstructions(pullRequestInstructionsDraft).catch(() => {
-      setPullRequestInstructionsDraft(state.pullRequestInstructions);
-    });
-  };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [
+    isBranchPrefixDirty,
+    isBranchPrefixDisabled,
+    isCommitInstructionsDirty,
+    isCommitInstructionsDisabled,
+    isPullRequestInstructionsDirty,
+    isPullRequestInstructionsDisabled,
+    branchPrefixValue,
+    commitInstructionsValue,
+    pullRequestInstructionsValue,
+  ]);
 
   return (
-    <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-5 py-5">
-      <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="app-title text-[14px] font-medium">{t("settings.section.git-settings")}</div>
+    <div className="mx-auto flex w-full max-w-[672px] flex-col gap-4 px-5 py-5">
+      <div className="pb-1">
+        <h1 className="text-[20px] font-medium leading-7">
+          {t("settings.section.git-settings")}
+        </h1>
       </div>
 
       <div className="app-card rounded-[18px] px-5 py-4">
         <div className="space-y-4 text-[14px]">
-          <SettingRow label={t("settings.git.branchPrefix.label")} description={t("settings.git.branchPrefix.description")}>
+          <SettingRow
+            label={t("settings.git.branchPrefix.label")}
+            description={t("settings.git.branchPrefix.description")}
+          >
             <input
               aria-label={t("settings.git.branchPrefix.ariaLabel")}
-              value={branchPrefixDraft}
-              onChange={(event) => setBranchPrefixDraft(event.target.value)}
-              onBlur={commitBranchPrefix}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  commitBranchPrefix();
-                }
+              value={branchPrefixValue}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                setBranchPrefixDraft(
+                  nextValue === gitState.branchPrefix ? null : nextValue,
+                );
+              }}
+              onBlur={() => {
+                void saveBranchPrefixIfDirty();
               }}
               placeholder={t("settings.git.branchPrefix.placeholder")}
-              disabled={isLoading || isSaving}
+              disabled={isBranchPrefixDisabled}
               className="app-control h-9 w-56 rounded-[10px] px-3 text-[13px]"
             />
           </SettingRow>
 
-          <SettingRow label={t("settings.git.forcePush.label")} description={t("settings.git.forcePush.description")}>
+          <SettingRow
+            label={t("settings.git.forcePush.label")}
+            description={t("settings.git.forcePush.description")}
+          >
             <ToggleSwitch
-              checked={state.alwaysForcePush}
-              disabled={isLoading || isSaving}
+              checked={gitState.alwaysForcePush}
+              disabled={isGitLoading || saving.alwaysForcePush}
               ariaLabel={t("settings.git.forcePush.ariaLabel")}
-              onChange={(checked) => void persistBooleanSetting("alwaysForcePush", checked)}
+              onChange={(checked) => {
+                void saveAlwaysForcePush(checked);
+              }}
             />
           </SettingRow>
 
@@ -212,44 +379,76 @@ export function GitSettings() {
             description={t("settings.git.createDraftPullRequest.description")}
           >
             <ToggleSwitch
-              checked={state.createDraftPullRequest}
-              disabled={isLoading || isSaving}
+              checked={gitState.createDraftPullRequest}
+              disabled={isGitLoading || saving.createDraftPullRequest}
               ariaLabel={t("settings.git.createDraftPullRequest.ariaLabel")}
-              onChange={(checked) => void persistBooleanSetting("createDraftPullRequest", checked)}
+              onChange={(checked) => {
+                void saveCreateDraftPullRequest(checked);
+              }}
             />
           </SettingRow>
 
           <SettingRow
-            label={t("settings.git.pullRequestMergeMethod.label")}
-            description={t("settings.git.pullRequestMergeMethod.description")}
-          >
-            <SegmentedChoiceControl
-              ariaLabel={t("settings.git.pullRequestMergeMethod.ariaLabel")}
-              disabled={isLoading || isSaving}
-              options={[
-                {
-                  id: "merge",
-                  label: t("settings.git.pullRequestMergeMethod.merge"),
-                },
-                {
-                  id: "squash",
-                  label: t("settings.git.pullRequestMergeMethod.squash"),
-                },
-              ]}
-              value={state.pullRequestMergeMethod}
-              onChange={(value) => void persistMergeMethod(value)}
-            />
-          </SettingRow>
-
-          <SettingRow
-            label={t("settings.git.showSidebarPrIcons.label")}
-            description={t("settings.git.showSidebarPrIcons.description")}
+            label={t("settings.worktrees.autoCleanup.label")}
+            description={t("settings.worktrees.autoCleanup.description")}
           >
             <ToggleSwitch
-              checked={state.showSidebarPrIcons}
-              disabled={isLoading || isSaving}
-              ariaLabel={t("settings.git.showSidebarPrIcons.ariaLabel")}
-              onChange={(checked) => void persistBooleanSetting("showSidebarPrIcons", checked)}
+              checked={worktreeState.autoCleanupEnabled}
+              disabled={isWorktreeAutoCleanupDisabled}
+              ariaLabel={t("settings.worktrees.autoCleanup.ariaLabel")}
+              onChange={(checked) => {
+                if (
+                  checked === worktreeState.autoCleanupEnabled ||
+                  isWorktreeAutoCleanupDisabled
+                ) {
+                  return;
+                }
+
+                if (checked) {
+                  void saveWorktreeAutoCleanup(true);
+                  return;
+                }
+
+                setIsDisableAutoCleanupConfirmOpen(true);
+              }}
+            />
+          </SettingRow>
+
+          <SettingRow
+            label={t("settings.worktrees.keepCount.label")}
+            description={
+              worktreeState.autoCleanupEnabled
+                ? t("settings.worktrees.keepCount.description")
+                : t("settings.worktrees.keepCount.description.disabled")
+            }
+          >
+            <input
+              aria-label={t("settings.worktrees.keepCount.ariaLabel")}
+              type="number"
+              min={1}
+              step={1}
+              disabled={isKeepCountDisabled}
+              value={keepCountValue}
+              onChange={(event) => {
+                if (isKeepCountDisabled) {
+                  return;
+                }
+
+                const nextValue = event.target.value;
+                setKeepCountDraft(
+                  nextValue === String(worktreeState.keepCount) ? null : nextValue,
+                );
+              }}
+              onBlur={() => {
+                void saveWorktreeKeepCountIfDirty();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void saveWorktreeKeepCountIfDirty();
+                }
+              }}
+              className="app-control h-9 w-24 rounded-[10px] px-2.5 py-0 text-right text-[13px]"
             />
           </SettingRow>
         </div>
@@ -261,11 +460,17 @@ export function GitSettings() {
         placeholder={t("settings.git.commitInstructions.placeholder")}
         saveLabel={t("settings.git.commitInstructions.save")}
         ariaLabel={t("settings.git.commitInstructions.ariaLabel")}
-        disabled={isLoading || isSaving}
-        draft={commitInstructionsDraft}
-        isDirty={commitInstructionsDraft !== state.commitInstructions}
-        onDraftChange={setCommitInstructionsDraft}
-        onSave={() => commitCommitInstructions()}
+        disabled={isCommitInstructionsDisabled}
+        draft={commitInstructionsValue}
+        isDirty={isCommitInstructionsDirty}
+        onDraftChange={(value) => {
+          setCommitInstructionsDraft(
+            value === gitState.commitInstructions ? null : value,
+          );
+        }}
+        onSave={() => {
+          void saveCommitInstructionsIfDirty();
+        }}
       />
 
       <InstructionsCard
@@ -274,12 +479,33 @@ export function GitSettings() {
         placeholder={t("settings.git.prInstructions.placeholder")}
         saveLabel={t("settings.git.prInstructions.save")}
         ariaLabel={t("settings.git.prInstructions.ariaLabel")}
-        disabled={isLoading || isSaving}
-        draft={pullRequestInstructionsDraft}
-        isDirty={pullRequestInstructionsDraft !== state.pullRequestInstructions}
-        onDraftChange={setPullRequestInstructionsDraft}
-        onSave={() => commitPullRequestInstructions()}
+        disabled={isPullRequestInstructionsDisabled}
+        draft={pullRequestInstructionsValue}
+        isDirty={isPullRequestInstructionsDirty}
+        onDraftChange={(value) => {
+          setPullRequestInstructionsDraft(
+            value === gitState.pullRequestInstructions ? null : value,
+          );
+        }}
+        onSave={() => {
+          void savePullRequestInstructionsIfDirty();
+        }}
       />
+
+      {isDisableAutoCleanupConfirmOpen ? (
+        <DisableAutoCleanupDialog
+          cancelLabel={t("settings.worktrees.autoCleanup.confirm.cancel")}
+          body={t("settings.worktrees.autoCleanup.confirm.body")}
+          confirmLabel={t("settings.worktrees.autoCleanup.confirm.confirm")}
+          title={t("settings.worktrees.autoCleanup.confirm.title")}
+          onCancel={() => setIsDisableAutoCleanupConfirmOpen(false)}
+          onConfirm={() => {
+            setKeepCountDraft(null);
+            setIsDisableAutoCleanupConfirmOpen(false);
+            void saveWorktreeAutoCleanup(false);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -297,43 +523,13 @@ function SettingRow({
     <div className="flex items-start justify-between gap-4 max-sm:flex-col max-sm:items-stretch">
       <div className="min-w-0 flex-1">
         <div>{label}</div>
-        {description ? <div className="app-text-muted mt-1 text-[12px] leading-5">{description}</div> : null}
+        {description ? (
+          <div className="app-text-muted mt-1 text-[12px] leading-5">
+            {description}
+          </div>
+        ) : null}
       </div>
       {children}
-    </div>
-  );
-}
-
-function SegmentedChoiceControl({
-  ariaLabel,
-  disabled,
-  options,
-  value,
-  onChange,
-}: {
-  ariaLabel: string;
-  disabled: boolean;
-  options: Array<{ id: GitMergeMethod; label: string }>;
-  value: GitMergeMethod;
-  onChange: (value: GitMergeMethod) => void;
-}) {
-  return (
-    <div role="group" aria-label={ariaLabel} className="app-segmented inline-flex rounded-[12px] p-1">
-      {options.map((option) => (
-        <button
-          key={option.id}
-          type="button"
-          disabled={disabled}
-          aria-pressed={value === option.id}
-          onClick={() => onChange(option.id)}
-          className={[
-            "rounded-[9px] px-3 py-1.5 text-[13px] transition",
-            value === option.id ? "app-segmented-option-active" : "app-segmented-option-idle",
-          ].join(" ")}
-        >
-          {option.label}
-        </button>
-      ))}
     </div>
   );
 }
@@ -384,6 +580,54 @@ function InstructionsCard({
         rows={6}
         className="app-control mt-4 w-full rounded-[12px] px-3 py-2 text-[13px] outline-none"
       />
+    </div>
+  );
+}
+
+function DisableAutoCleanupDialog({
+  body,
+  cancelLabel,
+  confirmLabel,
+  title,
+  onCancel,
+  onConfirm,
+}: {
+  body: string;
+  cancelLabel: string;
+  confirmLabel: string;
+  title: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-20 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          onCancel();
+        }
+      }}
+    >
+      <div className="app-card w-full max-w-[420px] rounded-[18px] px-5 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
+        <div className="app-title text-[15px] font-medium">{title}</div>
+        <div className="app-text-muted mt-2 text-[13px] leading-6">{body}</div>
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="app-card-error rounded-[11px] px-3 py-1.5 text-[12px]"
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
