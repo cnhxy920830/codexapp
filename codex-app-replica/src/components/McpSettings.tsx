@@ -3,20 +3,21 @@ import { open } from "@tauri-apps/plugin-shell";
 import { useI18n } from "../i18n/i18n";
 import { type MessageKey, type MessageValues } from "../i18n/messages";
 import {
-  batchWriteConfigValues,
-  buildConfigScopeOptions,
-  chooseDefaultConfigScopeKey,
-  readConfig,
-  writeConfigValue,
+  batchWriteConfigValueForHost,
+  readConfigForHost,
+  resolveConfigChildOrigins,
+  resolveConfigWriteTargetForKeyPath,
+  writeConfigValueForHost,
 } from "../services/settings";
 import {
   createBlankMcpServerDraft,
   listMcpServerStatuses,
   loginMcpServer,
+  onCodexAppServerInitialized,
   normalizeMcpServerDraft,
+  restartCodexAppServer,
   onMcpOauthLoginCompleted,
   parseMcpServers,
-  reloadMcpServerConfig,
   sanitizeMcpServerKey,
   serializeMcpServerDraft,
   type McpServerDraft,
@@ -25,6 +26,7 @@ import {
 import { ToggleSwitch } from "./ToggleSwitch";
 
 const MCP_DOCS_URL = "https://developers.openai.com/codex/mcp/";
+const LOCAL_HOST_ID = "local";
 
 type EditorKey = string | null | undefined;
 type Translate = (key: MessageKey, values?: MessageValues) => string;
@@ -36,21 +38,37 @@ type McpServerListItem = {
   server: McpServerDraft;
 };
 
-export function McpSettings({ workspaceRoot }: { workspaceRoot: string | null }) {
+export function McpSettings({
+  selectedHostId,
+  workspaceRoot,
+}: {
+  selectedHostId: string;
+  workspaceRoot: string | null;
+}) {
   const { t } = useI18n();
-  const [configResponse, setConfigResponse] = useState<Awaited<ReturnType<typeof readConfig>> | null>(null);
+  const [configResponse, setConfigResponse] = useState<Awaited<ReturnType<typeof readConfigForHost>> | null>(null);
   const [serverStatuses, setServerStatuses] = useState<McpServerStatusEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [editorKey, setEditorKey] = useState<EditorKey>(undefined);
   const [draft, setDraft] = useState<McpServerDraft | null>(null);
+  const [dirtyHostIds, setDirtyHostIds] = useState<string[]>([]);
+  const effectiveWorkspaceRoot = selectedHostId === LOCAL_HOST_ID ? workspaceRoot : null;
+  const isLocalHost = selectedHostId === LOCAL_HOST_ID;
 
   const load = async () => {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const [config, statuses] = await Promise.all([readConfig(workspaceRoot), listMcpServerStatuses()]);
+      const [config, statuses] = await Promise.all([
+        readConfigForHost({
+          hostId: selectedHostId,
+          cwd: effectiveWorkspaceRoot,
+          includeLayers: true,
+        }),
+        listMcpServerStatuses(selectedHostId),
+      ]);
       setConfigResponse(config);
       setServerStatuses(statuses.data);
     } catch (error) {
@@ -64,7 +82,7 @@ export function McpSettings({ workspaceRoot }: { workspaceRoot: string | null })
 
   useEffect(() => {
     void load();
-  }, [workspaceRoot]);
+  }, [effectiveWorkspaceRoot, selectedHostId]);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -80,33 +98,56 @@ export function McpSettings({ workspaceRoot }: { workspaceRoot: string | null })
     return () => {
       unlisten?.();
     };
-  }, [workspaceRoot]);
+  }, [effectiveWorkspaceRoot, selectedHostId]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    void onCodexAppServerInitialized((notification) => {
+      if (notification.hostId !== selectedHostId) {
+        return;
+      }
+      setDirtyHostIds((current) => current.filter((hostId) => hostId !== notification.hostId));
+      void load();
+    }).then((dispose) => {
+      unlisten = dispose;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, [effectiveWorkspaceRoot, selectedHostId]);
 
   const config = configResponse?.config ?? null;
   const servers = useMemo(() => parseMcpServers(config), [config]);
-  const scopeOptions = useMemo(
-    () => (configResponse ? buildConfigScopeOptions(configResponse) : []),
-    [configResponse],
-  );
   const writeTarget = useMemo(() => {
-    const defaultScopeKey = chooseDefaultConfigScopeKey(scopeOptions);
-    return scopeOptions.find((scope) => scope.key === defaultScopeKey) ?? null;
-  }, [scopeOptions]);
+    if (!configResponse) {
+      return null;
+    }
+    return resolveConfigWriteTargetForKeyPath(configResponse, "mcp_servers", ["enabled", "command", "url"]);
+  }, [configResponse]);
   const existingKeys = useMemo(() => Object.keys(config?.mcpServers ?? {}), [config]);
+  const serverOrigins = useMemo(() => {
+    if (!configResponse) {
+      return {};
+    }
+    return resolveConfigChildOrigins(configResponse, "mcp_servers", existingKeys, ["enabled", "command", "url"]);
+  }, [configResponse, existingKeys]);
   const serverListItems = useMemo<McpServerListItem[]>(
     () =>
       servers.map(({ name, server }) => ({
         authStatus: serverStatuses.find((entry) => entry.name === name)?.authStatus ?? null,
-        isReadOnly: configResponse?.origins[`mcp_servers.${name}`]?.name.type === "project",
+        isReadOnly: serverOrigins[name]?.name.type === "project",
         name,
         server,
       })),
-    [configResponse, serverStatuses, servers],
+    [serverOrigins, serverStatuses, servers],
   );
   const selectedExistingServer = useMemo(
     () => (typeof editorKey === "string" ? servers.find((entry) => entry.name === editorKey) ?? null : null),
     [editorKey, servers],
   );
+  const isRestartRequired = isLocalHost && dirtyHostIds.includes(LOCAL_HOST_ID);
   const initialDraft = useMemo(() => {
     if (editorKey === undefined) {
       return null;
@@ -131,7 +172,7 @@ export function McpSettings({ workspaceRoot }: { workspaceRoot: string | null })
   };
 
   const openEditorForExistingServer = (name: string) => {
-    if (configResponse?.origins[`mcp_servers.${name}`]?.name.type === "project") {
+    if (serverOrigins[name]?.name.type === "project") {
       return;
     }
 
@@ -145,6 +186,22 @@ export function McpSettings({ workspaceRoot }: { workspaceRoot: string | null })
     setDraft(null);
   };
 
+  const markLocalHostDirty = () => {
+    if (!isLocalHost) {
+      return;
+    }
+    setDirtyHostIds((current) =>
+      current.includes(LOCAL_HOST_ID) ? current : [...current, LOCAL_HOST_ID],
+    );
+  };
+
+  const restartAppServer = async () => {
+    if (!isLocalHost) {
+      return;
+    }
+    await restartCodexAppServer(LOCAL_HOST_ID);
+  };
+
   const persistEnabled = async (name: string, enabled: boolean) => {
     if (!writeTarget?.filePath) {
       return;
@@ -152,14 +209,15 @@ export function McpSettings({ workspaceRoot }: { workspaceRoot: string | null })
 
     setIsSaving(true);
     try {
-      await writeConfigValue({
+      await writeConfigValueForHost({
+        hostId: selectedHostId,
         keyPath: `mcp_servers.${name}.enabled`,
         value: enabled,
         mergeStrategy: "upsert",
         filePath: writeTarget.filePath,
         expectedVersion: writeTarget.expectedVersion,
       });
-      await reloadMcpServerConfig();
+      markLocalHostDirty();
       await load();
     } finally {
       setIsSaving(false);
@@ -167,7 +225,10 @@ export function McpSettings({ workspaceRoot }: { workspaceRoot: string | null })
   };
 
   const authenticateServer = async (name: string) => {
-    const response = await loginMcpServer(name);
+    const response = await loginMcpServer({
+      hostId: selectedHostId,
+      name,
+    });
     await open(response.authorizationUrl);
   };
 
@@ -199,13 +260,14 @@ export function McpSettings({ workspaceRoot }: { workspaceRoot: string | null })
         });
       }
 
-      await batchWriteConfigValues({
+      await batchWriteConfigValueForHost({
+        hostId: selectedHostId,
         edits,
         filePath: writeTarget.filePath,
         expectedVersion: writeTarget.expectedVersion,
         reloadUserConfig: true,
       });
-      await reloadMcpServerConfig();
+      markLocalHostDirty();
       await load();
       closeEditor();
     } finally {
@@ -220,7 +282,8 @@ export function McpSettings({ workspaceRoot }: { workspaceRoot: string | null })
 
     setIsSaving(true);
     try {
-      await batchWriteConfigValues({
+      await batchWriteConfigValueForHost({
+        hostId: selectedHostId,
         edits: [
           {
             keyPath: `mcp_servers.${editorKey}`,
@@ -232,7 +295,7 @@ export function McpSettings({ workspaceRoot }: { workspaceRoot: string | null })
         expectedVersion: writeTarget.expectedVersion,
         reloadUserConfig: true,
       });
-      await reloadMcpServerConfig();
+      markLocalHostDirty();
       await load();
       closeEditor();
     } finally {
@@ -259,6 +322,16 @@ export function McpSettings({ workspaceRoot }: { workspaceRoot: string | null })
 
   return (
     <SettingsContentLayout
+      action={
+        isRestartRequired ? (
+          <ToolbarButton
+            label={t("settings.mcp.restartApp")}
+            color="ghost"
+            icon={<RegenerateIcon className="icon-xs" />}
+            onClick={() => void restartAppServer()}
+          />
+        ) : null
+      }
       subtitle={renderMcpSectionSubtitle(t("settings.section.mcp-settings.subtitle"))}
       title={t("settings.section.mcp-settings")}
     >
@@ -1059,6 +1132,24 @@ function SettingsCogIcon({ className }: { className?: string }) {
         fillRule="evenodd"
         clipRule="evenodd"
         d="M10.6391 1.67517C11.2939 1.67532 11.8991 2.02577 12.226 2.59314L13.2485 4.36755H15.2963C15.9505 4.36758 16.555 4.71709 16.8823 5.28357L17.5219 6.39001C17.8489 6.95668 17.8481 7.65542 17.5209 8.22205L16.4975 9.99451L17.5239 11.7689C17.8519 12.3357 17.8521 13.0347 17.5248 13.6019L16.8862 14.7084C16.559 15.2747 15.9543 15.6243 15.3002 15.6244H13.2514L12.2299 17.3988C11.9029 17.9663 11.297 18.3168 10.642 18.3168L9.3637 18.3158C8.71064 18.3155 8.10718 17.9678 7.77972 17.4027L6.74847 15.6234L4.69964 15.6244C4.04558 15.6242 3.44087 15.2747 3.1137 14.7084L2.47503 13.6019C2.14791 13.0349 2.14836 12.3366 2.47601 11.7699L3.50237 9.99548L2.47894 8.22205C2.15175 7.65533 2.15174 6.95673 2.47894 6.39001L3.11761 5.28259C3.44458 4.71663 4.04894 4.36813 4.70257 4.36755L6.75042 4.36658L7.77581 2.59119C8.10301 2.02476 8.7076 1.67527 9.36175 1.67517H10.6391ZM9.36273 3.00623C9.1835 3.00623 9.01679 3.10199 8.92718 3.2572L7.82659 5.16345C7.63652 5.49253 7.28473 5.69529 6.90472 5.69568L4.70355 5.69763C4.52451 5.69782 4.3585 5.79355 4.26898 5.94861L3.6303 7.05505C3.54091 7.2102 3.54077 7.40192 3.6303 7.55701L4.73089 9.46326C4.92108 9.7929 4.92135 10.1992 4.73089 10.5287L3.62737 12.4359C3.5378 12.591 3.53792 12.7817 3.62737 12.9369L4.26605 14.0433C4.35567 14.1982 4.52067 14.2932 4.69964 14.2933L6.90276 14.2943C7.28242 14.2946 7.63335 14.497 7.82366 14.8256L8.93011 16.7357C9.01984 16.8905 9.18578 16.9857 9.36468 16.9857H10.642C10.8213 16.9857 10.987 16.89 11.0766 16.7347L12.1752 14.8275C12.3653 14.4975 12.7182 14.2943 13.0991 14.2943H15.3002C15.4794 14.2942 15.6452 14.1985 15.7348 14.0433L16.3725 12.9379C16.4621 12.7826 16.4621 12.5911 16.3725 12.4359L15.27 10.5287C15.1032 10.2404 15.0808 9.89331 15.2055 9.59021L15.269 9.46326L16.3696 7.55701C16.4591 7.40189 16.459 7.21022 16.3696 7.05505L15.7309 5.94861C15.6412 5.79363 15.4754 5.69863 15.2963 5.69861L13.0951 5.69763L12.9535 5.68884C12.6751 5.65158 12.4217 5.50519 12.2504 5.28259L12.1723 5.16443L11.0737 3.2572C10.9841 3.10175 10.8175 3.00525 10.6381 3.00525L9.36273 3.00623Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function RegenerateIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 20 20"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+    >
+      <path
+        d="M3.50205 16.6664V13.3333C3.50205 12.9661 3.79982 12.6683 4.16709 12.6683H7.5001L7.63389 12.682C7.93696 12.7439 8.16514 13.0119 8.16514 13.3333C8.16514 13.6547 7.93696 13.9227 7.63389 13.9847L7.5001 13.9984H5.47471C6.58687 15.2249 8.21848 16.0013 10.0001 16.0013C13.06 16.0013 15.586 13.711 15.9552 10.7513L15.9854 10.6195C16.0846 10.3266 16.3786 10.1335 16.6974 10.1732C17.0617 10.2186 17.3198 10.551 17.2745 10.9154L17.2247 11.2523C16.6301 14.7051 13.6225 17.3313 10.0001 17.3314C8.01108 17.3314 6.17193 16.5383 4.83213 15.2474V16.6664C4.83213 17.0335 4.53416 17.3312 4.16709 17.3314C3.79982 17.3314 3.50205 17.0336 3.50205 16.6664ZM4.04502 9.24936C3.99941 9.61354 3.66706 9.87179 3.30283 9.82651C2.93839 9.78106 2.67926 9.44877 2.72471 9.08432L4.04502 9.24936ZM10.0001 2.6683C11.994 2.66834 13.8372 3.46552 15.1778 4.76205V3.33334C15.1778 2.96617 15.4757 2.66846 15.8429 2.6683C16.2101 2.6683 16.5079 2.96607 16.5079 3.33334V6.66635C16.5079 7.03362 16.2101 7.33139 15.8429 7.33139H12.5099C12.1426 7.33139 11.8448 7.03362 11.8448 6.66635C11.845 6.29923 12.1427 6.00131 12.5099 6.00131H14.5255C13.4134 4.77489 11.7816 3.99842 10.0001 3.99838C6.94004 3.99838 4.41411 6.28948 4.04502 9.24936L3.38486 9.16635L2.72471 9.08432C3.1758 5.46703 6.26081 2.6683 10.0001 2.6683Z"
         fill="currentColor"
       />
     </svg>

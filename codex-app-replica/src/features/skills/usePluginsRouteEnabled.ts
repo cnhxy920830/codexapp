@@ -1,14 +1,20 @@
 import { useEffect, useState } from "react";
 import { onAppsSnapshotUpdated, readAppsSnapshot } from "../../services/apps";
+import { LOCAL_SETTINGS_HOST_ID } from "../../services/settingsHosts";
 
 function resolvePluginsRouteEnabled(data: Array<{ name: string; isEnabled: boolean }>) {
   return data.find((app) => app.name === "plugins")?.isEnabled ?? true;
 }
 
-export function usePluginsRouteEnabled() {
-  const [isPluginsRouteEnabled, setIsPluginsRouteEnabled] = useState(true);
+export function usePluginsRouteEnabled(hostId: string = LOCAL_SETTINGS_HOST_ID) {
+  const [isPluginsRouteEnabled, setIsPluginsRouteEnabled] = useState(hostId === LOCAL_SETTINGS_HOST_ID);
 
   useEffect(() => {
+    if (hostId !== LOCAL_SETTINGS_HOST_ID) {
+      setIsPluginsRouteEnabled(false);
+      return;
+    }
+
     let cancelled = false;
     let unlisten: (() => void) | undefined;
 
@@ -36,7 +42,7 @@ export function usePluginsRouteEnabled() {
       cancelled = true;
       unlisten?.();
     };
-  }, []);
+  }, [hostId]);
 
   return isPluginsRouteEnabled;
 }

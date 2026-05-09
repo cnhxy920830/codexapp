@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import { open } from "@tauri-apps/plugin-shell";
 import {
   cancelLogin,
@@ -48,12 +49,15 @@ import {
   applyAppearanceSettingsSnapshot,
   buildConfigScopeOptions,
   chooseDefaultConfigScopeKey,
+  onGlobalStateUpdated,
+  readPreventSleepWhileRunningPreference,
   type ComposerEnterBehavior,
   type FollowUpQueueMode,
   type ReviewDelivery,
   readAppearanceSettingsSnapshot,
   readConfig,
   readSelectedAvatarId,
+  setPowerSaveBlocker,
   writeConfigValue,
   type ConfigScopeOption,
   type ConfigSnapshot,
@@ -63,6 +67,8 @@ import { BUILTIN_AVATARS, DEFAULT_AVATAR_ID, type BuiltInAvatarId } from "./comp
 import {
   BackNavigationIcon,
   BrowserTabIcon,
+  CheckIcon,
+  ChevronDownIcon,
   ClockIcon,
   ForwardNavigationIcon,
   MoreActionsIcon,
@@ -95,6 +101,7 @@ import { SettingsChoiceMenu } from "./components/SettingsChoiceMenu";
 import { ToggleSwitch } from "./components/ToggleSwitch";
 import { ChatConversationMainPane } from "./features/chat/ChatConversationMainPane";
 import { ChatSidePanel } from "./features/chat/ChatSidePanel";
+import { PlanSummaryPage } from "./features/chat/PlanSummaryPage";
 import { RightPanelOpenTabMenu, RightPanelTabStrip } from "./features/chat/RightPanelTabStrip";
 import { WorkspaceFileSearchDialog } from "./features/chat/WorkspaceFileSearchDialog";
 import { renderConversationMarkdown } from "./features/chat/conversationMarkdown";
@@ -105,6 +112,7 @@ import { AutomationsRoutePage } from "./features/automations/AutomationsRoutePag
 import { PullRequestsRoutePage } from "./features/pullRequests/PullRequestsRoutePage";
 import { ThreadHeartbeatAutomationDialog } from "./features/automations/ThreadHeartbeatAutomationDialog";
 import { formatHeartbeatAutomationTooltip } from "./features/automations/time";
+import { FirstRunPage } from "./features/firstRun/FirstRunPage";
 import {
   createStaticRightPanelTab,
   createWorkspaceFileRightPanelTab,
@@ -163,13 +171,37 @@ import {
   getCommandShortcutAccelerators,
   type CommandKeymapState,
 } from "./services/keyboardShortcuts";
+import {
+  DEBUG_WINDOW_ORIGIN_CONVERSATION_CHANGED_EVENT,
+  DEBUG_WINDOW_ROUTE_PATH,
+  FIRST_RUN_ROUTE_PATH,
+  notifyDebugWindowOriginConversationChanged,
+  PLAN_SUMMARY_ROUTE_PATH,
+  takePendingDebugWindowOriginConversation,
+  takePendingPlanSummary,
+  takePendingWindowRoute,
+  type PendingPlanSummaryState,
+} from "./services/windowNavigation";
 import { readComputerUseApprovalsVisibility } from "./services/computerUseSettings";
 import { getCodexHomePath, isWithinCodexWorktrees } from "./services/codexHome";
+import {
+  getSettingsRemoteHostColor,
+  LOCAL_SETTINGS_HOST_ID,
+  normalizeRemoteConnectionsSnapshot,
+  normalizeSelectedSettingsHostId,
+  onSharedObjectUpdated,
+  readConnectedSettingsRemoteConnections,
+  readInitialSettingsHostId,
+  readSettingsRemoteConnectionsSnapshot,
+  REMOTE_CONNECTIONS_SHARED_OBJECT_KEY,
+  type RemoteConnection,
+} from "./services/settingsHosts";
 import type { WorkspaceFilePreviewTarget } from "./services/workspaceFiles";
 import {
   buildAutomationDraft,
   deleteAutomation,
   listAutomations,
+  notifyHeartbeatAutomationThreadStateChanged,
   type AutomationRecord,
   type HeartbeatAutomationRecord,
 } from "./services/automations";
@@ -179,6 +211,7 @@ const AGENT_SETTINGS_DOCS_URL = "https://developers.openai.com/codex/app/local-e
 const CONFIG_TOML_DOCS_URL = "https://developers.openai.com/codex/config-basic";
 const IMPLEMENT_PLAN_PROMPT_PREFIX = "PLEASE IMPLEMENT THIS PLAN:";
 const USER_MESSAGE_REQUEST_HEADING = "## My request for Codex:";
+const NAVIGATE_TO_ROUTE_EVENT = "navigate-to-route";
 type WorkspaceFileRightPanelTabState = Extract<RightPanelTab, { kind: "workspaceFile" }>;
 type PersistedWorkspaceFileRightPanelTabState = {
   workspaceFileTabsByThreadId: Array<[string, WorkspaceFileRightPanelTabState[]]>;
@@ -209,34 +242,95 @@ type SettingsSectionState = {
   licensesBackPath?: string;
 } | null;
 type AgentConfigControlErrors = Partial<Record<"approval" | "sandbox" | "network", string>>;
-type AppRoute = "chat" | "settings" | "skills" | "scratchpad" | "automations" | "pull-requests";
+type AppRoute =
+  | "chat"
+  | "settings"
+  | "skills"
+  | "scratchpad"
+  | "automations"
+  | "pull-requests"
+  | "first-run"
+  | "plan-summary"
+  | "debug";
+type SkillsRouteInitialTab = "plugins" | "skills";
+type SkillsPageRouteState = {
+  initialTab?: SkillsRouteInitialTab;
+  pluginDeepLinkAuthBlocked?: boolean;
+};
+type NavigateToRouteState = {
+  focusComposerNonce?: number;
+  initialHostId?: string;
+  initialTab?: SkillsRouteInitialTab;
+  pluginDeepLinkAuthBlocked?: boolean;
+  prefillPrompt?: string;
+};
+type NavigateToRouteNotification = {
+  path: string;
+  state?: NavigateToRouteState | null;
+};
+type DebugWindowOriginConversationChangedNotification = {
+  conversationId: string;
+};
+type ThreadShellVariant = "default" | "hotkey";
+type ThreadShellRoute = {
+  kind: "local" | "remote";
+  threadId: string;
+  shell: ThreadShellVariant;
+};
 
-const settingsGroups = [
-  {
-    headingKey: "settings.nav.heading.app" as const,
-    items: [
-      { id: "general-settings" as const, labelKey: "settings.nav.general-settings" as const, disabled: false },
-      { id: "appearance" as const, labelKey: "settings.nav.appearance" as const, disabled: false },
-      { id: "git-settings" as const, labelKey: "settings.nav.git-settings" as const, disabled: false },
-      { id: "usage" as const, labelKey: "settings.nav.usage" as const, disabled: false },
-    ],
-  },
-  {
-    headingKey: "settings.nav.heading.host" as const,
-    items: [
-      { id: "agent" as const, labelKey: "settings.nav.agent" as const, disabled: false },
-      { id: "personalization" as const, labelKey: "settings.nav.personalization" as const, disabled: false },
-      { id: "keyboard-shortcuts" as const, labelKey: "settings.nav.keyboard-shortcuts" as const, disabled: false },
-      { id: "mcp-settings" as const, labelKey: "settings.nav.mcp-settings" as const, disabled: false },
-      { id: "browser-use" as const, labelKey: "settings.nav.browser-use" as const, disabled: false },
-      { id: "computer-use" as const, labelKey: "settings.nav.computer-use" as const, disabled: false },
-      { id: "local-environments" as const, labelKey: "settings.nav.local-environments" as const, disabled: false },
-      { id: "worktrees" as const, labelKey: "settings.nav.worktrees" as const, disabled: false },
-      { id: "data-controls" as const, labelKey: "settings.nav.data-controls" as const, disabled: false },
-      { id: "plugins-settings" as const, labelKey: "settings.nav.plugins-settings" as const, disabled: false },
-      { id: "skills-settings" as const, labelKey: "settings.nav.skills-settings" as const, disabled: false },
-    ],
-  },
+type PendingWindowPageKind = "thread" | "plan-summary" | "debug" | null;
+
+const settingsNavItems = [
+  { id: "general-settings" as const, labelKey: "settings.nav.general-settings" as const },
+  { id: "appearance" as const, labelKey: "settings.nav.appearance" as const },
+  { id: "git-settings" as const, labelKey: "settings.nav.git-settings" as const },
+  { id: "agent" as const, labelKey: "settings.nav.agent" as const },
+  { id: "personalization" as const, labelKey: "settings.nav.personalization" as const },
+  { id: "keyboard-shortcuts" as const, labelKey: "settings.nav.keyboard-shortcuts" as const },
+  { id: "usage" as const, labelKey: "settings.nav.usage" as const },
+  { id: "browser-use" as const, labelKey: "settings.nav.browser-use" as const },
+  { id: "computer-use" as const, labelKey: "settings.nav.computer-use" as const },
+  { id: "mcp-settings" as const, labelKey: "settings.nav.mcp-settings" as const },
+  { id: "local-environments" as const, labelKey: "settings.nav.local-environments" as const },
+  { id: "worktrees" as const, labelKey: "settings.nav.worktrees" as const },
+  { id: "data-controls" as const, labelKey: "settings.nav.data-controls" as const },
+  { id: "plugins-settings" as const, labelKey: "settings.nav.plugins-settings" as const },
+  { id: "skills-settings" as const, labelKey: "settings.nav.skills-settings" as const },
+];
+
+const settingsNavSectionOrder: SettingsSection[] = [
+  "general-settings",
+  "appearance",
+  "agent",
+  "personalization",
+  "keyboard-shortcuts",
+  "mcp-settings",
+  "git-settings",
+  "local-environments",
+  "worktrees",
+  "browser-use",
+  "computer-use",
+  "data-controls",
+  "usage",
+];
+
+const settingsAppGroupSectionOrder: SettingsSection[] = [
+  "general-settings",
+  "appearance",
+  "git-settings",
+  "usage",
+];
+
+const settingsHostGroupSectionOrder: SettingsSection[] = [
+  "agent",
+  "personalization",
+  "keyboard-shortcuts",
+  "mcp-settings",
+  "browser-use",
+  "computer-use",
+  "local-environments",
+  "worktrees",
+  "data-controls",
 ];
 
 type NavItem = {
@@ -279,6 +373,80 @@ const settingsSectionLabelKeys: Record<SettingsSection, MessageKey> = {
   worktrees: "settings.section.worktrees",
   "data-controls": "settings.section.data-controls",
 };
+
+function isSettingsSection(value: string): value is SettingsSection {
+  return Object.prototype.hasOwnProperty.call(settingsSectionLabelKeys, value);
+}
+
+function parseSettingsRoute(path: string): SettingsSection | null {
+  const section = path.startsWith("/settings/") ? path.slice("/settings/".length) : "";
+  return isSettingsSection(section) ? section : null;
+}
+
+function parseThreadShellRoute(path: string): ThreadShellRoute | null {
+  const defaultMatch = /^\/(local|remote)\/([A-Za-z0-9._~%-]+)$/.exec(path);
+  if (defaultMatch) {
+    return {
+      kind: defaultMatch[1] as ThreadShellRoute["kind"],
+      threadId: defaultMatch[2],
+      shell: "default",
+    };
+  }
+
+  const hotkeyThreadMatch = /^\/hotkey-window\/thread\/([A-Za-z0-9._~%-]+)$/.exec(path);
+  if (hotkeyThreadMatch) {
+    return {
+      kind: "local",
+      threadId: hotkeyThreadMatch[1],
+      shell: "hotkey",
+    };
+  }
+
+  const hotkeyRemoteMatch = /^\/hotkey-window\/remote\/([A-Za-z0-9._~%-]+)$/.exec(path);
+  if (hotkeyRemoteMatch) {
+    return {
+      kind: "remote",
+      threadId: hotkeyRemoteMatch[1],
+      shell: "hotkey",
+    };
+  }
+
+  return null;
+}
+
+function isPlanSummaryRoute(path: string) {
+  return path === PLAN_SUMMARY_ROUTE_PATH;
+}
+
+function isFirstRunRoute(path: string) {
+  return path === FIRST_RUN_ROUTE_PATH;
+}
+
+function isDebugWindowRoute(path: string) {
+  return path === DEBUG_WINDOW_ROUTE_PATH;
+}
+
+function readInitialAppRoute(): AppRoute {
+  if (typeof window !== "undefined" && isFirstRunRoute(window.location.pathname)) {
+    return "first-run";
+  }
+
+  return "chat";
+}
+
+// Auxiliary windows share the same native blocker and must not clear it on mount/unmount.
+function shouldWindowManagePowerSaveBlocker() {
+  if (typeof window === "undefined") {
+    return true;
+  }
+
+  const { pathname } = window.location;
+  if (isDebugWindowRoute(pathname) || isPlanSummaryRoute(pathname) || isFirstRunRoute(pathname)) {
+    return false;
+  }
+
+  return parseThreadShellRoute(pathname)?.shell !== "hotkey";
+}
 
 function getRightPanelTabLabel(tab: RightPanelTab, t: (key: MessageKey) => string) {
   switch (tab.kind) {
@@ -527,7 +695,9 @@ function App() {
   const [launchContext, setLaunchContext] = useState<LaunchContext | null>(null);
   const [hasLoadedAuthSnapshot, setHasLoadedAuthSnapshot] = useState(false);
   const [hasLoadedLaunchContext, setHasLoadedLaunchContext] = useState(false);
+  const [hasLoadedInitialWindowRoute, setHasLoadedInitialWindowRoute] = useState(false);
   const [hasLoadedInitialThreadSnapshot, setHasLoadedInitialThreadSnapshot] = useState(false);
+  const [pendingPlanSummary, setPendingPlanSummary] = useState<PendingPlanSummaryState | null>(null);
   const [projectGroups, setProjectGroups] = useState<HistoryProjectGroup[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [threadConversation, setThreadConversation] = useState<ThreadConversation | null>(null);
@@ -542,6 +712,7 @@ function App() {
   const [composerEnterBehavior, setComposerEnterBehavior] = useState<ComposerEnterBehavior>("enter");
   const [followUpQueueMode, setFollowUpQueueMode] = useState<FollowUpQueueMode>("queue");
   const [reviewDelivery, setReviewDelivery] = useState<ReviewDelivery>("inline");
+  const [preventSleepWhileRunning, setPreventSleepWhileRunning] = useState(false);
   const [selectedAvatarId, setSelectedAvatarId] = useState<BuiltInAvatarId>(DEFAULT_AVATAR_ID);
   const [activeTurn, setActiveTurn] = useState<{ threadId: string; turnId: string } | null>(null);
   const [turnError, setTurnError] = useState<string | null>(null);
@@ -561,6 +732,7 @@ function App() {
   const [openRightPanelTabs, setOpenRightPanelTabs] = useState<RightPanelTab[]>([]);
   const [activeRightPanelTabId, setActiveRightPanelTabId] = useState<string | null>(null);
   const [isWorkspaceFileSearchOpen, setIsWorkspaceFileSearchOpen] = useState(false);
+  const [threadShellVariant, setThreadShellVariant] = useState<ThreadShellVariant>("default");
   const [isThreadActionsMenuOpen, setIsThreadActionsMenuOpen] = useState(false);
   const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false);
   const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
@@ -570,7 +742,9 @@ function App() {
     message: string;
   } | null>(null);
   const [appToast, setAppToast] = useState<AppToast | null>(null);
-  const [currentRoute, setCurrentRoute] = useState<AppRoute>("chat");
+  const [currentRoute, setCurrentRoute] = useState<AppRoute>(readInitialAppRoute);
+  const [composerFocusNonce, setComposerFocusNonce] = useState<number | null>(null);
+  const [skillsRouteState, setSkillsRouteState] = useState<SkillsPageRouteState | null>(null);
   const [threadHeaderAutomations, setThreadHeaderAutomations] = useState<AutomationRecord[]>([]);
   const [isThreadHeartbeatAutomationDialogOpen, setIsThreadHeartbeatAutomationDialogOpen] = useState(false);
   const [threadHeartbeatAutomationDialogDraft, setThreadHeartbeatAutomationDialogDraft] =
@@ -579,6 +753,9 @@ function App() {
     useState<"create" | "edit">("create");
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general-settings");
   const [settingsSectionState, setSettingsSectionState] = useState<SettingsSectionState>(null);
+  const [settingsRemoteConnections, setSettingsRemoteConnections] = useState<RemoteConnection[]>([]);
+  const [connectedSettingsRemoteConnections, setConnectedSettingsRemoteConnections] = useState<RemoteConnection[]>([]);
+  const [selectedSettingsHostId, setSelectedSettingsHostId] = useState<string>(() => readInitialSettingsHostId());
   const [hasComputerUseApprovalStore, setHasComputerUseApprovalStore] = useState(false);
   const [codexHome, setCodexHome] = useState<string | null>(null);
   const [configSnapshot, setConfigSnapshot] = useState<ConfigSnapshot | null>(null);
@@ -588,7 +765,7 @@ function App() {
   const [configError, setConfigError] = useState<string | null>(null);
   const [commandKeymapState, setCommandKeymapState] = useState<CommandKeymapState | null>(null);
   const selectedAvatar = BUILTIN_AVATARS.find((avatar) => avatar.id === selectedAvatarId) ?? BUILTIN_AVATARS[0];
-  const isPluginsRouteEnabled = usePluginsRouteEnabled();
+  const isPluginsRouteEnabled = usePluginsRouteEnabled(selectedSettingsHostId);
   const queuedFollowUpsRef = useRef<QueuedLocalFollowUp[]>([]);
   const drainingQueuedThreadIdsRef = useRef(new Set<string>());
   const threadActionsMenuRef = useRef<HTMLDivElement | null>(null);
@@ -596,6 +773,8 @@ function App() {
   const activeRightPanelTabIdRef = useRef<string | null>(null);
   const selectedThreadIdRef = useRef<string | null>(null);
   const threadConversationRef = useRef<ThreadConversation | null>(null);
+  const initialWindowThreadIdRef = useRef<string | null>(null);
+  const initialWindowPageKindRef = useRef<PendingWindowPageKind>(null);
   const initialThreadSnapshotLoadedRef = useRef(false);
   const threadLoadRequestIdRef = useRef(0);
   const previousSelectedThreadIdRef = useRef<string | null>(null);
@@ -613,20 +792,46 @@ function App() {
   const showUsageSettings =
     authSnapshot.authState.authMethod === "chatgpt" &&
     isUsageSettingsPlanSupported(authSnapshot.authState.planAtLogin);
-  const visibleSettingsGroups = settingsGroups
-    .map((group) => ({
-      ...group,
-      items: group.items.filter(
-        (item) =>
-          (item.id !== "computer-use" || hasComputerUseApprovalStore) &&
-          (item.id !== "usage" || showUsageSettings),
-      ),
-    }))
-    .filter((group) => group.items.length > 0);
+  const hiddenSettingsSectionIds = new Set<SettingsSection>(["plugins-settings", "skills-settings"]);
+  const visibleSettingsNavItems = settingsNavItems.filter(
+    (item) =>
+      !hiddenSettingsSectionIds.has(item.id) &&
+      (item.id !== "computer-use" || hasComputerUseApprovalStore) &&
+      (item.id !== "usage" || showUsageSettings),
+  );
+  const orderedVisibleSettingsNavItems = [
+    ...settingsNavSectionOrder.flatMap((sectionId) => {
+      const item = visibleSettingsNavItems.find((candidate) => candidate.id === sectionId);
+      return item ? [item] : [];
+    }),
+    ...visibleSettingsNavItems.filter((item) => !settingsNavSectionOrder.includes(item.id)),
+  ];
+  const settingsRemoteConnectionHostIds = settingsRemoteConnections.map((remoteConnection) => remoteConnection.hostId);
+  const shouldGroupSettingsSections = connectedSettingsRemoteConnections.length > 0;
+  const settingsNavigationGroups = shouldGroupSettingsSections
+    ? [
+        {
+          key: "app" as const,
+          headingKey: "settings.nav.heading.app" as const,
+          items: orderSettingsNavigationItems(orderedVisibleSettingsNavItems, settingsAppGroupSectionOrder),
+        },
+        {
+          key: "host" as const,
+          headingKey: "settings.nav.heading.host" as const,
+          items: orderSettingsNavigationItems(orderedVisibleSettingsNavItems, settingsHostGroupSectionOrder),
+        },
+      ].filter((group) => group.items.length > 0)
+    : [
+        {
+          key: "settings" as const,
+          headingKey: null,
+          items: orderedVisibleSettingsNavItems,
+        },
+      ];
   const firstVisibleSettingsSection =
-    visibleSettingsGroups[0]?.items[0]?.id ?? "general-settings";
-  const isCurrentSettingsSectionVisible = visibleSettingsGroups.some((group) =>
-    group.items.some((item) => item.id === settingsSection),
+    orderedVisibleSettingsNavItems[0]?.id ?? "general-settings";
+  const isCurrentSettingsSectionVisible = orderedVisibleSettingsNavItems.some(
+    (item) => item.id === settingsSection,
   );
   const isCurrentSettingsSubpage = settingsSection === "open-source-licenses";
   const menuItems = [t("app.menu.file"), t("app.menu.edit"), t("app.menu.view"), t("app.menu.window"), t("app.menu.help")];
@@ -670,6 +875,8 @@ function App() {
   const shellHeaderTitle =
     currentRoute === "settings"
       ? `${t("app.shell.settings")} / ${t(settingsSectionLabelKeys[settingsSection])}`
+      : currentRoute === "plan-summary"
+        ? t("localConversation.planSummary.title")
       : currentRoute === "automations"
         ? t("sidebarElectron.automationsRouteNavLink")
       : currentRoute === "pull-requests"
@@ -680,7 +887,10 @@ function App() {
         ? t(primarySkillsRouteLabelKey)
       : threadConversation?.title || selectedThreadView?.title || t("app.nav.newChat");
   const isAppBootstrapping =
-    !hasLoadedAuthSnapshot || !hasLoadedLaunchContext || !hasLoadedInitialThreadSnapshot;
+    !hasLoadedAuthSnapshot ||
+    !hasLoadedLaunchContext ||
+    !hasLoadedInitialWindowRoute ||
+    (!hasLoadedInitialThreadSnapshot && currentRoute !== "plan-summary" && currentRoute !== "first-run");
   const isTurnInProgress = activeTurn !== null && activeTurn.threadId === selectedThreadId;
   const editableUserMessage = findLastEditableUserMessage(threadConversation, activeTurn);
   const submitButtonMode = isTurnInProgress && composerDraft.trim().length === 0 ? "stop" : "send";
@@ -764,6 +974,34 @@ function App() {
   const hasArchivedThreadHeartbeatAutomation = selectedThreadAttachedHeartbeatAutomationIncludingPaused !== null;
   const archivedThreadHeartbeatAutomationName =
     selectedThreadAttachedHeartbeatAutomationIncludingPaused?.name.trim() ?? "";
+  const managesPowerSaveBlocker = shouldWindowManagePowerSaveBlocker();
+  const shouldBlockPowerSave = managesPowerSaveBlocker && preventSleepWhileRunning && activeTurn !== null;
+
+  useEffect(() => {
+    if (
+      threadShellVariant !== "hotkey" ||
+      currentRoute !== "chat" ||
+      selectedThreadId === null ||
+      threadConversation?.id !== selectedThreadId
+    ) {
+      return;
+    }
+
+    void notifyHeartbeatAutomationThreadStateChanged({
+      threadId: selectedThreadId,
+      isEligible: isHeartbeatAutomationEligible,
+      collaborationMode: null,
+      permissions: null,
+      reason: heartbeatAutomationEligibilityReason,
+    }).catch(() => undefined);
+  }, [
+    currentRoute,
+    heartbeatAutomationEligibilityReason,
+    isHeartbeatAutomationEligible,
+    selectedThreadId,
+    threadConversation?.id,
+    threadShellVariant,
+  ]);
 
   const refreshThreadHeaderAutomations = async () => {
     try {
@@ -822,10 +1060,109 @@ function App() {
         applyAppearanceSettingsSnapshot(settings);
         setComposerEnterBehavior(settings.composerEnterBehavior);
         setFollowUpQueueMode(settings.followUpQueueMode);
+        setPreventSleepWhileRunning(settings.preventSleepWhileRunning);
         setReviewDelivery(settings.reviewDelivery);
       })
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void onGlobalStateUpdated((notification) => {
+      if (!notification.keys.includes("preventSleepWhileRunning")) {
+        return;
+      }
+
+      void readPreventSleepWhileRunningPreference()
+        .then((value) => {
+          setPreventSleepWhileRunning(value);
+        })
+        .catch(() => undefined);
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+      unlisten = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  const applySettingsRemoteConnections = useEffectEvent(async (remoteConnections: RemoteConnection[]) => {
+    const connectedRemoteConnections = await readConnectedSettingsRemoteConnections(remoteConnections);
+    setSettingsRemoteConnections(remoteConnections);
+    setConnectedSettingsRemoteConnections(connectedRemoteConnections);
+    setSelectedSettingsHostId((currentHostId) => {
+      return normalizeSelectedSettingsHostId(currentHostId, connectedRemoteConnections);
+    });
+  });
+
+  useEffect(() => {
+    if (currentRoute !== "settings" && currentRoute !== "skills") {
+      return;
+    }
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void readSettingsRemoteConnectionsSnapshot()
+      .then((remoteConnections) => {
+        if (!disposed) {
+          void applySettingsRemoteConnections(remoteConnections);
+        }
+      })
+      .catch(() => {
+        if (disposed) {
+          return;
+        }
+        setSettingsRemoteConnections([]);
+        setConnectedSettingsRemoteConnections([]);
+        setSelectedSettingsHostId(LOCAL_SETTINGS_HOST_ID);
+      });
+
+    void onSharedObjectUpdated((notification) => {
+      if (notification.key !== REMOTE_CONNECTIONS_SHARED_OBJECT_KEY) {
+        return;
+      }
+
+      void applySettingsRemoteConnections(normalizeRemoteConnectionsSnapshot(notification.value));
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+      unlisten = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [currentRoute]);
+
+  useEffect(() => {
+    if (!managesPowerSaveBlocker) {
+      return;
+    }
+
+    void setPowerSaveBlocker(shouldBlockPowerSave).catch(() => undefined);
+  }, [managesPowerSaveBlocker, shouldBlockPowerSave]);
+
+  useEffect(() => {
+    if (!managesPowerSaveBlocker) {
+      return;
+    }
+
+    return () => {
+      void setPowerSaveBlocker(false).catch(() => undefined);
+    };
+  }, [managesPowerSaveBlocker]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1065,6 +1402,33 @@ function App() {
   }, [currentRoute, firstVisibleSettingsSection, isCurrentSettingsSectionVisible, isCurrentSettingsSubpage]);
 
   useEffect(() => {
+    if (currentRoute !== "settings") {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) {
+        return;
+      }
+
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (isSettingsInputElement(target) || target.closest('[role="dialog"][data-state="open"]') != null)
+      ) {
+        return;
+      }
+
+      setCurrentRoute("chat");
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [currentRoute]);
+
+  useEffect(() => {
     queuedFollowUpsRef.current = queuedFollowUps;
   }, [queuedFollowUps]);
 
@@ -1075,6 +1439,135 @@ function App() {
   useEffect(() => {
     threadConversationRef.current = threadConversation;
   }, [threadConversation]);
+
+  useEffect(() => {
+    if (currentRoute !== "chat" || selectedThreadId === null) {
+      return;
+    }
+
+    void notifyDebugWindowOriginConversationChanged(selectedThreadId).catch(() => undefined);
+  }, [currentRoute, selectedThreadId]);
+
+  const handleDebugWindowOriginConversationChanged = useEffectEvent(async (conversationId: string) => {
+    const normalizedConversationId = conversationId.trim();
+    if (!normalizedConversationId) {
+      return;
+    }
+
+    if (
+      selectedThreadIdRef.current === normalizedConversationId &&
+      threadConversationRef.current?.id === normalizedConversationId
+    ) {
+      return;
+    }
+
+    setSelectedThreadId(normalizedConversationId);
+    setTurnError(null);
+    setCurrentRoute("debug");
+    try {
+      await loadThreadConversation(normalizedConversationId);
+    } catch {
+      setThreadConversation(null);
+    }
+  });
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listen<DebugWindowOriginConversationChangedNotification>(
+      DEBUG_WINDOW_ORIGIN_CONVERSATION_CHANGED_EVENT,
+      (event) => {
+        void handleDebugWindowOriginConversationChanged(event.payload.conversationId);
+      },
+    )
+      .then((dispose) => {
+        if (disposed) {
+          void dispose();
+          return;
+        }
+        unlisten = dispose;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      if (unlisten) {
+        void unlisten();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void Promise.all([
+      takePendingWindowRoute(),
+      takePendingPlanSummary(),
+      takePendingDebugWindowOriginConversation(),
+    ])
+      .then(([path, planSummary, debugWindowConversationId]) => {
+        if (cancelled) {
+          return;
+        }
+
+        const normalizedDebugWindowConversationId =
+          typeof debugWindowConversationId === "string" && debugWindowConversationId.trim().length > 0
+            ? debugWindowConversationId.trim()
+            : null;
+
+        if (planSummary) {
+          setThreadShellVariant("default");
+          initialWindowPageKindRef.current = "plan-summary";
+          setPendingPlanSummary(planSummary);
+          setCurrentRoute("plan-summary");
+        }
+
+        if (typeof path !== "string") {
+          return;
+        }
+
+        if (isPlanSummaryRoute(path)) {
+          setThreadShellVariant("default");
+          initialWindowPageKindRef.current = "plan-summary";
+          setCurrentRoute("plan-summary");
+          return;
+        }
+
+        if (isFirstRunRoute(path)) {
+          setThreadShellVariant("default");
+          setCurrentRoute("first-run");
+          return;
+        }
+
+        if (isDebugWindowRoute(path)) {
+          setThreadShellVariant("default");
+          initialWindowPageKindRef.current = "debug";
+          if (normalizedDebugWindowConversationId) {
+            initialWindowThreadIdRef.current = normalizedDebugWindowConversationId;
+          }
+          setCurrentRoute("debug");
+          return;
+        }
+
+        const threadRoute = parseThreadShellRoute(path);
+        if (threadRoute) {
+          setThreadShellVariant(threadRoute.shell);
+          initialWindowPageKindRef.current = "thread";
+          initialWindowThreadIdRef.current = threadRoute.threadId;
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) {
+          setHasLoadedInitialWindowRoute(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
@@ -1339,15 +1832,35 @@ function App() {
   }, [locale, selectedThreadId, t]);
 
   useEffect(() => {
+    if (!hasLoadedInitialWindowRoute) {
+      return;
+    }
+
+    if (initialWindowPageKindRef.current === "plan-summary" || currentRoute === "first-run") {
+      initialThreadSnapshotLoadedRef.current = true;
+      setHasLoadedInitialThreadSnapshot(true);
+      return;
+    }
+
     let cancelled = false;
     const isInitialBootstrapRun = !initialThreadSnapshotLoadedRef.current;
+    const isDebugWindowBootstrap =
+      initialWindowPageKindRef.current === "debug" || currentRoute === "debug";
+    const preferredInitialThreadId = isInitialBootstrapRun
+      ? initialWindowThreadIdRef.current
+      : isDebugWindowBootstrap
+        ? selectedThreadIdRef.current
+        : null;
+    if (isInitialBootstrapRun) {
+      initialWindowThreadIdRef.current = null;
+    }
 
     void getRecentThreads()
       .then(async (threads) => {
         if (cancelled) {
           return;
         }
-        const activeThreadId = threads[0]?.id ?? null;
+        const activeThreadId = preferredInitialThreadId ?? (isDebugWindowBootstrap ? null : (threads[0]?.id ?? null));
         syncProjectGroups(activeThreadId, threads);
         if (activeThreadId) {
           const requestId = threadLoadRequestIdRef.current + 1;
@@ -1393,7 +1906,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [locale, syntheticRequestItemsByThreadId, t]);
+  }, [currentRoute, hasLoadedInitialWindowRoute, locale, syntheticRequestItemsByThreadId, t]);
 
   useEffect(() => {
     if (authSnapshot.activeLoginId || authSnapshot.authState.authMethod) {
@@ -1649,7 +2162,11 @@ function App() {
     setCurrentRoute("settings");
   };
 
-  const refreshRecentThreadsAfterUnarchive = async () => {
+  const refreshRecentThreadsAfterUnarchive = async (hostId: string) => {
+    if (hostId !== LOCAL_SETTINGS_HOST_ID) {
+      return;
+    }
+
     try {
       const threads = await getRecentThreads();
       syncProjectGroups(selectedThreadId ?? threads[0]?.id ?? null, threads);
@@ -1658,7 +2175,12 @@ function App() {
     }
   };
 
-  const viewUnarchivedThread = async (threadId: string) => {
+  const viewUnarchivedThread = async (threadId: string, hostId: string) => {
+    if (hostId !== LOCAL_SETTINGS_HOST_ID) {
+      await openRemoteTask(threadId);
+      return;
+    }
+
     try {
       const threads = await getRecentThreads();
       syncProjectGroups(threadId, threads);
@@ -1689,6 +2211,7 @@ function App() {
     const cwd = threadConversation?.cwd ?? openProjectPath ?? null;
     const threadId = await startThread(cwd);
     const threads = await getRecentThreads();
+    setThreadShellVariant("default");
     syncProjectGroups(threadId, threads);
     setCurrentRoute("chat");
     return loadThreadConversation(threadId);
@@ -1739,13 +2262,14 @@ function App() {
   const shouldShowAuthPanel =
     showApiKeyEntry || isBrowserLoginPending || isDeviceCodePending || loginError !== null;
 
-  const openRemoteTask = async (taskId: string) => {
+  const openRemoteTask = async (taskId: string, shell: ThreadShellVariant = "default") => {
     const normalizedTaskId = taskId.trim();
     if (!normalizedTaskId) {
       return;
     }
     try {
       const thread = await readThread(normalizedTaskId);
+      setThreadShellVariant(shell);
       setSelectedThreadId(normalizedTaskId);
       setTurnError(null);
       setCurrentRoute("chat");
@@ -1755,7 +2279,8 @@ function App() {
     }
   };
 
-  const selectThread = async (threadId: string) => {
+  const selectThread = async (threadId: string, shell: ThreadShellVariant = "default") => {
+    setThreadShellVariant(shell);
     setSelectedThreadId(threadId);
     setTurnError(null);
     setCurrentRoute("chat");
@@ -1765,6 +2290,103 @@ function App() {
       setThreadConversation(null);
     }
   };
+
+  const openNewConversation = useEffectEvent((state: NavigateToRouteState | null = null) => {
+    setThreadShellVariant("default");
+    setSkillsRouteState(null);
+    setSelectedThreadId(null);
+    setThreadConversation(null);
+    setIsThreadConversationLoading(false);
+    setTurnError(null);
+    setComposerDraft(state?.prefillPrompt ?? "");
+    setComposerFocusNonce(state?.focusComposerNonce ?? Date.now());
+    setCurrentRoute("chat");
+  });
+
+  const handleNavigateToRoute = useEffectEvent(async (path: string, state?: NavigateToRouteState | null) => {
+    if (path === "/" || path.length === 0) {
+      openNewConversation(state ?? null);
+      return;
+    }
+
+    if (isPlanSummaryRoute(path)) {
+      setThreadShellVariant("default");
+      setSkillsRouteState(null);
+      setCurrentRoute("plan-summary");
+      return;
+    }
+
+    if (isFirstRunRoute(path)) {
+      setThreadShellVariant("default");
+      setSkillsRouteState(null);
+      setCurrentRoute("first-run");
+      return;
+    }
+
+    if (isDebugWindowRoute(path)) {
+      setThreadShellVariant("default");
+      setSkillsRouteState(null);
+      setCurrentRoute("debug");
+      return;
+    }
+
+    if (path === "/skills") {
+      setThreadShellVariant("default");
+      if (state?.initialHostId && state.initialHostId.trim().length > 0) {
+        setSelectedSettingsHostId(state.initialHostId);
+      }
+      setSkillsRouteState({
+        initialTab: state?.initialTab,
+        pluginDeepLinkAuthBlocked: state?.pluginDeepLinkAuthBlocked,
+      });
+      setCurrentRoute("skills");
+      return;
+    }
+
+    const settingsSection = parseSettingsRoute(path);
+    if (settingsSection) {
+      setThreadShellVariant("default");
+      setSkillsRouteState(null);
+      setSettingsSection(settingsSection);
+      setSettingsSectionState(null);
+      setCurrentRoute("settings");
+      return;
+    }
+
+    const threadRoute = parseThreadShellRoute(path);
+    if (!threadRoute) {
+      return;
+    }
+
+    setSkillsRouteState(null);
+    setThreadShellVariant(threadRoute.shell);
+    if (threadRoute.kind === "remote") {
+      await openRemoteTask(threadRoute.threadId, threadRoute.shell);
+      return;
+    }
+
+    await selectThread(threadRoute.threadId, threadRoute.shell);
+  });
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listen<NavigateToRouteNotification>(NAVIGATE_TO_ROUTE_EVENT, (event) => {
+      void handleNavigateToRoute(event.payload.path, event.payload.state);
+    }).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+        return;
+      }
+      unlisten = cleanup;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   const startNewThread = async () => {
     try {
@@ -2557,9 +3179,16 @@ function App() {
     if (settingsSection === "general-settings") {
       return (
         <GeneralSettings
+          codexHome={codexHome}
+          workspaceRoot={settingsWorkspaceRoot}
           onComposerEnterBehaviorChange={setComposerEnterBehavior}
           onFollowUpQueueModeChange={setFollowUpQueueMode}
+          onOpenChatWithPrompt={(prompt) => {
+            setCurrentRoute("chat");
+            setComposerDraft(prompt);
+          }}
           onReviewDeliveryChange={setReviewDelivery}
+          onShowToast={(toast) => setAppToast(toast)}
         />
       );
     }
@@ -2594,7 +3223,17 @@ function App() {
     }
 
     if (settingsSection === "plugins-settings") {
-      return <PluginsSettings workspaceRoot={settingsWorkspaceRoot} />;
+      return (
+        <PluginsSettings
+          selectedHostId={selectedSettingsHostId}
+          workspaceRoot={settingsWorkspaceRoot}
+          onShowToast={(toast) => setAppToast(toast)}
+          onOpenChatWithPrompt={(prompt) => {
+            setCurrentRoute("chat");
+            setComposerDraft(prompt);
+          }}
+        />
+      );
     }
 
     if (settingsSection === "skills-settings") {
@@ -2602,7 +3241,7 @@ function App() {
     }
 
     if (settingsSection === "mcp-settings") {
-      return <McpSettings workspaceRoot={settingsWorkspaceRoot} />;
+      return <McpSettings selectedHostId={selectedSettingsHostId} workspaceRoot={settingsWorkspaceRoot} />;
     }
 
     if (settingsSection === "local-environments") {
@@ -2620,8 +3259,9 @@ function App() {
         <DataControlsSettings
           onDismissToast={() => setAppToast(null)}
           onShowToast={(toast) => setAppToast(toast)}
-          onThreadUnarchived={() => void refreshRecentThreadsAfterUnarchive()}
-          onViewThread={(threadId) => void viewUnarchivedThread(threadId)}
+          selectedHostId={selectedSettingsHostId}
+          onThreadUnarchived={(threadId, hostId) => void refreshRecentThreadsAfterUnarchive(hostId)}
+          onViewThread={(threadId, hostId) => void viewUnarchivedThread(threadId, hostId)}
         />
       );
     }
@@ -2843,6 +3483,33 @@ function App() {
     return <LoadingPage debugName="PersistedStateProvider" />;
   }
 
+  if (currentRoute === "debug") {
+    return (
+      <DebugWindowPage
+        conversationId={selectedThreadId}
+        isLoading={isThreadConversationLoading}
+        onClose={() => void appWindow.close()}
+        threadConversation={threadConversation}
+      />
+    );
+  }
+
+  if (currentRoute === "first-run") {
+    return (
+      <FirstRunPage
+        authMethod={authSnapshot.authState.authMethod}
+        locale={locale}
+        onAccept={() => {
+          if (typeof window !== "undefined") {
+            window.history.replaceState(window.history.state, "", "/");
+          }
+          setCurrentRoute("chat");
+        }}
+        t={t}
+      />
+    );
+  }
+
   return (
     <main className="h-full overflow-hidden bg-[var(--app-shell-surface)] text-[13px] text-[var(--app-shell-text)]">
       <div className="flex h-full flex-col">
@@ -3020,6 +3687,11 @@ function App() {
           </div>
         ) : null}
 
+        {currentRoute === "plan-summary" ? (
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <PlanSummaryPage planSummary={pendingPlanSummary} t={t} />
+          </div>
+        ) : (
         <div className="flex min-h-0 flex-1">
           <aside className="flex min-h-0 w-[var(--app-shell-sidebar-width)] flex-col border-r border-[var(--app-shell-border)] bg-[var(--app-shell-sidebar)] px-3 pt-3 pb-3">
             {currentRoute !== "settings" ? (
@@ -3045,6 +3717,7 @@ function App() {
                           onClick={() => {
                             if (item.action === "new-thread") {
                               setCurrentRoute("chat");
+                              setSkillsRouteState(null);
                               void startNewThread();
                               return;
                             }
@@ -3054,6 +3727,9 @@ function App() {
                             }
                             if (item.disabled) {
                               return;
+                            }
+                            if (item.route === "skills") {
+                              setSkillsRouteState(null);
                             }
                             setCurrentRoute(item.route);
                           }}
@@ -3149,43 +3825,47 @@ function App() {
                   <span>{t("settings.backToApp")}</span>
                 </button>
 
-                <div className="mt-5 px-1 text-[12px] font-medium tracking-[0.16em] text-[var(--app-shell-subtle)]">
-                  {t("settings.title")}
-                </div>
-
-                <div className="mt-3 min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
-                  {visibleSettingsGroups.map((group) => (
-                    <section key={group.headingKey} className="space-y-1.5">
-                      <div className="px-1 text-[12px] font-medium tracking-[0.16em] text-[var(--app-shell-subtle)]">
-                        {t(group.headingKey)}
-                      </div>
-                      <div className="space-y-1">
-                        {group.items.map((item) => (
-                          <button
-                            key={item.id}
-                            type="button"
-                            disabled={item.disabled}
-                            onClick={() => {
-                              setSettingsSection(item.id);
-                              setSettingsSectionState(null);
-                            }}
-                            className={[
-                              "flex h-10 w-full items-center gap-3 rounded-[12px] px-3.5 text-left text-[14px]",
-                              settingsSection === item.id
-                                ? "app-nav-item-active"
-                                : item.disabled
-                                  ? "app-nav-item-disabled"
-                                  : "app-nav-item-idle",
-                            ].join(" ")}
-                          >
-                            <span className="app-text-muted flex h-4 w-4 shrink-0 items-center justify-center">
-                              <SettingsSectionIcon className="h-4 w-4" section={item.id} />
-                            </span>
-                            {t(item.labelKey)}
-                          </button>
-                        ))}
-                      </div>
-                    </section>
+                <div className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                  {settingsNavigationGroups.map((group) => (
+                    <div key={group.key} className="space-y-1">
+                      {group.headingKey ? (
+                        <div className="mb-1 flex items-center justify-between gap-2 px-3.5">
+                          <div className="text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--app-shell-subtle)]">
+                            {t(group.headingKey)}
+                          </div>
+                          {group.key === "host" ? (
+                            <SettingsHostDropdown
+                              connectedRemoteConnections={connectedSettingsRemoteConnections}
+                              remoteConnectionHostIds={settingsRemoteConnectionHostIds}
+                              selectedHostId={selectedSettingsHostId}
+                              onSelectHost={(hostId) => {
+                                setSelectedSettingsHostId(hostId);
+                              }}
+                              t={t}
+                            />
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {group.items.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => {
+                            setSettingsSection(item.id);
+                            setSettingsSectionState(null);
+                          }}
+                          className={[
+                            "flex h-10 w-full items-center gap-3 rounded-[12px] px-3.5 text-left text-[14px]",
+                            settingsSection === item.id ? "app-nav-item-active" : "app-nav-item-idle",
+                          ].join(" ")}
+                        >
+                          <span className="app-text-muted flex h-4 w-4 shrink-0 items-center justify-center">
+                            <SettingsSectionIcon className="h-4 w-4" section={item.id} />
+                          </span>
+                          {t(item.labelKey)}
+                        </button>
+                      ))}
+                    </div>
                   ))}
                 </div>
               </>
@@ -3302,6 +3982,7 @@ function App() {
                       threadActionsMenuRef={threadActionsMenuRef}
                       composerDraft={composerDraft}
                       composerEnterBehavior={composerEnterBehavior}
+                      composerFocusNonce={composerFocusNonce}
                       followUpQueueMode={followUpQueueMode}
                       hasAttachedHeartbeatAutomation={selectedThreadAttachedHeartbeatAutomation !== null}
                       isThreadActionsMenuOpen={isThreadActionsMenuOpen}
@@ -3398,15 +4079,32 @@ function App() {
                   <AutomationsRoutePage recentThreads={recentThreadEntries} onOpenThread={selectThread} />
                 </div>
               ) : currentRoute === "skills" ? (
-                <div className="min-h-0 flex-1 overflow-y-auto">
+                <div className="min-h-0 flex-1 overflow-hidden">
                   <SkillsRoutePage
                     authMethod={authSnapshot.authState.authMethod}
+                    codexHome={codexHome}
+                    connectedRemoteConnections={connectedSettingsRemoteConnections}
+                    initialTab={skillsRouteState?.initialTab}
                     isPluginsRouteEnabled={isPluginsRouteEnabled}
+                    onConsumeInitialState={() => setSkillsRouteState(null)}
+                    onOpenChatWithPrompt={(prompt) =>
+                      openNewConversation({
+                        focusComposerNonce: Date.now(),
+                        prefillPrompt: prompt,
+                      })
+                    }
+                    onSelectHost={setSelectedSettingsHostId}
+                    onShowToast={(toast) => setAppToast(toast)}
+                    pluginDeepLinkAuthBlocked={skillsRouteState?.pluginDeepLinkAuthBlocked}
+                    remoteConnectionHostIds={settingsRemoteConnectionHostIds}
+                    selectedHostId={selectedSettingsHostId}
                     workspaceRoot={settingsWorkspaceRoot}
                   />
                 </div>
               ) : (
-                <div className="min-h-0 flex-1 overflow-y-auto">{renderSettings()}</div>
+                <div key={selectedSettingsHostId} className="min-h-0 flex-1 overflow-y-auto">
+                  {renderSettings()}
+                </div>
               )}
               {threadActionFeedback ? (
                 <div
@@ -3421,6 +4119,7 @@ function App() {
             </div>
           </section>
         </div>
+        )}
       </div>
       {isArchiveDialogOpen ? (
         <div className="fixed inset-0 z-20 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
@@ -3525,8 +4224,233 @@ function App() {
   );
 }
 
+function DebugWindowPage({
+  conversationId,
+  isLoading,
+  onClose,
+  threadConversation,
+}: {
+  conversationId: string | null;
+  isLoading: boolean;
+  onClose: () => void;
+  threadConversation: ThreadConversation | null;
+}) {
+  return (
+    <main className="h-dvh w-full overflow-hidden bg-[var(--app-shell-main-surface)] text-[var(--app-shell-text)]">
+      <div className="flex h-full flex-col">
+        <div className="flex h-[var(--app-shell-toolbar-sm)] items-center justify-between border-b border-[var(--app-shell-border)] px-3">
+          <h1 className="text-[13px] font-medium">Debug</h1>
+          <button
+            type="button"
+            onClick={onClose}
+            className="app-control-weak rounded-[8px] px-2.5 py-1 text-[12px]"
+          >
+            Close
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto p-4">
+          {isLoading ? (
+            <div className="relative h-full min-h-[240px]">
+              <LoadingPage fillParent debugName="DebugWindowPage" />
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="app-card rounded-[16px] px-4 py-3">
+                <div className="app-text-subtle text-[11px] font-medium tracking-[0.08em]">Conversation ID</div>
+                <div className="mt-2 break-all text-[13px] leading-6">
+                  {conversationId ?? "Unavailable"}
+                </div>
+              </div>
+              <div className="app-card rounded-[16px] px-4 py-3">
+                <div className="app-text-subtle text-[11px] font-medium tracking-[0.08em]">Thread Summary</div>
+                {threadConversation ? (
+                  <div className="mt-2 space-y-2 text-[13px] leading-6">
+                    <div>Title: {threadConversation.title || "Untitled"}</div>
+                    <div>CWD: {threadConversation.cwd || "Unavailable"}</div>
+                    <div>Turns: {threadConversation.turns.length}</div>
+                    <div>Items: {threadConversation.items.length}</div>
+                  </div>
+                ) : (
+                  <div className="mt-2 text-[13px] leading-6">No thread data loaded.</div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </main>
+  );
+}
+
 export default App;
+
+function isSettingsInputElement(element: HTMLElement) {
+  const tagName = element.tagName.toLowerCase();
+  if (tagName === "input" || tagName === "textarea" || tagName === "select" || element.isContentEditable) {
+    return true;
+  }
+  return element.closest("[contenteditable='true']") != null;
+}
 
 function normalizeAvatarId(value: string): BuiltInAvatarId {
   return BUILTIN_AVATARS.some((avatar) => avatar.id === value) ? (value as BuiltInAvatarId) : DEFAULT_AVATAR_ID;
+}
+
+function orderSettingsNavigationItems(
+  items: Array<{ id: SettingsSection; labelKey: MessageKey }>,
+  preferredOrder: SettingsSection[],
+) {
+  const itemsById = new Map(items.map((item) => [item.id, item]));
+  return [
+    ...preferredOrder.flatMap((sectionId) => {
+      const item = itemsById.get(sectionId);
+      return item ? [item] : [];
+    }),
+    ...items.filter((item) => !preferredOrder.includes(item.id)),
+  ];
+}
+
+function SettingsHostDropdown({
+  connectedRemoteConnections,
+  remoteConnectionHostIds,
+  selectedHostId,
+  onSelectHost,
+  t,
+}: {
+  connectedRemoteConnections: RemoteConnection[];
+  remoteConnectionHostIds: string[];
+  selectedHostId: string;
+  onSelectHost: (hostId: string) => void;
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const selectedRemoteConnection =
+    connectedRemoteConnections.find((remoteConnection) => remoteConnection.hostId === selectedHostId) ?? null;
+  const localHostLabel = t("settings.hostDropdown.local");
+  const selectedHostLabel = selectedRemoteConnection?.displayName ?? localHostLabel;
+  const hostOptions = [
+    { hostId: LOCAL_SETTINGS_HOST_ID, displayName: localHostLabel },
+    ...connectedRemoteConnections.map((remoteConnection) => ({
+      hostId: remoteConnection.hostId,
+      displayName: remoteConnection.displayName,
+    })),
+  ];
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (containerRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setIsOpen(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [isOpen]);
+
+  return (
+    <div className="relative shrink-0" ref={containerRef}>
+      <button
+        type="button"
+        aria-label={t("settings.hostDropdown.title")}
+        onClick={() => setIsOpen((open) => !open)}
+        className="app-control flex h-7 w-auto max-w-[160px] items-center gap-2 rounded-[10px] px-2 text-[13px]"
+      >
+        {selectedRemoteConnection === null ? (
+          <SettingsLocalHostIcon className="h-4 w-4 shrink-0 text-[var(--app-shell-text)]" />
+        ) : (
+          <SettingsRemoteHostIcon
+            className="h-4 w-4 shrink-0"
+            hostId={selectedRemoteConnection.hostId}
+            hostIdsForColorAssignment={remoteConnectionHostIds}
+          />
+        )}
+        <span className="truncate text-left text-[var(--app-shell-text)]">{selectedHostLabel}</span>
+        <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
+      </button>
+      {isOpen ? (
+        <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-[220px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+          <div className="px-3 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--app-shell-subtle)]">
+            {t("settings.hostDropdown.title")}
+          </div>
+          <div className="max-h-60 overflow-y-auto">
+            {hostOptions.map((hostOption) => {
+              const isSelected = hostOption.hostId === selectedHostId;
+              return (
+                <button
+                  key={hostOption.hostId}
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false);
+                    onSelectHost(hostOption.hostId);
+                  }}
+                  className={[
+                    "flex w-full items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-left text-[13px]",
+                    isSelected ? "app-nav-item-active" : "app-nav-item-idle",
+                  ].join(" ")}
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    {hostOption.hostId === LOCAL_SETTINGS_HOST_ID ? (
+                      <SettingsLocalHostIcon className="h-4 w-4 shrink-0" />
+                    ) : (
+                      <SettingsRemoteHostIcon
+                        className="h-4 w-4 shrink-0"
+                        hostId={hostOption.hostId}
+                        hostIdsForColorAssignment={remoteConnectionHostIds}
+                      />
+                    )}
+                    <span className="truncate">{hostOption.displayName}</span>
+                  </span>
+                  {isSelected ? <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" /> : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SettingsLocalHostIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path
+        d="M17.6682 13.998H12.6565L11.9641 14.3447C11.8718 14.3909 11.7695 14.415 11.6663 14.415H8.33325C8.23001 14.415 8.12774 14.3909 8.0354 14.3447L7.34302 13.998H2.32837V14.583C2.32837 15.1362 2.77712 15.585 3.33032 15.585H16.6663C17.2195 15.585 17.6682 15.1362 17.6682 14.583V13.998ZM16.8352 6.41699C16.8352 5.93931 16.8347 5.62054 16.8147 5.37598C16.8002 5.19841 16.7766 5.09313 16.7512 5.02246L16.7258 4.96191C16.6538 4.82049 16.5493 4.69891 16.4221 4.60645L16.2883 4.52441C16.2194 4.48931 16.1101 4.45489 15.8733 4.43555C15.6288 4.4156 15.3106 4.41504 14.8333 4.41504H5.16626C4.68886 4.41504 4.37071 4.41559 4.12622 4.43555C3.94903 4.45002 3.84339 4.47277 3.77271 4.49805L3.71216 4.52441C3.57094 4.59637 3.4491 4.70021 3.35669 4.82715L3.27368 4.96191C3.23861 5.03079 3.20513 5.13947 3.18579 5.37598C3.16581 5.62054 3.16528 5.93931 3.16528 6.41699V12.668H7.50024L7.57642 12.6729C7.65302 12.6817 7.72779 12.7036 7.79712 12.7383L8.4895 13.085H11.51L12.2024 12.7383L12.2737 12.708C12.346 12.6819 12.423 12.668 12.5002 12.668H16.8352V6.41699ZM18.1653 12.668H18.3333C18.7003 12.668 18.9981 12.9659 18.9983 13.333V14.583C18.9983 15.8708 17.954 16.915 16.6663 16.915H3.33032C2.04258 16.915 0.998291 15.8708 0.998291 14.583V13.333L1.01196 13.1992C1.07402 12.8962 1.34201 12.668 1.66333 12.668H1.83521V6.41699C1.83521 5.96125 1.83419 5.57886 1.85962 5.26758C1.88569 4.94869 1.94266 4.6459 2.08911 4.3584L2.17896 4.19727C2.40296 3.83215 2.72389 3.53443 3.10767 3.33887L3.21606 3.28809C3.47122 3.17862 3.73854 3.13317 4.01782 3.11035C4.32903 3.08493 4.71068 3.08496 5.16626 3.08496H14.8333C15.2888 3.08496 15.6705 3.08494 15.9817 3.11035C16.3007 3.13642 16.6042 3.19231 16.8918 3.33887L17.052 3.42871C17.4174 3.65275 17.7147 3.97437 17.9104 4.3584L17.9612 4.4668C18.0705 4.72179 18.1171 4.9885 18.1399 5.26758C18.1653 5.57886 18.1653 5.96125 18.1653 6.41699V12.668Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function SettingsRemoteHostIcon({
+  className,
+  hostId,
+  hostIdsForColorAssignment,
+}: {
+  className?: string;
+  hostId: string;
+  hostIdsForColorAssignment: string[];
+}) {
+  const color = getSettingsRemoteHostColor(hostId, hostIdsForColorAssignment);
+  return (
+    <svg
+      className={className}
+      width="20"
+      height="20"
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      aria-hidden="true"
+      style={color ? { color } : undefined}
+    >
+      <path d="M10 2.125C14.3492 2.125 17.875 5.65076 17.875 10C17.875 14.3492 14.3492 17.875 10 17.875C5.65076 17.875 2.125 14.3492 2.125 10C2.125 5.65076 5.65076 2.125 10 2.125ZM7.88672 10.625C7.94334 12.3161 8.22547 13.8134 8.63965 14.9053C8.87263 15.5194 9.1351 15.9733 9.39453 16.2627C9.65437 16.5524 9.86039 16.625 10 16.625C10.1396 16.625 10.3456 16.5524 10.6055 16.2627C10.8649 15.9733 11.1274 15.5194 11.3604 14.9053C11.7745 13.8134 12.0567 12.3161 12.1133 10.625H7.88672ZM3.40527 10.625C3.65313 13.2734 5.45957 15.4667 7.89844 16.2822C7.7409 15.997 7.5977 15.6834 7.4707 15.3486C6.99415 14.0923 6.69362 12.439 6.63672 10.625H3.40527ZM13.3633 10.625C13.3064 12.439 13.0059 14.0923 12.5293 15.3486C12.4022 15.6836 12.2582 15.9969 12.1006 16.2822C14.5399 15.467 16.3468 13.2737 16.5947 10.625H13.3633ZM12.1006 3.7168C12.2584 4.00235 12.4021 4.31613 12.5293 4.65137C13.0059 5.90775 13.3064 7.56102 13.3633 9.375H16.5947C16.3468 6.72615 14.54 4.53199 12.1006 3.7168ZM10 3.375C9.86039 3.375 9.65437 3.44756 9.39453 3.7373C9.1351 4.02672 8.87263 4.48057 8.63965 5.09473C8.22547 6.18664 7.94334 7.68388 7.88672 9.375H12.1133C12.0567 7.68388 11.7745 6.18664 11.3604 5.09473C11.1274 4.48057 10.8649 4.02672 10.6055 3.7373C10.3456 3.44756 10.1396 3.375 10 3.375ZM7.89844 3.7168C5.45942 4.53222 3.65314 6.72647 3.40527 9.375H6.63672C6.69362 7.56102 6.99415 5.90775 7.4707 4.65137C7.59781 4.31629 7.74073 4.00224 7.89844 3.7168Z" />
+    </svg>
+  );
 }

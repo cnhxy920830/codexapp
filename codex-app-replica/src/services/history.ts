@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { LOCAL_SETTINGS_HOST_ID } from "./settingsHosts";
 
 export type ThreadHistoryEntry = {
   id: string;
@@ -784,6 +785,14 @@ export async function getArchivedThreads() {
   return invoke<ThreadHistoryEntry[]>("list_archived_threads");
 }
 
+export async function getArchivedThreadsForHost(hostId?: string | null) {
+  return invoke<ThreadHistoryEntry[]>("list-archived-threads", {
+    params: {
+      hostId: normalizeHostId(hostId),
+    },
+  });
+}
+
 export async function startThread(cwd: string | null) {
   return invoke<string>("start_thread", { cwd });
 }
@@ -798,6 +807,18 @@ export async function archiveThread(threadId: string) {
 
 export async function unarchiveThread(threadId: string) {
   return invoke<string>("unarchive_thread", { threadId });
+}
+
+export async function unarchiveConversationForHost(params: {
+  conversationId: string;
+  hostId?: string | null;
+}) {
+  return invoke<string>("unarchive-conversation", {
+    params: {
+      conversationId: params.conversationId,
+      hostId: normalizeHostId(params.hostId),
+    },
+  });
 }
 
 export async function setThreadName(params: { threadId: string; name: string | null }) {
@@ -917,6 +938,14 @@ function formatRelativeTime(unixSeconds: number, now: Date, locale: string) {
     return formatter.format(-Math.floor(diffMs / hour), "hour");
   }
   return formatter.format(-Math.floor(diffMs / day), "day");
+}
+
+function normalizeHostId(hostId?: string | null) {
+  const trimmed = hostId?.trim();
+  if (!trimmed || trimmed === LOCAL_SETTINGS_HOST_ID) {
+    return null;
+  }
+  return trimmed;
 }
 
 export function normalizeThreadConversation(thread: ThreadConversation): ThreadConversation {

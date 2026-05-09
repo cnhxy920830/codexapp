@@ -46,6 +46,30 @@ export type AutomationThreadRunResult = {
   turnId: string;
 };
 
+export type HeartbeatAutomationThreadStateChangedParams = {
+  threadId: string | null;
+  isEligible: boolean;
+  collaborationMode: {
+    approvalPolicy: string | null;
+    approvalsReviewer: string | null;
+    sandboxPolicy: unknown | null;
+  } | null;
+  permissions: {
+    network: {
+      enabled: boolean | null;
+    } | null;
+    fileSystem: {
+      read: string[] | null;
+      write: string[] | null;
+      entries: Array<{
+        path: string;
+        access: string;
+      }> | null;
+    } | null;
+  } | null;
+  reason: string | null;
+};
+
 export async function listAutomations() {
   const response = await invoke<{ items: AutomationRecord[] }>("list_automations");
   return response.items;
@@ -69,6 +93,12 @@ export async function deleteAutomation(id: string) {
 
 export async function runAutomationNow(id: string) {
   return invoke<AutomationThreadRunResult>("run_automation_now", { params: { id } });
+}
+
+export async function notifyHeartbeatAutomationThreadStateChanged(
+  params: HeartbeatAutomationThreadStateChangedParams,
+) {
+  return invoke<void>("heartbeat-automation-thread-state-changed", { params });
 }
 
 export function buildAutomationDraft(kind: AutomationRecord["kind"]): AutomationRecord {

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { DEFAULT_LOCALE, resolveSupportedLocale, type LocaleCode } from "../i18n/messages";
 import {
   applyAppearanceCssVariables,
@@ -64,7 +65,17 @@ export type ReviewDelivery = "inline" | "detached";
 export type AppearanceTheme = "light" | "dark" | "system";
 export type ResolvedAppearanceTheme = Exclude<AppearanceTheme, "system">;
 export type ComposerEnterBehavior = "enter" | "cmdIfMultiline";
+export type IntegratedTerminalShell = "powershell" | "commandPrompt" | "gitBash" | "wsl";
 export type ConfigPersonality = "friendly" | "pragmatic" | "none";
+
+export type TerminalShellOptionsResponse = {
+  availableShells: IntegratedTerminalShell[];
+};
+
+export type WslBashAvailabilityResponse = {
+  available: boolean;
+  distro: string | null;
+};
 
 const SYSTEM_APPEARANCE_MEDIA_QUERY = "(prefers-color-scheme: dark)";
 
@@ -75,6 +86,9 @@ export type GlobalStateKey =
   | "sansFontSize"
   | "codeFontSize"
   | "localeOverride"
+  | "viewed2025-09-15-nux"
+  | "viewed2025-09-15-full-chatgpt-auth-nux"
+  | "viewed2025-09-15-apikey-auth-nux"
   | "appearanceTheme"
   | "appearanceLightChromeTheme"
   | "appearanceDarkChromeTheme"
@@ -82,6 +96,9 @@ export type GlobalStateKey =
   | "appearanceDarkCodeThemeId"
   | "selected-avatar-id"
   | "composerEnterBehavior"
+  | "integratedTerminalShell"
+  | "preventSleepWhileRunning"
+  | "runCodexInWindowsSubsystemForLinux"
   | "followUpQueueMode"
   | "reviewDelivery"
   | "git-branch-prefix"
@@ -104,6 +121,9 @@ export type GeneralSettingsSnapshot = {
   localeOverride: string | null;
   appearanceTheme: AppearanceTheme;
   composerEnterBehavior: ComposerEnterBehavior;
+  integratedTerminalShell: IntegratedTerminalShell;
+  preventSleepWhileRunning: boolean;
+  runCodexInWindowsSubsystemForLinux: boolean;
   followUpQueueMode: FollowUpQueueMode;
   reviewDelivery: ReviewDelivery;
 };
@@ -122,8 +142,15 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettingsSnapshot = {
   localeOverride: null,
   appearanceTheme: "system",
   composerEnterBehavior: "enter",
+  integratedTerminalShell: "powershell",
+  preventSleepWhileRunning: false,
+  runCodexInWindowsSubsystemForLinux: false,
   followUpQueueMode: "queue",
   reviewDelivery: "inline",
+};
+
+export type GlobalStateUpdatedNotification = {
+  keys: string[];
 };
 
 export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettingsSnapshot = {
@@ -145,6 +172,43 @@ export type ConfigScopeOption = {
   config: ConfigSnapshot | null;
 };
 
+export type ConfigWriteTarget = {
+  filePath: string | null;
+  expectedVersion: string | null;
+};
+
+export type ConfigWriteEdit = {
+  keyPath: string;
+  value: unknown;
+  mergeStrategy: "upsert" | "replace";
+};
+
+export type BatchWriteConfigParams = {
+  edits: ConfigWriteEdit[];
+  filePath?: string | null;
+  expectedVersion?: string | null;
+  reloadUserConfig?: boolean;
+};
+
+export type BatchWriteConfigForHostParams = BatchWriteConfigParams & {
+  hostId?: string | null;
+};
+
+export type ConfigReadForHostParams = {
+  hostId?: string | null;
+  cwd?: string | null;
+  includeLayers?: boolean;
+};
+
+export type ConfigWriteForHostParams = {
+  hostId?: string | null;
+  keyPath: string;
+  value: unknown;
+  mergeStrategy: "upsert" | "replace";
+  filePath?: string | null;
+  expectedVersion?: string | null;
+};
+
 export type ThirdPartyNoticesResponse = {
   text: string | null;
 };
@@ -162,6 +226,17 @@ export async function readConfig(cwd: string | null = null) {
   return invoke<ConfigReadResponse>("read_config", { cwd });
 }
 
+export async function readConfigForHost(params: ConfigReadForHostParams) {
+  const { cwd = null, hostId, includeLayers = true } = params;
+  return invoke<ConfigReadResponse>("read-config-for-host", {
+    params: {
+      hostId: normalizeHostId(hostId),
+      cwd,
+      includeLayers,
+    },
+  });
+}
+
 export async function writeConfigValue(params: {
   keyPath: string;
   value: unknown;
@@ -172,17 +247,21 @@ export async function writeConfigValue(params: {
   return invoke<void>("write_config_value", { params });
 }
 
-export async function batchWriteConfigValues(params: {
-  edits: Array<{
-    keyPath: string;
-    value: unknown;
-    mergeStrategy: "upsert" | "replace";
-  }>;
-  filePath?: string | null;
-  expectedVersion?: string | null;
-  reloadUserConfig?: boolean;
-}) {
+export async function writeConfigValueForHost(params: ConfigWriteForHostParams) {
+  return invoke<void>("write-config-value", {
+    params: {
+      ...params,
+      hostId: normalizeHostId(params.hostId),
+    },
+  });
+}
+
+export async function batchWriteConfigValues(params: BatchWriteConfigParams) {
   return invoke<void>("batch_write_config_values", { params });
+}
+
+export async function batchWriteConfigValueForHost(params: BatchWriteConfigForHostParams) {
+  return invoke<void>("batch-write-config-value", { params });
 }
 
 export async function setPersonality(personality: ConfigPersonality | null) {
@@ -278,6 +357,73 @@ export function buildConfigScopeOptions(response: ConfigReadResponse) {
   return options;
 }
 
+export function resolveUserConfigWriteTarget(response: ConfigReadResponse): ConfigWriteTarget | null {
+  const userLayer = response.layers?.find((layer) => layer.name.type === "user");
+  if (!userLayer || userLayer.name.type !== "user") {
+    return null;
+  }
+
+  return {
+    filePath: userLayer.name.file,
+    expectedVersion: userLayer.version,
+  };
+}
+
+export function resolveConfigWriteTargetForKeyPath(
+  response: ConfigReadResponse,
+  keyPath: string,
+  probeFields: string[] = [],
+): ConfigWriteTarget | null {
+  const userWriteTarget = resolveUserConfigWriteTarget(response);
+  if (userWriteTarget) {
+    return userWriteTarget;
+  }
+
+  const origin = findConfigOrigin(response.origins, keyPath, probeFields);
+  if (origin) {
+    if (isNonWritableConfigSource(origin.name)) {
+      return null;
+    }
+    if (origin.name.type === "system") {
+      return userWriteTarget;
+    }
+    const filePath = resolveWritableConfigSourcePath(origin.name);
+    return filePath
+      ? {
+          filePath,
+          expectedVersion: origin.version,
+        }
+      : userWriteTarget;
+  }
+
+  const fallbackLayer = response.layers?.[0];
+  if (!fallbackLayer) {
+    return null;
+  }
+
+  const filePath = resolveWritableConfigSourcePath(fallbackLayer.name);
+  return filePath
+    ? {
+        filePath,
+        expectedVersion: fallbackLayer.version,
+      }
+    : null;
+}
+
+export function resolveConfigChildOrigins(
+  response: ConfigReadResponse,
+  rootKey: string,
+  childKeys: string[],
+  probeFields: string[] = [],
+) {
+  return Object.fromEntries(
+    childKeys.map((childKey) => {
+      const keyPath = `${rootKey}.${childKey}`;
+      return [childKey, findConfigOrigin(response.origins, keyPath, probeFields)];
+    }),
+  ) as Record<string, ConfigLayerMetadata | null>;
+}
+
 export function chooseDefaultConfigScopeKey(options: ConfigScopeOption[]) {
   return options.find((scope) => scope.kind === "project")?.key ?? options[0]?.key ?? "user";
 }
@@ -290,8 +436,47 @@ export async function setGlobalState(key: GlobalStateKey, value: GlobalStateValu
   return invoke<void>("set_global_state", { key, value });
 }
 
+export function onGlobalStateUpdated(handler: (notification: GlobalStateUpdatedNotification) => void) {
+  return listen<GlobalStateUpdatedNotification>("global-state-updated", (event) => {
+    handler(event.payload);
+  });
+}
+
+export async function readTerminalShellOptions() {
+  return invoke<TerminalShellOptionsResponse>("terminal-shell-options");
+}
+
+export async function readWslBashAvailability() {
+  return invoke<WslBashAvailabilityResponse>("wsl-bash-availability");
+}
+
+export async function setPowerSaveBlocker(shouldBlock: boolean) {
+  return invoke<void>("power-save-blocker-set", {
+    params: {
+      shouldBlock,
+    },
+  });
+}
+
+export async function readPreventSleepWhileRunningPreference() {
+  const response = await getGlobalState("preventSleepWhileRunning");
+  return response.value === true;
+}
+
 export async function readGeneralSettingsSnapshot(): Promise<GeneralSettingsSnapshot> {
-  const [localeOverride, usePointerCursors, uiFontSize, codeFontSize, appearanceTheme, composerEnterBehavior, followUpQueueMode, reviewDelivery] =
+  const [
+    localeOverride,
+    usePointerCursors,
+    uiFontSize,
+    codeFontSize,
+    appearanceTheme,
+    composerEnterBehavior,
+    integratedTerminalShell,
+    preventSleepWhileRunning,
+    runCodexInWindowsSubsystemForLinux,
+    followUpQueueMode,
+    reviewDelivery,
+  ] =
     await Promise.all([
       getGlobalState("localeOverride"),
       getGlobalState("usePointerCursors"),
@@ -299,6 +484,9 @@ export async function readGeneralSettingsSnapshot(): Promise<GeneralSettingsSnap
       getGlobalState("codeFontSize"),
       getGlobalState("appearanceTheme"),
       getGlobalState("composerEnterBehavior"),
+      getGlobalState("integratedTerminalShell"),
+      getGlobalState("preventSleepWhileRunning"),
+      getGlobalState("runCodexInWindowsSubsystemForLinux"),
       getGlobalState("followUpQueueMode"),
       getGlobalState("reviewDelivery"),
     ]);
@@ -313,6 +501,15 @@ export async function readGeneralSettingsSnapshot(): Promise<GeneralSettingsSnap
       typeof codeFontSize.value === "number" ? codeFontSize.value : DEFAULT_GENERAL_SETTINGS.codeFontSize,
     appearanceTheme: normalizeAppearanceTheme(appearanceTheme.value),
     composerEnterBehavior: normalizeComposerEnterBehavior(composerEnterBehavior.value),
+    integratedTerminalShell: normalizeIntegratedTerminalShell(integratedTerminalShell.value),
+    preventSleepWhileRunning:
+      typeof preventSleepWhileRunning.value === "boolean"
+        ? preventSleepWhileRunning.value
+        : DEFAULT_GENERAL_SETTINGS.preventSleepWhileRunning,
+    runCodexInWindowsSubsystemForLinux:
+      typeof runCodexInWindowsSubsystemForLinux.value === "boolean"
+        ? runCodexInWindowsSubsystemForLinux.value
+        : DEFAULT_GENERAL_SETTINGS.runCodexInWindowsSubsystemForLinux,
     followUpQueueMode: normalizeFollowUpQueueMode(followUpQueueMode.value),
     reviewDelivery: normalizeReviewDelivery(reviewDelivery.value),
   };
@@ -440,6 +637,51 @@ function resolveLayerFilePath(name: ConfigLayerSource) {
   return null;
 }
 
+function resolveWritableConfigSourcePath(name: ConfigLayerSource) {
+  if (name.type === "user" || name.type === "system" || name.type === "legacyManagedConfigTomlFromFile") {
+    return resolveLayerFilePath(name);
+  }
+  if (name.type === "project") {
+    return buildProjectConfigPath(name.dotCodexFolder);
+  }
+  return null;
+}
+
+function isNonWritableConfigSource(name: ConfigLayerSource | null | undefined) {
+  if (!name) {
+    return false;
+  }
+  return name.type === "mdm" ||
+    name.type === "sessionFlags" ||
+    name.type === "legacyManagedConfigTomlFromFile" ||
+    name.type === "legacyManagedConfigTomlFromMdm";
+}
+
+function findConfigOrigin(
+  origins: Record<string, ConfigLayerMetadata>,
+  keyPath: string,
+  probeFields: string[] = [],
+) {
+  const directOrigin = origins[keyPath];
+  if (directOrigin) {
+    return directOrigin;
+  }
+
+  for (const probeField of probeFields) {
+    const origin = origins[`${keyPath}.${probeField}`];
+    if (origin) {
+      return origin;
+    }
+  }
+
+  return null;
+}
+
+function normalizeHostId(hostId?: string | null) {
+  const trimmed = hostId?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : null;
+}
+
 function normalizeApprovalPolicy(value: unknown) {
   return value === "untrusted" || value === "on-failure" || value === "on-request" || value === "never"
     ? value
@@ -494,6 +736,12 @@ function normalizeMemoriesConfig(value: unknown): MemoriesConfigSnapshot | null 
 
 function normalizeComposerEnterBehavior(value: unknown): ComposerEnterBehavior {
   return value === "enter" || value === "cmdIfMultiline" ? value : DEFAULT_GENERAL_SETTINGS.composerEnterBehavior;
+}
+
+function normalizeIntegratedTerminalShell(value: unknown): IntegratedTerminalShell {
+  return value === "powershell" || value === "commandPrompt" || value === "gitBash" || value === "wsl"
+    ? value
+    : DEFAULT_GENERAL_SETTINGS.integratedTerminalShell;
 }
 
 function applyAppearanceTheme(

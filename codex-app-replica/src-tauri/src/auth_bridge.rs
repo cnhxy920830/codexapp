@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStdin, ChildStdout, Command};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, Mutex as AsyncMutex, Notify};
 use tokio::time::{sleep, Duration};
 
 use crate::thread_history::append_agent_message_delta;
@@ -39,6 +39,7 @@ const AUTH_EVENT: &str = "auth-state-changed";
 const THREAD_EVENT: &str = "thread-event";
 const MCP_OAUTH_EVENT: &str = "mcp-oauth-login-completed";
 const APPS_LIST_UPDATED_EVENT: &str = "apps-list-updated";
+const CODEX_APP_SERVER_INITIALIZED_EVENT: &str = "codex-app-server-initialized";
 const CLIENT_NAME: &str = "codex-app-replica";
 const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const LOCAL_HOST_ID: &str = "local";
@@ -93,6 +94,12 @@ pub struct SendAddCreditsNudgeEmailResponse {
 #[serde(rename_all = "camelCase")]
 pub struct HostScopedParams {
     pub host_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct CodexAppServerInitializedNotification {
+    host_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -290,6 +297,27 @@ struct ThreadRollbackResponse {
     thread: ThreadReadThread,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UnsubscribeThreadForHostParams {
+    pub host_id: Option<String>,
+    pub thread_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadUnsubscribeResponse {
+    pub status: ThreadUnsubscribeStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ThreadUnsubscribeStatus {
+    NotLoaded,
+    NotSubscribed,
+    Unsubscribed,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ExperimentalFeatureListResponse {
@@ -314,6 +342,21 @@ pub struct SkillsListResponse {
     pub data: Vec<SkillsListEntry>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillsConfigWriteParams {
+    pub host_id: Option<String>,
+    pub path: Option<String>,
+    pub name: Option<String>,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillsConfigWriteResponse {
+    pub effective_enabled: bool,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillsListEntry {
@@ -336,7 +379,7 @@ pub struct SkillMetadata {
     pub enabled: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillInterface {
     #[serde(default)]
@@ -444,6 +487,59 @@ pub struct AppInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct MarketplaceAddParams {
+    pub host_id: Option<String>,
+    pub source: String,
+    pub ref_name: Option<String>,
+    pub sparse_paths: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketplaceAddResponse {
+    pub marketplace_name: String,
+    pub installed_root: String,
+    pub already_added: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketplaceRemoveParams {
+    pub host_id: Option<String>,
+    pub marketplace_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketplaceRemoveResponse {
+    pub marketplace_name: String,
+    pub installed_root: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketplaceUpgradeParams {
+    pub host_id: Option<String>,
+    pub marketplace_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketplaceUpgradeResponse {
+    pub selected_marketplaces: Vec<String>,
+    pub upgraded_roots: Vec<String>,
+    pub errors: Vec<MarketplaceUpgradeErrorInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketplaceUpgradeErrorInfo {
+    pub marketplace_name: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct PluginListParams {
     pub host_id: Option<String>,
     #[serde(default)]
@@ -464,6 +560,7 @@ pub struct PluginListResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginReadParams {
+    pub host_id: Option<String>,
     pub marketplace_path: Option<String>,
     pub remote_marketplace_name: Option<String>,
     pub plugin_name: String,
@@ -483,6 +580,7 @@ pub struct PluginDetail {
     pub summary: PluginSummary,
     pub description: Option<String>,
     pub skills: Vec<PluginSkillSummary>,
+    pub hooks: Vec<PluginHookSummary>,
     pub apps: Vec<PluginAppSummary>,
     pub mcp_servers: Vec<String>,
 }
@@ -495,7 +593,18 @@ pub struct PluginSkillSummary {
     #[serde(default)]
     pub short_description: Option<String>,
     #[serde(default)]
+    pub interface: Option<SkillInterface>,
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
     pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginHookSummary {
+    pub key: String,
+    pub event_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -514,6 +623,7 @@ pub struct PluginAppSummary {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginInstallParams {
+    pub host_id: Option<String>,
     pub marketplace_path: Option<String>,
     pub remote_marketplace_name: Option<String>,
     pub plugin_name: String,
@@ -529,6 +639,7 @@ pub struct PluginInstallResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginUninstallParams {
+    pub host_id: Option<String>,
     pub plugin_id: String,
 }
 
@@ -590,6 +701,13 @@ pub struct ArchiveConversationParams {
     pub cleanup_worktree: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UnarchiveConversationParams {
+    pub host_id: Option<String>,
+    pub conversation_id: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginMarketplaceEntry {
@@ -620,10 +738,91 @@ pub struct MarketplaceLoadErrorInfo {
 pub struct PluginSummary {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub share_context: Option<PluginShareContext>,
+    pub source: PluginSource,
     pub installed: bool,
     pub enabled: bool,
+    pub install_policy: PluginInstallPolicy,
+    pub auth_policy: PluginAuthPolicy,
+    #[serde(default)]
+    pub availability: PluginAvailability,
     #[serde(default)]
     pub interface: Option<PluginInterface>,
+    #[serde(default)]
+    pub keywords: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginShareContext {
+    pub remote_plugin_id: String,
+    pub share_url: Option<String>,
+    pub creator_account_user_id: Option<String>,
+    pub creator_name: Option<String>,
+    pub share_targets: Option<Vec<PluginSharePrincipal>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginSharePrincipal {
+    pub principal_type: PluginSharePrincipalType,
+    pub principal_id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PluginSharePrincipalType {
+    #[serde(rename = "user")]
+    User,
+    #[serde(rename = "group")]
+    Group,
+    #[serde(rename = "workspace")]
+    Workspace,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PluginInstallPolicy {
+    #[serde(rename = "NOT_AVAILABLE")]
+    NotAvailable,
+    #[serde(rename = "AVAILABLE")]
+    Available,
+    #[serde(rename = "INSTALLED_BY_DEFAULT")]
+    InstalledByDefault,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PluginAuthPolicy {
+    #[serde(rename = "ON_INSTALL")]
+    OnInstall,
+    #[serde(rename = "ON_USE")]
+    OnUse,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PluginAvailability {
+    #[serde(rename = "AVAILABLE", alias = "ENABLED")]
+    #[default]
+    Available,
+    #[serde(rename = "DISABLED_BY_ADMIN")]
+    DisabledByAdmin,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum PluginSource {
+    #[serde(rename_all = "camelCase")]
+    Local {
+        path: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    Git {
+        url: String,
+        path: Option<String>,
+        ref_name: Option<String>,
+        sha: Option<String>,
+    },
+    Remote,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -641,6 +840,28 @@ pub struct PluginInterface {
     pub category: Option<String>,
     #[serde(default)]
     pub capabilities: Vec<String>,
+    #[serde(default)]
+    pub website_url: Option<String>,
+    #[serde(default)]
+    pub privacy_policy_url: Option<String>,
+    #[serde(default)]
+    pub terms_of_service_url: Option<String>,
+    #[serde(default)]
+    pub default_prompt: Option<Vec<String>>,
+    #[serde(default)]
+    pub brand_color: Option<String>,
+    #[serde(default)]
+    pub composer_icon: Option<String>,
+    #[serde(default)]
+    pub composer_icon_url: Option<String>,
+    #[serde(default)]
+    pub logo: Option<String>,
+    #[serde(default)]
+    pub logo_url: Option<String>,
+    #[serde(default)]
+    pub screenshots: Vec<String>,
+    #[serde(default)]
+    pub screenshot_urls: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -676,6 +897,74 @@ pub struct McpServerStatusListResponse {
 pub struct McpServerStatusEntry {
     pub name: String,
     pub auth_status: Option<String>,
+    #[serde(default)]
+    pub tools: HashMap<String, McpToolEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpToolEntry {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub visibility: Option<String>,
+    #[serde(default)]
+    pub annotations: Option<McpToolAnnotations>,
+    #[serde(default, rename = "_meta")]
+    pub meta: Option<McpToolMeta>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpToolAnnotations {
+    #[serde(default)]
+    pub read_only_hint: bool,
+    #[serde(default)]
+    pub destructive_hint: bool,
+    #[serde(default)]
+    pub open_world_hint: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpToolMeta {
+    #[serde(default, rename = "connector_id", alias = "connectorId")]
+    pub connector_id: Option<String>,
+    #[serde(default, rename = "_codex_apps")]
+    pub codex_apps: Option<McpToolCodexAppsMeta>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct McpToolCodexAppsMeta {
+    #[serde(default, rename = "connector_id", alias = "connectorId")]
+    pub connector_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadAppToolsParams {
+    pub host_id: Option<String>,
+    pub app_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadAppToolsResponse {
+    pub tools: Vec<AppToolInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AppToolInfo {
+    pub name: String,
+    pub description: String,
+    pub access_badges: Vec<String>,
+    pub visibility: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -815,6 +1104,9 @@ pub struct AuthBridgeState {
     snapshot: Mutex<AuthSnapshot>,
     is_ready: Mutex<bool>,
     request_tx: Mutex<Option<mpsc::UnboundedSender<AppServerMessage>>>,
+    app_server_process: AsyncMutex<Option<tokio::process::Child>>,
+    app_server_generation: Mutex<u64>,
+    app_server_lifecycle_lock: AsyncMutex<()>,
     current_personality: Mutex<Option<String>>,
     turn_diffs: Mutex<HashMap<String, String>>,
     model_reroutes: Mutex<HashMap<String, Vec<ModelReroutedCacheEntry>>>,
@@ -824,6 +1116,8 @@ pub struct AuthBridgeState {
     latest_turn_ids: Mutex<HashMap<String, String>>,
     turn_errors: Mutex<HashMap<String, Vec<TurnErrorCacheEntry>>>,
     forked_from_conversations: Mutex<HashMap<String, ForkedFromConversationCacheEntry>>,
+    external_agent_import_completed_generation: Mutex<u64>,
+    external_agent_import_completed_notify: Notify,
 }
 
 impl AuthBridgeState {
@@ -832,6 +1126,32 @@ impl AuthBridgeState {
             .lock()
             .expect("current personality mutex poisoned")
             .clone()
+    }
+}
+
+pub(crate) struct ExternalAgentImportCompletedWaiter {
+    state: Arc<AuthBridgeState>,
+    seen_generation: u64,
+}
+
+impl ExternalAgentImportCompletedWaiter {
+    pub async fn wait(self, timeout_duration: Duration) -> Result<(), String> {
+        tokio::time::timeout(timeout_duration, async {
+            loop {
+                let notified = self.state.external_agent_import_completed_notify.notified();
+                let generation = *self
+                    .state
+                    .external_agent_import_completed_generation
+                    .lock()
+                    .expect("external agent import generation mutex poisoned");
+                if generation > self.seen_generation {
+                    return Ok(());
+                }
+                notified.await;
+            }
+        })
+        .await
+        .map_err(|_| "Timed out waiting for external agent import completion".to_string())?
     }
 }
 
@@ -1050,6 +1370,9 @@ impl Default for AuthBridgeState {
             snapshot: Mutex::new(AuthSnapshot::default()),
             is_ready: Mutex::new(false),
             request_tx: Mutex::new(None),
+            app_server_process: AsyncMutex::new(None),
+            app_server_generation: Mutex::new(0),
+            app_server_lifecycle_lock: AsyncMutex::new(()),
             current_personality: Mutex::new(None),
             turn_diffs: Mutex::new(HashMap::new()),
             model_reroutes: Mutex::new(HashMap::new()),
@@ -1058,6 +1381,8 @@ impl Default for AuthBridgeState {
             latest_turn_ids: Mutex::new(HashMap::new()),
             turn_errors: Mutex::new(HashMap::new()),
             forked_from_conversations: Mutex::new(HashMap::new()),
+            external_agent_import_completed_generation: Mutex::new(0),
+            external_agent_import_completed_notify: Notify::new(),
         }
     }
 }
@@ -1201,6 +1526,8 @@ enum AppServerRequestKind {
     CancelLogin,
     Logout,
     ConfigRead,
+    ExternalAgentConfigDetect,
+    ExternalAgentConfigImport,
     ConfigRequirementsRead,
     ConfigValueWrite,
     ConfigBatchWrite,
@@ -1211,7 +1538,11 @@ enum AppServerRequestKind {
     McpServerStatusList,
     ReloadMcpServerConfig,
     SkillsList,
+    SkillsConfigWrite,
     HooksList,
+    MarketplaceAdd,
+    MarketplaceRemove,
+    MarketplaceUpgrade,
     PluginList,
     PluginRead,
     PluginShareList,
@@ -1223,6 +1554,7 @@ enum AppServerRequestKind {
     ThreadStart,
     ThreadFork,
     ThreadArchive,
+    ThreadUnsubscribe,
     ThreadUnarchive,
     ThreadNameSet,
     ThreadRead,
@@ -1317,6 +1649,16 @@ pub async fn login_api_key(
     login_api_key_inner(&app, state.inner(), params.api_key).await
 }
 
+#[tauri::command(rename = "login-with-api-key")]
+pub async fn login_api_key_command(
+    app: AppHandle,
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: ApiKeyLoginParams,
+) -> Result<(), String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "login-with-api-key")?;
+    login_api_key_inner(&app, state.inner(), params.api_key).await
+}
+
 #[tauri::command(rename = "login-with-api-key-for-host")]
 pub async fn login_api_key_for_host_command(
     app: AppHandle,
@@ -1354,9 +1696,36 @@ pub async fn login_chatgpt(
     app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
 ) -> Result<ChatGptLoginStart, String> {
-    clear_login_error(&app, state.inner());
+    login_chatgpt_inner(&app, state.inner()).await
+}
+
+#[tauri::command(rename = "login-with-chatgpt")]
+pub async fn login_chatgpt_command(
+    app: AppHandle,
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: HostScopedParams,
+) -> Result<ChatGptLoginStart, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "login-with-chatgpt")?;
+    login_chatgpt_inner(&app, state.inner()).await
+}
+
+#[tauri::command(rename = "login-with-chatgpt-for-host")]
+pub async fn login_chatgpt_for_host_command(
+    app: AppHandle,
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: HostScopedParams,
+) -> Result<ChatGptLoginStart, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "login-with-chatgpt-for-host")?;
+    login_chatgpt_inner(&app, state.inner()).await
+}
+
+async fn login_chatgpt_inner(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+) -> Result<ChatGptLoginStart, String> {
+    clear_login_error(app, state);
     let value = send_request(
-        state.inner(),
+        state,
         AppServerRequestKind::LoginChatGpt,
         serde_json::json!({
             "type": "chatgpt",
@@ -1364,19 +1733,19 @@ pub async fn login_chatgpt(
     )
     .await
     .map_err(|error| {
-        set_login_error(&app, state.inner(), error.clone());
+        set_login_error(app, state, error.clone());
         error
     })?;
     let result = serde_json::from_value::<LoginStartResult>(value).map_err(|err| {
         let error = format!("failed to decode chatgpt login response: {err}");
-        set_login_error(&app, state.inner(), error.clone());
+        set_login_error(app, state, error.clone());
         error
     })?;
     match result {
         LoginStartResult::Chatgpt { login_id, auth_url } => {
             update_login_pending_state(
-                &app,
-                state.inner(),
+                app,
+                state,
                 Some(login_id.clone()),
                 Some(auth_url.clone()),
                 None,
@@ -1385,7 +1754,7 @@ pub async fn login_chatgpt(
         }
         _ => {
             let error = "unexpected login response type".to_string();
-            set_login_error(&app, state.inner(), error.clone());
+            set_login_error(app, state, error.clone());
             Err(error)
         }
     }
@@ -1396,9 +1765,26 @@ pub async fn login_chatgpt_device_code(
     app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
 ) -> Result<DeviceCodeLoginStart, String> {
-    clear_login_error(&app, state.inner());
+    login_chatgpt_device_code_inner(&app, state.inner()).await
+}
+
+#[tauri::command(rename = "login-with-chatgpt-device-code")]
+pub async fn login_chatgpt_device_code_command(
+    app: AppHandle,
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: HostScopedParams,
+) -> Result<DeviceCodeLoginStart, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "login-with-chatgpt-device-code")?;
+    login_chatgpt_device_code_inner(&app, state.inner()).await
+}
+
+async fn login_chatgpt_device_code_inner(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+) -> Result<DeviceCodeLoginStart, String> {
+    clear_login_error(app, state);
     let value = send_request(
-        state.inner(),
+        state,
         AppServerRequestKind::LoginChatGptDeviceCode,
         serde_json::json!({
             "type": "chatgptDeviceCode",
@@ -1406,12 +1792,12 @@ pub async fn login_chatgpt_device_code(
     )
     .await
     .map_err(|error| {
-        set_login_error(&app, state.inner(), error.clone());
+        set_login_error(app, state, error.clone());
         error
     })?;
     let result = serde_json::from_value::<LoginStartResult>(value).map_err(|err| {
         let error = format!("failed to decode device code response: {err}");
-        set_login_error(&app, state.inner(), error.clone());
+        set_login_error(app, state, error.clone());
         error
     })?;
     match result {
@@ -1421,8 +1807,8 @@ pub async fn login_chatgpt_device_code(
             user_code,
         } => {
             update_login_pending_state(
-                &app,
-                state.inner(),
+                app,
+                state,
                 Some(login_id.clone()),
                 None,
                 Some(DeviceCodeInfo {
@@ -1439,7 +1825,7 @@ pub async fn login_chatgpt_device_code(
         }
         _ => {
             let error = "unexpected login response type".to_string();
-            set_login_error(&app, state.inner(), error.clone());
+            set_login_error(app, state, error.clone());
             Err(error)
         }
     }
@@ -1705,6 +2091,67 @@ fn ensure_supported_host_id(host_id: Option<&str>, command_name: &str) -> Result
     }
 }
 
+fn map_app_tools(status_entry: &McpServerStatusEntry, app_id: &str) -> Vec<AppToolInfo> {
+    let mut tools = status_entry
+        .tools
+        .iter()
+        .filter_map(|(tool_key, tool)| {
+            (mcp_tool_connector_id(tool) == Some(app_id)).then(|| map_app_tool(tool_key, tool))
+        })
+        .collect::<Vec<_>>();
+    tools.sort_by(|left, right| left.name.cmp(&right.name));
+    tools
+}
+
+fn map_app_tool(tool_key: &str, tool: &McpToolEntry) -> AppToolInfo {
+    let visibility = normalize_tool_label(tool.visibility.as_deref());
+    let annotations = tool.annotations.as_ref();
+    let mut access_badges = if annotations.is_some_and(|annotations| annotations.read_only_hint) {
+        vec!["READ".to_string()]
+    } else if let Some(visibility) = visibility.as_ref() {
+        vec![format!("{visibility} WRITE")]
+    } else {
+        vec!["WRITE".to_string()]
+    };
+    if annotations.is_some_and(|annotations| annotations.open_world_hint) {
+        access_badges.push("OPEN WORLD".to_string());
+    }
+    if annotations.is_some_and(|annotations| annotations.destructive_hint) {
+        access_badges.push("DESTRUCTIVE".to_string());
+    }
+
+    AppToolInfo {
+        name: tool
+            .title
+            .clone()
+            .or_else(|| tool.name.clone())
+            .unwrap_or_else(|| tool_key.to_string()),
+        description: tool.description.clone().unwrap_or_default(),
+        access_badges,
+        visibility,
+    }
+}
+
+fn mcp_tool_connector_id(tool: &McpToolEntry) -> Option<&str> {
+    let meta = tool.meta.as_ref()?;
+    meta.connector_id.as_deref().or_else(|| {
+        meta.codex_apps
+            .as_ref()
+            .and_then(|codex_apps| codex_apps.connector_id.as_deref())
+    })
+}
+
+fn normalize_tool_label(value: Option<&str>) -> Option<String> {
+    let value = value?;
+    let normalized = value
+        .split(|character: char| character == '_' || character == '-' || character.is_whitespace())
+        .filter(|segment| !segment.is_empty())
+        .map(|segment| segment.to_ascii_uppercase())
+        .collect::<Vec<_>>()
+        .join(" ");
+    (!normalized.is_empty()).then_some(normalized)
+}
+
 fn plugin_list_cwds(params: &PluginListParams) -> Vec<String> {
     if !params.cwds.is_empty() {
         return params.cwds.clone();
@@ -1743,6 +2190,40 @@ pub async fn list_skills(
     .await?;
     serde_json::from_value::<SkillsListResponse>(value)
         .map_err(|err| format!("failed to decode skills list response: {err}"))
+}
+
+#[tauri::command]
+pub async fn write_skill_config(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: SkillsConfigWriteParams,
+) -> Result<SkillsConfigWriteResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "skills-config-write")?;
+    let SkillsConfigWriteParams {
+        host_id: _,
+        path,
+        name,
+        enabled,
+    } = params;
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::SkillsConfigWrite,
+        serde_json::json!({
+            "path": path,
+            "name": name,
+            "enabled": enabled,
+        }),
+    )
+    .await?;
+    serde_json::from_value::<SkillsConfigWriteResponse>(value)
+        .map_err(|err| format!("failed to decode skills config write response: {err}"))
+}
+
+#[tauri::command(rename = "skills-config-write")]
+pub async fn write_skill_config_command(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: SkillsConfigWriteParams,
+) -> Result<SkillsConfigWriteResponse, String> {
+    write_skill_config(state, params).await
 }
 
 #[tauri::command(rename = "list-skills-for-host")]
@@ -1792,6 +2273,53 @@ pub async fn list_apps(
 }
 
 #[tauri::command]
+pub async fn read_app_tools(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: ReadAppToolsParams,
+) -> Result<ReadAppToolsResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "read-app-tools")?;
+    let mut cursor = None;
+
+    loop {
+        let value = send_request(
+            state.inner(),
+            AppServerRequestKind::McpServerStatusList,
+            serde_json::json!({
+                "cursor": cursor,
+                "detail": "toolsAndAuthOnly",
+                "limit": 100,
+            }),
+        )
+        .await?;
+        let response = serde_json::from_value::<McpServerStatusListResponse>(value)
+            .map_err(|err| format!("failed to decode app tools response: {err}"))?;
+
+        if let Some(status_entry) = response
+            .data
+            .iter()
+            .find(|status_entry| status_entry.name == "codex_apps")
+        {
+            return Ok(ReadAppToolsResponse {
+                tools: map_app_tools(status_entry, &params.app_id),
+            });
+        }
+
+        if response.next_cursor.is_none() {
+            return Ok(ReadAppToolsResponse { tools: Vec::new() });
+        }
+        cursor = response.next_cursor;
+    }
+}
+
+#[tauri::command(rename = "read-app-tools")]
+pub async fn read_app_tools_command(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: ReadAppToolsParams,
+) -> Result<ReadAppToolsResponse, String> {
+    read_app_tools(state, params).await
+}
+
+#[tauri::command]
 pub async fn list_plugins(
     state: State<'_, Arc<AuthBridgeState>>,
     params: PluginListParams,
@@ -1819,11 +2347,107 @@ pub async fn list_plugins_command(
 }
 
 #[tauri::command]
+pub async fn add_marketplace(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: MarketplaceAddParams,
+) -> Result<MarketplaceAddResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "add-marketplace")?;
+    let MarketplaceAddParams {
+        host_id: _,
+        source,
+        ref_name,
+        sparse_paths,
+    } = params;
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::MarketplaceAdd,
+        serde_json::json!({
+            "source": source,
+            "refName": ref_name,
+            "sparsePaths": sparse_paths,
+        }),
+    )
+    .await?;
+    serde_json::from_value::<MarketplaceAddResponse>(value)
+        .map_err(|err| format!("failed to decode marketplace add response: {err}"))
+}
+
+#[tauri::command(rename = "add-marketplace")]
+pub async fn add_marketplace_command(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: MarketplaceAddParams,
+) -> Result<MarketplaceAddResponse, String> {
+    add_marketplace(state, params).await
+}
+
+#[tauri::command]
+pub async fn remove_marketplace(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: MarketplaceRemoveParams,
+) -> Result<MarketplaceRemoveResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "remove-marketplace")?;
+    let MarketplaceRemoveParams {
+        host_id: _,
+        marketplace_name,
+    } = params;
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::MarketplaceRemove,
+        serde_json::json!({
+            "marketplaceName": marketplace_name,
+        }),
+    )
+    .await?;
+    serde_json::from_value::<MarketplaceRemoveResponse>(value)
+        .map_err(|err| format!("failed to decode marketplace remove response: {err}"))
+}
+
+#[tauri::command(rename = "remove-marketplace")]
+pub async fn remove_marketplace_command(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: MarketplaceRemoveParams,
+) -> Result<MarketplaceRemoveResponse, String> {
+    remove_marketplace(state, params).await
+}
+
+#[tauri::command]
+pub async fn upgrade_marketplaces(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: MarketplaceUpgradeParams,
+) -> Result<MarketplaceUpgradeResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "upgrade-marketplaces")?;
+    let MarketplaceUpgradeParams {
+        host_id: _,
+        marketplace_name,
+    } = params;
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::MarketplaceUpgrade,
+        serde_json::json!({
+            "marketplaceName": marketplace_name,
+        }),
+    )
+    .await?;
+    serde_json::from_value::<MarketplaceUpgradeResponse>(value)
+        .map_err(|err| format!("failed to decode marketplace upgrade response: {err}"))
+}
+
+#[tauri::command(rename = "upgrade-marketplaces")]
+pub async fn upgrade_marketplaces_command(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: MarketplaceUpgradeParams,
+) -> Result<MarketplaceUpgradeResponse, String> {
+    upgrade_marketplaces(state, params).await
+}
+
+#[tauri::command]
 pub async fn read_plugin(
     state: State<'_, Arc<AuthBridgeState>>,
     params: PluginReadParams,
 ) -> Result<PluginReadResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "read-plugin")?;
     let PluginReadParams {
+        host_id: _,
         marketplace_path,
         remote_marketplace_name,
         plugin_name,
@@ -1847,12 +2471,22 @@ pub async fn read_plugin(
         .map_err(|err| format!("failed to decode plugin read response: {err}"))
 }
 
+#[tauri::command(rename = "read-plugin")]
+pub async fn read_plugin_command(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: PluginReadParams,
+) -> Result<PluginReadResponse, String> {
+    read_plugin(state, params).await
+}
+
 #[tauri::command]
 pub async fn install_plugin(
     state: State<'_, Arc<AuthBridgeState>>,
     params: PluginInstallParams,
 ) -> Result<PluginInstallResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "install-plugin")?;
     let PluginInstallParams {
+        host_id: _,
         marketplace_path,
         remote_marketplace_name,
         plugin_name,
@@ -1877,11 +2511,20 @@ pub async fn install_plugin(
         .map_err(|err| format!("failed to decode plugin install response: {err}"))
 }
 
+#[tauri::command(rename = "install-plugin")]
+pub async fn install_plugin_command(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: PluginInstallParams,
+) -> Result<PluginInstallResponse, String> {
+    install_plugin(state, params).await
+}
+
 #[tauri::command]
 pub async fn uninstall_plugin(
     state: State<'_, Arc<AuthBridgeState>>,
     params: PluginUninstallParams,
 ) -> Result<PluginUninstallResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "uninstall-plugin")?;
     send_request(
         state.inner(),
         AppServerRequestKind::PluginUninstall,
@@ -1891,6 +2534,14 @@ pub async fn uninstall_plugin(
     )
     .await
     .map(|_| PluginUninstallResponse {})
+}
+
+#[tauri::command(rename = "uninstall-plugin")]
+pub async fn uninstall_plugin_command(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: PluginUninstallParams,
+) -> Result<PluginUninstallResponse, String> {
+    uninstall_plugin(state, params).await
 }
 
 #[tauri::command]
@@ -2036,6 +2687,16 @@ pub async fn reload_mcp_server_config(
     .map(|_| ())
 }
 
+#[tauri::command(rename = "codex-app-server-restart")]
+pub async fn codex_app_server_restart(
+    app: AppHandle,
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: HostScopedParams,
+) -> Result<(), String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "codex-app-server-restart")?;
+    restart_app_server(&app, state.inner()).await
+}
+
 #[tauri::command]
 pub async fn list_recent_threads(
     state: State<'_, Arc<AuthBridgeState>>,
@@ -2048,6 +2709,33 @@ pub async fn list_archived_threads(
     state: State<'_, Arc<AuthBridgeState>>,
 ) -> Result<Vec<ThreadHistoryEntry>, String> {
     list_threads(state.inner(), true).await
+}
+
+#[tauri::command(rename = "list-archived-threads")]
+pub async fn list_archived_threads_command(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: HostScopedParams,
+) -> Result<Vec<ThreadHistoryEntry>, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "list-archived-threads")?;
+    list_threads(state.inner(), true).await
+}
+
+#[tauri::command(rename = "unsubscribe-thread-for-host")]
+pub async fn unsubscribe_thread_for_host(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: UnsubscribeThreadForHostParams,
+) -> Result<ThreadUnsubscribeResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "unsubscribe-thread-for-host")?;
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::ThreadUnsubscribe,
+        serde_json::json!({
+            "threadId": params.thread_id,
+        }),
+    )
+    .await?;
+    serde_json::from_value::<ThreadUnsubscribeResponse>(value)
+        .map_err(|err| format!("failed to decode thread unsubscribe response: {err}"))
 }
 
 async fn list_threads(
@@ -2209,6 +2897,15 @@ pub async fn unarchive_thread(
     let response = serde_json::from_value::<ThreadStartResponse>(value)
         .map_err(|err| format!("failed to decode thread unarchive response: {err}"))?;
     Ok(response.thread.id)
+}
+
+#[tauri::command(rename = "unarchive-conversation")]
+pub async fn unarchive_conversation_command(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: UnarchiveConversationParams,
+) -> Result<String, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "unarchive-conversation")?;
+    unarchive_thread(state, params.conversation_id).await
 }
 
 #[tauri::command]
@@ -2669,6 +3366,44 @@ pub fn shared_state() -> Arc<AuthBridgeState> {
     Arc::new(AuthBridgeState::default())
 }
 
+pub(crate) fn register_external_agent_import_completed_waiter(
+    state: &Arc<AuthBridgeState>,
+) -> ExternalAgentImportCompletedWaiter {
+    let seen_generation = *state
+        .external_agent_import_completed_generation
+        .lock()
+        .expect("external agent import generation mutex poisoned");
+    ExternalAgentImportCompletedWaiter {
+        state: Arc::clone(state),
+        seen_generation,
+    }
+}
+
+pub(crate) async fn request_external_agent_config_detect(
+    state: &Arc<AuthBridgeState>,
+    payload: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    send_request(
+        state,
+        AppServerRequestKind::ExternalAgentConfigDetect,
+        payload,
+    )
+    .await
+}
+
+pub(crate) async fn request_external_agent_config_import(
+    state: &Arc<AuthBridgeState>,
+    payload: serde_json::Value,
+) -> Result<(), String> {
+    send_request(
+        state,
+        AppServerRequestKind::ExternalAgentConfigImport,
+        payload,
+    )
+    .await
+    .map(|_| ())
+}
+
 pub async fn start_thread_with_personality(
     state: &Arc<AuthBridgeState>,
     cwd: Option<String>,
@@ -2744,7 +3479,19 @@ pub async fn start_turn_with_input_and_personality(
 
 pub async fn start(app: AppHandle) -> Result<(), String> {
     let state = app.state::<Arc<AuthBridgeState>>().inner().clone();
-    update_snapshot(&app, &state, AuthSnapshot::default());
+    let _lifecycle_lock = state.app_server_lifecycle_lock.lock().await;
+    spawn_app_server(&app, &state, true).await
+}
+
+async fn spawn_app_server(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    reset_snapshot: bool,
+) -> Result<(), String> {
+    if reset_snapshot {
+        update_snapshot(app, state, AuthSnapshot::default());
+    }
+    *state.is_ready.lock().expect("ready mutex poisoned") = false;
 
     let mut child = Command::new("cmd")
         .args(["/c", "codex", "app-server", "--listen", "stdio://"])
@@ -2769,13 +3516,51 @@ pub async fn start(app: AppHandle) -> Result<(), String> {
         .lock()
         .expect("request channel mutex poisoned") = Some(request_tx);
 
-    tokio::spawn(run_client(app, state, stdin, stdout, request_rx));
+    let generation = {
+        let mut generation = state
+            .app_server_generation
+            .lock()
+            .expect("app-server generation mutex poisoned");
+        *generation += 1;
+        *generation
+    };
+    *state.app_server_process.lock().await = Some(child);
+
+    tokio::spawn(run_client(
+        app.clone(),
+        Arc::clone(state),
+        generation,
+        stdin,
+        stdout,
+        request_rx,
+    ));
     Ok(())
+}
+
+async fn stop_app_server(state: &Arc<AuthBridgeState>) {
+    *state.is_ready.lock().expect("ready mutex poisoned") = false;
+    *state
+        .request_tx
+        .lock()
+        .expect("request channel mutex poisoned") = None;
+
+    let child = state.app_server_process.lock().await.take();
+    if let Some(mut child) = child {
+        let _ = child.start_kill();
+        let _ = child.wait().await;
+    }
+}
+
+async fn restart_app_server(app: &AppHandle, state: &Arc<AuthBridgeState>) -> Result<(), String> {
+    let _lifecycle_lock = state.app_server_lifecycle_lock.lock().await;
+    stop_app_server(state).await;
+    spawn_app_server(app, state, false).await
 }
 
 async fn run_client(
     app: AppHandle,
     state: Arc<AuthBridgeState>,
+    generation: u64,
     mut stdin: ChildStdin,
     stdout: ChildStdout,
     mut request_rx: mpsc::UnboundedReceiver<AppServerMessage>,
@@ -2880,6 +3665,12 @@ async fn run_client(
                         if id == JsonRpcId::Integer(1) && !initialized {
                             initialized = true;
                             *state.is_ready.lock().expect("ready mutex poisoned") = true;
+                            let _ = app.emit(
+                                CODEX_APP_SERVER_INITIALIZED_EVENT,
+                                CodexAppServerInitializedNotification {
+                                    host_id: LOCAL_HOST_ID.to_string(),
+                                },
+                            );
                             let _ = write_json(&mut stdin, &serde_json::json!({"method":"initialized","params":{}})).await;
                             queue_account_read(&mut stdin, &mut next_request_id, &mut pending).await;
                             continue;
@@ -2953,6 +3744,9 @@ async fn run_client(
                             }
                             "app/list/updated" => {
                                 handle_apps_list_updated(&app, params);
+                            }
+                            "externalAgentConfig/import/completed" => {
+                                handle_external_agent_import_completed(&state);
                             }
                             "mcpServer/startupStatus/updated" => {}
                             "turn/started" => {
@@ -3056,6 +3850,26 @@ async fn run_client(
             }
         }
     }
+
+    let is_current_generation = {
+        let current_generation = *state
+            .app_server_generation
+            .lock()
+            .expect("app-server generation mutex poisoned");
+        current_generation == generation
+    };
+    if is_current_generation {
+        *state.is_ready.lock().expect("ready mutex poisoned") = false;
+        *state
+            .request_tx
+            .lock()
+            .expect("request channel mutex poisoned") = None;
+
+        let child = state.app_server_process.lock().await.take();
+        if let Some(mut child) = child {
+            let _ = child.wait().await;
+        }
+    }
 }
 
 async fn queue_account_read(
@@ -3134,6 +3948,8 @@ fn request_method(kind: &AppServerRequestKind) -> &'static str {
         AppServerRequestKind::CancelLogin => "account/login/cancel",
         AppServerRequestKind::Logout => "account/logout",
         AppServerRequestKind::ConfigRead => "config/read",
+        AppServerRequestKind::ExternalAgentConfigDetect => "externalAgentConfig/detect",
+        AppServerRequestKind::ExternalAgentConfigImport => "externalAgentConfig/import",
         AppServerRequestKind::ConfigRequirementsRead => "configRequirements/read",
         AppServerRequestKind::ConfigValueWrite => "config/value/write",
         AppServerRequestKind::ConfigBatchWrite => "config/batchWrite",
@@ -3146,7 +3962,11 @@ fn request_method(kind: &AppServerRequestKind) -> &'static str {
         AppServerRequestKind::McpServerStatusList => "mcpServerStatus/list",
         AppServerRequestKind::ReloadMcpServerConfig => "config/mcpServer/reload",
         AppServerRequestKind::SkillsList => "skills/list",
+        AppServerRequestKind::SkillsConfigWrite => "skills/config/write",
         AppServerRequestKind::HooksList => "hooks/list",
+        AppServerRequestKind::MarketplaceAdd => "marketplace/add",
+        AppServerRequestKind::MarketplaceRemove => "marketplace/remove",
+        AppServerRequestKind::MarketplaceUpgrade => "marketplace/upgrade",
         AppServerRequestKind::PluginList => "plugin/list",
         AppServerRequestKind::PluginRead => "plugin/read",
         AppServerRequestKind::PluginShareList => "plugin/share/list",
@@ -3158,6 +3978,7 @@ fn request_method(kind: &AppServerRequestKind) -> &'static str {
         AppServerRequestKind::ThreadStart => "thread/start",
         AppServerRequestKind::ThreadFork => "thread/fork",
         AppServerRequestKind::ThreadArchive => "thread/archive",
+        AppServerRequestKind::ThreadUnsubscribe => "thread/unsubscribe",
         AppServerRequestKind::ThreadUnarchive => "thread/unarchive",
         AppServerRequestKind::ThreadNameSet => "thread/name/set",
         AppServerRequestKind::ThreadRead => "thread/read",
@@ -3207,6 +4028,19 @@ fn handle_item_started(
             item: thread_item,
         },
     );
+}
+
+fn handle_external_agent_import_completed(state: &Arc<AuthBridgeState>) {
+    {
+        let mut generation = state
+            .external_agent_import_completed_generation
+            .lock()
+            .expect("external agent import generation mutex poisoned");
+        *generation += 1;
+    }
+    state
+        .external_agent_import_completed_notify
+        .notify_waiters();
 }
 
 fn handle_item_completed(
@@ -4575,12 +5409,14 @@ mod tests {
     use super::ensure_supported_host_id;
     use super::map_account;
     use super::map_account_info_response;
+    use super::map_app_tools;
     use super::plugin_list_cwds;
     use super::skills_list_cwds;
     use super::Account;
     use super::AccountInfoResponse;
     use super::AccountReadResponse;
     use super::ApiKeyLoginParams;
+    use super::AppToolInfo;
     use super::ArchiveConversationParams;
     use super::AuthState;
     use super::ConfigBatchWriteForHostParams;
@@ -4594,13 +5430,47 @@ mod tests {
     use super::HooksListParams;
     use super::HooksListResponse;
     use super::HostScopedParams;
+    use super::MarketplaceAddParams;
+    use super::MarketplaceAddResponse;
+    use super::MarketplaceInterface;
+    use super::MarketplaceRemoveParams;
+    use super::MarketplaceRemoveResponse;
+    use super::MarketplaceUpgradeErrorInfo;
+    use super::MarketplaceUpgradeParams;
+    use super::MarketplaceUpgradeResponse;
     use super::McpServerOauthLoginParams;
+    use super::McpServerStatusEntry;
     use super::McpServerStatusListParams;
+    use super::McpServerStatusListResponse;
+    use super::PluginAuthPolicy;
+    use super::PluginAvailability;
+    use super::PluginDetail;
+    use super::PluginHookSummary;
+    use super::PluginInstallParams;
+    use super::PluginInstallPolicy;
+    use super::PluginInterface;
     use super::PluginListParams;
+    use super::PluginListResponse;
+    use super::PluginMarketplaceEntry;
+    use super::PluginReadParams;
+    use super::PluginReadResponse;
+    use super::PluginShareContext;
     use super::PluginShareDeleteParams;
     use super::PluginShareListParams;
+    use super::PluginSharePrincipal;
+    use super::PluginSharePrincipalType;
     use super::PluginShareSaveParams;
+    use super::PluginSource;
+    use super::PluginSummary;
+    use super::PluginUninstallParams;
+    use super::ReadAppToolsParams;
+    use super::SkillInterface;
+    use super::SkillsConfigWriteParams;
     use super::SkillsListParams;
+    use super::ThreadUnsubscribeResponse;
+    use super::ThreadUnsubscribeStatus;
+    use super::UnarchiveConversationParams;
+    use super::UnsubscribeThreadForHostParams;
     use serde_json::json;
 
     #[test]
@@ -4632,6 +5502,55 @@ mod tests {
             ArchiveConversationParams {
                 conversation_id: "thr_123".to_string(),
                 cleanup_worktree: false,
+            }
+        );
+    }
+
+    #[test]
+    fn unarchive_conversation_params_accept_page_owned_shape() {
+        let params: UnarchiveConversationParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "conversationId": "thr_123"
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            UnarchiveConversationParams {
+                host_id: Some("local".to_string()),
+                conversation_id: "thr_123".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn unsubscribe_thread_for_host_params_accept_upstream_shape() {
+        let params: UnsubscribeThreadForHostParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "threadId": "thr_123"
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            UnsubscribeThreadForHostParams {
+                host_id: Some("local".to_string()),
+                thread_id: "thr_123".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn unsubscribe_thread_for_host_response_deserializes_upstream_status() {
+        let response: ThreadUnsubscribeResponse = serde_json::from_value(json!({
+            "status": "notSubscribed"
+        }))
+        .expect("response should deserialize");
+
+        assert_eq!(
+            response,
+            ThreadUnsubscribeResponse {
+                status: ThreadUnsubscribeStatus::NotSubscribed,
             }
         );
     }
@@ -4686,6 +5605,15 @@ mod tests {
 
     #[test]
     fn remote_connections_auth_host_scoped_commands_only_accept_local_host() {
+        assert!(ensure_supported_host_id(None, "login-with-api-key").is_ok());
+        assert!(ensure_supported_host_id(Some(""), "login-with-api-key").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "login-with-api-key").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "login-with-api-key")
+                .expect_err("non-local host id should be rejected"),
+            "login-with-api-key does not support host id: remote"
+        );
+
         assert!(ensure_supported_host_id(None, "login-with-api-key-for-host").is_ok());
         assert!(ensure_supported_host_id(Some(""), "login-with-api-key-for-host").is_ok());
         assert!(ensure_supported_host_id(Some("local"), "login-with-api-key-for-host").is_ok());
@@ -4695,6 +5623,33 @@ mod tests {
             "login-with-api-key-for-host does not support host id: remote"
         );
 
+        assert!(ensure_supported_host_id(None, "login-with-chatgpt").is_ok());
+        assert!(ensure_supported_host_id(Some(""), "login-with-chatgpt").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "login-with-chatgpt").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "login-with-chatgpt")
+                .expect_err("non-local host id should be rejected"),
+            "login-with-chatgpt does not support host id: remote"
+        );
+
+        assert!(ensure_supported_host_id(None, "login-with-chatgpt-for-host").is_ok());
+        assert!(ensure_supported_host_id(Some(""), "login-with-chatgpt-for-host").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "login-with-chatgpt-for-host").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "login-with-chatgpt-for-host")
+                .expect_err("non-local host id should be rejected"),
+            "login-with-chatgpt-for-host does not support host id: remote"
+        );
+
+        assert!(ensure_supported_host_id(None, "login-with-chatgpt-device-code").is_ok());
+        assert!(ensure_supported_host_id(Some(""), "login-with-chatgpt-device-code").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "login-with-chatgpt-device-code").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "login-with-chatgpt-device-code")
+                .expect_err("non-local host id should be rejected"),
+            "login-with-chatgpt-device-code does not support host id: remote"
+        );
+
         assert!(ensure_supported_host_id(None, "logout").is_ok());
         assert!(ensure_supported_host_id(Some(""), "logout").is_ok());
         assert!(ensure_supported_host_id(Some("local"), "logout").is_ok());
@@ -4702,6 +5657,30 @@ mod tests {
             ensure_supported_host_id(Some("remote"), "logout")
                 .expect_err("non-local host id should be rejected"),
             "logout does not support host id: remote"
+        );
+
+        assert!(ensure_supported_host_id(None, "list-archived-threads").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "list-archived-threads").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "list-archived-threads")
+                .expect_err("non-local host id should be rejected"),
+            "list-archived-threads does not support host id: remote"
+        );
+
+        assert!(ensure_supported_host_id(None, "unsubscribe-thread-for-host").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "unsubscribe-thread-for-host").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "unsubscribe-thread-for-host")
+                .expect_err("non-local host id should be rejected"),
+            "unsubscribe-thread-for-host does not support host id: remote"
+        );
+
+        assert!(ensure_supported_host_id(None, "unarchive-conversation").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "unarchive-conversation").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "unarchive-conversation")
+                .expect_err("non-local host id should be rejected"),
+            "unarchive-conversation does not support host id: remote"
         );
     }
 
@@ -4757,6 +5736,27 @@ mod tests {
                 merge_strategy: "upsert".to_string(),
                 file_path: Some("D:/repo/.codex/config.toml".to_string()),
                 expected_version: Some("version-1".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn skills_config_write_params_accept_host_id() {
+        let params: SkillsConfigWriteParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "path": "D:/repo/.codex/skills/my-skill/SKILL.md",
+            "name": null,
+            "enabled": false
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            SkillsConfigWriteParams {
+                host_id: Some("local".to_string()),
+                path: Some("D:/repo/.codex/skills/my-skill/SKILL.md".to_string()),
+                name: None,
+                enabled: false,
             }
         );
     }
@@ -4830,6 +5830,14 @@ mod tests {
             ensure_supported_host_id(Some("remote"), "batch-write-config-value")
                 .expect_err("non-local host id should be rejected"),
             "batch-write-config-value does not support host id: remote"
+        );
+
+        assert!(ensure_supported_host_id(None, "skills-config-write").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "skills-config-write").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "skills-config-write")
+                .expect_err("non-local host id should be rejected"),
+            "skills-config-write does not support host id: remote"
         );
     }
 
@@ -4928,6 +5936,162 @@ mod tests {
             ensure_supported_host_id(Some("remote"), "login-mcp-server")
                 .expect_err("non-local host id should be rejected"),
             "login-mcp-server does not support host id: remote"
+        );
+    }
+
+    #[test]
+    fn read_app_tools_params_accept_host_id() {
+        let params: ReadAppToolsParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "appId": "connector-1"
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            ReadAppToolsParams {
+                host_id: Some("local".to_string()),
+                app_id: "connector-1".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn read_app_tools_only_accepts_local_host() {
+        assert!(ensure_supported_host_id(None, "read-app-tools").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "read-app-tools").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "read-app-tools")
+                .expect_err("non-local host id should be rejected"),
+            "read-app-tools does not support host id: remote"
+        );
+    }
+
+    #[test]
+    fn mcp_server_status_response_deserializes_tool_inventory() {
+        let response: McpServerStatusListResponse = serde_json::from_value(json!({
+            "data": [{
+                "name": "codex_apps",
+                "authStatus": "authenticated",
+                "tools": {
+                    "read_contacts": {
+                        "name": "lookup_contact",
+                        "description": "Find a contact",
+                        "visibility": "public",
+                        "annotations": {
+                            "readOnlyHint": true,
+                            "openWorldHint": true
+                        },
+                        "_meta": {
+                            "_codex_apps": {
+                                "connector_id": "connector-1"
+                            }
+                        }
+                    },
+                    "write_contacts": {
+                        "name": "create_contact",
+                        "title": "Create contact",
+                        "description": "Create a contact",
+                        "visibility": "visible",
+                        "annotations": {
+                            "destructiveHint": true
+                        },
+                        "_meta": {
+                            "connectorId": "connector-1"
+                        }
+                    }
+                }
+            }],
+            "nextCursor": null
+        }))
+        .expect("response should deserialize");
+
+        assert_eq!(
+            response.data[0]
+                .tools
+                .get("read_contacts")
+                .and_then(|tool| tool.name.as_deref()),
+            Some("lookup_contact")
+        );
+        assert_eq!(
+            response.data[0]
+                .tools
+                .get("read_contacts")
+                .and_then(|tool| tool.meta.as_ref())
+                .and_then(|meta| meta.codex_apps.as_ref())
+                .and_then(|meta| meta.connector_id.as_deref()),
+            Some("connector-1")
+        );
+        assert_eq!(
+            response.data[0]
+                .tools
+                .get("write_contacts")
+                .and_then(|tool| tool.meta.as_ref())
+                .and_then(|meta| meta.connector_id.as_deref()),
+            Some("connector-1")
+        );
+        assert_eq!(response.next_cursor, None);
+    }
+
+    #[test]
+    fn map_app_tools_filters_and_sorts_connector_tools() {
+        let status_entry: McpServerStatusEntry = serde_json::from_value(json!({
+            "name": "codex_apps",
+            "authStatus": "authenticated",
+            "tools": {
+                "read_contacts": {
+                    "name": "Lookup contact",
+                    "description": "Find a contact",
+                    "visibility": "public",
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "openWorldHint": true
+                    },
+                    "_meta": {
+                        "_codex_apps": {
+                            "connector_id": "connector-1"
+                        }
+                    }
+                },
+                "write_contacts": {
+                    "name": "create_contact",
+                    "title": "Create contact",
+                    "description": "Create a contact",
+                    "visibility": "visible",
+                    "annotations": {
+                        "destructiveHint": true
+                    },
+                    "_meta": {
+                        "connectorId": "connector-1"
+                    }
+                },
+                "other_connector": {
+                    "name": "Ignore me",
+                    "description": "Belongs to another app",
+                    "_meta": {
+                        "connectorId": "connector-2"
+                    }
+                }
+            }
+        }))
+        .expect("status entry should deserialize");
+
+        assert_eq!(
+            map_app_tools(&status_entry, "connector-1"),
+            vec![
+                AppToolInfo {
+                    name: "Create contact".to_string(),
+                    description: "Create a contact".to_string(),
+                    access_badges: vec!["VISIBLE WRITE".to_string(), "DESTRUCTIVE".to_string()],
+                    visibility: Some("VISIBLE".to_string()),
+                },
+                AppToolInfo {
+                    name: "Lookup contact".to_string(),
+                    description: "Find a contact".to_string(),
+                    access_badges: vec!["READ".to_string(), "OPEN WORLD".to_string()],
+                    visibility: Some("PUBLIC".to_string()),
+                },
+            ]
         );
     }
 
@@ -5110,6 +6274,581 @@ mod tests {
             ensure_supported_host_id(Some("remote"), "list-plugins")
                 .expect_err("non-local host id should be rejected"),
             "list-plugins does not support host id: remote"
+        );
+    }
+
+    #[test]
+    fn marketplace_mutation_params_accept_upstream_host_shape() {
+        let add_params: MarketplaceAddParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "source": "openai/plugins",
+            "refName": "main",
+            "sparsePaths": ["plugins/codex", "plugins/browser-use"]
+        }))
+        .expect("add params should deserialize");
+        let remove_params: MarketplaceRemoveParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "marketplaceName": "openai/plugins"
+        }))
+        .expect("remove params should deserialize");
+        let upgrade_params: MarketplaceUpgradeParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "marketplaceName": "openai/plugins"
+        }))
+        .expect("upgrade params should deserialize");
+
+        assert_eq!(
+            add_params,
+            MarketplaceAddParams {
+                host_id: Some("local".to_string()),
+                source: "openai/plugins".to_string(),
+                ref_name: Some("main".to_string()),
+                sparse_paths: Some(vec![
+                    "plugins/codex".to_string(),
+                    "plugins/browser-use".to_string(),
+                ]),
+            }
+        );
+        assert_eq!(
+            remove_params,
+            MarketplaceRemoveParams {
+                host_id: Some("local".to_string()),
+                marketplace_name: "openai/plugins".to_string(),
+            }
+        );
+        assert_eq!(
+            upgrade_params,
+            MarketplaceUpgradeParams {
+                host_id: Some("local".to_string()),
+                marketplace_name: Some("openai/plugins".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn marketplace_mutation_responses_deserialize_upstream_shape() {
+        let add_response: MarketplaceAddResponse = serde_json::from_value(json!({
+            "marketplaceName": "openai/plugins",
+            "installedRoot": "D:/Users/demo/.codex/marketplaces/openai-plugins",
+            "alreadyAdded": true
+        }))
+        .expect("add response should deserialize");
+        let remove_response: MarketplaceRemoveResponse = serde_json::from_value(json!({
+            "marketplaceName": "openai/plugins",
+            "installedRoot": "D:/Users/demo/.codex/marketplaces/openai-plugins"
+        }))
+        .expect("remove response should deserialize");
+        let upgrade_response: MarketplaceUpgradeResponse = serde_json::from_value(json!({
+            "selectedMarketplaces": ["openai/plugins"],
+            "upgradedRoots": ["D:/Users/demo/.codex/marketplaces/openai-plugins"],
+            "errors": [{
+                "marketplaceName": "acme/plugins",
+                "message": "failed to fetch origin"
+            }]
+        }))
+        .expect("upgrade response should deserialize");
+
+        assert_eq!(
+            add_response,
+            MarketplaceAddResponse {
+                marketplace_name: "openai/plugins".to_string(),
+                installed_root: "D:/Users/demo/.codex/marketplaces/openai-plugins".to_string(),
+                already_added: true,
+            }
+        );
+        assert_eq!(
+            remove_response,
+            MarketplaceRemoveResponse {
+                marketplace_name: "openai/plugins".to_string(),
+                installed_root: Some(
+                    "D:/Users/demo/.codex/marketplaces/openai-plugins".to_string()
+                ),
+            }
+        );
+        assert_eq!(
+            upgrade_response,
+            MarketplaceUpgradeResponse {
+                selected_marketplaces: vec!["openai/plugins".to_string()],
+                upgraded_roots: vec!["D:/Users/demo/.codex/marketplaces/openai-plugins".to_string()],
+                errors: vec![MarketplaceUpgradeErrorInfo {
+                    marketplace_name: "acme/plugins".to_string(),
+                    message: "failed to fetch origin".to_string(),
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn plugin_list_response_deserializes_upstream_plugin_sources() {
+        let response: PluginListResponse = serde_json::from_value(json!({
+            "marketplaces": [
+                {
+                    "name": "openai/plugins",
+                    "path": null,
+                    "interface": {
+                        "displayName": "OpenAI"
+                    },
+                    "plugins": [
+                        {
+                            "id": "browser-use@1.0.0",
+                            "name": "browser-use",
+                            "shareContext": {
+                                "remotePluginId": "rplugin_browser_use",
+                                "shareUrl": "https://chatgpt.com/g/g-browser-use",
+                                "creatorAccountUserId": "user_123",
+                                "creatorName": "OpenAI",
+                                "shareTargets": [{
+                                    "principalType": "group",
+                                    "principalId": "team_123",
+                                    "name": "Core Team"
+                                }]
+                            },
+                            "source": {
+                                "type": "remote"
+                            },
+                            "installed": true,
+                            "enabled": true,
+                            "installPolicy": "AVAILABLE",
+                            "authPolicy": "ON_INSTALL",
+                            "availability": "AVAILABLE",
+                            "keywords": ["browser", "automation"],
+                            "interface": null
+                        }
+                    ]
+                },
+                {
+                    "name": "workspace-marketplace",
+                    "path": "D:/repo/.codex/plugins",
+                    "interface": null,
+                    "plugins": [
+                        {
+                            "id": "workspace-plugin@1.0.0",
+                            "name": "workspace-plugin",
+                            "shareContext": null,
+                            "source": {
+                                "type": "local",
+                                "path": "D:/repo/.codex/plugins/workspace-plugin"
+                            },
+                            "installed": true,
+                            "enabled": false,
+                            "installPolicy": "INSTALLED_BY_DEFAULT",
+                            "authPolicy": "ON_USE",
+                            "availability": "DISABLED_BY_ADMIN",
+                            "keywords": [],
+                            "interface": null
+                        },
+                        {
+                            "id": "git-plugin@1.0.0",
+                            "name": "git-plugin",
+                            "shareContext": null,
+                            "source": {
+                                "type": "git",
+                                "url": "https://github.com/acme/plugins.git",
+                                "path": "plugins/git-plugin",
+                                "refName": "main",
+                                "sha": "abc123"
+                            },
+                            "installed": true,
+                            "enabled": true,
+                            "installPolicy": "NOT_AVAILABLE",
+                            "authPolicy": "ON_INSTALL",
+                            "availability": "AVAILABLE",
+                            "keywords": ["git"],
+                            "interface": null
+                        }
+                    ]
+                }
+            ],
+            "marketplaceLoadErrors": [],
+            "featuredPluginIds": []
+        }))
+        .expect("plugin list response should deserialize");
+
+        assert_eq!(
+            response,
+            PluginListResponse {
+                marketplaces: vec![
+                    PluginMarketplaceEntry {
+                        name: "openai/plugins".to_string(),
+                        path: None,
+                        interface: Some(MarketplaceInterface {
+                            display_name: Some("OpenAI".to_string()),
+                        }),
+                        plugins: vec![PluginSummary {
+                            id: "browser-use@1.0.0".to_string(),
+                            name: "browser-use".to_string(),
+                            share_context: Some(PluginShareContext {
+                                remote_plugin_id: "rplugin_browser_use".to_string(),
+                                share_url: Some("https://chatgpt.com/g/g-browser-use".to_string(),),
+                                creator_account_user_id: Some("user_123".to_string()),
+                                creator_name: Some("OpenAI".to_string()),
+                                share_targets: Some(vec![PluginSharePrincipal {
+                                    principal_type: PluginSharePrincipalType::Group,
+                                    principal_id: "team_123".to_string(),
+                                    name: "Core Team".to_string(),
+                                }]),
+                            }),
+                            source: PluginSource::Remote,
+                            installed: true,
+                            enabled: true,
+                            install_policy: PluginInstallPolicy::Available,
+                            auth_policy: PluginAuthPolicy::OnInstall,
+                            availability: PluginAvailability::Available,
+                            interface: None,
+                            keywords: vec!["browser".to_string(), "automation".to_string()],
+                        }],
+                    },
+                    PluginMarketplaceEntry {
+                        name: "workspace-marketplace".to_string(),
+                        path: Some("D:/repo/.codex/plugins".to_string()),
+                        interface: None,
+                        plugins: vec![
+                            PluginSummary {
+                                id: "workspace-plugin@1.0.0".to_string(),
+                                name: "workspace-plugin".to_string(),
+                                share_context: None,
+                                source: PluginSource::Local {
+                                    path: "D:/repo/.codex/plugins/workspace-plugin".to_string(),
+                                },
+                                installed: true,
+                                enabled: false,
+                                install_policy: PluginInstallPolicy::InstalledByDefault,
+                                auth_policy: PluginAuthPolicy::OnUse,
+                                availability: PluginAvailability::DisabledByAdmin,
+                                interface: None,
+                                keywords: vec![],
+                            },
+                            PluginSummary {
+                                id: "git-plugin@1.0.0".to_string(),
+                                name: "git-plugin".to_string(),
+                                share_context: None,
+                                source: PluginSource::Git {
+                                    url: "https://github.com/acme/plugins.git".to_string(),
+                                    path: Some("plugins/git-plugin".to_string()),
+                                    ref_name: Some("main".to_string()),
+                                    sha: Some("abc123".to_string()),
+                                },
+                                installed: true,
+                                enabled: true,
+                                install_policy: PluginInstallPolicy::NotAvailable,
+                                auth_policy: PluginAuthPolicy::OnInstall,
+                                availability: PluginAvailability::Available,
+                                interface: None,
+                                keywords: vec!["git".to_string()],
+                            },
+                        ],
+                    },
+                ],
+                marketplace_load_errors: vec![],
+                featured_plugin_ids: vec![],
+            }
+        );
+    }
+
+    #[test]
+    fn plugin_read_response_deserializes_upstream_plugin_detail_shape() {
+        let response: PluginReadResponse = serde_json::from_value(json!({
+            "plugin": {
+                "marketplaceName": "openai/plugins",
+                "marketplacePath": "D:/Users/demo/.codex/marketplaces/openai-plugins/.agents/plugins/marketplace.json",
+                "summary": {
+                    "id": "browser-use@1.0.0",
+                    "name": "browser-use",
+                    "shareContext": {
+                        "remotePluginId": "rplugin_browser_use",
+                        "shareUrl": "https://chatgpt.com/g/g-browser-use",
+                        "creatorAccountUserId": "user_123",
+                        "creatorName": "OpenAI",
+                        "shareTargets": [{
+                            "principalType": "workspace",
+                            "principalId": "ws_123",
+                            "name": "OpenAI Workspace"
+                        }]
+                    },
+                    "source": {
+                        "type": "git",
+                        "url": "https://github.com/openai/plugins.git",
+                        "path": "plugins/browser-use",
+                        "refName": "main",
+                        "sha": "abc123"
+                    },
+                    "installed": true,
+                    "enabled": true,
+                    "installPolicy": "AVAILABLE",
+                    "authPolicy": "ON_INSTALL",
+                    "availability": "DISABLED_BY_ADMIN",
+                    "interface": {
+                        "displayName": "Browser Use",
+                        "shortDescription": "Control a browser",
+                        "longDescription": "Drive and inspect browser sessions.",
+                        "developerName": "OpenAI",
+                        "category": "Browser",
+                        "capabilities": ["browser", "automation"],
+                        "websiteUrl": "https://example.com/browser-use",
+                        "privacyPolicyUrl": "https://example.com/privacy",
+                        "termsOfServiceUrl": "https://example.com/terms",
+                        "defaultPrompt": ["Summarize this page"],
+                        "brandColor": "#00AAFF",
+                        "composerIcon": "D:/plugins/browser-use/assets/composer.png",
+                        "composerIconUrl": "https://cdn.example.com/composer.png",
+                        "logo": "D:/plugins/browser-use/assets/logo.png",
+                        "logoUrl": "https://cdn.example.com/logo.png",
+                        "screenshots": ["D:/plugins/browser-use/assets/screenshot-1.png"],
+                        "screenshotUrls": ["https://cdn.example.com/screenshot-1.png"]
+                    },
+                    "keywords": ["browser", "automation"]
+                },
+                "description": "Drive and inspect browser sessions.",
+                "skills": [{
+                    "name": "browser",
+                    "description": "Interact with a browser",
+                    "shortDescription": "Control tabs",
+                    "interface": {
+                        "displayName": "Browser Skill",
+                        "shortDescription": "Control tabs",
+                        "iconSmall": "D:/plugins/browser-use/skills/browser/icon-small.png",
+                        "iconLarge": "D:/plugins/browser-use/skills/browser/icon-large.png",
+                        "brandColor": "#112233",
+                        "defaultPrompt": "Open example.com"
+                    },
+                    "path": "D:/plugins/browser-use/skills/browser",
+                    "enabled": true
+                }],
+                "hooks": [{
+                    "key": "browser.after_tool",
+                    "eventName": "post_tool"
+                }],
+                "apps": [{
+                    "id": "browser-app",
+                    "name": "Browser App",
+                    "description": "Connected browser app",
+                    "installUrl": "https://example.com/install",
+                    "needsAuth": true
+                }],
+                "mcpServers": ["browser-server"]
+            }
+        }))
+        .expect("plugin read response should deserialize");
+
+        assert_eq!(
+            response,
+            PluginReadResponse {
+                plugin: PluginDetail {
+                    marketplace_name: "openai/plugins".to_string(),
+                    marketplace_path: Some(
+                        "D:/Users/demo/.codex/marketplaces/openai-plugins/.agents/plugins/marketplace.json"
+                            .to_string(),
+                    ),
+                    summary: PluginSummary {
+                        id: "browser-use@1.0.0".to_string(),
+                        name: "browser-use".to_string(),
+                        share_context: Some(PluginShareContext {
+                            remote_plugin_id: "rplugin_browser_use".to_string(),
+                            share_url: Some(
+                                "https://chatgpt.com/g/g-browser-use".to_string(),
+                            ),
+                            creator_account_user_id: Some("user_123".to_string()),
+                            creator_name: Some("OpenAI".to_string()),
+                            share_targets: Some(vec![PluginSharePrincipal {
+                                principal_type: PluginSharePrincipalType::Workspace,
+                                principal_id: "ws_123".to_string(),
+                                name: "OpenAI Workspace".to_string(),
+                            }]),
+                        }),
+                        source: PluginSource::Git {
+                            url: "https://github.com/openai/plugins.git".to_string(),
+                            path: Some("plugins/browser-use".to_string()),
+                            ref_name: Some("main".to_string()),
+                            sha: Some("abc123".to_string()),
+                        },
+                        installed: true,
+                        enabled: true,
+                        install_policy: PluginInstallPolicy::Available,
+                        auth_policy: PluginAuthPolicy::OnInstall,
+                        availability: PluginAvailability::DisabledByAdmin,
+                        interface: Some(PluginInterface {
+                            display_name: Some("Browser Use".to_string()),
+                            short_description: Some("Control a browser".to_string()),
+                            long_description: Some(
+                                "Drive and inspect browser sessions.".to_string(),
+                            ),
+                            developer_name: Some("OpenAI".to_string()),
+                            category: Some("Browser".to_string()),
+                            capabilities: vec![
+                                "browser".to_string(),
+                                "automation".to_string(),
+                            ],
+                            website_url: Some(
+                                "https://example.com/browser-use".to_string(),
+                            ),
+                            privacy_policy_url: Some(
+                                "https://example.com/privacy".to_string(),
+                            ),
+                            terms_of_service_url: Some(
+                                "https://example.com/terms".to_string(),
+                            ),
+                            default_prompt: Some(vec![
+                                "Summarize this page".to_string(),
+                            ]),
+                            brand_color: Some("#00AAFF".to_string()),
+                            composer_icon: Some(
+                                "D:/plugins/browser-use/assets/composer.png".to_string(),
+                            ),
+                            composer_icon_url: Some(
+                                "https://cdn.example.com/composer.png".to_string(),
+                            ),
+                            logo: Some(
+                                "D:/plugins/browser-use/assets/logo.png".to_string(),
+                            ),
+                            logo_url: Some(
+                                "https://cdn.example.com/logo.png".to_string(),
+                            ),
+                            screenshots: vec![
+                                "D:/plugins/browser-use/assets/screenshot-1.png".to_string(),
+                            ],
+                            screenshot_urls: vec![
+                                "https://cdn.example.com/screenshot-1.png".to_string(),
+                            ],
+                        }),
+                        keywords: vec!["browser".to_string(), "automation".to_string()],
+                    },
+                    description: Some("Drive and inspect browser sessions.".to_string()),
+                    skills: vec![super::PluginSkillSummary {
+                        name: "browser".to_string(),
+                        description: "Interact with a browser".to_string(),
+                        short_description: Some("Control tabs".to_string()),
+                        interface: Some(SkillInterface {
+                            display_name: Some("Browser Skill".to_string()),
+                            short_description: Some("Control tabs".to_string()),
+                            icon_small: Some(
+                                "D:/plugins/browser-use/skills/browser/icon-small.png"
+                                    .to_string(),
+                            ),
+                            icon_large: Some(
+                                "D:/plugins/browser-use/skills/browser/icon-large.png"
+                                    .to_string(),
+                            ),
+                            brand_color: Some("#112233".to_string()),
+                            default_prompt: Some("Open example.com".to_string()),
+                        }),
+                        path: Some("D:/plugins/browser-use/skills/browser".to_string()),
+                        enabled: true,
+                    }],
+                    hooks: vec![PluginHookSummary {
+                        key: "browser.after_tool".to_string(),
+                        event_name: "post_tool".to_string(),
+                    }],
+                    apps: vec![super::PluginAppSummary {
+                        id: "browser-app".to_string(),
+                        name: "Browser App".to_string(),
+                        description: Some("Connected browser app".to_string()),
+                        install_url: Some("https://example.com/install".to_string()),
+                        needs_auth: true,
+                    }],
+                    mcp_servers: vec!["browser-server".to_string()],
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn marketplace_mutation_commands_only_accept_local_host() {
+        assert!(ensure_supported_host_id(None, "add-marketplace").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "add-marketplace").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "add-marketplace")
+                .expect_err("non-local host id should be rejected"),
+            "add-marketplace does not support host id: remote"
+        );
+
+        assert!(ensure_supported_host_id(None, "remove-marketplace").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "remove-marketplace").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "remove-marketplace")
+                .expect_err("non-local host id should be rejected"),
+            "remove-marketplace does not support host id: remote"
+        );
+
+        assert!(ensure_supported_host_id(None, "upgrade-marketplaces").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "upgrade-marketplaces").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "upgrade-marketplaces")
+                .expect_err("non-local host id should be rejected"),
+            "upgrade-marketplaces does not support host id: remote"
+        );
+    }
+
+    #[test]
+    fn plugin_detail_and_mutation_params_accept_upstream_host_shape() {
+        let read_params: PluginReadParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "remoteMarketplaceName": "openai/plugins",
+            "pluginName": "browser-use"
+        }))
+        .expect("read params should deserialize");
+        let install_params: PluginInstallParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "marketplacePath": "D:/repo/.codex/plugins",
+            "pluginName": "browser-use"
+        }))
+        .expect("install params should deserialize");
+        let uninstall_params: PluginUninstallParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "pluginId": "plugin-123"
+        }))
+        .expect("uninstall params should deserialize");
+
+        assert_eq!(
+            read_params,
+            PluginReadParams {
+                host_id: Some("local".to_string()),
+                marketplace_path: None,
+                remote_marketplace_name: Some("openai/plugins".to_string()),
+                plugin_name: "browser-use".to_string(),
+            }
+        );
+        assert_eq!(
+            install_params,
+            PluginInstallParams {
+                host_id: Some("local".to_string()),
+                marketplace_path: Some("D:/repo/.codex/plugins".to_string()),
+                remote_marketplace_name: None,
+                plugin_name: "browser-use".to_string(),
+            }
+        );
+        assert_eq!(
+            uninstall_params,
+            PluginUninstallParams {
+                host_id: Some("local".to_string()),
+                plugin_id: "plugin-123".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn plugin_detail_and_mutation_commands_only_accept_local_host() {
+        assert!(ensure_supported_host_id(None, "read-plugin").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "read-plugin").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "read-plugin")
+                .expect_err("non-local host id should be rejected"),
+            "read-plugin does not support host id: remote"
+        );
+
+        assert!(ensure_supported_host_id(None, "install-plugin").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "install-plugin").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "install-plugin")
+                .expect_err("non-local host id should be rejected"),
+            "install-plugin does not support host id: remote"
+        );
+
+        assert!(ensure_supported_host_id(None, "uninstall-plugin").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "uninstall-plugin").is_ok());
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "uninstall-plugin")
+                .expect_err("non-local host id should be rejected"),
+            "uninstall-plugin does not support host id: remote"
         );
     }
 

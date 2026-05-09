@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { MessageKey } from "../../i18n/messages";
 import { readWorkspaceFile, type WorkspaceFileDocument, type WorkspaceFilePreviewTarget } from "../../services/workspaceFiles";
-import { normalizePreviewText } from "./workspaceFilePreviewUtils";
+import { isWorkspaceFilePdbPreview, normalizePreviewText } from "./workspaceFilePreviewUtils";
+import { PdbPreview } from "./PdbPreview";
 
 type WorkspaceFilePreviewPanelProps = {
   selectedFileTarget: WorkspaceFilePreviewTarget;
@@ -66,12 +67,21 @@ export function WorkspaceFilePreviewPanel({
   const normalizedPath = (file.relativePath || file.path).toLowerCase();
   const normalizedMimeType = file.mimeType?.toLowerCase() ?? null;
   const isPdf = normalizedMimeType === "application/pdf" || normalizedPath.endsWith(".pdf");
+  const isPdb = isWorkspaceFilePdbPreview(file);
   const normalizedContents = normalizePreviewText(file.contents ?? "");
 
   if (isPdf) {
     return (
       <div className="-mx-4 -my-4 flex h-[calc(100%+2rem)] min-h-full items-center justify-center">
         <div className="app-text-muted text-[13px] leading-6">{t("wham.diff.binaryFile")}</div>
+      </div>
+    );
+  }
+
+  if (isPdb) {
+    return (
+      <div className="-mx-4 -my-4 h-[calc(100%+2rem)] min-h-full overflow-hidden">
+        <PdbPreview contents={file.contents ?? ""} t={t} />
       </div>
     );
   }

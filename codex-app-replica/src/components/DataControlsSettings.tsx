@@ -1,22 +1,25 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useI18n } from "../i18n/i18n";
 import {
-  getArchivedThreads,
-  unarchiveThread,
+  getArchivedThreadsForHost,
+  unarchiveConversationForHost,
   type ThreadHistoryEntry,
 } from "../services/history";
 import type { AppToast } from "./AppToastRegion";
+import { SettingsContentLayout } from "./SettingsContentLayout";
 
 export function DataControlsSettings({
   onDismissToast,
   onShowToast,
   onThreadUnarchived,
   onViewThread,
+  selectedHostId,
 }: {
   onDismissToast?: () => void;
   onShowToast?: (toast: AppToast) => void;
-  onThreadUnarchived?: (threadId: string) => void | Promise<void>;
-  onViewThread?: (threadId: string) => void | Promise<void>;
+  onThreadUnarchived?: (threadId: string, hostId: string) => void | Promise<void>;
+  onViewThread?: (threadId: string, hostId: string) => void | Promise<void>;
+  selectedHostId: string;
 }) {
   const { locale, t } = useI18n();
   const [archivedThreads, setArchivedThreads] = useState<ThreadHistoryEntry[]>([]);
@@ -31,13 +34,14 @@ export function DataControlsSettings({
       setIsLoading(true);
       setLoadError(null);
       try {
-        const threads = await getArchivedThreads();
+        const threads = await getArchivedThreadsForHost(selectedHostId);
         if (!cancelled) {
           setArchivedThreads(threads);
         }
       } catch (error) {
         if (!cancelled) {
           setLoadError(error instanceof Error ? error.message : String(error));
+          setArchivedThreads([]);
         }
       } finally {
         if (!cancelled) {
@@ -51,14 +55,22 @@ export function DataControlsSettings({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectedHostId]);
+
+  const openUnarchivedConversation = (threadId: string) => {
+    onDismissToast?.();
+    void onViewThread?.(threadId, selectedHostId);
+  };
 
   const unarchiveArchivedThread = async (thread: ThreadHistoryEntry) => {
     setPendingThreadIds((current) => [...current, thread.id]);
     try {
-      await unarchiveThread(thread.id);
+      const unarchivedThreadId = await unarchiveConversationForHost({
+        hostId: selectedHostId,
+        conversationId: thread.id,
+      });
       setArchivedThreads((current) => current.filter((entry) => entry.id !== thread.id));
-      void onThreadUnarchived?.(thread.id);
+      void onThreadUnarchived?.(unarchivedThreadId, selectedHostId);
       onShowToast?.({
         tone: "info",
         message: (
@@ -69,10 +81,7 @@ export function DataControlsSettings({
                 {" "}
                 <button
                   type="button"
-                  onClick={() => {
-                    onDismissToast?.();
-                    void onViewThread(thread.id);
-                  }}
+                  onClick={() => openUnarchivedConversation(unarchivedThreadId)}
                   className="cursor-interaction text-[var(--app-shell-accent)] underline underline-offset-2 hover:opacity-80"
                 >
                   {t("settings.dataControls.archivedChats.viewNow")}
@@ -93,72 +102,117 @@ export function DataControlsSettings({
   };
 
   return (
-    <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-5 py-5">
-      <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="app-title text-[14px] font-medium">{t("settings.section.data-controls")}</div>
-      </div>
+    <SettingsContentLayout title={t("settings.section.data-controls")}>
+      <SettingsGroup>
+        <SettingsGroupContent>
+          {isLoading ? (
+            <SettingsSurface>
+              <SettingsRow label={t("settings.dataControls.archivedChats.loading")} />
+            </SettingsSurface>
+          ) : loadError ? (
+            <SettingsSurface>
+              <SettingsRow label={t("settings.dataControls.archivedChats.error")} />
+            </SettingsSurface>
+          ) : archivedThreads.length === 0 ? (
+            <SettingsSurface>
+              <SettingsRow label={t("settings.dataControls.archivedChats.empty")} />
+            </SettingsSurface>
+          ) : (
+            <SettingsSurface className="max-h-[min(80vh)] overflow-y-auto">
+              {archivedThreads.map((thread) => {
+                const isPending = pendingThreadIds.includes(thread.id);
+                const title = (thread.name ?? thread.preview).trim() || t("settings.dataControls.archivedChats.untitled");
+                const summary = formatArchivedThreadSummary(thread, locale, t);
 
-      <div className="app-card rounded-[18px] px-0 py-0">
-        {isLoading ? (
-          <ArchivedThreadStateRow label={t("settings.dataControls.archivedChats.loading")} />
-        ) : loadError ? (
-          <ArchivedThreadStateRow label={t("settings.dataControls.archivedChats.error")} />
-        ) : archivedThreads.length === 0 ? (
-          <ArchivedThreadStateRow label={t("settings.dataControls.archivedChats.empty")} />
-        ) : (
-          <div className="max-h-[80vh] overflow-y-auto">
-            {archivedThreads.map((thread) => {
-              const isPending = pendingThreadIds.includes(thread.id);
-              const title = (thread.name ?? thread.preview).trim() || t("settings.dataControls.archivedChats.untitled");
-              const summary = formatArchivedThreadSummary(thread, locale, t);
-
-              return (
-                <div
-                  key={thread.id}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 transition hover:bg-[var(--app-shell-muted-surface)]"
-                >
-                  <div className="min-w-0 flex-1 text-left">
-                    <div className="truncate text-[16px] font-medium">{title}</div>
-                    {summary ? (
-                      <div className="app-text-muted mt-1 truncate text-[13px] leading-5">
-                        {summary}
-                      </div>
-                    ) : null}
-                  </div>
-                  <button
-                    type="button"
-                    disabled={isPending}
-                    onClick={() => void unarchiveArchivedThread(thread)}
-                    className="app-control shrink-0 rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
+                return (
+                  <div
+                    key={thread.id}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 hover:bg-token-list-hover-background"
                   >
-                    {t("settings.dataControls.archivedChats.unarchive")}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                    <div className="min-w-0 flex-1 text-left text-token-text-primary">
+                      <div className="truncate text-base font-medium">{title}</div>
+                      {summary ? (
+                        <div className="mt-1 flex min-w-0 flex-col gap-0.5 text-sm">
+                          <div className="truncate text-token-text-secondary">{summary}</div>
+                        </div>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isPending}
+                      onClick={() => void unarchiveArchivedThread(thread)}
+                      className="app-control shrink-0 rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
+                    >
+                      {t("settings.dataControls.archivedChats.unarchive")}
+                    </button>
+                  </div>
+                );
+              })}
+            </SettingsSurface>
+          )}
+        </SettingsGroupContent>
+      </SettingsGroup>
+    </SettingsContentLayout>
+  );
+}
+
+function SettingsGroup({ children }: { children: ReactNode }) {
+  return <section className="flex flex-col">{children}</section>;
+}
+
+function SettingsGroupContent({ children }: { children: ReactNode }) {
+  return <div className="flex flex-col gap-1.5">{children}</div>;
+}
+
+function SettingsSurface({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={joinClasses(
+        "border-token-border flex flex-col divide-y-[0.5px] divide-token-border rounded-lg border",
+        className,
+      )}
+      style={{
+        backgroundColor: "var(--color-background-panel, var(--color-token-bg-fog))",
+      }}
+    >
+      {children}
     </div>
   );
 }
 
-function ArchivedThreadStateRow({ label }: { label: string }) {
+function SettingsRow({ label }: { label: ReactNode }) {
   return (
-    <div className="px-5 py-4">
-      <div className="app-text-muted text-[14px] leading-6">{label}</div>
+    <div className="flex items-center justify-between gap-4 p-3 max-sm:flex-col max-sm:items-stretch">
+      <div className="min-w-0 text-sm text-token-text-primary">{label}</div>
     </div>
   );
+}
+
+function joinClasses(...values: Array<string | null | undefined | false>) {
+  return values.filter((value): value is string => Boolean(value)).join(" ");
 }
 
 function formatArchivedThreadSummary(
   thread: ThreadHistoryEntry,
   locale: string,
-  t: (key: "settings.dataControls.archivedChats.dateTime" | "settings.dataControls.archivedChats.dateTimeWithRepo", values?: Record<string, number | string>) => string,
+  t: (
+    key: "settings.dataControls.archivedChats.dateTime" | "settings.dataControls.archivedChats.dateTimeWithRepo",
+    values?: Record<string, number | string>,
+  ) => string,
 ) {
-  const primaryTimestamp = Number.isFinite(thread.updatedAt) ? thread.updatedAt : thread.createdAt;
-  const date = new Date(primaryTimestamp * 1000);
-  if (Number.isNaN(date.getTime())) {
+  const updatedAt = Number(thread.updatedAt);
+  const createdAt = Number(thread.createdAt);
+  const updatedAtDate = new Date(updatedAt * 1000);
+  const createdAtDate = new Date(createdAt * 1000);
+  const date =
+    Number.isFinite(updatedAtDate.getTime()) ? updatedAtDate : Number.isFinite(createdAtDate.getTime()) ? createdAtDate : null;
+  if (date === null) {
     return null;
   }
 

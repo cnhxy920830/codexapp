@@ -1,12 +1,19 @@
+use crate::auth_bridge::PermissionProfilePayload;
 use serde::Deserialize;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tauri::State;
+use tokio::time::interval_at;
+use tokio::time::Duration;
+use tokio::time::Instant;
+use tokio::time::MissedTickBehavior;
 
 use crate::auth_bridge::start_thread_with_personality;
 use crate::auth_bridge::start_turn_with_personality;
@@ -17,6 +24,9 @@ const AUTOMATIONS_DIR: &str = "automations";
 const AUTOMATION_FILE_NAME: &str = "automation.toml";
 const AUTOMATION_UPDATE_MISSING_MESSAGE: &str =
     "Automation does not exist in the app and could not be updated. It may have been deleted manually by the user.";
+const HEARTBEAT_AUTOMATION_SCHEDULER_TICK_MS: u64 = 30_000;
+const HEARTBEAT_AUTOMATION_RENDERER_STATE_STALE_MS: u64 = 120_000;
+const HEARTBEAT_AUTOMATION_BLOCKED_RETRY_MS: u64 = 60_000;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -138,6 +148,36 @@ struct PersistedAutomationDocument {
     pub automation: AutomationRecord,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HeartbeatAutomationCollaborationModePayload {
+    pub approval_policy: Option<String>,
+    pub approvals_reviewer: Option<String>,
+    pub sandbox_policy: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HeartbeatAutomationThreadStateChangedParams {
+    pub thread_id: Option<String>,
+    pub is_eligible: bool,
+    pub collaboration_mode: Option<HeartbeatAutomationCollaborationModePayload>,
+    pub permissions: Option<PermissionProfilePayload>,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct HeartbeatAutomationRendererState {
+    is_eligible: bool,
+    reason: Option<String>,
+    updated_at_ms: u64,
+}
+
+#[derive(Default)]
+pub struct HeartbeatAutomationSchedulerState {
+    renderer_states_by_thread_id: Mutex<HashMap<String, HeartbeatAutomationRendererState>>,
+}
+
 #[tauri::command]
 pub fn list_automations() -> Result<AutomationsListResponse, String> {
     let root = automations_root_path()?;
@@ -178,6 +218,34 @@ pub fn list_automations() -> Result<AutomationsListResponse, String> {
 #[tauri::command(rename = "list-automations")]
 pub fn list_automations_command() -> Result<AutomationsListResponse, String> {
     list_automations()
+}
+
+#[tauri::command(rename = "heartbeat-automation-thread-state-changed")]
+pub fn heartbeat_automation_thread_state_changed(
+    scheduler_state: State<'_, Arc<HeartbeatAutomationSchedulerState>>,
+    params: HeartbeatAutomationThreadStateChangedParams,
+) -> Result<(), String> {
+    let Some(thread_id) = params
+        .thread_id
+        .as_deref()
+        .and_then(normalize_optional_field)
+    else {
+        return Ok(());
+    };
+
+    let mut renderer_states = scheduler_state
+        .renderer_states_by_thread_id
+        .lock()
+        .map_err(|_| "failed to lock heartbeat automation renderer states".to_string())?;
+    renderer_states.insert(
+        thread_id,
+        HeartbeatAutomationRendererState {
+            is_eligible: params.is_eligible,
+            reason: params.reason.as_deref().and_then(normalize_optional_field),
+            updated_at_ms: current_timestamp_ms()?,
+        },
+    );
+    Ok(())
 }
 
 #[tauri::command]
@@ -297,6 +365,129 @@ pub async fn automation_run_now_command(
     Ok(AutomationRunNowResponse { success: true })
 }
 
+pub fn spawn_heartbeat_automation_scheduler(
+    auth_state: Arc<AuthBridgeState>,
+    scheduler_state: Arc<HeartbeatAutomationSchedulerState>,
+) {
+    tauri::async_runtime::spawn(async move {
+        let mut ticker = interval_at(
+            Instant::now() + Duration::from_millis(HEARTBEAT_AUTOMATION_SCHEDULER_TICK_MS),
+            Duration::from_millis(HEARTBEAT_AUTOMATION_SCHEDULER_TICK_MS),
+        );
+        ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+        loop {
+            ticker.tick().await;
+            let _ = process_due_heartbeat_automations(&auth_state, &scheduler_state).await;
+        }
+    });
+}
+
+async fn process_due_heartbeat_automations(
+    auth_state: &Arc<AuthBridgeState>,
+    scheduler_state: &Arc<HeartbeatAutomationSchedulerState>,
+) -> Result<(), String> {
+    let now = current_timestamp_ms()?;
+    for automation in list_automations()?.items {
+        let AutomationRecord::Heartbeat {
+            status,
+            target_thread_id,
+            ..
+        } = &automation
+        else {
+            continue;
+        };
+        if *status != AutomationStatus::Active {
+            continue;
+        }
+
+        let Some(next_run_at) = automation.next_run_at() else {
+            continue;
+        };
+        if next_run_at > now {
+            continue;
+        }
+
+        if heartbeat_renderer_state_block_reason(scheduler_state, target_thread_id, now)?.is_some()
+        {
+            rewrite_automation_next_run_at(
+                &automation,
+                compute_blocked_heartbeat_next_run_at(&automation, now),
+                now,
+            )?;
+            continue;
+        }
+
+        if run_automation_record_now_inner(auth_state, automation.clone())
+            .await
+            .is_err()
+        {
+            rewrite_automation_next_run_at(
+                &automation,
+                now.checked_add(HEARTBEAT_AUTOMATION_BLOCKED_RETRY_MS),
+                now,
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn heartbeat_renderer_state_block_reason(
+    scheduler_state: &Arc<HeartbeatAutomationSchedulerState>,
+    thread_id: &str,
+    now: u64,
+) -> Result<Option<String>, String> {
+    let mut renderer_states = scheduler_state
+        .renderer_states_by_thread_id
+        .lock()
+        .map_err(|_| "failed to lock heartbeat automation renderer states".to_string())?;
+    let Some(renderer_state) = renderer_states.get(thread_id).cloned() else {
+        return Ok(Some("missing_renderer_state".to_string()));
+    };
+
+    if now.saturating_sub(renderer_state.updated_at_ms)
+        > HEARTBEAT_AUTOMATION_RENDERER_STATE_STALE_MS
+    {
+        renderer_states.remove(thread_id);
+        return Ok(Some("stale_renderer_state".to_string()));
+    }
+
+    if renderer_state.is_eligible {
+        return Ok(None);
+    }
+
+    Ok(Some(
+        renderer_state
+            .reason
+            .unwrap_or_else(|| "renderer_ineligible".to_string()),
+    ))
+}
+
+fn compute_blocked_heartbeat_next_run_at(automation: &AutomationRecord, now: u64) -> Option<u64> {
+    let next_interval_at = parse_rrule_interval_ms(automation.rrule())
+        .and_then(|interval_ms| now.checked_add(interval_ms));
+    let retry_at = now.checked_add(HEARTBEAT_AUTOMATION_BLOCKED_RETRY_MS);
+
+    match (next_interval_at, retry_at) {
+        (Some(next_interval_at), Some(retry_at)) => Some(next_interval_at.min(retry_at)),
+        (Some(next_interval_at), None) => Some(next_interval_at),
+        (None, Some(retry_at)) => Some(retry_at),
+        (None, None) => None,
+    }
+}
+
+fn rewrite_automation_next_run_at(
+    automation: &AutomationRecord,
+    next_run_at: Option<u64>,
+    now: u64,
+) -> Result<(), String> {
+    let mut updated = automation.clone();
+    updated.set_updated_at(Some(now));
+    updated.set_next_run_at(next_run_at);
+    write_automation_file(&updated)
+}
+
 fn save_automation_inner(automation: AutomationRecord) -> Result<AutomationRecord, String> {
     let automation = normalize_automation_record(automation)?;
     let existing = read_automation(AutomationIdParams {
@@ -325,6 +516,13 @@ async fn run_automation_now_inner(
     let Some(automation) = read_automation(params)? else {
         return Err("automation not found".to_string());
     };
+    run_automation_record_now_inner(state, automation).await
+}
+
+async fn run_automation_record_now_inner(
+    state: &Arc<AuthBridgeState>,
+    automation: AutomationRecord,
+) -> Result<AutomationThreadRunResult, String> {
     let personality = state.current_personality();
 
     let result: AutomationThreadRunResult = match &automation {
@@ -751,11 +949,20 @@ fn ensure_trailing_newline(contents: String) -> String {
 mod tests {
     use super::automation_delete_command;
     use super::automation_delete_response;
+    use super::compute_blocked_heartbeat_next_run_at;
+    use super::heartbeat_renderer_state_block_reason;
     use super::AutomationDeleteResponse;
     use super::AutomationDeleteStatus;
     use super::AutomationIdParams;
+    use super::AutomationRecord;
+    use super::AutomationStatus;
+    use super::HeartbeatAutomationRendererState;
+    use super::HeartbeatAutomationSchedulerState;
+    use super::HeartbeatAutomationThreadStateChangedParams;
     use super::AUTOMATION_UPDATE_MISSING_MESSAGE;
+    use super::HEARTBEAT_AUTOMATION_RENDERER_STATE_STALE_MS;
     use serde_json::json;
+    use std::sync::Arc;
 
     #[test]
     fn automation_delete_response_uses_upstream_status_names() {
@@ -794,5 +1001,81 @@ mod tests {
             AUTOMATION_UPDATE_MISSING_MESSAGE,
             "Automation does not exist in the app and could not be updated. It may have been deleted manually by the user."
         );
+    }
+
+    #[test]
+    fn heartbeat_thread_state_changed_payload_deserializes_optional_fields() {
+        assert_eq!(
+            serde_json::from_value::<HeartbeatAutomationThreadStateChangedParams>(json!({
+                "threadId": "thread-1",
+                "isEligible": false,
+                "collaborationMode": null,
+                "permissions": null,
+                "reason": "turn_in_progress",
+            }))
+            .expect("heartbeat renderer-state payload should deserialize"),
+            HeartbeatAutomationThreadStateChangedParams {
+                thread_id: Some("thread-1".to_string()),
+                is_eligible: false,
+                collaboration_mode: None,
+                permissions: None,
+                reason: Some("turn_in_progress".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn blocked_heartbeat_retry_prefers_one_minute_window_for_long_intervals() {
+        let automation = AutomationRecord::Heartbeat {
+            id: "heartbeat-1".to_string(),
+            name: "Heartbeat".to_string(),
+            prompt: "Check in".to_string(),
+            status: AutomationStatus::Active,
+            created_at: None,
+            updated_at: None,
+            last_run_at: None,
+            next_run_at: Some(0),
+            target_thread_id: "thread-1".to_string(),
+            model: None,
+            reasoning_effort: None,
+            rrule: "FREQ=MINUTELY;INTERVAL=30".to_string(),
+        };
+
+        assert_eq!(
+            compute_blocked_heartbeat_next_run_at(&automation, 1_000),
+            Some(61_000),
+        );
+    }
+
+    #[test]
+    fn stale_heartbeat_renderer_state_is_removed() {
+        let state = Arc::new(HeartbeatAutomationSchedulerState::default());
+        state
+            .renderer_states_by_thread_id
+            .lock()
+            .expect("renderer-state mutex should lock")
+            .insert(
+                "thread-1".to_string(),
+                HeartbeatAutomationRendererState {
+                    is_eligible: true,
+                    reason: None,
+                    updated_at_ms: 1_000,
+                },
+            );
+
+        assert_eq!(
+            heartbeat_renderer_state_block_reason(
+                &state,
+                "thread-1",
+                1_000 + HEARTBEAT_AUTOMATION_RENDERER_STATE_STALE_MS + 1,
+            )
+            .expect("renderer-state lookup should succeed"),
+            Some("stale_renderer_state".to_string()),
+        );
+        assert!(!state
+            .renderer_states_by_thread_id
+            .lock()
+            .expect("renderer-state mutex should lock")
+            .contains_key("thread-1"));
     }
 }

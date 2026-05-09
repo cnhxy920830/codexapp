@@ -20,6 +20,12 @@ pub struct CommandKeybinding {
     pub key: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CommandKeybindingLookup {
+    pub has_binding: bool,
+    pub hotkey: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PlatformDefaultKeybindings {
@@ -135,6 +141,14 @@ pub fn set_command_keybinding(
     Ok(state)
 }
 
+pub(crate) fn read_command_keybinding_lookup(
+    app: &AppHandle,
+    command_id: &str,
+) -> Result<CommandKeybindingLookup, String> {
+    let state = read_command_keymap_state(app)?;
+    Ok(command_keybinding_lookup(command_id, &state))
+}
+
 fn read_command_keymap_state(app: &AppHandle) -> Result<CommandKeymapState, String> {
     let path = command_keymap_state_path(app)?;
     if !path.exists() {
@@ -172,6 +186,26 @@ fn command_keymap_state_path(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn default_keybindings_for_command(command_id: &str) -> Result<Vec<String>, String> {
     default_keybindings_for_command_from_inventory(command_id, COMMAND_INVENTORY_JSON)
+}
+
+fn command_keybinding_lookup(
+    command_id: &str,
+    state: &CommandKeymapState,
+) -> CommandKeybindingLookup {
+    match state
+        .bindings
+        .iter()
+        .find(|binding| binding.command == command_id)
+    {
+        Some(binding) => CommandKeybindingLookup {
+            has_binding: true,
+            hotkey: binding.key.clone(),
+        },
+        None => CommandKeybindingLookup {
+            has_binding: false,
+            hotkey: None,
+        },
+    }
 }
 
 fn default_keybindings_for_command_from_inventory(
@@ -269,7 +303,70 @@ fn normalize_accelerators(accelerators: Vec<String>) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{default_keybindings_for_command_from_inventory, COMMAND_INVENTORY_JSON};
+    use super::{
+        command_keybinding_lookup, default_keybindings_for_command_from_inventory,
+        CommandKeybinding, CommandKeybindingLookup, CommandKeymapState, COMMAND_INVENTORY_JSON,
+    };
+
+    #[test]
+    fn command_keybinding_lookup_reports_missing_binding() {
+        assert_eq!(
+            command_keybinding_lookup(
+                "hotkeyWindow",
+                &CommandKeymapState {
+                    bindings: Vec::new(),
+                },
+            ),
+            CommandKeybindingLookup {
+                has_binding: false,
+                hotkey: None,
+            }
+        );
+    }
+
+    #[test]
+    fn command_keybinding_lookup_uses_first_matching_binding() {
+        assert_eq!(
+            command_keybinding_lookup(
+                "hotkeyWindow",
+                &CommandKeymapState {
+                    bindings: vec![
+                        CommandKeybinding {
+                            command: "hotkeyWindow".to_string(),
+                            key: Some("Ctrl+Alt+K".to_string()),
+                        },
+                        CommandKeybinding {
+                            command: "hotkeyWindow".to_string(),
+                            key: Some("Ctrl+Alt+L".to_string()),
+                        },
+                    ],
+                },
+            ),
+            CommandKeybindingLookup {
+                has_binding: true,
+                hotkey: Some("Ctrl+Alt+K".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn command_keybinding_lookup_reports_cleared_binding() {
+        assert_eq!(
+            command_keybinding_lookup(
+                "hotkeyWindow",
+                &CommandKeymapState {
+                    bindings: vec![CommandKeybinding {
+                        command: "hotkeyWindow".to_string(),
+                        key: None,
+                    }],
+                },
+            ),
+            CommandKeybindingLookup {
+                has_binding: true,
+                hotkey: None,
+            }
+        );
+    }
 
     #[test]
     fn find_in_thread_uses_platform_specific_default_keybinding() {

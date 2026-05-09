@@ -98,6 +98,7 @@ type ChatConversationMainPaneProps = {
   threadActionsMenuRef: RefObject<HTMLDivElement | null>;
   composerDraft: string;
   composerEnterBehavior: ComposerEnterBehavior;
+  composerFocusNonce?: number | null;
   followUpQueueMode: FollowUpQueueMode;
   hasAttachedHeartbeatAutomation: boolean;
   isThreadActionsMenuOpen: boolean;
@@ -163,6 +164,7 @@ export function ChatConversationMainPane({
   threadActionsMenuRef,
   composerDraft,
   composerEnterBehavior,
+  composerFocusNonce,
   followUpQueueMode,
   hasAttachedHeartbeatAutomation,
   isThreadActionsMenuOpen,
@@ -241,14 +243,16 @@ export function ChatConversationMainPane({
   const conversationGroups = groupedConversation.groups;
   const latestConversationGroup = conversationGroups.at(-1) ?? null;
   const latestConversationGroupTurnId = conversationGroups.at(-1)?.turnId ?? null;
+  const conversationId = threadConversation?.id ?? null;
   const hasTurnContent = threadConversation !== null && conversationGroups.length > 0;
   const hasUnmatchedBodyContent =
     groupedConversation.unmatchedApprovalItems.length > 0 ||
     currentThreadQueuedFollowUps.length > 0;
   const showBlankConversationBody = !hasTurnContent && !hasUnmatchedBodyContent;
   const latestTurnPreviewContent =
-    latestConversationGroup !== null ? (
+    latestConversationGroup !== null && conversationId !== null ? (
       <ConversationGroupContent
+        conversationId={conversationId}
         group={latestConversationGroup}
         approvalActionErrors={approvalActionErrors}
         onApprovalDecision={onApprovalDecision}
@@ -308,6 +312,7 @@ export function ChatConversationMainPane({
               ? conversationGroups.map((group) => (
                   <ConversationGroupContent
                     key={group.id}
+                    conversationId={conversationId ?? ""}
                     group={group}
                     approvalActionErrors={approvalActionErrors}
                     onApprovalDecision={onApprovalDecision}
@@ -399,6 +404,7 @@ export function ChatConversationMainPane({
             <ThreadComposer
               composerDraft={composerDraft}
               composerEnterBehavior={composerEnterBehavior}
+              focusComposerNonce={composerFocusNonce}
               followUpQueueMode={followUpQueueMode}
               isWorktreeThread={isWorktreeThread}
               onComposerDraftChange={onComposerDraftChange}
@@ -889,6 +895,7 @@ function ApprovalRequestCard({
 }
 
 function ConversationGroupContent({
+  conversationId,
   group,
   approvalActionErrors,
   onApprovalDecision,
@@ -903,6 +910,7 @@ function ConversationGroupContent({
   t,
   userMessageSentAtMsByTurnId,
 }: {
+  conversationId: string;
   group: RenderableConversationGroup;
   approvalActionErrors: Record<string, string>;
   onApprovalDecision: (approval: PendingApproval, decision: ApprovalDecision) => void;
@@ -930,15 +938,16 @@ function ConversationGroupContent({
 }) {
   return (
     <div className="space-y-3">
-      <ConversationItemList items={group.preUserItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      <ConversationItemList items={group.modelChangedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      <ConversationItemList items={group.userItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      <ConversationItemList items={group.modelReroutedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      <ConversationItemList items={group.activityItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationId={conversationId} items={group.preUserItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationId={conversationId} items={group.modelChangedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationId={conversationId} items={group.userItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationId={conversationId} items={group.modelReroutedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationId={conversationId} items={group.activityItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       {group.assistantMessage ? (
-        <ConversationItemCard item={group.assistantMessage} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+        <ConversationItemCard conversationId={conversationId} item={group.assistantMessage} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       ) : null}
       <ConversationItemList
+        conversationId={conversationId}
         items={group.assistantAutomationUpdateItems}
         onEditUserMessage={onEditUserMessage}
         onOpenRemoteTask={onOpenRemoteTask}
@@ -946,23 +955,24 @@ function ConversationGroupContent({
         t={t}
         userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId}
       />
-      <ConversationItemList items={group.automationUpdateItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      <ConversationItemList items={group.toolOutputItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      <ConversationItemList items={group.postAssistantItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationId={conversationId} items={group.automationUpdateItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationId={conversationId} items={group.toolOutputItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationId={conversationId} items={group.postAssistantItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       {group.systemEventItem ? (
-        <ConversationItemCard item={group.systemEventItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+        <ConversationItemCard conversationId={conversationId} item={group.systemEventItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       ) : null}
       {group.unifiedDiffItem ? (
-        <ConversationItemCard item={group.unifiedDiffItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+        <ConversationItemCard conversationId={conversationId} item={group.unifiedDiffItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       ) : null}
-      <ConversationItemList items={group.remoteTaskCreatedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      <ConversationItemList items={group.personalityChangedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      <ConversationItemList items={group.forkedFromConversationItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationId={conversationId} items={group.remoteTaskCreatedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationId={conversationId} items={group.personalityChangedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationId={conversationId} items={group.forkedFromConversationItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       {group.todoListItem ? (
-        <ConversationItemCard item={group.todoListItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+        <ConversationItemCard conversationId={conversationId} item={group.todoListItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       ) : null}
       {group.proposedPlanItem ? (
         <ConversationItemCard
+          conversationId={conversationId}
           item={group.proposedPlanItem}
           planSummaryIsWriting={planSummaryIsWriting}
           onEditUserMessage={onEditUserMessage}
@@ -973,8 +983,8 @@ function ConversationGroupContent({
         />
       ) : null}
       <ConversationTurnPlanImplementationItems items={group.planImplementationItem ? [group.planImplementationItem] : []} t={t} />
-      <ConversationItemList items={group.mcpServerElicitationItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      <ConversationItemList items={group.permissionRequestItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationId={conversationId} items={group.mcpServerElicitationItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationId={conversationId} items={group.permissionRequestItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       <ConversationTurnApprovalRequests
         approvals={group.approvalItem ? [group.approvalItem] : []}
         approvalActionErrors={approvalActionErrors}
@@ -983,13 +993,14 @@ function ConversationGroupContent({
         t={t}
       />
       {group.userInputItem ? (
-        <ConversationItemCard item={group.userInputItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+        <ConversationItemCard conversationId={conversationId} item={group.userInputItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       ) : null}
     </div>
   );
 }
 
 function ConversationItemList({
+  conversationId,
   items,
   onEditUserMessage,
   onOpenRemoteTask,
@@ -997,6 +1008,7 @@ function ConversationItemList({
   t,
   userMessageSentAtMsByTurnId,
 }: {
+  conversationId: string;
   items: RenderableConversationItem[];
   onEditUserMessage: (text: string) => void | Promise<void>;
   onOpenRemoteTask: (taskId: string) => void;
@@ -1011,13 +1023,14 @@ function ConversationItemList({
   return (
     <div className="space-y-3">
       {items.map((item) => (
-        <ConversationItemCard key={item.id} item={item} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+        <ConversationItemCard key={item.id} conversationId={conversationId} item={item} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       ))}
     </div>
   );
 }
 
 function ConversationItemCard({
+  conversationId,
   item,
   planSummaryIsWriting = false,
   onEditUserMessage,
@@ -1026,6 +1039,7 @@ function ConversationItemCard({
   t,
   userMessageSentAtMsByTurnId,
 }: {
+  conversationId: string;
   item: RenderableConversationItem;
   planSummaryIsWriting?: boolean;
   onEditUserMessage: (text: string) => void | Promise<void>;
@@ -1070,7 +1084,7 @@ function ConversationItemCard({
   }
 
   if (item.type === "plan") {
-    return <PlanSummaryItemCard item={item} isWriting={planSummaryIsWriting} t={t} />;
+    return <PlanSummaryItemCard conversationId={conversationId} item={item} isWriting={planSummaryIsWriting} t={t} />;
   }
 
   if (item.type === "todoList") {

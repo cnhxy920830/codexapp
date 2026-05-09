@@ -6,25 +6,36 @@ import {
 } from "../../components/AppShellIcons";
 import type { MessageKey } from "../../i18n/messages";
 import type { ThreadConversationPlan } from "../../services/history";
+import { showPlanSummary } from "../../services/windowNavigation";
 import { renderMessageContent } from "./messageContent";
 
 type Translate = (key: MessageKey, values?: Record<string, number | string>) => string;
 
 type PlanSummaryItemCardProps = {
+  conversationId: string;
+  defaultCollapsed?: boolean;
   item: ThreadConversationPlan;
   isWriting?: boolean;
+  showOpenButton?: boolean;
   t: Translate;
 };
 
 const PLAN_DOWNLOAD_NAME = "PLAN.md";
 
 export function PlanSummaryItemCard({
+  conversationId,
+  defaultCollapsed,
   item,
   isWriting = false,
+  showOpenButton = true,
   t,
 }: PlanSummaryItemCardProps) {
   const text = item.text.trim();
-  const [isCollapsed, setIsCollapsed] = useState(!isWriting);
+  const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed ?? !isWriting);
+
+  useEffect(() => {
+    setIsCollapsed(defaultCollapsed ?? !isWriting);
+  }, [defaultCollapsed, isWriting]);
 
   useEffect(() => {
     if (isWriting) {
@@ -58,14 +69,15 @@ export function PlanSummaryItemCard({
     URL.revokeObjectURL(url);
   };
 
-  const handleOpen = () => {
-    const html = buildPlanWindowHtml(text, t("localConversation.planSummary.title"));
-    const blob = new Blob([html], {
-      type: "text/html;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
-    window.open(url, "_blank");
-    window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  const handleOpen = async () => {
+    try {
+      await showPlanSummary({
+        conversationId,
+        planContent: item.text,
+      });
+    } catch {
+      // Keep the inline plan summary usable when desktop handoff fails.
+    }
   };
 
   return (
@@ -99,10 +111,10 @@ export function PlanSummaryItemCard({
               <CopyPathIcon className="h-4 w-4" />
             </button>
           ) : null}
-          {showCompletedActions ? (
+          {showCompletedActions && showOpenButton ? (
             <button
               type="button"
-              onClick={handleOpen}
+              onClick={() => void handleOpen()}
               className="app-control flex items-center gap-1 rounded-full px-3 py-1 text-[12px]"
             >
               <span>{t("localConversation.planSummary.openInNewWindow")}</span>
@@ -148,34 +160,4 @@ export function PlanSummaryItemCard({
       </div>
     </div>
   );
-}
-
-function buildPlanWindowHtml(text: string, title: string) {
-  const escapedTitle = escapeHtml(title);
-  const escapedText = escapeHtml(text);
-  return [
-    "<!doctype html>",
-    "<html lang=\"en\">",
-    "<head>",
-    "<meta charset=\"utf-8\" />",
-    `<title>${escapedTitle}</title>`,
-    "<style>",
-    "body{margin:0;padding:24px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;background:#faf8f2;color:#211e16;}",
-    "pre{margin:0;white-space:pre-wrap;word-break:break-word;line-height:1.65;font-size:13px;}",
-    "</style>",
-    "</head>",
-    "<body>",
-    `<pre>${escapedText}</pre>`,
-    "</body>",
-    "</html>",
-  ].join("");
-}
-
-function escapeHtml(text: string) {
-  return text
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }

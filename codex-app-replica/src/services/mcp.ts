@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { readConfig, type ConfigSnapshot } from "./settings";
+import { batchWriteConfigValueForHost, type ConfigSnapshot } from "./settings";
 
 export type McpServerStatusEntry = {
   name: string;
@@ -16,6 +16,10 @@ export type McpOauthLoginCompletedNotification = {
   name: string;
   success: boolean;
   error: string | null;
+};
+
+export type CodexAppServerInitializedNotification = {
+  hostId: string;
 };
 
 export type McpTransportType = "stdio" | "streamable_http";
@@ -51,22 +55,64 @@ export type McpServerWriteTarget = {
   expectedVersion: string | null;
 };
 
-export async function listMcpServerStatuses() {
+export type McpServerSetEnabledParams = {
+  enabled: boolean;
+  expectedVersion?: string | null;
+  filePath?: string | null;
+  hostId?: string | null;
+  serverName: string;
+};
+
+export async function listMcpServerStatuses(hostId?: string | null) {
   return invoke<McpServerStatusListResponse>("list_mcp_server_status", {
-    params: { cursor: null, detail: "full", limit: 100 },
+    params: { hostId: normalizeHostId(hostId), cursor: null, detail: "full", limit: 100 },
   });
 }
 
-export async function loginMcpServer(name: string) {
-  return invoke<{ authorizationUrl: string }>("login_mcp_server", { params: { name } });
+export async function loginMcpServer(params: { hostId?: string | null; name: string }) {
+  return invoke<{ authorizationUrl: string }>("login_mcp_server", {
+    params: {
+      hostId: normalizeHostId(params.hostId),
+      name: params.name,
+    },
+  });
 }
 
 export async function reloadMcpServerConfig() {
   return invoke<void>("reload_mcp_server_config");
 }
 
+export async function restartCodexAppServer(hostId: string) {
+  return invoke<void>("codex-app-server-restart", { params: { hostId } });
+}
+
+export async function setMcpServerEnabled(params: McpServerSetEnabledParams) {
+  const { enabled, expectedVersion, filePath, hostId, serverName } = params;
+  return batchWriteConfigValueForHost({
+    hostId,
+    edits: [
+      {
+        keyPath: `mcp_servers.${serverName}.enabled`,
+        value: enabled,
+        mergeStrategy: "upsert",
+      },
+    ],
+    filePath: filePath ?? null,
+    expectedVersion: expectedVersion ?? null,
+    reloadUserConfig: true,
+  });
+}
+
 export function onMcpOauthLoginCompleted(handler: (notification: McpOauthLoginCompletedNotification) => void) {
   return listen<McpOauthLoginCompletedNotification>("mcp-oauth-login-completed", (event) => {
+    handler(event.payload);
+  });
+}
+
+export function onCodexAppServerInitialized(
+  handler: (notification: CodexAppServerInitializedNotification) => void,
+) {
+  return listen<CodexAppServerInitializedNotification>("codex-app-server-initialized", (event) => {
     handler(event.payload);
   });
 }
@@ -239,4 +285,9 @@ function serializeRecordArray(values: Array<{ key: string; value: string }>) {
     output[key] = value;
   }
   return Object.keys(output).length > 0 ? output : undefined;
+}
+
+function normalizeHostId(hostId?: string | null) {
+  const trimmed = hostId?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : null;
 }

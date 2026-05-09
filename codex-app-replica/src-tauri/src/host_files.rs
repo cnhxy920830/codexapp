@@ -1,13 +1,14 @@
+use crate::open_targets::ensure_supported_host_id;
+use crate::open_targets::open_path_in_effective_target;
+use crate::open_targets::OpenTargetLocation;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fs;
-use std::path::Path;
 use std::path::PathBuf;
-use std::process::Command;
 use tauri::{AppHandle, Manager};
+#[allow(deprecated)]
+use tauri_plugin_shell::ShellExt;
 
-const FILE_MANAGER_TARGET: &str = "fileManager";
-const LOCAL_HOST_ID: &str = "local";
 const THIRD_PARTY_NOTICES_FILE_NAME: &str = "THIRD_PARTY_NOTICES.txt";
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
@@ -32,19 +33,6 @@ pub struct ThirdPartyNoticesResponse {
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct OpenInTargetsParams {
-    pub host_id: Option<String>,
-    pub cwd: Option<String>,
-}
-
-#[derive(Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct OpenInTargetsResponse {
-    pub preferred_target: Option<String>,
-}
-
-#[derive(Debug, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
 pub struct OpenFileParams {
     pub host_id: Option<String>,
     pub path: String,
@@ -53,6 +41,12 @@ pub struct OpenFileParams {
     pub line: Option<u32>,
     pub column: Option<u32>,
     pub range: Option<FileRange>,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenInBrowserParams {
+    pub url: String,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -83,23 +77,29 @@ pub fn read_file(params: ReadFileParams) -> Result<ReadFileResponse, String> {
 }
 
 #[tauri::command(rename = "open-file")]
-pub fn open_file(params: OpenFileParams) -> Result<(), String> {
+pub fn open_file(app: AppHandle, params: OpenFileParams) -> Result<(), String> {
     ensure_supported_host_id(params.host_id.as_deref(), "open-file")?;
     let path = resolve_requested_path(&params.path, params.cwd.as_deref())?;
-    if params.target.as_deref() == Some(FILE_MANAGER_TARGET) {
-        return open_in_file_manager(&path);
-    }
-
-    open_in_default_target(&path, effective_location(&params))
+    let location = effective_location(&params).map(|location| OpenTargetLocation {
+        line: location.line,
+        column: location.column,
+    });
+    open_path_in_effective_target(
+        &app,
+        params.target.as_deref(),
+        params.cwd.as_deref(),
+        &path,
+        location,
+    )
 }
 
-#[tauri::command(rename = "open-in-targets")]
-pub fn open_in_targets(params: OpenInTargetsParams) -> Result<OpenInTargetsResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "open-in-targets")?;
-    let _ = params.cwd;
-    Ok(OpenInTargetsResponse {
-        preferred_target: None,
-    })
+#[tauri::command(rename = "open-in-browser")]
+pub fn open_in_browser(app: AppHandle, params: OpenInBrowserParams) -> Result<(), String> {
+    let url = normalize_browser_url(&params.url)?;
+    #[allow(deprecated)]
+    app.shell()
+        .open(url, None)
+        .map_err(|err| format!("failed to open url: {err}"))
 }
 
 #[tauri::command(rename = "third-party-notices")]
@@ -157,134 +157,25 @@ fn map_not_found_error(error: std::io::Error) -> String {
     error.to_string()
 }
 
-fn ensure_supported_host_id(host_id: Option<&str>, command_name: &str) -> Result<(), String> {
-    match host_id.map(str::trim).filter(|value| !value.is_empty()) {
-        None | Some(LOCAL_HOST_ID) => Ok(()),
-        Some(host_id) => Err(format!(
-            "{command_name} does not support host id: {host_id}"
-        )),
-    }
-}
-
-fn open_in_default_target(path: &Path, location: Option<FilePosition>) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        if location.is_some() || (!path.exists() && is_text_like_path(path)) {
-            return spawn_command(Command::new("notepad.exe").arg(path), "notepad.exe");
-        }
-
-        return spawn_command(
-            Command::new("cmd.exe")
-                .arg("/d")
-                .arg("/c")
-                .arg("start")
-                .arg("")
-                .arg(path),
-            "cmd.exe",
-        );
+fn normalize_browser_url(url: &str) -> Result<String, String> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Err("url is empty".to_string());
     }
 
-    #[cfg(target_os = "macos")]
-    {
-        let _ = location;
-        return spawn_command(Command::new("open").arg(path), "open");
-    }
-
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        let _ = location;
-        return spawn_command(Command::new("xdg-open").arg(path), "xdg-open");
-    }
-
-    #[allow(unreachable_code)]
-    Err("open-file is not supported on this platform".to_string())
-}
-
-fn open_in_file_manager(path: &Path) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        let existing = nearest_existing_path(path)
-            .ok_or_else(|| format!("failed to resolve file manager path: {}", path.display()))?;
-        if existing.is_file() {
-            return spawn_command(
-                Command::new("explorer.exe").arg(format!("/select,{}", existing.display())),
-                "explorer.exe",
-            );
-        }
-
-        return spawn_command(Command::new("explorer.exe").arg(existing), "explorer.exe");
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let existing = nearest_existing_path(path).unwrap_or_else(|| path.to_path_buf());
-        if existing.is_file() {
-            return spawn_command(Command::new("open").arg("-R").arg(existing), "open");
-        }
-        return spawn_command(Command::new("open").arg(existing), "open");
-    }
-
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        let existing = nearest_existing_path(path).unwrap_or_else(|| path.to_path_buf());
-        let directory = if existing.is_dir() {
-            existing
-        } else {
-            existing.parent().map(Path::to_path_buf).unwrap_or(existing)
-        };
-        return spawn_command(Command::new("xdg-open").arg(directory), "xdg-open");
-    }
-
-    #[allow(unreachable_code)]
-    Err("open-file is not supported on this platform".to_string())
-}
-
-fn spawn_command(command: &mut Command, program_name: &str) -> Result<(), String> {
-    command
-        .spawn()
-        .map(|_| ())
-        .map_err(|err| format!("failed to launch {program_name}: {err}"))
-}
-
-fn is_text_like_path(path: &Path) -> bool {
-    matches!(
-        path.extension()
-            .and_then(|extension| extension.to_str())
-            .map(|extension| extension.to_ascii_lowercase())
-            .as_deref(),
-        Some(
-            "cfg" | "conf" | "ini" | "json" | "log" | "md" | "rs" | "toml" | "txt" | "yaml" | "yml"
-        )
-    )
-}
-
-fn nearest_existing_path(path: &Path) -> Option<PathBuf> {
-    let mut current = path.to_path_buf();
-    loop {
-        if current.exists() {
-            return Some(current);
-        }
-
-        let parent = current.parent()?.to_path_buf();
-        if parent == current {
-            return None;
-        }
-        current = parent;
-    }
+    Ok(trimmed.to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::effective_location;
     use super::ensure_supported_host_id;
-    use super::nearest_existing_path;
-    use super::open_in_targets;
+    use super::normalize_browser_url;
     use super::read_file;
     use super::resolve_requested_path;
     use super::FilePosition;
     use super::OpenFileParams;
-    use super::OpenInTargetsParams;
-    use super::OpenInTargetsResponse;
+    use super::OpenInBrowserParams;
     use super::ReadFileParams;
     use super::ThirdPartyNoticesResponse;
     use std::fs;
@@ -351,18 +242,49 @@ mod tests {
     }
 
     #[test]
-    fn open_in_targets_returns_minimal_preferred_target_shape() {
-        let response = open_in_targets(OpenInTargetsParams {
-            host_id: Some("local".to_string()),
-            cwd: None,
-        })
-        .expect("query should succeed");
+    fn open_in_browser_params_accept_url() {
+        let params: OpenInBrowserParams = serde_json::from_value(json!({
+            "url": "https://github.com/openai/codex/pull/1"
+        }))
+        .expect("params should deserialize");
 
         assert_eq!(
-            response,
-            OpenInTargetsResponse {
-                preferred_target: None,
+            params,
+            OpenInBrowserParams {
+                url: "https://github.com/openai/codex/pull/1".to_string(),
             }
+        );
+    }
+
+    #[test]
+    fn open_in_browser_params_ignore_external_browser_flag() {
+        let params: OpenInBrowserParams = serde_json::from_value(json!({
+            "url": "https://auth.openai.com/login",
+            "useExternalBrowser": true
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            OpenInBrowserParams {
+                url: "https://auth.openai.com/login".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn normalize_browser_url_rejects_empty_string() {
+        assert_eq!(
+            normalize_browser_url("   ").expect_err("empty url should fail"),
+            "url is empty"
+        );
+    }
+
+    #[test]
+    fn normalize_browser_url_trims_surrounding_whitespace() {
+        assert_eq!(
+            normalize_browser_url("  https://example.com/path  ").expect("url should normalize"),
+            "https://example.com/path"
         );
     }
 
@@ -404,18 +326,6 @@ mod tests {
                 .expect_err("relative path without cwd should fail"),
             "relative path requires cwd: config.toml"
         );
-    }
-
-    #[test]
-    fn nearest_existing_path_returns_parent_for_missing_file() {
-        let root = temp_dir("existing-parent");
-        let file_path = root.join("nested").join("config.toml");
-        fs::create_dir_all(root.join("nested")).expect("nested directory should be created");
-
-        let existing = nearest_existing_path(&file_path).expect("ancestor should resolve");
-
-        assert_eq!(existing, root.join("nested"));
-        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

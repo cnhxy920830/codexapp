@@ -87,8 +87,88 @@ export type MessageKey =
   | "skills.appsPage.loadError.title"
   | "skills.appsPage.loadError.retry"
   | "skills.appsPage.empty.plugins"
+  | "skills.appsPage.manageTab.plugins"
+  | "skills.appsPage.manageTab.apps"
+  | "skills.appsPage.manageTab.mcps"
+  | "skills.appsPage.manageTab.skills"
+  | "skills.appsPage.manageTab.marketplace"
+  | "skills.appsPage.empty.installedApps"
+  | "skills.appsPage.empty.mcps"
+  | "skills.appsPage.empty.skills"
+  | "skills.appsPage.marketplace.loading"
+  | "skills.appsPage.marketplace.loadError.title"
+  | "skills.appsPage.marketplace.loadError.retry"
+  | "skills.appsPage.empty.marketplace"
+  | "skills.appsPage.marketplace.pluginCount"
+  | "skills.appsPage.marketplace.upgradeAll"
+  | "skills.appsPage.marketplace.upgradeAll.tooltip"
+  | "skills.appsPage.marketplace.upgrade.ariaLabel"
+  | "skills.appsPage.marketplace.upgrade.button"
+  | "skills.appsPage.marketplace.upgrade"
+  | "skills.appsPage.marketplace.upgrade.builtInDisabled"
+  | "skills.appsPage.marketplace.upgrade.workspaceDisabled"
+  | "skills.appsPage.marketplace.upgrade.localDisabled"
+  | "skills.appsPage.marketplace.remove"
+  | "skills.appsPage.marketplace.remove.ariaLabel"
+  | "skills.appsPage.marketplace.remove.builtInDisabled"
+  | "skills.appsPage.marketplace.remove.workspaceDisabled"
+  | "skills.appsPage.marketplace.removeDialog.title"
+  | "skills.appsPage.marketplace.removeDialog.description"
+  | "skills.appsPage.marketplace.removeDialog.cancel"
+  | "skills.appsPage.marketplace.removeDialog.confirm"
+  | "skills.appsPage.marketplace.partialLoadError.title"
+  | "skills.appsPage.marketplace.partialLoadError.more"
+  | "skills.appsPage.marketplace.partialLoadError.retry"
+  | "skills.appsPage.mcps.settings"
+  | "skills.appsPage.mcps.enable"
+  | "skills.appsPage.mcps.disable"
+  | "skills.appsPage.mcps.toggle"
+  | "skills.appsPage.mcps.toggleError"
+  | "skills.appsPage.apps.toggle"
+  | "skills.appsPage.apps.toggleError"
+  | "skills.appsPage.skills.enable"
+  | "skills.appsPage.skills.disable"
+  | "skills.appsPage.skills.toggle"
+  | "skills.appsPage.skills.toggleError"
+  | "skills.appsPage.toolsDialog.open"
+  | "skills.appsPage.toolsDialog.moreActions"
+  | "skills.appsPage.toolsDialog.enableApp"
+  | "skills.appsPage.toolsDialog.disableApp"
+  | "skills.appsPage.toolsDialog.tryInChat"
+  | "skills.appsPage.toolsDialog.tryInChatDisabled"
+  | "skills.appsPage.toolsDialog.disabledBadge"
+  | "skills.appsPage.toolsDialog.subtitle"
+  | "skills.appsPage.toolsDialog.summary"
+  | "skills.appsPage.toolsDialog.loading"
+  | "skills.appsPage.toolsDialog.empty"
+  | "skills.appsPage.toolsDialog.error"
+  | "skills.appsPage.addMarketplace.title"
+  | "skills.appsPage.addMarketplace.header"
+  | "skills.appsPage.addMarketplace.subtitle"
+  | "skills.appsPage.addMarketplace.sourceRequired"
+  | "skills.appsPage.addMarketplace.sourceLabel"
+  | "skills.appsPage.addMarketplace.sourcePlaceholder"
+  | "skills.appsPage.addMarketplace.refLabel"
+  | "skills.appsPage.addMarketplace.refPlaceholder"
+  | "skills.appsPage.addMarketplace.sparsePathsLabel"
+  | "skills.appsPage.addMarketplace.sparsePathsPlaceholder"
+  | "skills.appsPage.addMarketplace.cancel"
+  | "skills.appsPage.addMarketplace.submit"
+  | "skills.appsPage.addMarketplace.failed"
+  | "skills.appsPage.addMarketplace.refreshFailed"
+  | "skills.appsPage.addMarketplace.alreadyAdded"
+  | "skills.appsPage.addMarketplace.success"
   | "skills.appsPage.pluginsUnsupportedHost.title"
   | "skills.appsPage.pluginsUnsupportedHost.description"
+  | "skills.appsPage.browseIntro.title"
+  | "skills.appsPage.hostDropdown.local"
+  | "skills.appsPage.hostDropdown.title"
+  | "skills.appsPage.pluginsFilter.all"
+  | "skills.appsPage.categoryFilter.all"
+  | "skills.appsPage.categoryFilter.trigger"
+  | "skills.appsPage.categoryDropdown.ariaLabel"
+  | "skills.appsPage.browseDropdown.ariaLabel"
+  | "skills.appsPage.marketplaceFilter.addMore"
   | "skills.page.heading"
   | "skills.page.subheading"
   | "skills.page.loading"
@@ -97,20 +177,52 @@ export type MessageKey =
   | "skills.page.filteredEmptyDescription"
   | "skills.page.search"
   | "skills.page.search.label"
+  | "skills.page.createSkill"
   | "skills.page.refreshSkills"
   | "skills.page.refreshSkillsToUseNew"
   | "skills.page.refreshFailed"
+  | "skills.pluginsAuthBlockedToast.title"
+  | "skills.pluginsAuthBlockedToast.description"
   | "skills.section.installed"
   | "skills.section.recommended"
   | "settings.nav.skills-settings"
   | "settings.section.skills-settings"
   | "skills.card.enabledStatus"
   | "skills.card.disabledStatus"
+  | "plugins.card.enableToggleTooltip"
+  | "plugins.card.disableToggleTooltip"
+  | "plugins.card.toggleAria"
+  | "plugins.card.enabledStatus"
+  | "plugins.card.disabledStatus"
+  | "plugins.card.enableButton"
+  | "plugins.card.installTooltip"
+  | "plugins.card.tryInChat"
+  | "plugins.card.enableSuccess"
+  | "plugins.card.disableSuccess"
+  | "plugins.card.toggleError"
+  | "plugins.importedConnectors.title"
+  | "plugins.importedConnectors.empty"
+  | "plugins.importedConnectors.finishSetup"
+  | "plugins.hero.tryInChat"
+  | "plugins.hero.dotLabel"
+  | "plugins.hero.copy.computerUse"
+  | "plugins.hero.copy.gmail"
+  | "plugins.hero.copy.slack"
+  | "plugins.hero.copy.googleCalendar"
+  | "plugins.hero.copy.googleDrive"
+  | "plugins.hero.copy.linear"
   | "skills.recommended.error"
   | "skills.scope.builtIn"
   | "skills.scope.team"
   | "skills.scope.personal"
   | "skills.scope.adminInstalled"
+  | "plugins.marketplace.removeSuccess"
+  | "plugins.marketplace.removeError"
+  | "plugins.marketplace.upgradeAllSuccess"
+  | "plugins.marketplace.upgradeSuccess"
+  | "plugins.marketplace.upgradeAllError"
+  | "plugins.marketplace.upgradeError"
+  | "plugins.marketplace.upgradeAllRequestError"
   | "app.shell.appMenu"
   | "app.shell.back"
   | "app.shell.forward"
@@ -119,6 +231,38 @@ export type MessageKey =
   | "codex.alert.closeAriaLabel"
   | "codex.archiveInfo.electron"
   | "codex.archiveInfo.settingsLink"
+  | "codex.legal.step.intro.title"
+  | "codex.legal.step.intro.subtitle"
+  | "codex.legal.step.cloud.title"
+  | "codex.legal.step.cloud.subtitle"
+  | "codex.legal.step.todo.title"
+  | "codex.legal.step.todo.subtitle"
+  | "codex.legal.autonomy.title"
+  | "codex.legal.autonomy.details"
+  | "codex.legal.autonomy.details.link"
+  | "codex.legal.mistakes.title"
+  | "codex.legal.mistakes.review"
+  | "codex.legal.powered.title"
+  | "codex.legal.powered.details"
+  | "codex.legal.powered.details.link"
+  | "codex.legal.copilot.title"
+  | "codex.legal.copilot.details"
+  | "codex.legal.copilot.oaiTosLink"
+  | "codex.legal.copilot.gitHubTosLink"
+  | "codex.legal.backButton"
+  | "codex.legal.continueButton"
+  | "codex.legal.continue.apikey"
+  | "codex.legal.cloud.taskOne.title"
+  | "codex.legal.cloud.taskOne.meta"
+  | "codex.legal.cloud.taskTwo.title"
+  | "codex.legal.cloud.taskTwo.meta"
+  | "codex.legal.cloud.taskTwo.stats.positive"
+  | "codex.legal.cloud.taskTwo.stats.negative"
+  | "codex.legal.cloud.taskThree.title"
+  | "codex.legal.cloud.taskThree.meta"
+  | "codex.legal.cloud.taskThree.stats.positive"
+  | "codex.legal.cloud.taskThree.stats.negative"
+  | "codex.legal.todo.heading"
   | "app.chat.noRecentThreads"
   | "app.chat.noMessages"
   | "app.chat.changedFiles"
@@ -128,6 +272,7 @@ export type MessageKey =
   | "app.chat.projects"
   | "app.chat.filesChanged"
   | "app.chat.composePlaceholder"
+  | "composer.placeholder.newTask.doAnything"
   | "app.chat.send"
   | "app.chat.stop"
   | "app.chat.queuedFollowUps"
@@ -409,6 +554,28 @@ export type MessageKey =
   | "review.fileSource.richPreview.disable"
   | "review.fileSource.wrap.enable"
   | "review.fileSource.wrap.disable"
+  | "codex.filePreview.pdb.empty"
+  | "codex.filePreview.pdb.modelSelectLabel"
+  | "codex.filePreview.pdb.modelOption"
+  | "codex.filePreview.pdb.resetView"
+  | "codex.filePreview.pdb.residueCount"
+  | "codex.filePreview.pdb.atomCount"
+  | "codex.filePreview.pdb.scoreSummary"
+  | "codex.filePreview.pdb.viewerLabel"
+  | "codex.filePreview.pdb.viewerLoadError"
+  | "codex.filePreview.pdb.legendVeryHigh"
+  | "codex.filePreview.pdb.legendConfident"
+  | "codex.filePreview.pdb.legendLow"
+  | "codex.filePreview.pdb.legendVeryLow"
+  | "codex.filePreview.pdb.interactionHint"
+  | "codex.filePreview.pdb.chainSelectLabel"
+  | "codex.filePreview.pdb.chainLabel"
+  | "codex.filePreview.pdb.chainOption"
+  | "codex.filePreview.pdb.sequenceResidueCount"
+  | "codex.filePreview.pdb.selectedResidues"
+  | "codex.filePreview.pdb.sequenceLabel"
+  | "codex.filePreview.pdb.residueLabel"
+  | "codex.filePreview.pdb.residueTitle"
   | "artifactTab.sourceOptions"
   | "codex.diffView.richPreviewEnable"
   | "codex.diffView.richPreviewDisable"
@@ -858,6 +1025,85 @@ export type MessageKey =
   | "settings.general.reviewDelivery.description"
   | "settings.general.reviewDelivery.inline"
   | "settings.general.reviewDelivery.detached"
+  | "settings.agentEnvironment.label"
+  | "settings.agentEnvironment.description"
+  | "settings.agentEnvironment.windowsNative"
+  | "settings.agentEnvironment.windowsNative.description"
+  | "settings.agentEnvironment.wsl"
+  | "settings.agentEnvironment.wsl.description"
+  | "settings.agentEnvironment.restartNotice"
+  | "settings.agentEnvironment.wslBashError"
+  | "settings.agentEnvironment.wslBashError.unknownDistribution"
+  | "settings.general.importExternalAgent.rowLabel"
+  | "settings.general.importExternalAgent.importedRowLabel"
+  | "settings.general.importExternalAgent.rowDescription"
+  | "settings.general.importExternalAgent.lastImported"
+  | "settings.general.importExternalAgent.checking"
+  | "settings.general.importExternalAgent.importing"
+  | "settings.general.importExternalAgent.import"
+  | "settings.general.importExternalAgent.importAgain"
+  | "settings.general.importExternalAgent.viewImportedFiles"
+  | "settings.general.importExternalAgent.continueWithCodex"
+  | "settings.openIn.integratedTerminalShell.label"
+  | "settings.openIn.integratedTerminalShell.description"
+  | "settings.openIn.integratedTerminalShell.unavailable"
+  | "settings.ide.defaultOpenTarget.label"
+  | "settings.ide.defaultOpenTarget.description"
+  | "settings.ide.defaultOpenTarget.placeholder"
+  | "externalAgentConfig.projectImport.title"
+  | "externalAgentConfig.projectImport.subtitle"
+  | "externalAgentConfig.projectImport.confirm"
+  | "externalAgentConfig.projectImport.cancel"
+  | "externalAgentConfig.projectImport.error"
+  | "externalAgentConfig.itemType.agentsMd"
+  | "externalAgentConfig.itemType.config"
+  | "externalAgentConfig.itemType.skills"
+  | "externalAgentConfig.itemType.plugins"
+  | "externalAgentConfig.itemType.subagents"
+  | "externalAgentConfig.itemType.hooks"
+  | "externalAgentConfig.itemType.commands"
+  | "externalAgentConfig.itemType.sessions"
+  | "externalAgentConfig.itemType.mcpServerConfig"
+  | "settings.agent.importSettings.sectionTitle"
+  | "settings.agent.importSettings.sectionSubtitle"
+  | "settings.agent.importSettings.loadingLabel"
+  | "settings.agent.importSettings.detectingDescription"
+  | "settings.agent.importSettings.sharedImportLabel"
+  | "settings.agent.importSettings.sharedImportDescription"
+  | "settings.agent.importSettings.applySelected"
+  | "settings.agent.importSettings.remaining.summaryLabel"
+  | "settings.agent.importSettings.remaining.summaryDescription"
+  | "settings.agent.importSettings.remaining.continueInCodex"
+  | "settings.agent.importSettings.remaining.userConfigSettingsSection"
+  | "settings.agent.importSettings.remaining.currentProjectSettingsSection"
+  | "settings.agent.importSettings.remaining.itemDescription"
+  | "settings.agent.importSettings.remaining.slashCommandsLabel"
+  | "settings.agent.importSettings.remaining.hooksLabel"
+  | "settings.agent.importSettings.remaining.mcpLabel"
+  | "settings.agent.importSettings.remaining.pluginsLabel"
+  | "settings.agent.importSettings.remaining.subagentsLabel"
+  | "settings.agent.importSettings.toast.importing"
+  | "settings.agent.importSettings.toast.success"
+  | "settings.agent.importSettings.toast.error"
+  | "settings.agent.importSettings.progress.close"
+  | "settings.agent.importSettings.progress.continueInCodex"
+  | "settings.agent.importSettings.progress.scrollToBottom"
+  | "settings.agent.importSettings.progress.remainingOnlyTitle"
+  | "settings.agent.importSettings.progress.remainingOnlySubtitle"
+  | "settings.agent.importSettings.progress.successTitle"
+  | "settings.agent.importSettings.progress.successSubtitle"
+  | "settings.agent.importSettings.progress.errorTitle"
+  | "settings.agent.importSettings.progress.errorSubtitle"
+  | "settings.agent.importSettings.progress.runningTitle"
+  | "settings.agent.importSettings.progress.runningSubtitle"
+  | "settings.agent.importSettings.progress.userConfigSection"
+  | "settings.agent.importSettings.progress.currentProjectSection"
+  | "wham.formattedRelativeDateTime.compactMinutesAgo"
+  | "wham.formattedRelativeDateTime.compactHoursAgo"
+  | "wham.formattedRelativeDateTime.compactDaysAgo"
+  | "wham.formattedRelativeDateTime.compactWeeksAgo"
+  | "wham.formattedRelativeDateTime.compactMonthsAgo"
+  | "wham.formattedRelativeDateTime.compactYearsAgo"
   | "settings.general.appearance.theme"
   | "settings.general.appearance.theme.description"
   | "settings.general.appearance.theme.light"
@@ -906,6 +1152,8 @@ export type MessageKey =
   | "settings.title"
   | "settings.nav.heading.app"
   | "settings.nav.heading.host"
+  | "settings.hostDropdown.local"
+  | "settings.hostDropdown.title"
   | "settings.agent.title"
   | "settings.agent.configuration.subtitle.summary"
   | "settings.agent.customConfig"
@@ -1114,8 +1362,60 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "skills.appsPage.loadError.title": "Unable to load apps",
     "skills.appsPage.loadError.retry": "Retry",
     "skills.appsPage.empty.plugins": "No plugins found",
+    "skills.appsPage.manageTab.plugins": "Plugins",
+    "skills.appsPage.manageTab.marketplace": "Marketplace",
+    "skills.appsPage.marketplace.loading": "Loading marketplaces…",
+    "skills.appsPage.marketplace.loadError.title": "Unable to load marketplaces",
+    "skills.appsPage.marketplace.loadError.retry": "Retry",
+    "skills.appsPage.empty.marketplace": "No marketplaces found",
+    "skills.appsPage.marketplace.pluginCount": "{count, plural, one {# plugin} other {# plugins}}",
+    "skills.appsPage.marketplace.upgrade.ariaLabel": "Upgrade marketplace",
+    "skills.appsPage.marketplace.upgrade.button": "Upgrade",
+    "skills.appsPage.marketplace.upgrade": "Upgrade marketplace",
+    "skills.appsPage.marketplace.upgrade.builtInDisabled": "Built-in marketplaces are upgraded by Codex",
+    "skills.appsPage.marketplace.upgrade.workspaceDisabled": "Workspace marketplaces are managed by the workspace",
+    "skills.appsPage.marketplace.upgrade.localDisabled": "Only Git marketplaces can be upgraded",
+    "skills.appsPage.marketplace.remove": "Remove marketplace",
+    "skills.appsPage.marketplace.remove.ariaLabel": "Remove marketplace",
+    "skills.appsPage.marketplace.remove.builtInDisabled": "Built-in marketplaces cannot be removed",
+    "skills.appsPage.marketplace.remove.workspaceDisabled": "Workspace marketplaces are managed by the workspace",
+    "skills.appsPage.marketplace.removeDialog.title": 'Remove "{marketplaceName}"?',
+    "skills.appsPage.marketplace.removeDialog.description":
+      "Codex will remove this marketplace from your configuration. Plugins from it will no longer appear unless the marketplace is added again",
+    "skills.appsPage.marketplace.removeDialog.cancel": "Cancel",
+    "skills.appsPage.marketplace.removeDialog.confirm": "Remove",
+    "skills.appsPage.marketplace.partialLoadError.title": "Some marketplaces could not be loaded",
+    "skills.appsPage.marketplace.partialLoadError.more":
+      "{count, plural, one {# more marketplace could not be loaded} other {# more marketplaces could not be loaded}}",
+    "skills.appsPage.marketplace.partialLoadError.retry": "Retry",
+    "skills.appsPage.addMarketplace.title": "Add marketplace",
+    "skills.appsPage.addMarketplace.header": "Add marketplace",
+    "skills.appsPage.addMarketplace.subtitle": "Add a plugin marketplace from a GitHub repo, Git URL, or local folder",
+    "skills.appsPage.addMarketplace.sourceRequired": "Enter a marketplace source",
+    "skills.appsPage.addMarketplace.sourceLabel": "Source",
+    "skills.appsPage.addMarketplace.sourcePlaceholder": "openai/plugins or git@github.com:org/repo.git",
+    "skills.appsPage.addMarketplace.refLabel": "Git ref",
+    "skills.appsPage.addMarketplace.refPlaceholder": "main",
+    "skills.appsPage.addMarketplace.sparsePathsLabel": "Sparse paths",
+    "skills.appsPage.addMarketplace.sparsePathsPlaceholder": "plugins/codex",
+    "skills.appsPage.addMarketplace.cancel": "Cancel",
+    "skills.appsPage.addMarketplace.submit": "Add marketplace",
+    "skills.appsPage.addMarketplace.failed": "Failed to add marketplace",
+    "skills.appsPage.addMarketplace.refreshFailed":
+      "{marketplaceName} marketplace is configured, but failed to refresh the plugin list",
+    "skills.appsPage.addMarketplace.alreadyAdded": "{marketplaceName} is already added",
+    "skills.appsPage.addMarketplace.success": "{marketplaceName} marketplace added",
     "skills.appsPage.pluginsUnsupportedHost.title": "Plugins are not available for this host",
     "skills.appsPage.pluginsUnsupportedHost.description": "Choose another host to browse and manage plugins",
+    "skills.appsPage.browseIntro.title": "Make Codex work your way",
+    "skills.appsPage.hostDropdown.local": "Local",
+    "skills.appsPage.hostDropdown.title": "Host",
+    "skills.appsPage.pluginsFilter.all": "All plugins",
+    "skills.appsPage.categoryFilter.all": "All",
+    "skills.appsPage.categoryFilter.trigger": "Category",
+    "skills.appsPage.categoryDropdown.ariaLabel": "Choose a category",
+    "skills.appsPage.browseDropdown.ariaLabel": "Choose a plugin marketplace",
+    "skills.appsPage.marketplaceFilter.addMore": "Add more",
     "skills.page.heading": "Skills",
     "skills.page.subheading": "Give Codex superpowers. <a>Learn more</a>",
     "skills.page.loading": "Loading skills...",
@@ -1124,19 +1424,83 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "skills.page.filteredEmptyDescription": "Try adjusting your search or scope filters",
     "skills.page.search": "Search skills",
     "skills.page.search.label": "Search skills",
+    "skills.page.createSkill": "New skill",
     "skills.page.refreshSkills": "Refresh",
     "skills.page.refreshSkillsToUseNew": "Refresh to use new skill(s)",
     "skills.page.refreshFailed": "Unable to load skills",
+    "skills.pluginsAuthBlockedToast.title": "Sign in with ChatGPT to use plugins",
+    "skills.pluginsAuthBlockedToast.description":
+      "Plugins are not available with API key sign-in. Sign in with ChatGPT to browse and install them.",
     "skills.section.installed": "Installed",
     "skills.section.recommended": "Recommended",
     "settings.nav.skills-settings": "Skills",
     "skills.card.enabledStatus": "Enabled",
     "skills.card.disabledStatus": "Disabled",
+    "skills.appsPage.manageTab.apps": "Apps",
+    "skills.appsPage.manageTab.mcps": "MCPs",
+    "skills.appsPage.manageTab.skills": "Skills",
+    "skills.appsPage.empty.installedApps": "No installed apps",
+    "skills.appsPage.empty.mcps": "No MCP servers found",
+    "skills.appsPage.empty.skills": "No installed skills",
+    "skills.appsPage.marketplace.upgradeAll": "Upgrade all",
+    "skills.appsPage.marketplace.upgradeAll.tooltip": "Upgrade all upgradable marketplaces",
+    "skills.appsPage.mcps.settings": "Open MCP settings",
+    "skills.appsPage.mcps.enable": "Enable MCP server",
+    "skills.appsPage.mcps.disable": "Disable MCP server",
+    "skills.appsPage.mcps.toggle": "Toggle MCP server enabled state",
+    "skills.appsPage.mcps.toggleError": "Failed to update MCP server",
+    "skills.appsPage.apps.toggle": "Toggle app enabled state",
+    "skills.appsPage.apps.toggleError": "Failed to update app",
+    "skills.appsPage.skills.enable": "Enable skill",
+    "skills.appsPage.skills.disable": "Disable skill",
+    "skills.appsPage.skills.toggle": "Toggle skill enabled state",
+    "skills.appsPage.skills.toggleError": "Failed to update skill",
+    "skills.appsPage.toolsDialog.open": "Manage on ChatGPT",
+    "skills.appsPage.toolsDialog.moreActions": "More actions",
+    "skills.appsPage.toolsDialog.enableApp": "Enable app",
+    "skills.appsPage.toolsDialog.disableApp": "Disable app",
+    "skills.appsPage.toolsDialog.tryInChat": "Try in chat",
+    "skills.appsPage.toolsDialog.tryInChatDisabled": "Enable and connect this app to try it in chat",
+    "skills.appsPage.toolsDialog.disabledBadge": "Disabled",
+    "skills.appsPage.toolsDialog.subtitle": "Available tools for this app",
+    "skills.appsPage.toolsDialog.summary": "The {appName} app contains {totalActions} actions ({actionTypes})",
+    "skills.appsPage.toolsDialog.loading": "Loading tools…",
+    "skills.appsPage.toolsDialog.empty": "No tools available for this app.",
+    "skills.appsPage.toolsDialog.error": "Unable to load tools for this app.",
+    "plugins.card.enableToggleTooltip": "Enable plugin",
+    "plugins.card.disableToggleTooltip": "Disable plugin",
+    "plugins.card.toggleAria": "Toggle plugin enabled state",
+    "plugins.card.enabledStatus": "Plugin enabled",
+    "plugins.card.disabledStatus": "Plugin disabled",
+    "plugins.card.enableButton": "Enable",
+    "plugins.card.installTooltip": "Install plugin",
+    "plugins.card.tryInChat": "Try in Chat",
+    "plugins.card.enableSuccess": "{pluginName} plugin enabled",
+    "plugins.card.disableSuccess": "{pluginName} plugin disabled",
+    "plugins.card.toggleError": "Failed to update plugin",
+    "plugins.importedConnectors.title": "Imported plugins",
+    "plugins.importedConnectors.empty": "No imported plugins",
+    "plugins.importedConnectors.finishSetup": "Finish setup",
+    "plugins.hero.tryInChat": "Try in chat",
+    "plugins.hero.dotLabel": "Go to plugin slide {index}",
+    "plugins.hero.copy.computerUse": "Play a playlist to help me lock in",
+    "plugins.hero.copy.gmail": "Draft replies for every email I'm behind on",
+    "plugins.hero.copy.slack": "Prep me for standup every morning",
+    "plugins.hero.copy.googleCalendar": "Schedule a recurring 1:1",
+    "plugins.hero.copy.googleDrive": "Draft my weekly recap every Friday",
+    "plugins.hero.copy.linear": "Create tickets for these bug bash findings",
     "skills.recommended.error": "Unable to load recommended skills",
     "skills.scope.builtIn": "System",
     "skills.scope.team": "Team",
     "skills.scope.personal": "Personal",
     "skills.scope.adminInstalled": "Admin installed",
+    "plugins.marketplace.removeSuccess": "{marketplaceName} marketplace removed",
+    "plugins.marketplace.removeError": "Failed to remove marketplace",
+    "plugins.marketplace.upgradeAllSuccess": "Marketplaces upgraded",
+    "plugins.marketplace.upgradeSuccess": "{marketplaceName} marketplace upgraded",
+    "plugins.marketplace.upgradeAllError": "Some marketplaces failed to upgrade",
+    "plugins.marketplace.upgradeError": "Failed to upgrade marketplace",
+    "plugins.marketplace.upgradeAllRequestError": "Failed to upgrade marketplaces",
     "plugins.installModal.about": "About",
     "plugins.installModal.capabilities": "Capabilities",
     "plugins.installModal.developedBy": "Developed by {developerName}",
@@ -1156,6 +1520,41 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.alert.closeAriaLabel": "Close",
     "codex.archiveInfo.electron": "View archived chats in {settingsLink}",
     "codex.archiveInfo.settingsLink": "Settings",
+    "codex.legal.step.intro.title": "Codex in your IDE",
+    "codex.legal.step.intro.subtitle":
+      "Codex navigates, edits, runs commands, and executes tests directly in your repo. Powered by your ChatGPT account.",
+    "codex.legal.step.cloud.title": "Hand off to Codex in the cloud",
+    "codex.legal.step.cloud.subtitle":
+      "Send tasks to Codex to run in the background so you can stay focused and move faster.",
+    "codex.legal.step.todo.title": "Turn TODOs into Codex tasks",
+    "codex.legal.step.todo.subtitle": "Write a TODO comment and convert it into a Codex task with a single click.",
+    "codex.legal.autonomy.title": "Decide how much autonomy you want to grant",
+    "codex.legal.autonomy.details": "For more details, see the {link}",
+    "codex.legal.autonomy.details.link": "Codex docs",
+    "codex.legal.mistakes.title": "Codex can make mistakes",
+    "codex.legal.mistakes.review": "Review the code it writes and commands it runs",
+    "codex.legal.powered.title": "Powered by your ChatGPT account",
+    "codex.legal.powered.details": "Uses your plan’s rate limits and {link}",
+    "codex.legal.powered.details.link": "training data preferences",
+    "codex.legal.copilot.title": "Powered by GitHub Copilot",
+    "codex.legal.copilot.details":
+      "Uses your Copilot plan for all model calls, billing, and rate limits. Codex extension usage is subject to both {oaiTos} and {gitHubTos}.",
+    "codex.legal.copilot.oaiTosLink": "OpenAI Codex terms of service",
+    "codex.legal.copilot.gitHubTosLink": "GitHub Terms of Service",
+    "codex.legal.backButton": "Back",
+    "codex.legal.continueButton": "Next",
+    "codex.legal.continue.apikey": "Continue",
+    "codex.legal.cloud.taskOne.title": "Explain repository to a new designer",
+    "codex.legal.cloud.taskOne.meta": "openai/agi · Oct 12",
+    "codex.legal.cloud.taskTwo.title": "Fix an onboarding bug",
+    "codex.legal.cloud.taskTwo.meta": "openai/agi · Oct 9",
+    "codex.legal.cloud.taskTwo.stats.positive": "+2",
+    "codex.legal.cloud.taskTwo.stats.negative": "-20",
+    "codex.legal.cloud.taskThree.title": "Create a darkmode theme",
+    "codex.legal.cloud.taskThree.meta": "openai/codex · Oct 8",
+    "codex.legal.cloud.taskThree.stats.positive": "+249",
+    "codex.legal.cloud.taskThree.stats.negative": "-123",
+    "codex.legal.todo.heading": "// TODO: implement schema",
     "app.chat.noRecentThreads": "No recent conversations",
     "app.chat.noMessages": "No messages",
     "app.chat.changedFiles": "{fileCount} files changed",
@@ -1165,6 +1564,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.projects": "PROJECTS",
     "app.chat.filesChanged": "{fileCount} files changed",
     "app.chat.composePlaceholder": "Ask Codex anything. Type @ to use plugins or mention files",
+    "composer.placeholder.newTask.doAnything": "Ask Codex to do anything",
     "app.chat.send": "Send",
     "app.chat.stop": "Stop",
     "app.chat.queuedFollowUps": "Queued follow-ups ({count})",
@@ -1458,6 +1858,28 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "review.fileSource.richPreview.disable": "Disable rich view",
     "review.fileSource.wrap.enable": "Enable word wrap",
     "review.fileSource.wrap.disable": "Disable word wrap",
+    "codex.filePreview.pdb.empty": "No PDB atoms found",
+    "codex.filePreview.pdb.modelSelectLabel": "Select PDB model",
+    "codex.filePreview.pdb.modelOption": "Model {modelNumber}",
+    "codex.filePreview.pdb.resetView": "Reset view",
+    "codex.filePreview.pdb.residueCount": "{count, number} residues",
+    "codex.filePreview.pdb.atomCount": "{count, number} atoms",
+    "codex.filePreview.pdb.scoreSummary": "B-factor/pLDDT {mean}",
+    "codex.filePreview.pdb.viewerLabel": "Interactive PDB structure viewer",
+    "codex.filePreview.pdb.viewerLoadError": "Unable to load the 3Dmol PDB viewer",
+    "codex.filePreview.pdb.legendVeryHigh": "90+",
+    "codex.filePreview.pdb.legendConfident": "70-90",
+    "codex.filePreview.pdb.legendLow": "50-70",
+    "codex.filePreview.pdb.legendVeryLow": "<50",
+    "codex.filePreview.pdb.interactionHint": "Drag to rotate. Scroll to zoom.",
+    "codex.filePreview.pdb.chainSelectLabel": "Select PDB chain",
+    "codex.filePreview.pdb.chainLabel": "Chain {chainId}",
+    "codex.filePreview.pdb.chainOption": "Chain {chainId} ({count, number} residues)",
+    "codex.filePreview.pdb.sequenceResidueCount": "{count, number} coordinate residues",
+    "codex.filePreview.pdb.selectedResidues": "Selected {range}",
+    "codex.filePreview.pdb.sequenceLabel": "PDB chain sequence",
+    "codex.filePreview.pdb.residueLabel": "{residueName} {residueNumber} in chain {chainId}",
+    "codex.filePreview.pdb.residueTitle": "{residueName} {residueNumber}",
     "artifactTab.sourceOptions": "Artifact viewer options",
     "codex.diffView.richPreviewEnable": "Enable rich preview",
     "codex.diffView.richPreviewDisable": "Disable rich preview",
@@ -1920,6 +2342,103 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.general.reviewDelivery.description": "Start /review in the current chat when possible or launch a separate review chat",
     "settings.general.reviewDelivery.inline": "Inline",
     "settings.general.reviewDelivery.detached": "Detached",
+    "settings.agentEnvironment.label": "Agent environment",
+    "settings.agentEnvironment.description": "Choose where the agent runs on Windows",
+    "settings.agentEnvironment.windowsNative": "Windows native",
+    "settings.agentEnvironment.windowsNative.description": "Run the agent directly in Windows",
+    "settings.agentEnvironment.wsl": "Windows Subsystem for Linux",
+    "settings.agentEnvironment.wsl.description": "Run the agent inside WSL",
+    "settings.agentEnvironment.restartNotice":
+      "Restart Codex to apply this change. The agent is still running in {currentEnvironment}.",
+    "settings.agentEnvironment.wslBashError":
+      "Codex can't run in {distributionName} because /usr/bin/bash is missing",
+    "settings.agentEnvironment.wslBashError.unknownDistribution": "this WSL distribution",
+    "settings.general.importExternalAgent.rowLabel": "Import work from other AI apps",
+    "settings.general.importExternalAgent.importedRowLabel": "Imported agent setup",
+    "settings.general.importExternalAgent.rowDescription":
+      "Bring over your setup, projects, and recent chats",
+    "settings.general.importExternalAgent.lastImported":
+      "Last imported {relativeTime} ago",
+    "settings.general.importExternalAgent.checking": "Checking",
+    "settings.general.importExternalAgent.importing": "Importing",
+    "settings.general.importExternalAgent.import": "Import",
+    "settings.general.importExternalAgent.importAgain": "Import again",
+    "settings.general.importExternalAgent.viewImportedFiles": "View imported files",
+    "settings.general.importExternalAgent.continueWithCodex": "Continue with Codex",
+    "settings.openIn.integratedTerminalShell.label": "Integrated terminal shell",
+    "settings.openIn.integratedTerminalShell.description": "Choose which shell opens in the integrated terminal.",
+    "settings.openIn.integratedTerminalShell.unavailable": "No shells available",
+    "settings.ide.defaultOpenTarget.label": "Default open destination",
+    "settings.ide.defaultOpenTarget.description": "Where files and folders open by default",
+    "settings.ide.defaultOpenTarget.placeholder": "No targets found",
+    "externalAgentConfig.projectImport.title": "Select settings to import",
+    "externalAgentConfig.projectImport.subtitle":
+      "Codex found useful settings in another agent app",
+    "externalAgentConfig.projectImport.confirm": "Continue",
+    "externalAgentConfig.projectImport.cancel": "Maybe later",
+    "externalAgentConfig.projectImport.error": "Could not import project settings",
+    "externalAgentConfig.itemType.agentsMd": "Instructions",
+    "externalAgentConfig.itemType.config": "Settings",
+    "externalAgentConfig.itemType.skills": "Skills",
+    "externalAgentConfig.itemType.plugins": "Plugins",
+    "externalAgentConfig.itemType.subagents": "Agents",
+    "externalAgentConfig.itemType.hooks": "Hooks",
+    "externalAgentConfig.itemType.commands": "Commands",
+    "externalAgentConfig.itemType.sessions": "Sessions",
+    "externalAgentConfig.itemType.mcpServerConfig": "MCP servers",
+    "settings.agent.importSettings.sectionTitle": "Import external agent config",
+    "settings.agent.importSettings.sectionSubtitle":
+      "Detected settings from another agent that can be added to Codex",
+    "settings.agent.importSettings.loadingLabel": "Checking for imports",
+    "settings.agent.importSettings.detectingDescription":
+      "Checking for compatible external settings, AGENTS.md, and skills",
+    "settings.agent.importSettings.sharedImportLabel": "Import another agent setup",
+    "settings.agent.importSettings.sharedImportDescription":
+      "Choose settings, chats, and projects from another local agent app",
+    "settings.agent.importSettings.applySelected": "Import to Codex",
+    "settings.agent.importSettings.remaining.summaryLabel": "{count} selected",
+    "settings.agent.importSettings.remaining.summaryDescription":
+      "Migrate selected settings that can’t be imported automatically",
+    "settings.agent.importSettings.remaining.continueInCodex": "Continue in Codex",
+    "settings.agent.importSettings.remaining.userConfigSettingsSection": "User config",
+    "settings.agent.importSettings.remaining.currentProjectSettingsSection":
+      "Current project",
+    "settings.agent.importSettings.remaining.itemDescription":
+      "Migrate {path} with Codex",
+    "settings.agent.importSettings.remaining.slashCommandsLabel": "Slash commands",
+    "settings.agent.importSettings.remaining.hooksLabel": "Hooks",
+    "settings.agent.importSettings.remaining.mcpLabel": "MCP",
+    "settings.agent.importSettings.remaining.pluginsLabel": "Plugins",
+    "settings.agent.importSettings.remaining.subagentsLabel": "Subagents",
+    "settings.agent.importSettings.toast.importing": "Importing agent setup",
+    "settings.agent.importSettings.toast.success": "Agent setup imported",
+    "settings.agent.importSettings.toast.error": "Unable to import agent setup",
+    "settings.agent.importSettings.progress.close": "Close",
+    "settings.agent.importSettings.progress.continueInCodex": "Continue with Codex",
+    "settings.agent.importSettings.progress.scrollToBottom": "Scroll to bottom",
+    "settings.agent.importSettings.progress.remainingOnlyTitle":
+      "Additional setup found",
+    "settings.agent.importSettings.progress.remainingOnlySubtitle":
+      "Codex found additional setup that requires extra steps to import.",
+    "settings.agent.importSettings.progress.successTitle":
+      "Imported external agent config",
+    "settings.agent.importSettings.progress.successSubtitle":
+      "Selected config was copied into Codex",
+    "settings.agent.importSettings.progress.errorTitle": "Import failed",
+    "settings.agent.importSettings.progress.errorSubtitle":
+      "Some config could not be imported. Check the selected items and try again",
+    "settings.agent.importSettings.progress.runningTitle":
+      "Importing external agent config",
+    "settings.agent.importSettings.progress.runningSubtitle":
+      "Hang tight, this may take a few moments",
+    "settings.agent.importSettings.progress.userConfigSection": "User config",
+    "settings.agent.importSettings.progress.currentProjectSection": "Current project",
+    "wham.formattedRelativeDateTime.compactMinutesAgo": "{value}m",
+    "wham.formattedRelativeDateTime.compactHoursAgo": "{value}h",
+    "wham.formattedRelativeDateTime.compactDaysAgo": "{value}d",
+    "wham.formattedRelativeDateTime.compactWeeksAgo": "{value}w",
+    "wham.formattedRelativeDateTime.compactMonthsAgo": "{value}mo",
+    "wham.formattedRelativeDateTime.compactYearsAgo": "{value}y",
     "settings.general.appearance.theme": "Theme",
     "settings.general.appearance.theme.description": "Use light, dark, or match your system",
     "settings.general.appearance.theme.light": "Light",
@@ -1969,6 +2488,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.title": "SETTINGS",
     "settings.nav.heading.app": "APP",
     "settings.nav.heading.host": "HOST",
+    "settings.hostDropdown.local": "Local",
+    "settings.hostDropdown.title": "Host",
     "settings.agent.title": "Configuration",
     "settings.agent.configuration.subtitle.summary": "Configure approval policy and sandbox settings <a>Learn more</a>",
     "settings.agent.customConfig": "Custom config.toml settings",
@@ -2131,8 +2652,59 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "skills.appsPage.loadError.title": "无法加载应用",
     "skills.appsPage.loadError.retry": "重试",
     "skills.appsPage.empty.plugins": "未找到插件",
+    "skills.appsPage.manageTab.plugins": "插件",
+    "skills.appsPage.manageTab.marketplace": "市场",
+    "skills.appsPage.marketplace.loading": "正在加载市场…",
+    "skills.appsPage.marketplace.loadError.title": "无法加载插件市场",
+    "skills.appsPage.marketplace.loadError.retry": "重试",
+    "skills.appsPage.empty.marketplace": "未找到任何市场",
+    "skills.appsPage.marketplace.pluginCount": "{count, plural, one {# 个插件} other {# 个插件}}",
+    "skills.appsPage.marketplace.upgrade.ariaLabel": "升级市场",
+    "skills.appsPage.marketplace.upgrade.button": "升级",
+    "skills.appsPage.marketplace.upgrade": "升级市场",
+    "skills.appsPage.marketplace.upgrade.builtInDisabled": "内置市场由 Codex 升级",
+    "skills.appsPage.marketplace.upgrade.workspaceDisabled": "工作区市场由工作区管理",
+    "skills.appsPage.marketplace.upgrade.localDisabled": "只能升级 Git 市场",
+    "skills.appsPage.marketplace.remove": "移除市场",
+    "skills.appsPage.marketplace.remove.ariaLabel": "移除市场",
+    "skills.appsPage.marketplace.remove.builtInDisabled": "无法移除内置市场",
+    "skills.appsPage.marketplace.remove.workspaceDisabled": "工作区市场由工作区管理",
+    "skills.appsPage.marketplace.removeDialog.title": "是否移除“{marketplaceName}”？",
+    "skills.appsPage.marketplace.removeDialog.description":
+      "Codex 将从你的配置中移除此市场。除非再次添加该市场，否则其中的插件将不再显示",
+    "skills.appsPage.marketplace.removeDialog.cancel": "取消",
+    "skills.appsPage.marketplace.removeDialog.confirm": "移除",
+    "skills.appsPage.marketplace.partialLoadError.title": "部分插件市场无法加载",
+    "skills.appsPage.marketplace.partialLoadError.more":
+      "{count, plural, one {还有 # 个市场无法加载} other {还有 # 个市场无法加载}}",
+    "skills.appsPage.marketplace.partialLoadError.retry": "重试",
+    "skills.appsPage.addMarketplace.title": "添加插件市场",
+    "skills.appsPage.addMarketplace.header": "添加插件市场",
+    "skills.appsPage.addMarketplace.subtitle": "从 GitHub 仓库、Git URL 或本地文件夹添加插件市场",
+    "skills.appsPage.addMarketplace.sourceRequired": "请输入市场来源",
+    "skills.appsPage.addMarketplace.sourceLabel": "来源",
+    "skills.appsPage.addMarketplace.sourcePlaceholder": "openai/plugins 或 git@github.com:org/repo.git",
+    "skills.appsPage.addMarketplace.refLabel": "Git 引用",
+    "skills.appsPage.addMarketplace.refPlaceholder": "main",
+    "skills.appsPage.addMarketplace.sparsePathsLabel": "稀疏路径",
+    "skills.appsPage.addMarketplace.sparsePathsPlaceholder": "plugins/codex",
+    "skills.appsPage.addMarketplace.cancel": "取消",
+    "skills.appsPage.addMarketplace.submit": "添加市场",
+    "skills.appsPage.addMarketplace.failed": "添加插件市场失败",
+    "skills.appsPage.addMarketplace.refreshFailed": "{marketplaceName} 市场已配置，但刷新插件列表失败",
+    "skills.appsPage.addMarketplace.alreadyAdded": "{marketplaceName} 已添加",
+    "skills.appsPage.addMarketplace.success": "已添加 {marketplaceName} 市场",
     "skills.appsPage.pluginsUnsupportedHost.title": "此主机不支持插件",
     "skills.appsPage.pluginsUnsupportedHost.description": "请选择其他主机以浏览和管理插件",
+    "skills.appsPage.browseIntro.title": "让 Codex 按你的方式工作",
+    "skills.appsPage.hostDropdown.local": "本地",
+    "skills.appsPage.hostDropdown.title": "主机",
+    "skills.appsPage.pluginsFilter.all": "全部插件",
+    "skills.appsPage.categoryFilter.all": "全部",
+    "skills.appsPage.categoryFilter.trigger": "分类",
+    "skills.appsPage.categoryDropdown.ariaLabel": "选择分类",
+    "skills.appsPage.browseDropdown.ariaLabel": "选择插件市场",
+    "skills.appsPage.marketplaceFilter.addMore": "添加更多",
     "skills.page.heading": "技能",
     "skills.page.subheading": "赋予 Codex 更强大的能力。<a>了解更多</a>",
     "skills.page.loading": "正在加载技能…",
@@ -2141,19 +2713,83 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "skills.page.filteredEmptyDescription": "尝试调整你的搜索内容或范围筛选条件",
     "skills.page.search": "搜索技能",
     "skills.page.search.label": "搜索技能",
+    "skills.page.createSkill": "新建技能",
     "skills.page.refreshSkills": "刷新",
     "skills.page.refreshSkillsToUseNew": "刷新以使用新技能",
     "skills.page.refreshFailed": "无法加载技能",
+    "skills.pluginsAuthBlockedToast.title": "使用插件需要通过 ChatGPT 登录",
+    "skills.pluginsAuthBlockedToast.description":
+      "使用 API 密钥登录时无法使用插件。请通过 ChatGPT 登录以浏览和安装插件。",
     "skills.section.installed": "已安装",
     "skills.section.recommended": "推荐",
     "settings.nav.skills-settings": "技能",
     "skills.card.enabledStatus": "已启用",
     "skills.card.disabledStatus": "已禁用",
+    "skills.appsPage.manageTab.apps": "应用",
+    "skills.appsPage.manageTab.mcps": "MCP 服务器",
+    "skills.appsPage.manageTab.skills": "技能",
+    "skills.appsPage.empty.installedApps": "没有已安装的应用",
+    "skills.appsPage.empty.mcps": "没有 MCP 服务器",
+    "skills.appsPage.empty.skills": "没有已安装的技能",
+    "skills.appsPage.marketplace.upgradeAll": "全部升级",
+    "skills.appsPage.marketplace.upgradeAll.tooltip": "升级所有可升级的市场",
+    "skills.appsPage.mcps.settings": "打开 MCP 设置",
+    "skills.appsPage.mcps.enable": "启用 MCP 服务器",
+    "skills.appsPage.mcps.disable": "禁用 MCP 服务器",
+    "skills.appsPage.mcps.toggle": "切换 MCP 服务器启用状态",
+    "skills.appsPage.mcps.toggleError": "更新 MCP 服务器失败",
+    "skills.appsPage.apps.toggle": "切换应用启用状态",
+    "skills.appsPage.apps.toggleError": "更新应用失败",
+    "skills.appsPage.skills.enable": "启用技能",
+    "skills.appsPage.skills.disable": "禁用技能",
+    "skills.appsPage.skills.toggle": "切换技能启用状态",
+    "skills.appsPage.skills.toggleError": "更新技能失败",
+    "skills.appsPage.toolsDialog.open": "前往 ChatGPT 管理",
+    "skills.appsPage.toolsDialog.moreActions": "更多操作",
+    "skills.appsPage.toolsDialog.enableApp": "启用应用",
+    "skills.appsPage.toolsDialog.disableApp": "禁用应用",
+    "skills.appsPage.toolsDialog.tryInChat": "在对话中试用",
+    "skills.appsPage.toolsDialog.tryInChatDisabled": "启用并连接此应用，即可在对话中试用",
+    "skills.appsPage.toolsDialog.disabledBadge": "已禁用",
+    "skills.appsPage.toolsDialog.subtitle": "此应用的可用工具",
+    "skills.appsPage.toolsDialog.summary": "{appName} 应用包含 {totalActions} 项操作（{actionTypes}）",
+    "skills.appsPage.toolsDialog.loading": "正在加载工具…",
+    "skills.appsPage.toolsDialog.empty": "此应用暂无可用工具。",
+    "skills.appsPage.toolsDialog.error": "无法加载此应用的工具。",
+    "plugins.card.enableToggleTooltip": "启用插件",
+    "plugins.card.disableToggleTooltip": "禁用插件",
+    "plugins.card.toggleAria": "切换插件启用状态",
+    "plugins.card.enabledStatus": "插件已启用",
+    "plugins.card.disabledStatus": "插件已禁用",
+    "plugins.card.enableButton": "启用",
+    "plugins.card.installTooltip": "安装插件",
+    "plugins.card.tryInChat": "在聊天中试用",
+    "plugins.card.enableSuccess": "{pluginName} 插件已启用",
+    "plugins.card.disableSuccess": "{pluginName} 插件已禁用",
+    "plugins.card.toggleError": "更新插件失败",
+    "plugins.importedConnectors.title": "已导入的插件",
+    "plugins.importedConnectors.empty": "没有已导入的插件",
+    "plugins.importedConnectors.finishSetup": "完成设置",
+    "plugins.hero.tryInChat": "在聊天中试用",
+    "plugins.hero.dotLabel": "前往第 {index} 个插件幻灯片",
+    "plugins.hero.copy.computerUse": "播放一个帮助我进入状态的歌单",
+    "plugins.hero.copy.gmail": "帮我起草所有积压邮件的回复",
+    "plugins.hero.copy.slack": "每天早上帮我准备 standup",
+    "plugins.hero.copy.googleCalendar": "安排一个周期性的 1:1",
+    "plugins.hero.copy.googleDrive": "每周五帮我起草周报",
+    "plugins.hero.copy.linear": "把这次 bug bash 发现整理成工单",
     "skills.recommended.error": "无法加载推荐技能",
     "skills.scope.builtIn": "系统",
     "skills.scope.team": "团队",
     "skills.scope.personal": "个人",
     "skills.scope.adminInstalled": "管理员安装",
+    "plugins.marketplace.removeSuccess": "已移除 {marketplaceName} 市场",
+    "plugins.marketplace.removeError": "移除市场失败",
+    "plugins.marketplace.upgradeAllSuccess": "市场已升级",
+    "plugins.marketplace.upgradeSuccess": "{marketplaceName} 市场已升级",
+    "plugins.marketplace.upgradeAllError": "部分市场升级失败",
+    "plugins.marketplace.upgradeError": "升级市场失败",
+    "plugins.marketplace.upgradeAllRequestError": "升级市场失败",
     "plugins.installModal.about": "关于",
     "plugins.installModal.capabilities": "能力",
     "plugins.installModal.developedBy": "由 {developerName} 开发",
@@ -2173,6 +2809,40 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.alert.closeAriaLabel": "关闭",
     "codex.archiveInfo.electron": "查看已归档的聊天：{settingsLink}",
     "codex.archiveInfo.settingsLink": "设置",
+    "codex.legal.step.intro.title": "在 IDE 中使用 Codex",
+    "codex.legal.step.intro.subtitle":
+      "Codex 能直接在代码仓库内导航、编辑、运行命令、执行测试，均由你的 ChatGPT 帐户提供支持。",
+    "codex.legal.step.cloud.title": "移交云端 Codex 处理",
+    "codex.legal.step.cloud.subtitle": "将任务发送至 Codex 后台运行，让你保持专注，提高效率​。",
+    "codex.legal.step.todo.title": "将 TODO 转为 Codex 任务",
+    "codex.legal.step.todo.subtitle": "编写 TODO 注释并一键转为 Codex 任务。",
+    "codex.legal.autonomy.title": "设定授予的自主权限程度",
+    "codex.legal.autonomy.details": "有关详情，请查看{link}",
+    "codex.legal.autonomy.details.link": "Codex 文档",
+    "codex.legal.mistakes.title": "Codex 也可能会犯错",
+    "codex.legal.mistakes.review": "审查其编写的代码和执行的命令",
+    "codex.legal.powered.title": "由你的 ChatGPT 帐户提供支持",
+    "codex.legal.powered.details": "使用套餐的速率限制和{link}",
+    "codex.legal.powered.details.link": "训练数据偏好设置",
+    "codex.legal.copilot.title": "由 GitHub Copilot 提供支持",
+    "codex.legal.copilot.details":
+      "你的 Copilot 套餐适用于模型调用、计费与速率限制。使用 Codex 扩展程序时需同时遵守 {oaiTos} 和 {gitHubTos}。",
+    "codex.legal.copilot.oaiTosLink": "OpenAI Codex 服务条款",
+    "codex.legal.copilot.gitHubTosLink": "GitHub 服务条款",
+    "codex.legal.backButton": "返回",
+    "codex.legal.continueButton": "下一步",
+    "codex.legal.continue.apikey": "继续",
+    "codex.legal.cloud.taskOne.title": "为新设计师讲解代码仓库",
+    "codex.legal.cloud.taskOne.meta": "openai/agi · 10 月 12 日",
+    "codex.legal.cloud.taskTwo.title": "修复引导流程错误",
+    "codex.legal.cloud.taskTwo.meta": "openai/agi · 10 月 9 日",
+    "codex.legal.cloud.taskTwo.stats.positive": "+2",
+    "codex.legal.cloud.taskTwo.stats.negative": "-20",
+    "codex.legal.cloud.taskThree.title": "创建深色模式主题",
+    "codex.legal.cloud.taskThree.meta": "openai/codex · 10 月 8 日",
+    "codex.legal.cloud.taskThree.stats.positive": "+249",
+    "codex.legal.cloud.taskThree.stats.negative": "-123",
+    "codex.legal.todo.heading": "// TODO：实现架构",
     "app.chat.noRecentThreads": "暂无最近会话",
     "app.chat.noMessages": "暂无消息",
     "app.chat.changedFiles": "{fileCount} 个文件已更改",
@@ -2182,6 +2852,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.projects": "项目",
     "app.chat.filesChanged": "{fileCount} 个文件已更改",
     "app.chat.composePlaceholder": "可向 Codex 询问任何事。输入 @ 使用插件或提及文件",
+    "composer.placeholder.newTask.doAnything": "向 Codex 下达任意指令​",
     "app.chat.send": "发送",
     "app.chat.stop": "停止",
     "app.chat.queuedFollowUps": "排队中的跟进（{count}）",
@@ -2473,6 +3144,28 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "review.fileSource.richPreview.disable": "禁用增强视图",
     "review.fileSource.wrap.enable": "启用自动换行",
     "review.fileSource.wrap.disable": "禁用自动换行",
+    "codex.filePreview.pdb.empty": "未找到 PDB 原子",
+    "codex.filePreview.pdb.modelSelectLabel": "选择 PDB 模型",
+    "codex.filePreview.pdb.modelOption": "模型 {modelNumber}",
+    "codex.filePreview.pdb.resetView": "重置视图",
+    "codex.filePreview.pdb.residueCount": "{count, number} 个残基",
+    "codex.filePreview.pdb.atomCount": "{count, number} 个原子",
+    "codex.filePreview.pdb.scoreSummary": "B 因子/pLDDT {mean}",
+    "codex.filePreview.pdb.viewerLabel": "交互式 PDB 结构查看器",
+    "codex.filePreview.pdb.viewerLoadError": "无法加载 3Dmol PDB 查看器",
+    "codex.filePreview.pdb.legendVeryHigh": "90+",
+    "codex.filePreview.pdb.legendConfident": "70-90",
+    "codex.filePreview.pdb.legendLow": "50-70",
+    "codex.filePreview.pdb.legendVeryLow": "<50",
+    "codex.filePreview.pdb.interactionHint": "拖动旋转，滚动缩放。",
+    "codex.filePreview.pdb.chainSelectLabel": "选择 PDB 链",
+    "codex.filePreview.pdb.chainLabel": "链 {chainId}",
+    "codex.filePreview.pdb.chainOption": "链 {chainId}（{count, number} 个残基）",
+    "codex.filePreview.pdb.sequenceResidueCount": "{count, number} 个坐标残基",
+    "codex.filePreview.pdb.selectedResidues": "已选 {range}",
+    "codex.filePreview.pdb.sequenceLabel": "PDB 链序列",
+    "codex.filePreview.pdb.residueLabel": "链 {chainId} 中的 {residueName} {residueNumber}",
+    "codex.filePreview.pdb.residueTitle": "{residueName} {residueNumber}",
     "artifactTab.sourceOptions": "制品查看器选项",
     "codex.diffView.richPreviewEnable": "启用富文本预览",
     "codex.diffView.richPreviewDisable": "禁用富文本预览",
@@ -2922,6 +3615,94 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.general.reviewDelivery.description": "尽可能在当前对话中启动 /review，或发起单独的审查对话",
     "settings.general.reviewDelivery.inline": "行内视图",
     "settings.general.reviewDelivery.detached": "分离视图",
+    "settings.agentEnvironment.label": "智能体环境",
+    "settings.agentEnvironment.description": "选择智能体在 Windows 上的运行位置",
+    "settings.agentEnvironment.windowsNative": "Windows 原生",
+    "settings.agentEnvironment.windowsNative.description": "直接在 Windows 中运行智能体",
+    "settings.agentEnvironment.wsl": "适用于 Linux 的 Windows 子系统",
+    "settings.agentEnvironment.wsl.description": "在 WSL 中运行智能体",
+    "settings.agentEnvironment.restartNotice": "重启 Codex 以应用此更改。智能体仍在 {currentEnvironment} 中运行。",
+    "settings.agentEnvironment.wslBashError": "由于缺少 /usr/bin/bash，Codex 无法在{distributionName}中运行",
+    "settings.agentEnvironment.wslBashError.unknownDistribution": "此 WSL 发行版",
+    "settings.general.importExternalAgent.rowLabel": "从其他 AI 应用导入设置",
+    "settings.general.importExternalAgent.importedRowLabel": "导入的智能体设置",
+    "settings.general.importExternalAgent.rowDescription":
+      "导入你的设置、项目和最近聊天记录",
+    "settings.general.importExternalAgent.lastImported": "上次于 {relativeTime} 前导入",
+    "settings.general.importExternalAgent.checking": "正在检查",
+    "settings.general.importExternalAgent.importing": "正在导入",
+    "settings.general.importExternalAgent.import": "导入",
+    "settings.general.importExternalAgent.importAgain": "再次导入",
+    "settings.general.importExternalAgent.viewImportedFiles": "查看已导入的文件",
+    "settings.general.importExternalAgent.continueWithCodex": "继续使用 Codex",
+    "settings.openIn.integratedTerminalShell.label": "集成终端 Shell",
+    "settings.openIn.integratedTerminalShell.description": "选择要在集成终端中打开的 Shell。",
+    "settings.openIn.integratedTerminalShell.unavailable": "无可用 Shell",
+    "settings.ide.defaultOpenTarget.label": "默认打开目标",
+    "settings.ide.defaultOpenTarget.description": "默认打开文件和文件夹的位置",
+    "settings.ide.defaultOpenTarget.placeholder": "未找到目标",
+    "externalAgentConfig.projectImport.title": "选择要导入的设置",
+    "externalAgentConfig.projectImport.subtitle": "Codex 在另一款智能体应用中发现了有用的设置",
+    "externalAgentConfig.projectImport.confirm": "继续",
+    "externalAgentConfig.projectImport.cancel": "以后再说",
+    "externalAgentConfig.projectImport.error": "无法导入项目设置",
+    "externalAgentConfig.itemType.agentsMd": "说明",
+    "externalAgentConfig.itemType.config": "设置",
+    "externalAgentConfig.itemType.skills": "技能",
+    "externalAgentConfig.itemType.plugins": "插件",
+    "externalAgentConfig.itemType.subagents": "智能体",
+    "externalAgentConfig.itemType.hooks": "钩子",
+    "externalAgentConfig.itemType.commands": "命令",
+    "externalAgentConfig.itemType.sessions": "会话",
+    "externalAgentConfig.itemType.mcpServerConfig": "MCP 服务器",
+    "settings.agent.importSettings.sectionTitle": "导入外部智能体配置",
+    "settings.agent.importSettings.sectionSubtitle":
+      "已检测到来自其他智能体、可添加到 Codex 的设置",
+    "settings.agent.importSettings.loadingLabel": "正在检查导入项",
+    "settings.agent.importSettings.detectingDescription":
+      "正在检查兼容的外部设置、AGENTS.md 和技能",
+    "settings.agent.importSettings.sharedImportLabel": "导入其他智能体设置",
+    "settings.agent.importSettings.sharedImportDescription":
+      "从另一款本地智能体应用中选择设置、聊天记录和项目",
+    "settings.agent.importSettings.applySelected": "导入到 Codex",
+    "settings.agent.importSettings.remaining.summaryLabel": "已选中 {count} 项",
+    "settings.agent.importSettings.remaining.summaryDescription":
+      "迁移无法自动导入的所选设置",
+    "settings.agent.importSettings.remaining.continueInCodex": "继续在 Codex 中处理",
+    "settings.agent.importSettings.remaining.userConfigSettingsSection": "用户配置",
+    "settings.agent.importSettings.remaining.currentProjectSettingsSection": "当前项目",
+    "settings.agent.importSettings.remaining.itemDescription": "使用 Codex 迁移 {path}",
+    "settings.agent.importSettings.remaining.slashCommandsLabel": "斜杠命令",
+    "settings.agent.importSettings.remaining.hooksLabel": "钩子",
+    "settings.agent.importSettings.remaining.mcpLabel": "MCP",
+    "settings.agent.importSettings.remaining.pluginsLabel": "插件",
+    "settings.agent.importSettings.remaining.subagentsLabel": "子智能体",
+    "settings.agent.importSettings.toast.importing": "正在导入智能体设置",
+    "settings.agent.importSettings.toast.success": "已导入智能体设置",
+    "settings.agent.importSettings.toast.error": "无法导入智能体设置",
+    "settings.agent.importSettings.progress.close": "关闭",
+    "settings.agent.importSettings.progress.continueInCodex": "继续使用 Codex",
+    "settings.agent.importSettings.progress.scrollToBottom": "滚动到底部",
+    "settings.agent.importSettings.progress.remainingOnlyTitle": "发现其他设置",
+    "settings.agent.importSettings.progress.remainingOnlySubtitle":
+      "Codex 发现还有其他设置需要额外步骤才能导入。",
+    "settings.agent.importSettings.progress.successTitle": "已导入外部智能体配置",
+    "settings.agent.importSettings.progress.successSubtitle":
+      "已将所选配置复制到 Codex",
+    "settings.agent.importSettings.progress.errorTitle": "导入失败",
+    "settings.agent.importSettings.progress.errorSubtitle":
+      "部分配置无法导入。请检查所选项目后重试",
+    "settings.agent.importSettings.progress.runningTitle": "正在导入外部智能体配置",
+    "settings.agent.importSettings.progress.runningSubtitle":
+      "请稍候，这可能需要一点时间",
+    "settings.agent.importSettings.progress.userConfigSection": "用户配置",
+    "settings.agent.importSettings.progress.currentProjectSection": "当前项目",
+    "wham.formattedRelativeDateTime.compactMinutesAgo": "{value} 分",
+    "wham.formattedRelativeDateTime.compactHoursAgo": "{value} 小时",
+    "wham.formattedRelativeDateTime.compactDaysAgo": "{value} 天",
+    "wham.formattedRelativeDateTime.compactWeeksAgo": "{value} 周",
+    "wham.formattedRelativeDateTime.compactMonthsAgo": "{value} 个月",
+    "wham.formattedRelativeDateTime.compactYearsAgo": "{value} 年",
     "settings.general.appearance.theme": "主题",
     "settings.general.appearance.theme.description": "使用浅色、深色，或匹配你的系统",
     "settings.general.appearance.theme.light": "浅色",
@@ -2970,6 +3751,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.title": "设置",
     "settings.nav.heading.app": "应用",
     "settings.nav.heading.host": "主机",
+    "settings.hostDropdown.local": "本地",
+    "settings.hostDropdown.title": "主机",
     "settings.agent.title": "配置",
     "settings.agent.configuration.subtitle.summary": "配置审批策略和沙盒设置 <a>了解更多</a>",
     "settings.agent.customConfig": "自定义 config.toml 设置",

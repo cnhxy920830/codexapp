@@ -262,6 +262,10 @@ export function getWorkspaceFileRichPreviewKind(file: WorkspaceFilePreviewDescri
   return null;
 }
 
+export function isWorkspaceFilePdbPreview(file: WorkspaceFilePreviewDescriptor) {
+  return getWorkspaceFileExtension(file) === "pdb";
+}
+
 export function getWorkspaceFileRichPreviewControlMode(file: WorkspaceFilePreviewDescriptor) {
   const extension = getWorkspaceFileExtension(file);
   const richPreviewMode = getWorkspaceFileRichPreviewMode(file);

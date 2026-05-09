@@ -11,6 +11,13 @@ export type SkillSummary = {
   enabled: boolean;
 };
 
+export type SkillSetEnabledParams = {
+  enabled: boolean;
+  hostId?: string | null;
+  name?: string | null;
+  path?: string | null;
+};
+
 type SkillsListResponse = {
   data: Array<{
     cwd: string;
@@ -32,11 +39,35 @@ type SkillsListResponse = {
   }>;
 };
 
-export async function readSkillsSnapshot(cwd: string | null, forceReload = false): Promise<SkillSummary[]> {
+type SkillsConfigWriteResponse = {
+  effectiveEnabled: boolean;
+};
+
+type ReadSkillsSnapshotOptions = {
+  forceReload?: boolean;
+  hostId?: string | null;
+};
+
+export async function readSkillsSnapshot(
+  cwd: string | null,
+  forceReloadOrOptions: boolean | ReadSkillsSnapshotOptions = false,
+): Promise<SkillSummary[]> {
+  const { forceReload, hostId } =
+    typeof forceReloadOrOptions === "boolean"
+      ? {
+          forceReload: forceReloadOrOptions,
+          hostId: null,
+        }
+      : {
+          forceReload: forceReloadOrOptions.forceReload ?? false,
+          hostId: forceReloadOrOptions.hostId ?? null,
+        };
+
   const response = await invoke<SkillsListResponse>("list_skills", {
     params: {
       cwd,
       forceReload,
+      hostId,
     },
   });
 
@@ -58,4 +89,23 @@ export async function readSkillsSnapshot(cwd: string | null, forceReload = false
       const rightName = (right.displayName ?? right.name).toLowerCase();
       return leftName.localeCompare(rightName);
     });
+}
+
+export async function setSkillEnabled(params: SkillSetEnabledParams) {
+  const { enabled, hostId, name, path } = params;
+  const hasName = typeof name === "string" && name.trim().length > 0;
+  const hasPath = typeof path === "string" && path.trim().length > 0;
+
+  if (hasName === hasPath) {
+    throw new Error("setSkillEnabled requires exactly one of path or name");
+  }
+
+  return invoke<SkillsConfigWriteResponse>("skills-config-write", {
+    params: {
+      enabled,
+      hostId: hostId ?? null,
+      name: hasName ? name : null,
+      path: hasPath ? path : null,
+    },
+  });
 }

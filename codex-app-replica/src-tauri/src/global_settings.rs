@@ -4,9 +4,10 @@ use std::fs;
 use std::path::PathBuf;
 #[cfg(target_os = "windows")]
 use std::process::Command;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 const GLOBAL_SETTINGS_FILE_NAME: &str = "global-settings.json";
+const GLOBAL_STATE_UPDATED_EVENT: &str = "global-state-updated";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,6 +20,12 @@ pub struct GlobalStateResponse {
 pub struct WslBashAvailabilityResponse {
     pub available: bool,
     pub distro: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct GlobalStateUpdatedNotification {
+    keys: Vec<String>,
 }
 
 #[tauri::command]
@@ -42,8 +49,13 @@ pub fn get_global_state_command(
 pub fn set_global_state(app: AppHandle, key: String, value: Value) -> Result<(), String> {
     ensure_supported_key(&key)?;
     let mut settings = read_global_settings(&app)?;
-    settings.insert(key, value);
-    write_global_settings(&app, &settings)
+    settings.insert(key.clone(), value);
+    write_global_settings(&app, &settings)?;
+    let _ = app.emit(
+        GLOBAL_STATE_UPDATED_EVENT,
+        GlobalStateUpdatedNotification { keys: vec![key] },
+    );
+    Ok(())
 }
 
 #[tauri::command(rename = "set-global-state")]
@@ -62,6 +74,9 @@ fn ensure_supported_key(key: &str) -> Result<(), String> {
         | "sansFontSize"
         | "codeFontSize"
         | "localeOverride"
+        | "viewed2025-09-15-nux"
+        | "viewed2025-09-15-full-chatgpt-auth-nux"
+        | "viewed2025-09-15-apikey-auth-nux"
         | "appearanceTheme"
         | "appearanceLightChromeTheme"
         | "appearanceDarkChromeTheme"
@@ -91,7 +106,7 @@ fn ensure_supported_key(key: &str) -> Result<(), String> {
     }
 }
 
-fn read_global_settings(app: &AppHandle) -> Result<Map<String, Value>, String> {
+pub(crate) fn read_global_settings(app: &AppHandle) -> Result<Map<String, Value>, String> {
     let path = global_settings_path(app)?;
     if !path.exists() {
         return Ok(Map::new());
@@ -108,7 +123,10 @@ fn read_global_settings(app: &AppHandle) -> Result<Map<String, Value>, String> {
     }
 }
 
-fn write_global_settings(app: &AppHandle, settings: &Map<String, Value>) -> Result<(), String> {
+pub(crate) fn write_global_settings(
+    app: &AppHandle,
+    settings: &Map<String, Value>,
+) -> Result<(), String> {
     let path = global_settings_path(app)?;
     let parent = path
         .parent()
@@ -157,7 +175,7 @@ fn default_wsl_bash_is_available() -> bool {
 }
 
 #[cfg(target_os = "windows")]
-fn default_wsl_distro_name() -> Option<String> {
+pub(crate) fn default_wsl_distro_name() -> Option<String> {
     let output = Command::new("wsl.exe").args(["-l", "-v"]).output().ok()?;
     parse_default_wsl_distro(&decode_wsl_command_output(&output.stdout))
 }
@@ -233,6 +251,9 @@ mod tests {
             "integratedTerminalShell",
             "preventSleepWhileRunning",
             "runCodexInWindowsSubsystemForLinux",
+            "viewed2025-09-15-nux",
+            "viewed2025-09-15-full-chatgpt-auth-nux",
+            "viewed2025-09-15-apikey-auth-nux",
         ] {
             assert!(
                 ensure_supported_key(key).is_ok(),

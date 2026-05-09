@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { AvatarSprite } from "../../components/appearance/AvatarSprite";
 import type { AvatarOption } from "../../components/appearance/avatarData";
 import type { MessageKey } from "../../i18n/messages";
@@ -8,6 +9,7 @@ const COMPOSER_MODIFIER_SYMBOL = "Ctrl";
 
 type ThreadComposerProps = {
   followUpQueueMode: FollowUpQueueMode;
+  focusComposerNonce?: number | null;
   isWorktreeThread: boolean;
   composerDraft: string;
   composerEnterBehavior: ComposerEnterBehavior;
@@ -25,6 +27,7 @@ type ThreadComposerProps = {
 
 export function ThreadComposer({
   followUpQueueMode,
+  focusComposerNonce,
   isWorktreeThread,
   composerDraft,
   composerEnterBehavior,
@@ -39,6 +42,7 @@ export function ThreadComposer({
   threadCwd,
   turnError,
 }: ThreadComposerProps) {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const helperText =
     composerEnterBehavior === "cmdIfMultiline"
       ? t("general.enterBehaviorDescription", { modifierSymbol: COMPOSER_MODIFIER_SYMBOL })
@@ -53,10 +57,26 @@ export function ThreadComposer({
       ? "settings.general.reviewDelivery.inline"
       : "settings.general.reviewDelivery.detached";
 
+  useEffect(() => {
+    if (focusComposerNonce == null) {
+      return;
+    }
+
+    const textarea = textareaRef.current;
+    if (textarea === null) {
+      return;
+    }
+
+    textarea.focus();
+    const cursorPosition = textarea.value.length;
+    textarea.setSelectionRange(cursorPosition, cursorPosition);
+  }, [focusComposerNonce]);
+
   return (
     <div className="app-card overflow-hidden rounded-[18px]">
       <div className="px-4 pt-4 pb-3">
         <textarea
+          ref={textareaRef}
           value={composerDraft}
           onChange={(event) => onComposerDraftChange(event.target.value)}
           onKeyDown={(event) => {
