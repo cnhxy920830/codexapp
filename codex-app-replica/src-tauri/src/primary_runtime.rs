@@ -8,11 +8,9 @@
 //! Phase 1 (this commit) ships the bridge surface: typed Tauri commands for
 //! every page-owned name, parameter/response shapes that match upstream's
 //! payloads, and an in-process registry so the page can poll consistent
-//! state. Default responses match the upstream "feature not enabled / no
-//! runtime installed" branch — `bundleVersion: null`, `installed: false`,
-//! `instructions: null`, no problems, no install in progress. This is the
-//! faithful steady state on a machine where no runtime has yet been
-//! provisioned.
+//! state. Default responses mirror the upstream disabled / no-runtime branch,
+//! while the install and update commands stay on a no-op path until the real
+//! runtime owner exists in this replica.
 //!
 //! Phase 2 (follow-up scope) will:
 //!
@@ -35,6 +33,9 @@ use tauri::Emitter;
 use tauri::State;
 
 const PRIMARY_RUNTIME_INSTALL_PROGRESS_EVENT: &str = "primary-runtime-install-progress";
+const PRIMARY_RUNTIME_RUNTIME_CONFIG_MISSING_REASON: &str = "runtime-config-missing";
+const PRIMARY_RUNTIME_INSTALL_RELEASE_LATEST: &str = "latest";
+const PRIMARY_RUNTIME_INSTALL_RELEASE_LATEST_ALPHA: &str = "latest-alpha";
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -46,8 +47,14 @@ pub struct PrimaryRuntimeHostParams {
 #[serde(rename_all = "camelCase")]
 pub struct PrimaryRuntimeReleaseParams {
     pub host_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub release: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrimaryRuntimeInstallReleaseParams {
+    pub release: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -75,8 +82,17 @@ pub struct PrimaryRuntimeProblem {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct InstallPrimaryRuntimeResponse {
-    pub started: bool,
+pub struct PrimaryRuntimeInstallResultResponse {
+    pub bundle_version: Option<String>,
+    pub status: PrimaryRuntimeInstallStatus,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[allow(dead_code)]
+#[serde(rename_all = "kebab-case")]
+pub enum PrimaryRuntimeInstallStatus {
+    AlreadyCurrent,
+    Installed,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -92,30 +108,58 @@ pub struct CancelPrimaryRuntimeInstallResponse {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[allow(dead_code)]
 #[serde(rename_all = "kebab-case")]
-pub enum PrimaryRuntimeUpdateStatusKind {
-    Idle,
+pub enum PrimaryRuntimeInstallProgressPhase {
     Checking,
-    Available,
-    Installing,
-    Failed,
+    Downloading,
+    Verifying,
+    Extracting,
+    Validating,
+    Installed,
+    Configuring,
+    Ready,
+    Error,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct PrimaryRuntimeUpdateStatusResponse {
-    pub status: PrimaryRuntimeUpdateStatusKind,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error_message: Option<String>,
+    pub disabled_reason: Option<String>,
+    pub enabled: bool,
+    pub is_running: bool,
+    pub next_run_at: Option<i64>,
+    pub startup_checked: bool,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PrimaryRuntimeInstallProgressEvent {
-    pub host_id: String,
-    pub progress: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bundle_version: Option<String>,
+    pub downloaded_bytes: Option<u64>,
+    pub error_message: Option<String>,
+    pub phase: PrimaryRuntimeInstallProgressPhase,
     pub release: Option<String>,
+    pub total_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrimaryRuntimeInstallProgressNotification {
+    pub host_id: String,
+    pub progress: PrimaryRuntimeInstallProgressEvent,
+}
+
+impl Default for PrimaryRuntimeUpdateStatusResponse {
+    fn default() -> Self {
+        Self {
+            disabled_reason: Some(PRIMARY_RUNTIME_RUNTIME_CONFIG_MISSING_REASON.to_string()),
+            enabled: false,
+            is_running: false,
+            next_run_at: None,
+            startup_checked: false,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -123,26 +167,83 @@ pub struct PrimaryRuntimeState {
     inner: Mutex<PrimaryRuntimeStateInner>,
 }
 
-#[derive(Default)]
+#[derive(Clone)]
 struct PrimaryRuntimeStateInner {
-    update_status: Option<PrimaryRuntimeUpdateStatusKind>,
+    update_status: PrimaryRuntimeUpdateStatusResponse,
+    install_release: String,
+}
+
+impl Default for PrimaryRuntimeStateInner {
+    fn default() -> Self {
+        Self {
+            update_status: PrimaryRuntimeUpdateStatusResponse::default(),
+            install_release: PRIMARY_RUNTIME_INSTALL_RELEASE_LATEST.to_string(),
+        }
+    }
 }
 
 impl PrimaryRuntimeState {
     fn current_update_status(&self) -> PrimaryRuntimeUpdateStatusResponse {
         let guard = self.inner.lock().expect("primary runtime state poisoned");
-        PrimaryRuntimeUpdateStatusResponse {
-            status: guard
-                .update_status
-                .unwrap_or(PrimaryRuntimeUpdateStatusKind::Idle),
-            error_message: None,
-        }
+        guard.update_status.clone()
     }
 
-    fn set_update_status(&self, status: PrimaryRuntimeUpdateStatusKind) {
-        let mut guard = self.inner.lock().expect("primary runtime state poisoned");
-        guard.update_status = Some(status);
+    fn selected_install_release(&self) -> String {
+        let guard = self.inner.lock().expect("primary runtime state poisoned");
+        guard.install_release.clone()
     }
+
+    fn set_install_release(&self, release: String) {
+        let mut guard = self.inner.lock().expect("primary runtime state poisoned");
+        guard.install_release = release;
+    }
+
+    fn effective_install_release(&self, release: Option<String>) -> Result<String, String> {
+        if let Some(release) = release {
+            validate_primary_runtime_install_release(&release)?;
+            return Ok(release);
+        }
+
+        Ok(self.selected_install_release())
+    }
+
+    fn run_now(&self) -> PrimaryRuntimeUpdateRunNowResponse {
+        let guard = self.inner.lock().expect("primary runtime state poisoned");
+        let status = guard.update_status.clone();
+        PrimaryRuntimeUpdateRunNowResponse {
+            bundle_version: None,
+            next_run_at: status.next_run_at,
+            reason: status.disabled_reason,
+            status: PrimaryRuntimeUpdateRunNowStatus::Skipped,
+        }
+    }
+}
+
+fn validate_primary_runtime_install_release(release: &str) -> Result<(), String> {
+    match release {
+        PRIMARY_RUNTIME_INSTALL_RELEASE_LATEST | PRIMARY_RUNTIME_INSTALL_RELEASE_LATEST_ALPHA => {
+            Ok(())
+        }
+        _ => Err(format!("unsupported primary runtime release: {release}")),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrimaryRuntimeUpdateRunNowResponse {
+    pub bundle_version: Option<String>,
+    pub next_run_at: Option<i64>,
+    pub reason: Option<String>,
+    pub status: PrimaryRuntimeUpdateRunNowStatus,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[allow(dead_code)]
+#[serde(rename_all = "kebab-case")]
+pub enum PrimaryRuntimeUpdateRunNowStatus {
+    AlreadyCurrent,
+    Installed,
+    Skipped,
 }
 
 #[tauri::command(rename = "load-primary-runtime-dependencies")]
@@ -170,24 +271,38 @@ pub fn diagnose_primary_runtime_dependencies(
 #[tauri::command(rename = "install-primary-runtime")]
 pub fn install_primary_runtime(
     app: AppHandle,
+    state: State<'_, PrimaryRuntimeState>,
     params: PrimaryRuntimeReleaseParams,
-) -> Result<InstallPrimaryRuntimeResponse, String> {
+) -> Result<PrimaryRuntimeInstallResultResponse, String> {
+    let PrimaryRuntimeReleaseParams { host_id, release } = params;
+    let release = state.effective_install_release(release)?;
     // Phase 1: emit a single 0% progress event so the page-owner knows the
     // install request was received. Phase 2 will replace this with a real
     // installer task that streams measured progress.
-    let event = PrimaryRuntimeInstallProgressEvent {
-        host_id: params.host_id.clone(),
-        progress: 0.0,
-        release: params.release.clone(),
+    let event = PrimaryRuntimeInstallProgressNotification {
+        host_id,
+        progress: PrimaryRuntimeInstallProgressEvent {
+            bundle_version: None,
+            downloaded_bytes: None,
+            error_message: None,
+            phase: PrimaryRuntimeInstallProgressPhase::Checking,
+            release: Some(release),
+            total_bytes: None,
+        },
     };
     let _ = app.emit(PRIMARY_RUNTIME_INSTALL_PROGRESS_EVENT, event);
-    Ok(InstallPrimaryRuntimeResponse { started: true })
+    Ok(PrimaryRuntimeInstallResultResponse {
+        bundle_version: None,
+        status: PrimaryRuntimeInstallStatus::AlreadyCurrent,
+    })
 }
 
 #[tauri::command(rename = "finish-primary-runtime-install")]
 pub fn finish_primary_runtime_install(
-    _params: PrimaryRuntimeReleaseParams,
+    state: State<'_, PrimaryRuntimeState>,
+    params: PrimaryRuntimeReleaseParams,
 ) -> Result<FinishPrimaryRuntimeInstallResponse, String> {
+    let _ = state.effective_install_release(params.release)?;
     Ok(FinishPrimaryRuntimeInstallResponse { completed: false })
 }
 
@@ -208,20 +323,30 @@ pub fn primary_runtime_update_status(
 #[tauri::command(rename = "primary-runtime-update-run-now")]
 pub fn primary_runtime_update_run_now(
     state: State<'_, PrimaryRuntimeState>,
-) -> Result<PrimaryRuntimeUpdateStatusResponse, String> {
-    state.set_update_status(PrimaryRuntimeUpdateStatusKind::Idle);
-    Ok(state.current_update_status())
+) -> Result<PrimaryRuntimeUpdateRunNowResponse, String> {
+    Ok(state.run_now())
 }
 
 #[tauri::command(rename = "reset-primary-runtime-dependencies")]
 pub fn reset_primary_runtime_dependencies(
-    _params: PrimaryRuntimeReleaseParams,
-) -> Result<DiagnosePrimaryRuntimeDependenciesResponse, String> {
-    Ok(DiagnosePrimaryRuntimeDependenciesResponse {
+    state: State<'_, PrimaryRuntimeState>,
+    params: PrimaryRuntimeReleaseParams,
+) -> Result<PrimaryRuntimeInstallResultResponse, String> {
+    let _ = state.effective_install_release(params.release)?;
+    Ok(PrimaryRuntimeInstallResultResponse {
         bundle_version: None,
-        installed: false,
-        problems: Vec::new(),
+        status: PrimaryRuntimeInstallStatus::AlreadyCurrent,
     })
+}
+
+#[tauri::command(rename = "set-primary-runtime-install-release")]
+pub fn set_primary_runtime_install_release(
+    state: State<'_, PrimaryRuntimeState>,
+    params: PrimaryRuntimeInstallReleaseParams,
+) -> Result<(), String> {
+    validate_primary_runtime_install_release(&params.release)?;
+    state.set_install_release(params.release);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -263,25 +388,58 @@ mod tests {
     #[test]
     fn install_progress_event_serializes_camel_case() {
         let event = PrimaryRuntimeInstallProgressEvent {
-            host_id: "local".into(),
-            progress: 42.5,
+            bundle_version: Some("1.0.0".into()),
+            downloaded_bytes: Some(42),
+            error_message: None,
+            phase: PrimaryRuntimeInstallProgressPhase::Downloading,
             release: Some("1.0.0".into()),
+            total_bytes: Some(100),
         };
         let value = serde_json::to_value(&event).expect("serialize");
-        assert_eq!(value["hostId"], "local");
-        assert_eq!(value["progress"], 42.5);
+        assert_eq!(value["bundleVersion"], "1.0.0");
+        assert_eq!(value["downloadedBytes"], 42);
+        assert!(value["errorMessage"].is_null());
+        assert_eq!(value["phase"], "downloading");
         assert_eq!(value["release"], "1.0.0");
+        assert_eq!(value["totalBytes"], 100);
     }
 
     #[test]
-    fn install_progress_event_omits_null_release() {
+    fn install_progress_event_serializes_null_fields() {
         let event = PrimaryRuntimeInstallProgressEvent {
-            host_id: "local".into(),
-            progress: 0.0,
+            bundle_version: None,
+            downloaded_bytes: None,
+            error_message: Some("failed".into()),
+            phase: PrimaryRuntimeInstallProgressPhase::Error,
             release: None,
+            total_bytes: None,
         };
         let value = serde_json::to_value(&event).expect("serialize");
-        assert!(value.get("release").is_none() || value["release"].is_null());
+        assert!(value["bundleVersion"].is_null());
+        assert!(value["downloadedBytes"].is_null());
+        assert_eq!(value["errorMessage"], "failed");
+        assert_eq!(value["phase"], "error");
+        assert!(value["release"].is_null());
+        assert!(value["totalBytes"].is_null());
+    }
+
+    #[test]
+    fn install_progress_notification_serializes_host_and_progress() {
+        let event = PrimaryRuntimeInstallProgressNotification {
+            host_id: "local".into(),
+            progress: PrimaryRuntimeInstallProgressEvent {
+                bundle_version: None,
+                downloaded_bytes: None,
+                error_message: None,
+                phase: PrimaryRuntimeInstallProgressPhase::Checking,
+                release: Some("latest".into()),
+                total_bytes: None,
+            },
+        };
+        let value = serde_json::to_value(&event).expect("serialize");
+        assert_eq!(value["hostId"], "local");
+        assert_eq!(value["progress"]["phase"], "checking");
+        assert_eq!(value["progress"]["release"], "latest");
     }
 
     #[test]
@@ -289,6 +447,38 @@ mod tests {
         let raw = serde_json::json!({"hostId": "local"});
         let parsed: PrimaryRuntimeHostParams = serde_json::from_value(raw).expect("decode");
         assert_eq!(parsed.host_id, "local");
+    }
+
+    #[test]
+    fn install_release_defaults_to_latest() {
+        let state = PrimaryRuntimeState::default();
+        assert_eq!(state.selected_install_release(), "latest");
+    }
+
+    #[test]
+    fn install_release_state_updates_selected_release() {
+        let state = PrimaryRuntimeState::default();
+        state.set_install_release("latest-alpha".into());
+        assert_eq!(state.selected_install_release(), "latest-alpha");
+    }
+
+    #[test]
+    fn effective_install_release_uses_selected_release_when_missing() {
+        let state = PrimaryRuntimeState::default();
+        state.set_install_release("latest-alpha".into());
+        let release = state
+            .effective_install_release(None)
+            .expect("effective release");
+        assert_eq!(release, "latest-alpha");
+    }
+
+    #[test]
+    fn effective_install_release_rejects_unknown_release() {
+        let state = PrimaryRuntimeState::default();
+        let err = state
+            .effective_install_release(Some("stable".into()))
+            .expect_err("reject unknown release");
+        assert!(err.contains("unsupported primary runtime release"));
     }
 
     #[test]
@@ -314,23 +504,55 @@ mod tests {
     }
 
     #[test]
-    fn update_status_starts_idle_and_can_advance() {
+    fn update_status_defaults_to_disabled_runtime_config_missing() {
         let state = PrimaryRuntimeState::default();
         let initial = state.current_update_status();
-        assert_eq!(initial.status, PrimaryRuntimeUpdateStatusKind::Idle);
-        state.set_update_status(PrimaryRuntimeUpdateStatusKind::Checking);
-        let next = state.current_update_status();
-        assert_eq!(next.status, PrimaryRuntimeUpdateStatusKind::Checking);
+        assert_eq!(
+            initial.disabled_reason.as_deref(),
+            Some("runtime-config-missing")
+        );
+        assert!(!initial.enabled);
+        assert!(!initial.is_running);
+        assert!(initial.next_run_at.is_none());
+        assert!(!initial.startup_checked);
     }
 
     #[test]
-    fn update_status_serializes_kebab_case() {
+    fn update_status_serializes_disabled_fields() {
         let response = PrimaryRuntimeUpdateStatusResponse {
-            status: PrimaryRuntimeUpdateStatusKind::Available,
-            error_message: None,
+            disabled_reason: Some("runtime-config-missing".into()),
+            enabled: false,
+            is_running: false,
+            next_run_at: None,
+            startup_checked: false,
         };
         let value = serde_json::to_value(&response).expect("serialize");
-        assert_eq!(value["status"], "available");
-        assert!(value.get("errorMessage").is_none());
+        assert_eq!(value["disabledReason"], "runtime-config-missing");
+        assert_eq!(value["enabled"], false);
+        assert_eq!(value["isRunning"], false);
+        assert!(value["nextRunAt"].is_null());
+        assert_eq!(value["startupChecked"], false);
+    }
+
+    #[test]
+    fn install_result_response_serializes_status() {
+        let response = PrimaryRuntimeInstallResultResponse {
+            bundle_version: None,
+            status: PrimaryRuntimeInstallStatus::AlreadyCurrent,
+        };
+        let value = serde_json::to_value(&response).expect("serialize");
+        assert!(value["bundleVersion"].is_null());
+        assert_eq!(value["status"], "already-current");
+    }
+
+    #[test]
+    fn update_run_now_defaults_to_skipped() {
+        let state = PrimaryRuntimeState::default();
+        let response = state.run_now();
+        let value = serde_json::to_value(&response).expect("serialize");
+        assert!(value["bundleVersion"].is_null());
+        assert!(value["nextRunAt"].is_null());
+        assert_eq!(value["reason"], "runtime-config-missing");
+        assert_eq!(value["status"], "skipped");
     }
 }

@@ -9,6 +9,7 @@ use tokio::sync::{mpsc, oneshot, Mutex as AsyncMutex, Notify};
 use tokio::time::{sleep, Duration};
 
 use crate::query_cache::emit_query_cache_invalidate;
+use crate::remote_app_server_runtime;
 use crate::thread_history::append_agent_message_delta;
 use crate::thread_history::append_command_execution_output_delta;
 use crate::thread_history::append_plan_delta;
@@ -1718,8 +1719,7 @@ pub async fn login_chatgpt_command(
     state: State<'_, Arc<AuthBridgeState>>,
     params: HostScopedParams,
 ) -> Result<ChatGptLoginStart, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "login-with-chatgpt")?;
-    login_chatgpt_inner(&app, state.inner()).await
+    login_chatgpt_inner_for_host(&app, state.inner(), params.host_id.as_deref()).await
 }
 
 #[tauri::command(rename = "login-with-chatgpt-for-host")]
@@ -1728,8 +1728,7 @@ pub async fn login_chatgpt_for_host_command(
     state: State<'_, Arc<AuthBridgeState>>,
     params: HostScopedParams,
 ) -> Result<ChatGptLoginStart, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "login-with-chatgpt-for-host")?;
-    login_chatgpt_inner(&app, state.inner()).await
+    login_chatgpt_inner_for_host(&app, state.inner(), params.host_id.as_deref()).await
 }
 
 async fn login_chatgpt_inner(
@@ -1773,6 +1772,32 @@ async fn login_chatgpt_inner(
     }
 }
 
+async fn login_chatgpt_inner_for_host(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    host_id: Option<&str>,
+) -> Result<ChatGptLoginStart, String> {
+    if is_local_host_id(host_id) {
+        return login_chatgpt_inner(app, state).await;
+    }
+    let host_id = remote_host_id(host_id).expect("remote host id should be present");
+    let value = remote_app_server_runtime::send_request(
+        app,
+        host_id,
+        request_method(&AppServerRequestKind::LoginChatGpt),
+        serde_json::json!({
+            "type": "chatgpt",
+        }),
+    )
+    .await?;
+    let result = serde_json::from_value::<LoginStartResult>(value)
+        .map_err(|err| format!("failed to decode chatgpt login response: {err}"))?;
+    match result {
+        LoginStartResult::Chatgpt { login_id, auth_url } => Ok(ChatGptLoginStart { login_id, auth_url }),
+        _ => Err("unexpected login response type".to_string()),
+    }
+}
+
 #[tauri::command]
 pub async fn login_chatgpt_device_code(
     app: AppHandle,
@@ -1787,8 +1812,7 @@ pub async fn login_chatgpt_device_code_command(
     state: State<'_, Arc<AuthBridgeState>>,
     params: HostScopedParams,
 ) -> Result<DeviceCodeLoginStart, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "login-with-chatgpt-device-code")?;
-    login_chatgpt_device_code_inner(&app, state.inner()).await
+    login_chatgpt_device_code_inner_for_host(&app, state.inner(), params.host_id.as_deref()).await
 }
 
 async fn login_chatgpt_device_code_inner(
@@ -1844,6 +1868,40 @@ async fn login_chatgpt_device_code_inner(
     }
 }
 
+async fn login_chatgpt_device_code_inner_for_host(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    host_id: Option<&str>,
+) -> Result<DeviceCodeLoginStart, String> {
+    if is_local_host_id(host_id) {
+        return login_chatgpt_device_code_inner(app, state).await;
+    }
+    let host_id = remote_host_id(host_id).expect("remote host id should be present");
+    let value = remote_app_server_runtime::send_request(
+        app,
+        host_id,
+        request_method(&AppServerRequestKind::LoginChatGptDeviceCode),
+        serde_json::json!({
+            "type": "chatgptDeviceCode",
+        }),
+    )
+    .await?;
+    let result = serde_json::from_value::<LoginStartResult>(value)
+        .map_err(|err| format!("failed to decode device code response: {err}"))?;
+    match result {
+        LoginStartResult::ChatgptDeviceCode {
+            login_id,
+            verification_url,
+            user_code,
+        } => Ok(DeviceCodeLoginStart {
+            login_id,
+            verification_url,
+            user_code,
+        }),
+        _ => Err("unexpected login response type".to_string()),
+    }
+}
+
 #[tauri::command]
 pub async fn cancel_login(
     app: AppHandle,
@@ -1870,22 +1928,20 @@ pub async fn logout(
     state: State<'_, Arc<AuthBridgeState>>,
     params: Option<HostScopedParams>,
 ) -> Result<(), String> {
-    ensure_supported_host_id(
-        params.as_ref().and_then(|params| params.host_id.as_deref()),
-        "logout",
-    )?;
-    send_request(
+    let host_id = params.as_ref().and_then(|params| params.host_id.as_deref());
+    send_request_for_host(
+        &app,
         state.inner(),
+        host_id,
         AppServerRequestKind::Logout,
         serde_json::json!({}),
     )
     .await
-    .map(|_| ())
-    .map(|_| clear_login_state(&app, state.inner()))
-    .map_err(|error| {
-        set_login_error(&app, state.inner(), error.clone());
-        error
-    })
+    .map(|_| ())?;
+    if is_local_host_id(host_id) {
+        clear_login_state(&app, state.inner());
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1898,11 +1954,18 @@ pub async fn read_config(
 
 #[tauri::command(rename = "read-config-for-host")]
 pub async fn read_config_for_host(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: ConfigReadForHostParams,
 ) -> Result<ConfigReadResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "read-config-for-host")?;
-    read_config_inner(state.inner(), params.cwd, params.include_layers).await
+    read_config_inner_for_host(
+        &app,
+        state.inner(),
+        params.host_id.as_deref(),
+        params.cwd,
+        params.include_layers,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -1915,24 +1978,23 @@ pub async fn write_config_value(
 
 #[tauri::command(rename = "write-config-value")]
 pub async fn write_config_value_command(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: ConfigValueWriteParams,
 ) -> Result<(), String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "write-config-value")?;
-    write_config_value_inner(state.inner(), params).await
+    write_config_value_inner_for_host(&app, state.inner(), params).await
 }
 
 #[tauri::command(rename = "get-config-requirements-for-host")]
 pub async fn get_config_requirements_for_host(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: HostScopedParams,
 ) -> Result<ConfigRequirementsReadResponse, String> {
-    ensure_supported_host_id(
-        params.host_id.as_deref(),
-        "get-config-requirements-for-host",
-    )?;
-    let value = send_request(
+    let value = send_request_for_host(
+        &app,
         state.inner(),
+        params.host_id.as_deref(),
         AppServerRequestKind::ConfigRequirementsRead,
         serde_json::json!({}),
     )
@@ -1948,6 +2010,28 @@ async fn read_config_inner(
 ) -> Result<ConfigReadResponse, String> {
     let value = send_request(
         state,
+        AppServerRequestKind::ConfigRead,
+        serde_json::json!({
+            "includeLayers": include_layers,
+            "cwd": cwd,
+        }),
+    )
+    .await?;
+    serde_json::from_value::<ConfigReadResponse>(value)
+        .map_err(|err| format!("failed to decode config read response: {err}"))
+}
+
+async fn read_config_inner_for_host(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    host_id: Option<&str>,
+    cwd: Option<String>,
+    include_layers: bool,
+) -> Result<ConfigReadResponse, String> {
+    let value = send_request_for_host(
+        app,
+        state,
+        host_id,
         AppServerRequestKind::ConfigRead,
         serde_json::json!({
             "includeLayers": include_layers,
@@ -1978,6 +2062,28 @@ async fn write_config_value_inner(
     .map(|_| ())
 }
 
+async fn write_config_value_inner_for_host(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    params: ConfigValueWriteParams,
+) -> Result<(), String> {
+    send_request_for_host(
+        app,
+        state,
+        params.host_id.as_deref(),
+        AppServerRequestKind::ConfigValueWrite,
+        serde_json::json!({
+            "keyPath": params.key_path,
+            "value": params.value,
+            "mergeStrategy": params.merge_strategy,
+            "filePath": params.file_path,
+            "expectedVersion": params.expected_version,
+        }),
+    )
+    .await
+    .map(|_| ())
+}
+
 #[tauri::command]
 pub async fn batch_write_config_values(
     app: AppHandle,
@@ -1993,8 +2099,13 @@ pub async fn batch_write_config_value_command(
     state: State<'_, Arc<AuthBridgeState>>,
     params: ConfigBatchWriteForHostParams,
 ) -> Result<(), String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "batch-write-config-value")?;
-    batch_write_config_values_inner(&app, state.inner(), params.write).await
+    batch_write_config_values_inner_for_host(
+        &app,
+        state.inner(),
+        params.host_id.as_deref(),
+        params.write,
+    )
+    .await
 }
 
 async fn batch_write_config_values_inner(
@@ -2021,6 +2132,50 @@ async fn batch_write_config_values_inner(
         .collect::<Vec<_>>();
     send_request(
         state,
+        AppServerRequestKind::ConfigBatchWrite,
+        serde_json::json!({
+            "edits": edits,
+            "filePath": params.file_path,
+            "expectedVersion": params.expected_version,
+            "reloadUserConfig": params.reload_user_config,
+        }),
+    )
+    .await
+    .map(|_| ())?;
+
+    for root in query_cache_invalidations {
+        emit_query_cache_invalidate(app, vec![serde_json::Value::String(root)]);
+    }
+    Ok(())
+}
+
+async fn batch_write_config_values_inner_for_host(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    host_id: Option<&str>,
+    params: ConfigBatchWriteParams,
+) -> Result<(), String> {
+    let query_cache_invalidations = params
+        .edits
+        .iter()
+        .filter_map(|edit| query_cache_invalidation_root(&edit.key_path))
+        .map(str::to_string)
+        .collect::<std::collections::BTreeSet<_>>();
+    let edits = params
+        .edits
+        .into_iter()
+        .map(|edit| {
+            serde_json::json!({
+                "keyPath": edit.key_path,
+                "value": edit.value,
+                "mergeStrategy": edit.merge_strategy,
+            })
+        })
+        .collect::<Vec<_>>();
+    send_request_for_host(
+        app,
+        state,
+        host_id,
         AppServerRequestKind::ConfigBatchWrite,
         serde_json::json!({
             "edits": edits,
@@ -2092,11 +2247,19 @@ pub async fn reset_memories(state: State<'_, Arc<AuthBridgeState>>) -> Result<()
 
 #[tauri::command(rename = "reset-memories-for-host")]
 pub async fn reset_memories_for_host(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: HostScopedParams,
 ) -> Result<(), String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "reset-memories-for-host")?;
-    reset_memories_inner(state.inner()).await
+    send_request_for_host(
+        &app,
+        state.inner(),
+        params.host_id.as_deref(),
+        AppServerRequestKind::MemoryReset,
+        serde_json::json!({}),
+    )
+    .await
+    .map(|_| ())
 }
 
 async fn reset_memories_inner(state: &Arc<AuthBridgeState>) -> Result<(), String> {
@@ -2115,6 +2278,30 @@ fn ensure_supported_host_id(host_id: Option<&str>, command_name: &str) -> Result
         Some(host_id) => Err(format!(
             "{command_name} does not support host id: {host_id}"
         )),
+    }
+}
+
+fn is_local_host_id(host_id: Option<&str>) -> bool {
+    matches!(host_id.map(str::trim).filter(|value| !value.is_empty()), None | Some(LOCAL_HOST_ID))
+}
+
+fn remote_host_id(host_id: Option<&str>) -> Option<&str> {
+    host_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && *value != LOCAL_HOST_ID)
+}
+
+async fn send_request_for_host(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    host_id: Option<&str>,
+    kind: AppServerRequestKind,
+    payload: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    if let Some(host_id) = remote_host_id(host_id) {
+        remote_app_server_runtime::send_request(app, host_id, request_method(&kind), payload).await
+    } else {
+        send_request(state, kind, payload).await
     }
 }
 

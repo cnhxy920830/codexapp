@@ -11,6 +11,7 @@ use crate::global_settings::{read_global_settings, write_global_settings};
 use crate::pending_worktrees::{
     pending_worktrees_shared_object_key, pending_worktrees_snapshot_value,
 };
+use crate::remote_app_server_runtime;
 
 const CODEX_MANAGED_REMOTE_CONNECTIONS_KEY: &str = "codex-managed-remote-connections";
 const SHARED_OBJECT_UPDATED_EVENT: &str = "shared-object-updated";
@@ -146,6 +147,13 @@ pub struct SaveCodexManagedRemoteSshConnectionsResponse {
     pub remote_connections: Vec<SavedRemoteConnection>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SetRemoteConnectionAutoConnectParams {
+    pub host_id: String,
+    pub auto_connect: bool,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct SharedObjectUpdatedNotification {
@@ -184,14 +192,7 @@ pub async fn discover_remote_ssh_connections(
 pub async fn refresh_remote_connections(
     app: AppHandle,
 ) -> Result<RefreshRemoteConnectionsResponse, String> {
-    let blocking_app = app.clone();
-    let response = tauri::async_runtime::spawn_blocking(move || {
-        refresh_remote_connections_blocking(&blocking_app)
-    })
-    .await
-    .map_err(|err| format!("refresh-remote-connections task failed: {err}"))??;
-    emit_remote_connections_shared_object_updated(&app, &response.remote_connections)?;
-    Ok(response)
+    refresh_remote_connections_runtime(&app).await
 }
 
 #[tauri::command(rename = "save-codex-managed-remote-ssh-connections")]
@@ -205,8 +206,41 @@ pub async fn save_codex_managed_remote_ssh_connections(
     })
     .await
     .map_err(|err| format!("save-codex-managed-remote-ssh-connections task failed: {err}"))??;
-    emit_remote_connections_shared_object_updated(&app, &result.remote_connections)?;
-    Ok(result.response)
+    let SaveCodexManagedRemoteSshConnectionsCommandResult {
+        response,
+        remote_connections,
+    } = result;
+    apply_remote_connections_runtime(&app, remote_connections).await?;
+    Ok(response)
+}
+
+#[tauri::command(rename = "set-remote-connection-auto-connect")]
+pub async fn set_remote_connection_auto_connect(
+    app: AppHandle,
+    _registry: tauri::State<'_, crate::remote_app_server_registry::RemoteAppServerRegistry>,
+    params: SetRemoteConnectionAutoConnectParams,
+) -> Result<RefreshRemoteConnectionsResponse, String> {
+    let blocking_app = app.clone();
+    let host_id = params.host_id;
+    let auto_connect = params.auto_connect;
+    let remote_connections = tauri::async_runtime::spawn_blocking(move || {
+        let mut settings = read_global_settings(&blocking_app)?;
+        let mut auto_connect_by_host_id = read_auto_connect_by_host_id(&settings);
+        if auto_connect {
+            auto_connect_by_host_id.insert(host_id.clone(), Value::Bool(true));
+        } else {
+            auto_connect_by_host_id.remove(&host_id);
+        }
+        settings.insert(
+            REMOTE_CONNECTION_AUTO_CONNECT_BY_HOST_ID_KEY.to_string(),
+            Value::Object(auto_connect_by_host_id),
+        );
+        write_global_settings(&blocking_app, &settings)?;
+        Ok::<_, String>(refresh_remote_connections_blocking(&blocking_app)?.remote_connections)
+    })
+    .await
+    .map_err(|err| format!("set-remote-connection-auto-connect task failed: {err}"))??;
+    apply_remote_connections_runtime(&app, remote_connections).await
 }
 
 #[tauri::command(rename = "app-server-connection-state")]
@@ -231,6 +265,9 @@ fn app_server_connection_state_for_registry(
         crate::remote_app_server_registry::RemoteAppServerConnectionState::Connecting => {
             AppServerConnectionState::Connecting
         }
+        crate::remote_app_server_registry::RemoteAppServerConnectionState::Restarting => {
+            AppServerConnectionState::Restarting
+        }
         crate::remote_app_server_registry::RemoteAppServerConnectionState::Connected => {
             AppServerConnectionState::Connected
         }
@@ -242,6 +279,29 @@ fn app_server_connection_state_for_registry(
         .error
         .map(|message| AppServerConnectionError::ConnectionFailed { message });
     AppServerConnectionStateResponse { state, error }
+}
+
+async fn refresh_remote_connections_runtime(
+    app: &AppHandle,
+) -> Result<RefreshRemoteConnectionsResponse, String> {
+    let response = tauri::async_runtime::spawn_blocking({
+        let app = app.clone();
+        move || refresh_remote_connections_blocking(&app)
+    })
+    .await
+    .map_err(|err| format!("refresh-remote-connections task failed: {err}"))??;
+    remote_app_server_runtime::reconcile(app, &response.remote_connections).await?;
+    emit_remote_connections_shared_object_updated(app, &response.remote_connections)?;
+    Ok(response)
+}
+
+async fn apply_remote_connections_runtime(
+    app: &AppHandle,
+    remote_connections: Vec<RemoteConnection>,
+) -> Result<RefreshRemoteConnectionsResponse, String> {
+    remote_app_server_runtime::reconcile(app, &remote_connections).await?;
+    emit_remote_connections_shared_object_updated(app, &remote_connections)?;
+    Ok(RefreshRemoteConnectionsResponse { remote_connections })
 }
 
 #[tauri::command(rename = "get-shared-object-snapshot")]
@@ -1072,16 +1132,19 @@ mod tests {
     use super::collect_ssh_aliases;
     use super::default_ssh_config_entrypoint;
     use super::expand_glob_pattern;
+    use super::load_remote_connections;
     use super::normalize_saved_remote_connection;
     use super::parse_resolved_ssh_config;
     use super::split_ssh_values;
     use super::AppServerConnectionState;
     use super::AppServerConnectionStateParams;
     use super::AppServerConnectionStateResponse;
+    use super::RemoteConnection;
     use super::SavedRemoteConnection;
     use super::SavedRemoteConnectionInput;
     use super::SharedObjectSnapshotResponse;
     use serde_json::json;
+    use serde_json::Map;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -1189,6 +1252,39 @@ mod tests {
                 ssh_port: Some(2200),
                 identity: Some("~/.ssh/id_demo".to_string()),
             }
+        );
+    }
+
+    #[test]
+    fn load_remote_connections_applies_auto_connect_flags() {
+        let saved_connections = vec![SavedRemoteConnection {
+            host_id: "remote-ssh-codex-managed:demo".to_string(),
+            display_name: "Demo Host".to_string(),
+            source: "codex-managed".to_string(),
+            alias: None,
+            hostname: Some("demo.example.com".to_string()),
+            ssh_port: Some(2200),
+            identity: Some("~/.ssh/id_demo".to_string()),
+        }];
+        let mut auto_connect_by_host_id = Map::new();
+        auto_connect_by_host_id.insert("remote-ssh-codex-managed:demo".to_string(), json!(true));
+
+        let remote_connections =
+            load_remote_connections(&saved_connections, &auto_connect_by_host_id)
+                .expect("remote connections should load");
+
+        assert_eq!(
+            remote_connections,
+            vec![RemoteConnection {
+                host_id: "remote-ssh-codex-managed:demo".to_string(),
+                display_name: "Demo Host".to_string(),
+                source: "codex-managed".to_string(),
+                auto_connect: true,
+                ssh_alias: None,
+                ssh_host: Some("demo.example.com".to_string()),
+                ssh_port: Some(2200),
+                identity: Some("~/.ssh/id_demo".to_string()),
+            }]
         );
     }
 

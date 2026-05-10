@@ -41,6 +41,7 @@ import {
   startTurn,
   startTurnWithInput,
   type HistoryProjectGroup,
+  type ThreadHistoryEntry,
   type FileChangeSummary,
   type ToolRequestUserInputQuestion,
   type ThreadConversation,
@@ -186,6 +187,15 @@ import {
   takePendingWindowRoute,
   type PendingPlanSummaryState,
 } from "./services/windowNavigation";
+import {
+  estimateUtf8Bytes,
+  notifyViewFocused,
+  onAppStateSnapshotRequested,
+  readRendererFrameIntervalSnapshot,
+  sendAppStateSnapshotResponse,
+  startRendererFrameIntervalSampler,
+  type AppStateSnapshotFields,
+} from "./services/appStateSnapshot";
 import { readComputerUseApprovalsVisibility } from "./services/computerUseSettings";
 import { getCodexHomePath, isWithinCodexWorktrees } from "./services/codexHome";
 import {
@@ -221,6 +231,7 @@ const CONFIG_TOML_DOCS_URL = "https://developers.openai.com/codex/config-basic";
 const IMPLEMENT_PLAN_PROMPT_PREFIX = "PLEASE IMPLEMENT THIS PLAN:";
 const USER_MESSAGE_REQUEST_HEADING = "## My request for Codex:";
 const NAVIGATE_TO_ROUTE_EVENT = "navigate-to-route";
+const APP_STATE_SNAPSHOT_WINDOW_MS = 30_000;
 type WorkspaceFileRightPanelTabState = Extract<RightPanelTab, { kind: "workspaceFile" }>;
 type PersistedWorkspaceFileRightPanelTabState = {
   workspaceFileTabsByThreadId: Array<[string, WorkspaceFileRightPanelTabState[]]>;
@@ -697,6 +708,88 @@ function findLastEditableUserMessage(
   };
 }
 
+type SnapshotDeltaTelemetrySample = {
+  timestampMs: number;
+  bytes: number;
+};
+
+type SnapshotDeltaTelemetry = {
+  totalEvents: number;
+  totalBytes: number;
+  samples: SnapshotDeltaTelemetrySample[];
+};
+
+function isInProgressTurnStatus(status: string) {
+  return status === "inProgress" || status === "in_progress";
+}
+
+function countInProgressTurns(conversation: ThreadConversation) {
+  return conversation.turns.reduce((count, turn) => count + (isInProgressTurnStatus(turn.status) ? 1 : 0), 0);
+}
+
+function summarizeDeltaBearingItemContent(item: ThreadConversationItem) {
+  switch (item.type) {
+    case "agentMessage":
+      return item.text;
+    case "plan":
+      return item.text;
+    case "reasoning":
+      return [...item.summary, ...item.content].join("\n");
+    case "commandExecution":
+      return item.aggregatedOutput ?? "";
+    case "fileChange":
+      return item.changes
+        .map((change) => change.diff ?? "")
+        .filter((diff) => diff.length > 0)
+        .join("\n");
+    default:
+      return null;
+  }
+}
+
+function isDeltaBearingThreadItem(item: ThreadConversationItem) {
+  return summarizeDeltaBearingItemContent(item) !== null;
+}
+
+function estimateThreadItemDeltaBytes(
+  previousItem: ThreadConversationItem | null,
+  nextItem: ThreadConversationItem,
+) {
+  const nextSummary = summarizeDeltaBearingItemContent(nextItem);
+  if (nextSummary === null) {
+    return 0;
+  }
+
+  const nextBytes = estimateUtf8Bytes(nextSummary);
+  const previousSummary =
+    previousItem !== null && previousItem.type === nextItem.type
+      ? summarizeDeltaBearingItemContent(previousItem)
+      : null;
+  const previousBytes = previousSummary === null ? 0 : estimateUtf8Bytes(previousSummary);
+
+  return Math.max(0, nextBytes - previousBytes);
+}
+
+function pruneSnapshotDeltaTelemetrySamples(telemetry: SnapshotDeltaTelemetry, nowMs: number) {
+  while (
+    telemetry.samples.length > 0 &&
+    nowMs - telemetry.samples[0].timestampMs > APP_STATE_SNAPSHOT_WINDOW_MS
+  ) {
+    telemetry.samples.shift();
+  }
+}
+
+function recordSnapshotDeltaTelemetry(
+  telemetry: SnapshotDeltaTelemetry,
+  bytes: number,
+  nowMs: number,
+) {
+  telemetry.totalEvents += 1;
+  telemetry.totalBytes += Math.max(0, bytes);
+  telemetry.samples.push({ timestampMs: nowMs, bytes });
+  pruneSnapshotDeltaTelemetrySamples(telemetry, nowMs);
+}
+
 function App() {
   const { locale, t } = useI18n();
   const [isMaximized, setIsMaximized] = useState(false);
@@ -708,6 +801,7 @@ function App() {
   const [hasLoadedInitialThreadSnapshot, setHasLoadedInitialThreadSnapshot] = useState(false);
   const [pendingPlanSummary, setPendingPlanSummary] = useState<PendingPlanSummaryState | null>(null);
   const [projectGroups, setProjectGroups] = useState<HistoryProjectGroup[]>([]);
+  const [recentThreads, setRecentThreads] = useState<ThreadHistoryEntry[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [threadConversation, setThreadConversation] = useState<ThreadConversation | null>(null);
   const [isThreadConversationLoading, setIsThreadConversationLoading] = useState(false);
@@ -790,6 +884,14 @@ function App() {
   const activeRightPanelTabIdRef = useRef<string | null>(null);
   const selectedThreadIdRef = useRef<string | null>(null);
   const threadConversationRef = useRef<ThreadConversation | null>(null);
+  const recentThreadsRef = useRef<ThreadHistoryEntry[]>([]);
+  const loadedConversationsByIdRef = useRef(new Map<string, ThreadConversation>());
+  const snapshotDeltaTelemetryRef = useRef<SnapshotDeltaTelemetry>({
+    totalEvents: 0,
+    totalBytes: 0,
+    samples: [],
+  });
+  const snapshotSessionStartedAtMsRef = useRef(Date.now());
   const initialWindowThreadIdRef = useRef<string | null>(null);
   const initialWindowPageKindRef = useRef<PendingWindowPageKind>(null);
   const initialThreadSnapshotLoadedRef = useRef(false);
@@ -925,17 +1027,13 @@ function App() {
     (request) => request.threadId === selectedThreadId,
   );
   const currentThreadQueuedFollowUps = queuedLocalFollowUpsForThread(queuedFollowUps, selectedThreadId);
-  const recentThreadEntries = projectGroups.flatMap((group) =>
-    group.threads.map((thread) => ({
-      id: thread.id,
-      preview: thread.title,
-      createdAt: 0,
-      updatedAt: 0,
-      cwd: "",
-      path: null,
-      name: thread.title,
-    })),
-  );
+  const recentThreadEntries = recentThreads;
+  const totalPendingRequestCount =
+    pendingApprovals.length +
+    pendingPermissionsRequestApproval.length +
+    pendingMcpServerElicitationRequest.length +
+    pendingToolRequestUserInput.length +
+    pendingImplementPlanRequests.length;
   const selectedThreadAttachedHeartbeatAutomation: HeartbeatAutomationRecord | null =
     selectedThreadId === null
       ? null
@@ -1482,11 +1580,18 @@ function App() {
   }, [queuedFollowUps]);
 
   useEffect(() => {
+    recentThreadsRef.current = recentThreads;
+  }, [recentThreads]);
+
+  useEffect(() => {
     selectedThreadIdRef.current = selectedThreadId;
   }, [selectedThreadId]);
 
   useEffect(() => {
     threadConversationRef.current = threadConversation;
+    if (threadConversation !== null) {
+      loadedConversationsByIdRef.current.set(threadConversation.id, threadConversation);
+    }
   }, [threadConversation]);
 
   useEffect(() => {
@@ -1496,6 +1601,117 @@ function App() {
 
     void notifyDebugWindowOriginConversationChanged(selectedThreadId).catch(() => undefined);
   }, [currentRoute, selectedThreadId]);
+
+  const handleAppStateSnapshotRequest = useEffectEvent(
+    async ({ reason, requestId }: { reason: string; requestId: string }) => {
+      const nowMs = Date.now();
+      const loadedConversations = Array.from(loadedConversationsByIdRef.current.values());
+      const loadedConversationIds = new Set(loadedConversations.map((conversation) => conversation.id));
+      const recentThreadIds = recentThreadsRef.current.map((thread) => thread.id);
+      const threadCountLoadedRecent = recentThreadIds.reduce(
+        (count, threadId) => count + (loadedConversationIds.has(threadId) ? 1 : 0),
+        0,
+      );
+      const inflightTurnCount = loadedConversations.reduce(
+        (count, conversation) => count + countInProgressTurns(conversation),
+        0,
+      );
+      const threadCountWithInflightTurn = loadedConversations.reduce(
+        (count, conversation) => count + (countInProgressTurns(conversation) > 0 ? 1 : 0),
+        0,
+      );
+      const turnCountTotalLoaded = loadedConversations.reduce(
+        (count, conversation) => count + conversation.turns.length,
+        0,
+      );
+      const itemCountTotalLoaded = loadedConversations.reduce(
+        (count, conversation) => count + conversation.items.length,
+        0,
+      );
+      const maxTurnsInSingleThread = loadedConversations.reduce(
+        (max, conversation) => Math.max(max, conversation.turns.length),
+        0,
+      );
+      const maxItemsInSingleTurn = loadedConversations.reduce((max, conversation) => {
+        const conversationMax = conversation.turns.reduce((turnMax, turn) => {
+          const turnItemCount = conversation.items.filter((item) => item.turnId === turn.id).length;
+          return Math.max(turnMax, turnItemCount);
+        }, 0);
+        return Math.max(max, conversationMax);
+      }, 0);
+
+      const telemetry = snapshotDeltaTelemetryRef.current;
+      pruneSnapshotDeltaTelemetrySamples(telemetry, nowMs);
+      const deltaEventsLast30s = telemetry.samples.length;
+      const deltaBytesLast30sEstimate = telemetry.samples.reduce((sum, sample) => sum + sample.bytes, 0);
+      const rendererFrameIntervalSnapshot = readRendererFrameIntervalSnapshot();
+      const reviewDiffBytesEstimate =
+        threadDiffSummary.files.reduce((sum, file) => sum + estimateUtf8Bytes(file.diff ?? ""), 0);
+
+      const fields: AppStateSnapshotFields = {
+        event: "app_state_snapshot",
+        schema_version: 1,
+        snapshot_reason: reason,
+        session_age_ms: Math.max(0, nowMs - snapshotSessionStartedAtMsRef.current),
+        thread_count_total: loadedConversations.length,
+        thread_count_loaded_recent: threadCountLoadedRecent,
+        thread_count_active: activeTurn === null ? 0 : 1,
+        thread_count_streaming_owner: activeTurn === null ? 0 : 1,
+        thread_count_streaming_follower: 0,
+        thread_count_streaming_without_role: 0,
+        thread_count_streaming_with_active_runtime: activeTurn === null ? 0 : 1,
+        thread_count_streaming_without_active_runtime: 0,
+        thread_count_with_inflight_turn: threadCountWithInflightTurn,
+        turn_count_total_loaded: turnCountTotalLoaded,
+        item_count_total_loaded: itemCountTotalLoaded,
+        max_turns_in_single_thread: maxTurnsInSingleThread,
+        max_items_in_single_turn: maxItemsInSingleTurn,
+        pending_request_count: totalPendingRequestCount,
+        inflight_turn_count: inflightTurnCount,
+        delta_events_total: telemetry.totalEvents,
+        delta_bytes_total_estimate: telemetry.totalBytes,
+        delta_events_last_30s: deltaEventsLast30s,
+        delta_bytes_last_30s_estimate: deltaBytesLast30sEstimate,
+        renderer_frame_interval_sample_count_last_30s:
+          rendererFrameIntervalSnapshot.rendererFrameIntervalSampleCountLast30s,
+        renderer_frame_interval_p95_ms_last_30s:
+          rendererFrameIntervalSnapshot.rendererFrameIntervalP95MsLast30s,
+        review_diff_files_total: threadDiffSummary.fileCount,
+        review_diff_lines_total: totalAdditions + totalDeletions,
+        review_diff_bytes_estimate: reviewDiffBytesEstimate,
+      };
+
+      await sendAppStateSnapshotResponse({ requestId, fields });
+    },
+  );
+
+  useEffect(() => {
+    startRendererFrameIntervalSampler();
+
+    if (typeof document !== "undefined" && document.hasFocus()) {
+      void notifyViewFocused().catch(() => undefined);
+    }
+
+    const handleFocus = () => {
+      void notifyViewFocused().catch(() => undefined);
+    };
+
+    window.addEventListener("focus", handleFocus);
+
+    let unlisten: (() => void) | undefined;
+    void onAppStateSnapshotRequested((notification) => {
+      void handleAppStateSnapshotRequest(notification);
+    }).then((dispose) => {
+      unlisten = dispose;
+    });
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      if (unlisten) {
+        void unlisten();
+      }
+    };
+  }, []);
 
   const handleDebugWindowOriginConversationChanged = useEffectEvent(async (conversationId: string) => {
     const normalizedConversationId = conversationId.trim();
@@ -1861,14 +2077,23 @@ function App() {
               ? foldStartedThreadItemWithSteer(nextConversation.items, event.item)
               : foldCompletedThreadItemWithSteer(nextConversation.items, event.item);
 
+          const previousItem =
+            nextConversation.items.find((item) => item.id === event.item.id) ?? null;
+          if (isDeltaBearingThreadItem(event.item)) {
+            const deltaBytes = estimateThreadItemDeltaBytes(previousItem, event.item);
+            recordSnapshotDeltaTelemetry(snapshotDeltaTelemetryRef.current, deltaBytes, now);
+          }
+
           if (folded.items === nextConversation.items && nextConversation === current) {
             return current;
           }
 
-          return {
+          const nextLoadedConversation = {
             ...nextConversation,
             items: folded.items,
           };
+          loadedConversationsByIdRef.current.set(nextLoadedConversation.id, nextLoadedConversation);
+          return nextLoadedConversation;
         });
         return;
       }
@@ -2188,6 +2413,7 @@ function App() {
   };
 
   const syncProjectGroups = (activeThreadId: string | null, threads: Awaited<ReturnType<typeof getRecentThreads>>) => {
+    setRecentThreads(threads);
     setSelectedThreadId(activeThreadId);
     setProjectGroups(
       buildProjectGroups(threads, {
@@ -2205,6 +2431,7 @@ function App() {
     setThreadConversation(null);
     try {
       const thread = await readThread(threadId);
+      loadedConversationsByIdRef.current.set(thread.id, thread);
       if (threadLoadRequestIdRef.current === requestId) {
         setThreadConversation(mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId));
       }

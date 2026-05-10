@@ -1,4 +1,5 @@
 mod app_shell_signals;
+mod app_state_snapshot;
 mod auth_bridge;
 mod automations;
 mod avatar_overlay;
@@ -27,6 +28,7 @@ mod projectless_threads;
 mod pull_requests;
 mod query_cache;
 mod remote_app_server_registry;
+mod remote_app_server_runtime;
 mod remote_connections;
 mod remote_control;
 mod scratchpad;
@@ -42,6 +44,9 @@ mod workspace_roots;
 mod worktrees;
 use app_shell_signals::electron_window_focus_request;
 use app_shell_signals::view_focused;
+use app_state_snapshot::electron_app_state_snapshot_response;
+use app_state_snapshot::spawn_app_state_snapshot_heartbeat;
+use app_state_snapshot::AppStateSnapshotState;
 use auth_bridge::add_marketplace;
 use auth_bridge::add_marketplace_command;
 use auth_bridge::archive_conversation_command;
@@ -244,6 +249,7 @@ use primary_runtime::load_primary_runtime_dependencies;
 use primary_runtime::primary_runtime_update_run_now;
 use primary_runtime::primary_runtime_update_status;
 use primary_runtime::reset_primary_runtime_dependencies;
+use primary_runtime::set_primary_runtime_install_release;
 use primary_runtime::PrimaryRuntimeState;
 use projectless_threads::projectless_thread_cwd;
 use pull_requests::gh_cli_status;
@@ -257,15 +263,14 @@ use pull_requests::gh_pr_diff;
 use pull_requests::gh_pr_merge;
 use pull_requests::gh_pr_status;
 use pull_requests::gh_pr_update;
-use remote_app_server_registry::disconnect_remote_connection;
-use remote_app_server_registry::ensure_remote_connection_connected;
-use remote_app_server_registry::set_remote_connection_auto_connect;
 use remote_app_server_registry::RemoteAppServerRegistry;
+use remote_app_server_runtime::RemoteAppServerRuntimeState;
 use remote_connections::app_server_connection_state;
 use remote_connections::discover_remote_ssh_connections;
 use remote_connections::get_shared_object_snapshot;
 use remote_connections::refresh_remote_connections;
 use remote_connections::save_codex_managed_remote_ssh_connections;
+use remote_connections::set_remote_connection_auto_connect;
 use remote_control::mfa_info_read;
 use remote_control::remote_control_clients_list;
 use remote_control::remote_control_mfa_required_but_disabled_read;
@@ -342,6 +347,7 @@ pub fn run() {
     let auth_state = shared_state();
     let heartbeat_automation_scheduler_state =
         Arc::new(HeartbeatAutomationSchedulerState::default());
+    let app_state_snapshot_state = Arc::new(AppStateSnapshotState::default());
     if let Some(path) = parse_open_project_path() {
         *launch_state
             .open_project_path
@@ -355,6 +361,7 @@ pub fn run() {
         })
         .manage(auth_state.clone())
         .manage(heartbeat_automation_scheduler_state.clone())
+        .manage(app_state_snapshot_state.clone())
         .manage(launch_state)
         .manage(PowerSaveBlockerState::default())
         .manage(AvatarOverlayState::default())
@@ -368,6 +375,7 @@ pub fn run() {
         .manage(GlobalDictationWindowState::default())
         .manage(DesktopNotificationsState::default())
         .manage(RemoteAppServerRegistry::default())
+        .manage(RemoteAppServerRuntimeState::default())
         .manage(PrimaryRuntimeState::default())
         .manage(Arc::new(PendingWorktreesState::default()))
         .invoke_handler(tauri::generate_handler![
@@ -403,9 +411,6 @@ pub fn run() {
             desktop_notification_show,
             desktop_notification_hide,
             browser_browsing_data_clear,
-            ensure_remote_connection_connected,
-            disconnect_remote_connection,
-            set_remote_connection_auto_connect,
             remote_control_mfa_requirement_read,
             mfa_info_read,
             remote_control_clients_list,
@@ -418,6 +423,7 @@ pub fn run() {
             primary_runtime_update_status,
             primary_runtime_update_run_now,
             reset_primary_runtime_dependencies,
+            set_primary_runtime_install_release,
             list_apps,
             read_app_tools,
             read_app_tools_command,
@@ -612,6 +618,7 @@ pub fn run() {
             discover_remote_ssh_connections,
             refresh_remote_connections,
             save_codex_managed_remote_ssh_connections,
+            set_remote_connection_auto_connect,
             upstream_local_environments,
             upstream_local_environment,
             upstream_local_environment_config,
@@ -633,6 +640,7 @@ pub fn run() {
             pending_worktree_retry,
             pending_worktree_cancel,
             pending_worktree_dismiss,
+            electron_app_state_snapshot_response,
             electron_window_focus_request,
             view_focused
         ])
@@ -643,6 +651,7 @@ pub fn run() {
                 auth_state.clone(),
                 heartbeat_automation_scheduler_state.clone(),
             );
+            spawn_app_state_snapshot_heartbeat(handle.clone(), app_state_snapshot_state.clone());
             let avatar_overlay_state = app.state::<AvatarOverlayState>();
             let main_window = handle.get_webview_window("main");
             let _ = avatar_overlay::restore_open_state(
@@ -653,8 +662,12 @@ pub fn run() {
             if cfg!(target_os = "windows") && should_register_windows_context_menu() {
                 let _ = register_windows_folder_context_menu();
             }
-            tauri::async_runtime::spawn(async move {
-                let _ = auth_bridge::start(handle).await;
+            tauri::async_runtime::spawn({
+                let handle = handle.clone();
+                async move {
+                    let _ = auth_bridge::start(handle.clone()).await;
+                    let _ = refresh_remote_connections(handle).await;
+                }
             });
             Ok(())
         })

@@ -2,11 +2,10 @@
 //!
 //! Implements the `browser-browsing-data-clear` Tauri command, which mirrors
 //! upstream `main-Bnxe1qAn.js`'s
-//! `partitionForId(id).session.clearStorageData(...)` for the
-//! `persist:codex-browser-${encodeURIComponent(id)}` Electron session
-//! partition family. The page-owner `browser-use-settings-CJBdA4SJ.js`
-//! invokes this with `{ id: "app", scope: "siteData" | "cookies" | "cache" }`
-//! when the user clicks "Clear browsing data".
+//! `session.fromPartition("persist:codex-browser-app")` clearing path. The
+//! page-owner `browser-use-settings-CJBdA4SJ.js` invokes this with
+//! `{ dataTypes: ["siteData" | "cookies" | "cache", ...] }` when the user
+//! clears browsing data from Browser Use settings.
 //!
 //! ## Replica reality
 //!
@@ -19,13 +18,12 @@
 //!
 //! This implementation honors the page-owned desktop bridge contract:
 //!
-//! 1. validate `id` (must be a non-empty trimmed string),
-//! 2. validate `scope` (one of the upstream values),
-//! 3. resolve the future `UserDataFolder` for the partition (without
-//!    creating it),
-//! 4. if the folder exists, attempt to clear the matching subdirectories;
+//! 1. deserialize the extracted `dataTypes` array shape,
+//! 2. resolve the future `UserDataFolder` for the fixed `app` partition
+//!    (without creating it),
+//! 3. if the folder exists, attempt to clear the matching subdirectories;
 //!    otherwise return success (faithful "no-op against empty partition"),
-//! 5. respond with `{ ok: true }` to satisfy the page's promise.
+//! 4. respond with `{ ok: true }` to satisfy the page's promise.
 //!
 //! When the browser sidebar surface lands, this owner becomes the natural
 //! seam to call `WebView2.Profile.ClearBrowsingDataAsync(...)` once the
@@ -41,21 +39,21 @@ use tauri::Manager;
 const PARTITION_ROOT_DIR: &str = "codex-browser-partitions";
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-pub enum BrowserBrowsingDataScope {
+#[serde(rename_all = "camelCase")]
+pub enum BrowserBrowsingDataType {
     SiteData,
     Cookies,
     Cache,
 }
 
-impl BrowserBrowsingDataScope {
+impl BrowserBrowsingDataType {
     fn subdirectories(self) -> &'static [&'static str] {
         match self {
-            BrowserBrowsingDataScope::SiteData => {
+            BrowserBrowsingDataType::SiteData => {
                 &["IndexedDB", "Local Storage", "Service Worker", "WebStorage"]
             }
-            BrowserBrowsingDataScope::Cookies => &["Cookies"],
-            BrowserBrowsingDataScope::Cache => &["Cache", "Code Cache", "GPUCache"],
+            BrowserBrowsingDataType::Cookies => &["Cookies"],
+            BrowserBrowsingDataType::Cache => &["Cache", "Code Cache", "GPUCache"],
         }
     }
 }
@@ -63,8 +61,7 @@ impl BrowserBrowsingDataScope {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserBrowsingDataClearParams {
-    pub id: String,
-    pub scope: BrowserBrowsingDataScope,
+    pub data_types: Vec<BrowserBrowsingDataType>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -78,47 +75,33 @@ pub fn browser_browsing_data_clear(
     app: AppHandle,
     params: BrowserBrowsingDataClearParams,
 ) -> Result<BrowserBrowsingDataClearResponse, String> {
-    let trimmed = params.id.trim();
-    if trimmed.is_empty() {
-        return Err("browser-browsing-data-clear requires a non-empty `id`".to_string());
-    }
-
     let app_data_dir = app
         .path()
         .app_data_dir()
         .map_err(|err| format!("failed to resolve app data dir: {err}"))?;
 
-    let partition_dir = partition_dir_for(&app_data_dir, trimmed);
+    let partition_dir = app_partition_dir(&app_data_dir);
     if !partition_dir.exists() {
         // Faithful no-op: upstream `clearStorageData` is itself a no-op when
         // the partition has never been materialized.
         return Ok(BrowserBrowsingDataClearResponse { ok: true });
     }
 
-    clear_partition_subdirs(&partition_dir, params.scope.subdirectories())?;
+    let mut subdirs = Vec::new();
+    for data_type in params.data_types {
+        for subdir in data_type.subdirectories() {
+            if !subdirs.contains(subdir) {
+                subdirs.push(*subdir);
+            }
+        }
+    }
+
+    clear_partition_subdirs(&partition_dir, &subdirs)?;
     Ok(BrowserBrowsingDataClearResponse { ok: true })
 }
 
-fn partition_dir_for(app_data_dir: &Path, partition_id: &str) -> PathBuf {
-    app_data_dir
-        .join(PARTITION_ROOT_DIR)
-        .join(safe_partition_segment(partition_id))
-}
-
-fn safe_partition_segment(partition_id: &str) -> String {
-    // Mirror upstream's `encodeURIComponent(id)`-derived segment, but
-    // additionally strip path separators and reserved characters that would
-    // escape the partition directory on disk.
-    partition_id
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
+fn app_partition_dir(app_data_dir: &Path) -> PathBuf {
+    app_data_dir.join(PARTITION_ROOT_DIR).join("app")
 }
 
 fn clear_partition_subdirs(partition_dir: &Path, subdirs: &[&str]) -> Result<(), String> {
@@ -145,28 +128,28 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn scope_deserializes_kebab_case_values() {
+    fn data_types_deserialize_extracted_camel_case_values() {
         let v: BrowserBrowsingDataClearParams =
-            serde_json::from_value(serde_json::json!({"id": "app", "scope": "site-data"}))
-                .expect("deserialize site-data");
-        assert_eq!(v.id, "app");
-        assert_eq!(v.scope, BrowserBrowsingDataScope::SiteData);
+            serde_json::from_value(serde_json::json!({"dataTypes": ["siteData"]}))
+                .expect("deserialize siteData");
+        assert_eq!(v.data_types, vec![BrowserBrowsingDataType::SiteData]);
 
         let v: BrowserBrowsingDataClearParams =
-            serde_json::from_value(serde_json::json!({"id": "app", "scope": "cookies"}))
+            serde_json::from_value(serde_json::json!({"dataTypes": ["cookies", "cache"]}))
                 .expect("deserialize cookies");
-        assert_eq!(v.scope, BrowserBrowsingDataScope::Cookies);
-
-        let v: BrowserBrowsingDataClearParams =
-            serde_json::from_value(serde_json::json!({"id": "app", "scope": "cache"}))
-                .expect("deserialize cache");
-        assert_eq!(v.scope, BrowserBrowsingDataScope::Cache);
+        assert_eq!(
+            v.data_types,
+            vec![
+                BrowserBrowsingDataType::Cookies,
+                BrowserBrowsingDataType::Cache,
+            ]
+        );
     }
 
     #[test]
-    fn scope_rejects_unknown_values() {
+    fn data_types_reject_unknown_values() {
         let result: Result<BrowserBrowsingDataClearParams, _> =
-            serde_json::from_value(serde_json::json!({"id": "app", "scope": "unknown"}));
+            serde_json::from_value(serde_json::json!({"dataTypes": ["unknown"]}));
         assert!(result.is_err());
     }
 
@@ -180,30 +163,32 @@ mod tests {
     #[test]
     fn site_data_subdirectories_match_chromium_layout() {
         assert_eq!(
-            BrowserBrowsingDataScope::SiteData.subdirectories(),
+            BrowserBrowsingDataType::SiteData.subdirectories(),
             &["IndexedDB", "Local Storage", "Service Worker", "WebStorage"]
         );
         assert_eq!(
-            BrowserBrowsingDataScope::Cookies.subdirectories(),
+            BrowserBrowsingDataType::Cookies.subdirectories(),
             &["Cookies"]
         );
         assert_eq!(
-            BrowserBrowsingDataScope::Cache.subdirectories(),
+            BrowserBrowsingDataType::Cache.subdirectories(),
             &["Cache", "Code Cache", "GPUCache"]
         );
     }
 
     #[test]
-    fn safe_partition_segment_strips_path_separators() {
-        assert_eq!(safe_partition_segment("app"), "app");
-        assert_eq!(safe_partition_segment("..\\evil"), "___evil");
-        assert_eq!(safe_partition_segment("hostA/B"), "hostA_B");
+    fn app_partition_dir_uses_fixed_app_partition() {
+        let app_data_dir = PathBuf::from(r"C:\tmp\codex-app-replica");
+        assert_eq!(
+            app_partition_dir(&app_data_dir),
+            app_data_dir.join(PARTITION_ROOT_DIR).join("app")
+        );
     }
 
     #[test]
     fn clear_partition_subdirs_is_no_op_when_dir_absent() {
         let temp = unique_temp_dir("browser-clear-absent");
-        clear_partition_subdirs(&temp, BrowserBrowsingDataScope::Cache.subdirectories())
+        clear_partition_subdirs(&temp, BrowserBrowsingDataType::Cache.subdirectories())
             .expect("absent partition is treated as no-op");
         let _ = fs::remove_dir_all(temp);
     }
@@ -218,7 +203,7 @@ mod tests {
         fs::write(cache.join("entry"), b"x").expect("seed cache file");
         fs::write(cookies.join("entry"), b"x").expect("seed cookies file");
 
-        clear_partition_subdirs(&temp, BrowserBrowsingDataScope::Cache.subdirectories())
+        clear_partition_subdirs(&temp, BrowserBrowsingDataType::Cache.subdirectories())
             .expect("clear cache succeeds");
 
         assert!(!cache.exists(), "cache dir was removed");

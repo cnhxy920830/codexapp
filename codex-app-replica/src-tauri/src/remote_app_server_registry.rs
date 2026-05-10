@@ -30,13 +30,13 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use tauri::State;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum RemoteAppServerConnectionState {
     Disconnected,
     Connecting,
+    Restarting,
     Connected,
     Error,
 }
@@ -130,6 +130,7 @@ impl RemoteAppServerRegistry {
     }
 
     /// Returns true if the host is currently reporting `Connected` state.
+    #[allow(dead_code)]
     pub fn is_connected(&self, host_id: &str) -> bool {
         let guard = self.inner.lock().expect("registry mutex poisoned");
         guard
@@ -140,6 +141,7 @@ impl RemoteAppServerRegistry {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteAppServerConnectStateParams {
@@ -169,57 +171,6 @@ pub fn registry_connection_state(
         state: snapshot.state,
         error: snapshot.error,
     }
-}
-
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct SetRemoteAutoConnectParams {
-    pub host_id: String,
-    pub auto_connect: bool,
-}
-
-#[tauri::command(rename = "set-remote-connection-auto-connect")]
-pub fn set_remote_connection_auto_connect(
-    registry: State<'_, RemoteAppServerRegistry>,
-    params: SetRemoteAutoConnectParams,
-) -> Result<(), String> {
-    registry.set_auto_connect(&params.host_id, params.auto_connect);
-    Ok(())
-}
-
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct EnsureRemoteConnectionParams {
-    pub host_id: String,
-}
-
-#[tauri::command(rename = "ensure-remote-connection-connected")]
-pub fn ensure_remote_connection_connected(
-    registry: State<'_, RemoteAppServerRegistry>,
-    params: EnsureRemoteConnectionParams,
-) -> Result<RemoteAppServerHostStatus, String> {
-    registry.ensure_host(&params.host_id);
-    // Phase 1: surface a Connecting state so settings UIs can render the
-    // intent. Phase 2 will replace this with a real SSH dial.
-    registry.set_state(
-        &params.host_id,
-        RemoteAppServerConnectionState::Connecting,
-        None,
-    );
-    Ok(registry.snapshot(&params.host_id))
-}
-
-#[tauri::command(rename = "disconnect-remote-connection")]
-pub fn disconnect_remote_connection(
-    registry: State<'_, RemoteAppServerRegistry>,
-    params: EnsureRemoteConnectionParams,
-) -> Result<RemoteAppServerHostStatus, String> {
-    registry.set_state(
-        &params.host_id,
-        RemoteAppServerConnectionState::Disconnected,
-        None,
-    );
-    Ok(registry.snapshot(&params.host_id))
 }
 
 #[cfg(test)]
@@ -327,13 +278,5 @@ mod tests {
         assert_eq!(value["state"], "connecting");
         assert_eq!(value["error"], "slow");
         assert_eq!(value["autoConnect"], true);
-    }
-
-    #[test]
-    fn auto_connect_params_deserialize_camel_case() {
-        let raw = serde_json::json!({"hostId": "h", "autoConnect": true});
-        let parsed: SetRemoteAutoConnectParams = serde_json::from_value(raw).expect("deserialize");
-        assert_eq!(parsed.host_id, "h");
-        assert!(parsed.auto_connect);
     }
 }
