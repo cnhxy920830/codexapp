@@ -22,6 +22,7 @@ mod local_environments;
 mod open_targets;
 mod pending_worktrees;
 mod power_save_blocker;
+mod primary_runtime;
 mod projectless_threads;
 mod pull_requests;
 mod query_cache;
@@ -235,6 +236,15 @@ use pending_worktrees::pending_worktree_update_metadata;
 use pending_worktrees::PendingWorktreesState;
 use power_save_blocker::power_save_blocker_set;
 use power_save_blocker::PowerSaveBlockerState;
+use primary_runtime::cancel_primary_runtime_install;
+use primary_runtime::diagnose_primary_runtime_dependencies;
+use primary_runtime::finish_primary_runtime_install;
+use primary_runtime::install_primary_runtime;
+use primary_runtime::load_primary_runtime_dependencies;
+use primary_runtime::primary_runtime_update_run_now;
+use primary_runtime::primary_runtime_update_status;
+use primary_runtime::reset_primary_runtime_dependencies;
+use primary_runtime::PrimaryRuntimeState;
 use projectless_threads::projectless_thread_cwd;
 use pull_requests::gh_cli_status;
 use pull_requests::gh_current_user;
@@ -358,6 +368,7 @@ pub fn run() {
         .manage(GlobalDictationWindowState::default())
         .manage(DesktopNotificationsState::default())
         .manage(RemoteAppServerRegistry::default())
+        .manage(PrimaryRuntimeState::default())
         .manage(Arc::new(PendingWorktreesState::default()))
         .invoke_handler(tauri::generate_handler![
             get_launch_context,
@@ -399,6 +410,14 @@ pub fn run() {
             mfa_info_read,
             remote_control_clients_list,
             remote_control_mfa_required_but_disabled_read,
+            load_primary_runtime_dependencies,
+            diagnose_primary_runtime_dependencies,
+            install_primary_runtime,
+            finish_primary_runtime_install,
+            cancel_primary_runtime_install,
+            primary_runtime_update_status,
+            primary_runtime_update_run_now,
+            reset_primary_runtime_dependencies,
             list_apps,
             read_app_tools,
             read_app_tools_command,
