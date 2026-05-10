@@ -1,6 +1,8 @@
 use crate::open_targets::ensure_supported_host_id;
 use crate::open_targets::open_path_in_effective_target;
 use crate::open_targets::OpenTargetLocation;
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine as _;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fs;
@@ -23,6 +25,20 @@ pub struct ReadFileParams {
 #[serde(rename_all = "camelCase")]
 pub struct ReadFileResponse {
     pub contents: String,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadFileMetadataResponse {
+    pub is_file: bool,
+    pub size_bytes: Option<u64>,
+    pub mime_type: Option<String>,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadFileBinaryResponse {
+    pub contents_base64: String,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -74,6 +90,35 @@ pub fn read_file(params: ReadFileParams) -> Result<ReadFileResponse, String> {
     let contents =
         fs::read_to_string(&path).map_err(|err| format!("failed to read file: {err}"))?;
     Ok(ReadFileResponse { contents })
+}
+
+#[tauri::command(rename = "read-file-metadata")]
+pub fn read_file_metadata(params: ReadFileParams) -> Result<ReadFileMetadataResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "read-file-metadata")?;
+    let path = resolve_requested_path(&params.path, params.cwd.as_deref())?;
+    let metadata = fs::metadata(&path).map_err(map_not_found_error)?;
+    let is_file = metadata.is_file();
+
+    Ok(ReadFileMetadataResponse {
+        is_file,
+        size_bytes: is_file.then_some(metadata.len()),
+        mime_type: infer_mime_type(&path),
+    })
+}
+
+#[tauri::command(rename = "read-file-binary")]
+pub fn read_file_binary(params: ReadFileParams) -> Result<ReadFileBinaryResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "read-file-binary")?;
+    let path = resolve_requested_path(&params.path, params.cwd.as_deref())?;
+    let metadata = fs::metadata(&path).map_err(map_not_found_error)?;
+    if !metadata.is_file() {
+        return Err(format!("path is not a file: {}", path.display()));
+    }
+
+    let contents = fs::read(&path).map_err(|err| format!("failed to read file: {err}"))?;
+    Ok(ReadFileBinaryResponse {
+        contents_base64: STANDARD.encode(contents),
+    })
 }
 
 #[tauri::command(rename = "open-file")]
@@ -157,6 +202,18 @@ fn map_not_found_error(error: std::io::Error) -> String {
     error.to_string()
 }
 
+fn infer_mime_type(path: &std::path::Path) -> Option<String> {
+    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+    let mime_type = match extension.as_str() {
+        "c" | "cc" | "cpp" | "css" | "go" | "h" | "hpp" | "html" | "java" | "js" | "json"
+        | "jsx" | "md" | "mjs" | "py" | "rb" | "rs" | "sh" | "sql" | "svg" | "toml" | "ts"
+        | "tsx" | "txt" | "xml" | "yaml" | "yml" => "text/plain",
+        "pdf" => "application/pdf",
+        _ => return None,
+    };
+    Some(mime_type.to_string())
+}
+
 fn normalize_browser_url(url: &str) -> Result<String, String> {
     let trimmed = url.trim();
     if trimmed.is_empty() {
@@ -172,10 +229,14 @@ mod tests {
     use super::ensure_supported_host_id;
     use super::normalize_browser_url;
     use super::read_file;
+    use super::read_file_binary;
+    use super::read_file_metadata;
     use super::resolve_requested_path;
     use super::FilePosition;
     use super::OpenFileParams;
     use super::OpenInBrowserParams;
+    use super::ReadFileBinaryResponse;
+    use super::ReadFileMetadataResponse;
     use super::ReadFileParams;
     use super::ThirdPartyNoticesResponse;
     use std::fs;
@@ -340,6 +401,71 @@ mod tests {
         .expect_err("missing file should fail");
 
         assert_eq!(error, "ENOENT");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn read_file_metadata_returns_directory_state() {
+        let root = temp_dir("metadata-directory");
+        let response = read_file_metadata(ReadFileParams {
+            host_id: Some("local".to_string()),
+            path: root.display().to_string(),
+            cwd: None,
+        })
+        .expect("directory metadata should succeed");
+
+        assert_eq!(
+            response,
+            ReadFileMetadataResponse {
+                is_file: false,
+                size_bytes: None,
+                mime_type: None,
+            }
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn read_file_metadata_returns_size_and_mime_type() {
+        let root = temp_dir("metadata-file");
+        let file = root.join("preview.txt");
+        fs::write(&file, "hello").expect("file should be created");
+        let response = read_file_metadata(ReadFileParams {
+            host_id: Some("local".to_string()),
+            path: file.display().to_string(),
+            cwd: None,
+        })
+        .expect("file metadata should succeed");
+
+        assert_eq!(
+            response,
+            ReadFileMetadataResponse {
+                is_file: true,
+                size_bytes: Some(5),
+                mime_type: Some("text/plain".to_string()),
+            }
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn read_file_binary_returns_base64_contents() {
+        let root = temp_dir("binary-file");
+        let file = root.join("preview.bin");
+        fs::write(&file, b"abc").expect("file should be created");
+        let response = read_file_binary(ReadFileParams {
+            host_id: Some("local".to_string()),
+            path: file.display().to_string(),
+            cwd: None,
+        })
+        .expect("file binary should succeed");
+
+        assert_eq!(
+            response,
+            ReadFileBinaryResponse {
+                contents_base64: "YWJj".to_string(),
+            }
+        );
         let _ = fs::remove_dir_all(root);
     }
 

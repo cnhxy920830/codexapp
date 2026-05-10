@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type ReactNode,
+} from "react";
 import type { AppToast } from "../../components/AppToastRegion";
 import { CheckIcon, ChevronDownIcon, PlusIcon, SearchIcon } from "../../components/AppShellIcons";
 import { SettingsChoiceMenu } from "../../components/SettingsChoiceMenu";
@@ -39,6 +47,11 @@ import {
   type ConfigWriteTarget,
 } from "../../services/settings";
 import {
+  onQueryCacheInvalidated,
+  queryKeyMatchesPrefix,
+  type QueryCacheInvalidateNotification,
+} from "../../services/queryCache";
+import {
   getSettingsRemoteHostColor,
   LOCAL_SETTINGS_HOST_ID,
   type RemoteConnection,
@@ -62,6 +75,10 @@ const ALL_CATEGORIES_VALUE = "__all_categories__";
 const ALL_MARKETPLACES_VALUE = "__all_marketplaces__";
 const IMPORT_PROVIDER_IDS = ["claude-code"];
 const SKILL_CREATOR_PREFILL_STORAGE_KEY = "has-opened-skill-creator-prefill-v1";
+const PLUGIN_QUERY_KEY = ["plugins"] as const;
+const APPS_QUERY_KEY = ["apps", "list"] as const;
+const CONFIG_QUERY_KEY = ["config"] as const;
+const SKILLS_QUERY_KEY = ["skills"] as const;
 
 type BrowseTab = "plugins" | "skills";
 
@@ -227,6 +244,19 @@ export function SkillsRoutePage({
     };
   }, [activePlugin, canShowUnifiedPluginsPage, selectedHostId]);
 
+  useEffect(() => {
+    if (activePlugin == null) {
+      return;
+    }
+
+    const nextActivePlugin = findPluginCandidateById(pluginsSnapshot, activePlugin.plugin.id);
+    if (nextActivePlugin === activePlugin) {
+      return;
+    }
+
+    setActivePlugin(nextActivePlugin);
+  }, [activePlugin, pluginsSnapshot]);
+
   const installedSkills = useMemo(() => dedupeSkills(skills), [skills]);
   const workspaceRoots = useMemo(() => collectWorkspaceRoots(installedSkills), [installedSkills]);
 
@@ -362,7 +392,7 @@ export function SkillsRoutePage({
       workspaceRoot,
     });
 
-  const refreshBrowseData = async () =>
+  const refreshBrowseData = async (options?: { forceRefetchApps?: boolean }) =>
     refreshBrowseState({
       onAppsLoaded: setApps,
       onConfigWriteTargetLoaded: setConfigWriteTarget,
@@ -371,8 +401,53 @@ export function SkillsRoutePage({
       onLoaded: setPluginsSnapshot,
       requestIdRef: browseRequestIdRef,
       selectedHostId,
+      forceRefetchApps: options?.forceRefetchApps ?? false,
       workspaceRoot,
     });
+
+  const handleQueryCacheInvalidate = useEffectEvent((notification: QueryCacheInvalidateNotification) => {
+    const shouldRefreshBrowseData =
+      canShowUnifiedPluginsPage &&
+      (queryKeyMatchesPrefix(notification.queryKey, PLUGIN_QUERY_KEY) ||
+        queryKeyMatchesPrefix(notification.queryKey, APPS_QUERY_KEY) ||
+        queryKeyMatchesPrefix(notification.queryKey, CONFIG_QUERY_KEY));
+    const shouldRefreshSkills = queryKeyMatchesPrefix(notification.queryKey, SKILLS_QUERY_KEY);
+
+    if (!shouldRefreshBrowseData && !shouldRefreshSkills) {
+      return;
+    }
+
+    if (shouldRefreshBrowseData) {
+      void refreshBrowseData({ forceRefetchApps: true });
+    }
+
+    if (shouldRefreshSkills) {
+      void refreshSkills(true);
+    }
+  });
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void onQueryCacheInvalidated((notification) => {
+      if (!disposed) {
+        handleQueryCacheInvalidate(notification);
+      }
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+
+      unlisten = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   const updateActivePluginFromSnapshot = (snapshot: PluginListSnapshot | null, pluginId: string) => {
     const nextCandidate = findPluginCandidateById(snapshot, pluginId);
@@ -1107,6 +1182,7 @@ async function loadBrowseState({
   onLoading,
   requestIdRef,
   selectedHostId,
+  forceRefetchApps,
   workspaceRoot,
 }: {
   onAppsLoaded: (value: AppInfo[]) => void;
@@ -1115,6 +1191,7 @@ async function loadBrowseState({
   onImportedPluginNamesLoaded: (value: string[]) => void;
   onLoaded: (value: PluginListSnapshot | null) => void;
   onLoading: (value: boolean) => void;
+  forceRefetchApps?: boolean;
   requestIdRef: MutableRefObject<number>;
   selectedHostId: string;
   workspaceRoot: string | null;
@@ -1124,7 +1201,9 @@ async function loadBrowseState({
   onError(null);
 
   try {
-    const nextState = await readPluginBrowseState(workspaceRoot, selectedHostId);
+    const nextState = await readPluginBrowseState(workspaceRoot, selectedHostId, {
+      forceRefetchApps: forceRefetchApps ?? false,
+    });
     if (requestId !== requestIdRef.current) {
       return null;
     }
@@ -1160,6 +1239,7 @@ async function refreshBrowseState({
   onError,
   onImportedPluginNamesLoaded,
   onLoaded,
+  forceRefetchApps,
   requestIdRef,
   selectedHostId,
   workspaceRoot,
@@ -1169,12 +1249,15 @@ async function refreshBrowseState({
   onError: (value: string | null) => void;
   onImportedPluginNamesLoaded: (value: string[]) => void;
   onLoaded: (value: PluginListSnapshot | null) => void;
+  forceRefetchApps?: boolean;
   requestIdRef: MutableRefObject<number>;
   selectedHostId: string;
   workspaceRoot: string | null;
 }) {
   const requestId = ++requestIdRef.current;
-  const nextState = await readPluginBrowseState(workspaceRoot, selectedHostId);
+  const nextState = await readPluginBrowseState(workspaceRoot, selectedHostId, {
+    forceRefetchApps: forceRefetchApps ?? false,
+  });
   if (requestId !== requestIdRef.current) {
     return null;
   }
@@ -1187,11 +1270,17 @@ async function refreshBrowseState({
   return nextState.snapshot;
 }
 
-async function readPluginBrowseState(workspaceRoot: string | null, selectedHostId: string) {
+async function readPluginBrowseState(
+  workspaceRoot: string | null,
+  selectedHostId: string,
+  options?: { forceRefetchApps?: boolean },
+) {
   const [pluginsResult, configResult, appsResult, importsResult] = await Promise.allSettled([
     readPluginsSnapshot(workspaceRoot, selectedHostId),
     readConfig(workspaceRoot),
-    readAppsSnapshot(),
+    readAppsSnapshot({
+      forceRefetch: options?.forceRefetchApps ?? false,
+    }),
     detectExternalAgentImports({
       hostId: selectedHostId,
       includeHome: true,

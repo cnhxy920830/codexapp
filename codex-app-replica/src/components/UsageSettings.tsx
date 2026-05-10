@@ -1,9 +1,13 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { CheckIcon } from "./AppShellIcons";
+import { UsageAutoTopUpDialog } from "./UsageAutoTopUpDialog";
 import { useI18n } from "../i18n/i18n";
 import type { MessageKey } from "../i18n/messages";
 import { isUsageSettingsPlanSupported, readAccountInfo } from "../services/auth";
 import {
   readAccountRateLimits,
+  readUsageAutoTopUpSettings,
+  type UsageAutoTopUpSettings,
   type UsageCreditsSnapshot,
   type UsageRateLimitSnapshot,
   type UsageRateLimitWindow,
@@ -23,32 +27,6 @@ type UsageLimitRowData = {
   resetsAt: number | null;
 };
 
-async function loadUsageRateLimits(
-  setIsLoading: (value: boolean) => void,
-  setLoadError: (value: string | null) => void,
-  setRateLimitsResponse: (value: UsageRateLimitsResponse | null) => void,
-  cancelled?: { current: boolean },
-) {
-  setIsLoading(true);
-  setLoadError(null);
-
-  try {
-    const response = await readAccountRateLimits();
-    if (!cancelled?.current) {
-      setRateLimitsResponse(response);
-    }
-  } catch (error) {
-    if (!cancelled?.current) {
-      setRateLimitsResponse(null);
-      setLoadError(error instanceof Error ? error.message : String(error));
-    }
-  } finally {
-    if (!cancelled?.current) {
-      setIsLoading(false);
-    }
-  }
-}
-
 export function UsageSettings({
   authMethod,
 }: {
@@ -58,8 +36,12 @@ export function UsageSettings({
   const [isUsageSettingsVisible, setIsUsageSettingsVisible] = useState(false);
   const [isUsageSettingsAccessLoading, setIsUsageSettingsAccessLoading] = useState(authMethod === "chatgpt");
   const [rateLimitsResponse, setRateLimitsResponse] = useState<UsageRateLimitsResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [autoTopUpSettings, setAutoTopUpSettings] = useState<UsageAutoTopUpSettings | null>(null);
+  const [isRateLimitsLoading, setIsRateLimitsLoading] = useState(false);
+  const [isAutoTopUpLoading, setIsAutoTopUpLoading] = useState(false);
+  const [rateLimitsLoadError, setRateLimitsLoadError] = useState<string | null>(null);
+  const [autoTopUpLoadError, setAutoTopUpLoadError] = useState<string | null>(null);
+  const [isAutoTopUpDialogOpen, setIsAutoTopUpDialogOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,14 +83,28 @@ export function UsageSettings({
 
     if (!isUsageSettingsVisible) {
       setRateLimitsResponse(null);
-      setLoadError(null);
-      setIsLoading(false);
+      setAutoTopUpSettings(null);
+      setRateLimitsLoadError(null);
+      setAutoTopUpLoadError(null);
+      setIsRateLimitsLoading(false);
+      setIsAutoTopUpLoading(false);
       return () => {
         cancelled.current = true;
       };
     }
 
-    void loadUsageRateLimits(setIsLoading, setLoadError, setRateLimitsResponse, cancelled);
+    void loadUsageRateLimits({
+      cancelled,
+      setIsLoading: setIsRateLimitsLoading,
+      setLoadError: setRateLimitsLoadError,
+      setRateLimitsResponse,
+    });
+    void loadUsageAutoTopUpSettings({
+      cancelled,
+      setAutoTopUpSettings,
+      setIsLoading: setIsAutoTopUpLoading,
+      setLoadError: setAutoTopUpLoadError,
+    });
 
     return () => {
       cancelled.current = true;
@@ -127,7 +123,10 @@ export function UsageSettings({
     );
   }
 
-  if (loadError && rateLimitsResponse == null) {
+  const hasInitialLoadError =
+    (rateLimitsLoadError != null && rateLimitsResponse == null) ||
+    (autoTopUpLoadError != null && autoTopUpSettings == null);
+  if (hasInitialLoadError) {
     return (
       <SettingsContentLayout title={t("settings.section.usage")}>
         <UsageStateSection
@@ -135,7 +134,18 @@ export function UsageSettings({
           control={
             <button
               type="button"
-              onClick={() => void loadUsageRateLimits(setIsLoading, setLoadError, setRateLimitsResponse)}
+              onClick={() => {
+                void loadUsageRateLimits({
+                  setIsLoading: setIsRateLimitsLoading,
+                  setLoadError: setRateLimitsLoadError,
+                  setRateLimitsResponse,
+                });
+                void loadUsageAutoTopUpSettings({
+                  setAutoTopUpSettings,
+                  setIsLoading: setIsAutoTopUpLoading,
+                  setLoadError: setAutoTopUpLoadError,
+                });
+              }}
               className="rounded-lg border border-token-border bg-token-main-surface-primary px-3 py-1.5 text-sm text-token-text-primary shadow-sm transition hover:bg-token-list-hover-background"
             >
               {t("settings.usage.load.retry")}
@@ -146,7 +156,7 @@ export function UsageSettings({
     );
   }
 
-  if (isLoading || rateLimitsResponse == null) {
+  if (isRateLimitsLoading || isAutoTopUpLoading || rateLimitsResponse == null || autoTopUpSettings == null) {
     return (
       <SettingsContentLayout title={t("settings.section.usage")}>
         <UsageStateSection label={t("settings.usage.load.loading")} />
@@ -161,23 +171,110 @@ export function UsageSettings({
   );
 
   return (
-    <SettingsContentLayout title={t("settings.section.usage")}>
-      <UsageLimitSection
-        locale={locale}
-        rows={coreLimitRows}
-        sectionTitle={t("settings.usage.limits.title")}
-      />
-      <UsageLimitSection
-        locale={locale}
-        rows={sparkLimitRows}
-        sectionTitle={t("settings.usage.limits.spark.title")}
-      />
-      <UsageCreditSection
-        creditDetails={rateLimitsResponse.rateLimits.credits ?? null}
-        locale={locale}
-      />
-    </SettingsContentLayout>
+    <>
+      <SettingsContentLayout title={t("settings.section.usage")}>
+        <UsageLimitSection
+          locale={locale}
+          rows={coreLimitRows}
+          sectionTitle={t("settings.usage.limits.title")}
+        />
+        <UsageLimitSection
+          locale={locale}
+          rows={sparkLimitRows}
+          sectionTitle={t("settings.usage.limits.spark.title")}
+        />
+        <UsageCreditSection
+          autoTopUpSettings={autoTopUpSettings}
+          creditDetails={rateLimitsResponse.rateLimits.credits ?? null}
+          locale={locale}
+          onOpenAutoTopUpDialog={() => setIsAutoTopUpDialogOpen(true)}
+        />
+      </SettingsContentLayout>
+      {isAutoTopUpDialogOpen ? (
+        <UsageAutoTopUpDialog
+          creditDetails={rateLimitsResponse.rateLimits.credits ?? null}
+          open={isAutoTopUpDialogOpen}
+          onClose={() => setIsAutoTopUpDialogOpen(false)}
+          onSaved={(response) => {
+            setAutoTopUpSettings(response);
+            if (response.immediateTopUpStatus === "succeeded") {
+              void readAccountRateLimits()
+                .then((nextResponse) => {
+                  setRateLimitsResponse(nextResponse);
+                  setRateLimitsLoadError(null);
+                })
+                .catch(() => {
+                  // Preserve the last successful rate-limit snapshot if the background refresh fails.
+                });
+            }
+          }}
+          serverState={autoTopUpSettings}
+        />
+      ) : null}
+    </>
   );
+}
+
+async function loadUsageRateLimits({
+  cancelled,
+  setIsLoading,
+  setLoadError,
+  setRateLimitsResponse,
+}: {
+  cancelled?: { current: boolean };
+  setIsLoading: (value: boolean) => void;
+  setLoadError: (value: string | null) => void;
+  setRateLimitsResponse: (value: UsageRateLimitsResponse | null) => void;
+}) {
+  setIsLoading(true);
+  setLoadError(null);
+
+  try {
+    const response = await readAccountRateLimits();
+    if (!cancelled?.current) {
+      setRateLimitsResponse(response);
+    }
+  } catch (error) {
+    if (!cancelled?.current) {
+      setRateLimitsResponse(null);
+      setLoadError(error instanceof Error ? error.message : String(error));
+    }
+  } finally {
+    if (!cancelled?.current) {
+      setIsLoading(false);
+    }
+  }
+}
+
+async function loadUsageAutoTopUpSettings({
+  cancelled,
+  setAutoTopUpSettings,
+  setIsLoading,
+  setLoadError,
+}: {
+  cancelled?: { current: boolean };
+  setAutoTopUpSettings: (value: UsageAutoTopUpSettings | null) => void;
+  setIsLoading: (value: boolean) => void;
+  setLoadError: (value: string | null) => void;
+}) {
+  setIsLoading(true);
+  setLoadError(null);
+
+  try {
+    const response = await readUsageAutoTopUpSettings();
+    if (!cancelled?.current) {
+      setAutoTopUpSettings(response);
+    }
+  } catch (error) {
+    if (!cancelled?.current) {
+      setAutoTopUpSettings(null);
+      setLoadError(error instanceof Error ? error.message : String(error));
+    }
+  } finally {
+    if (!cancelled?.current) {
+      setIsLoading(false);
+    }
+  }
 }
 
 function UsageLimitSection({
@@ -227,11 +324,15 @@ function UsageLimitSection({
 }
 
 function UsageCreditSection({
+  autoTopUpSettings,
   creditDetails,
   locale,
+  onOpenAutoTopUpDialog,
 }: {
+  autoTopUpSettings: UsageAutoTopUpSettings;
   creditDetails: UsageCreditsSnapshot | null;
   locale: string;
+  onOpenAutoTopUpDialog: () => void;
 }) {
   const { t } = useI18n();
 
@@ -250,6 +351,24 @@ function UsageCreditSection({
                 className="rounded-lg border border-token-border bg-token-main-surface-primary px-3 py-1.5 text-sm text-token-text-primary shadow-sm transition hover:bg-token-list-hover-background"
               >
                 {t("settings.usage.credit.purchase")}
+              </button>
+            }
+          />
+          <SettingsRow
+            label={
+              <div className="flex items-center gap-1.5">
+                <span>{t("settings.usage.autoTopUp.title")}</span>
+                {autoTopUpSettings.isEnabled ? <AutoTopUpActiveBadge /> : null}
+              </div>
+            }
+            description={t("settings.usage.autoTopUp.description")}
+            control={
+              <button
+                type="button"
+                onClick={onOpenAutoTopUpDialog}
+                className="rounded-lg border border-token-border bg-token-main-surface-primary px-3 py-1.5 text-sm text-token-text-primary shadow-sm transition hover:bg-token-list-hover-background"
+              >
+                {t("settings.usage.autoTopUp.settings")}
               </button>
             }
           />
@@ -274,6 +393,17 @@ function UsageStateSection({
         </SettingsSurface>
       </SettingsGroupContent>
     </SettingsGroup>
+  );
+}
+
+function AutoTopUpActiveBadge() {
+  const { t } = useI18n();
+
+  return (
+    <span className="inline-flex items-center gap-1 text-sm text-token-charts-green">
+      <CheckIcon className="h-3.5 w-3.5 shrink-0" />
+      {t("settings.usage.autoTopUp.status.active")}
+    </span>
   );
 }
 

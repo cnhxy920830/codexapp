@@ -1008,6 +1008,37 @@ export type MessageKey =
   | "settings.usage.credit.remaining.unavailable"
   | "settings.usage.credit.remaining.unlimited"
   | "settings.usage.credit.remaining.value"
+  | "settings.usage.autoTopUp.title"
+  | "settings.usage.autoTopUp.description"
+  | "settings.usage.autoTopUp.settings"
+  | "settings.usage.autoTopUp.status.active"
+  | "settings.usage.autoTopUp.managePayment.error"
+  | "settings.usage.autoTopUp.managePayment.action"
+  | "settings.usage.autoTopUp.purchaseCredit.action"
+  | "settings.usage.autoTopUp.dialog.title"
+  | "settings.usage.autoTopUp.dialog.description"
+  | "settings.usage.autoTopUp.threshold.label"
+  | "settings.usage.autoTopUp.threshold.helper"
+  | "settings.usage.autoTopUp.threshold.ariaLabel"
+  | "settings.usage.autoTopUp.threshold.error.missing"
+  | "settings.usage.autoTopUp.threshold.error.wholeNumber"
+  | "settings.usage.autoTopUp.threshold.error.minimum"
+  | "settings.usage.autoTopUp.target.label"
+  | "settings.usage.autoTopUp.target.helper"
+  | "settings.usage.autoTopUp.target.ariaLabel"
+  | "settings.usage.autoTopUp.target.equivalent"
+  | "settings.usage.autoTopUp.target.equivalent.loading"
+  | "settings.usage.autoTopUp.target.error.missing"
+  | "settings.usage.autoTopUp.target.error.wholeNumber"
+  | "settings.usage.autoTopUp.target.error.minimumDifference"
+  | "settings.usage.autoTopUp.disable"
+  | "settings.usage.autoTopUp.cancel"
+  | "settings.usage.autoTopUp.save"
+  | "settings.usage.autoTopUp.enable"
+  | "settings.usage.autoTopUp.immediateTopUpNotice.enable"
+  | "settings.usage.autoTopUp.immediateTopUpNotice.update"
+  | "settings.usage.autoTopUp.immediateTopUpFailure.generic"
+  | "settings.usage.autoTopUp.immediateTopUpFailure.amount"
   | "settings.usage.limits.title"
   | "settings.usage.limits.spark.title"
   | "settings.usage.limits.fiveHour.label"
@@ -1256,8 +1287,17 @@ export type MessageKey =
   | "settings.personalization.memory.subtitle"
   | "settings.personalization.pets.title"
   | "settings.personalization.pets.current"
+  | "settings.personalization.pets.openPet"
+  | "settings.personalization.pets.tuckAwayPet"
   | "settings.personalization.avatars.select"
   | "settings.personalization.avatars.selected"
+  | "settings.pets.custom.title"
+  | "settings.pets.custom.openFolder"
+  | "settings.pets.custom.openFolderError"
+  | "settings.pets.refresh"
+  | "settings.pets.loadingCustom"
+  | "settings.pets.loadCustomError"
+  | "settings.pets.custom.create.title"
   | "settings.memory.enableMemoriesLabel"
   | "settings.memory.enableMemoriesDescription"
   | "settings.memory.enableMemoriesAriaLabel"
@@ -2324,6 +2364,37 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.usage.credit.remaining.unavailable": "Credit remaining unavailable",
     "settings.usage.credit.remaining.unlimited": "Unlimited credit",
     "settings.usage.credit.remaining.value": "{credit} credit remaining",
+    "settings.usage.autoTopUp.title": "Auto-reload credit",
+    "settings.usage.autoTopUp.description": "Automatically add credit when you reach your minimum balance.",
+    "settings.usage.autoTopUp.settings": "Settings",
+    "settings.usage.autoTopUp.status.active": "Active",
+    "settings.usage.autoTopUp.managePayment.error": "Unable to open payment settings right now. Please try again.",
+    "settings.usage.autoTopUp.managePayment.action": "Update your payment method",
+    "settings.usage.autoTopUp.purchaseCredit.action": "Purchase credit directly",
+    "settings.usage.autoTopUp.dialog.title": "Auto-reload credit",
+    "settings.usage.autoTopUp.dialog.description": "OpenAI will charge your payment method automatically when you reach your minimum balance.",
+    "settings.usage.autoTopUp.threshold.label": "Minimum balance",
+    "settings.usage.autoTopUp.threshold.helper": "Auto reload triggers when your credit balance goes below this amount.",
+    "settings.usage.autoTopUp.threshold.ariaLabel": "Auto-reload minimum balance",
+    "settings.usage.autoTopUp.threshold.error.missing": "Enter a minimum balance (at least 125 credits).",
+    "settings.usage.autoTopUp.threshold.error.wholeNumber": "Minimum balance must be a whole number.",
+    "settings.usage.autoTopUp.threshold.error.minimum": "Set the minimum balance to at least 125 credits.",
+    "settings.usage.autoTopUp.target.label": "Target balance",
+    "settings.usage.autoTopUp.target.helper": "Auto reload brings your credit balance back up to this amount.",
+    "settings.usage.autoTopUp.target.ariaLabel": "Auto-reload target balance",
+    "settings.usage.autoTopUp.target.equivalent": "Minimum {creditCount} credit will be purchased, equivalent to {amount}",
+    "settings.usage.autoTopUp.target.equivalent.loading": "Loading price",
+    "settings.usage.autoTopUp.target.error.missing": "Enter a target balance.",
+    "settings.usage.autoTopUp.target.error.wholeNumber": "Target balance must be a whole number.",
+    "settings.usage.autoTopUp.target.error.minimumDifference": "Set the target balance to at least 125 credits above the minimum balance.",
+    "settings.usage.autoTopUp.disable": "Turn off",
+    "settings.usage.autoTopUp.cancel": "Cancel",
+    "settings.usage.autoTopUp.save": "Save",
+    "settings.usage.autoTopUp.enable": "Turn on",
+    "settings.usage.autoTopUp.immediateTopUpNotice.enable": "Enabling auto reload will trigger a one-time purchase of {creditCount} credit to reach your target balance. Estimated cost: {amount}.",
+    "settings.usage.autoTopUp.immediateTopUpNotice.update": "Updating your settings will trigger a one-time purchase of {creditCount} credit with an estimated cost of {amount}.",
+    "settings.usage.autoTopUp.immediateTopUpFailure.generic": "The initial top-up failed.",
+    "settings.usage.autoTopUp.immediateTopUpFailure.amount": "The initial top-up for an estimated {amount} failed.",
     "settings.usage.limits.title": "General usage limits",
     "settings.usage.limits.spark.title": "GPT-5.3-Codex-Spark usage limits",
     "settings.usage.limits.fiveHour.label": "5 hour usage limit",
@@ -2592,8 +2663,17 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.personalization.memory.subtitle": "Configure how Codex collects, retains, and consolidates memories. <a>Learn more</a>",
     "settings.personalization.pets.title": "Pets",
     "settings.personalization.pets.current": "{petName} selected",
+    "settings.personalization.pets.openPet": "Wake Pet",
+    "settings.personalization.pets.tuckAwayPet": "Tuck Away Pet",
     "settings.personalization.avatars.select": "Select",
     "settings.personalization.avatars.selected": "Selected",
+    "settings.pets.custom.title": "Custom pets",
+    "settings.pets.custom.openFolder": "Open folder",
+    "settings.pets.custom.openFolderError": "Unable to open pet folder",
+    "settings.pets.refresh": "Refresh",
+    "settings.pets.loadingCustom": "Loading custom pets",
+    "settings.pets.loadCustomError": "Unable to load custom pets",
+    "settings.pets.custom.create.title": "Create your own pet",
     "settings.memory.enableMemoriesLabel": "Enable memories",
     "settings.memory.enableMemoriesDescription": "Generate new memories from chats and bring them into new chats",
     "settings.memory.enableMemoriesAriaLabel": "Enable memories",
@@ -3597,6 +3677,37 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.usage.credit.remaining.unavailable": "剩余额度不可用",
     "settings.usage.credit.remaining.unlimited": "无限额度",
     "settings.usage.credit.remaining.value": "剩余 {credit} 额度",
+    "settings.usage.autoTopUp.title": "自动充值额度",
+    "settings.usage.autoTopUp.description": "当额度余额达到最低值时自动充值。",
+    "settings.usage.autoTopUp.settings": "设置",
+    "settings.usage.autoTopUp.status.active": "已启用",
+    "settings.usage.autoTopUp.managePayment.error": "暂时无法打开付款设置，请重试。",
+    "settings.usage.autoTopUp.managePayment.action": "更新付款方式",
+    "settings.usage.autoTopUp.purchaseCredit.action": "直接购买额度",
+    "settings.usage.autoTopUp.dialog.title": "自动充值额度",
+    "settings.usage.autoTopUp.dialog.description": "当你达到最低余额时，OpenAI 会自动向你的付款方式扣费。",
+    "settings.usage.autoTopUp.threshold.label": "最低余额",
+    "settings.usage.autoTopUp.threshold.helper": "当你的额度余额低于此数值时会触发自动充值。",
+    "settings.usage.autoTopUp.threshold.ariaLabel": "自动充值最低余额",
+    "settings.usage.autoTopUp.threshold.error.missing": "请输入最低余额（至少 125 额度）。",
+    "settings.usage.autoTopUp.threshold.error.wholeNumber": "最低余额必须是整数。",
+    "settings.usage.autoTopUp.threshold.error.minimum": "请将最低余额设置为至少 125 额度。",
+    "settings.usage.autoTopUp.target.label": "目标余额",
+    "settings.usage.autoTopUp.target.helper": "自动充值会将你的额度余额补回到这个数值。",
+    "settings.usage.autoTopUp.target.ariaLabel": "自动充值目标余额",
+    "settings.usage.autoTopUp.target.equivalent": "至少会购买 {creditCount} 额度，约合 {amount}",
+    "settings.usage.autoTopUp.target.equivalent.loading": "正在加载价格",
+    "settings.usage.autoTopUp.target.error.missing": "请输入目标余额。",
+    "settings.usage.autoTopUp.target.error.wholeNumber": "目标余额必须是整数。",
+    "settings.usage.autoTopUp.target.error.minimumDifference": "请将目标余额设置为至少比最低余额高 125 额度。",
+    "settings.usage.autoTopUp.disable": "关闭",
+    "settings.usage.autoTopUp.cancel": "取消",
+    "settings.usage.autoTopUp.save": "保存",
+    "settings.usage.autoTopUp.enable": "开启",
+    "settings.usage.autoTopUp.immediateTopUpNotice.enable": "开启自动充值后，会立即一次性购买 {creditCount} 额度以达到你的目标余额。预计费用：{amount}。",
+    "settings.usage.autoTopUp.immediateTopUpNotice.update": "更新设置后，会立即一次性购买 {creditCount} 额度，预计费用为 {amount}。",
+    "settings.usage.autoTopUp.immediateTopUpFailure.generic": "首次充值失败。",
+    "settings.usage.autoTopUp.immediateTopUpFailure.amount": "预计金额为 {amount} 的首次充值失败。",
     "settings.usage.limits.title": "常规使用限制",
     "settings.usage.limits.spark.title": "GPT-5.3-Codex-Spark 使用限制",
     "settings.usage.limits.fiveHour.label": "5 小时使用限制",
@@ -3855,8 +3966,17 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.personalization.memory.subtitle": "设置 Codex 如何收集、保留和整合记忆。<a>了解更多</a>",
     "settings.personalization.pets.title": "宠物",
     "settings.personalization.pets.current": "已选择 {petName}",
+    "settings.personalization.pets.openPet": "唤醒宠物",
+    "settings.personalization.pets.tuckAwayPet": "收起宠物",
     "settings.personalization.avatars.select": "选择",
     "settings.personalization.avatars.selected": "已选",
+    "settings.pets.custom.title": "自定义宠物",
+    "settings.pets.custom.openFolder": "打开文件夹",
+    "settings.pets.custom.openFolderError": "无法打开宠物文件夹",
+    "settings.pets.refresh": "刷新",
+    "settings.pets.loadingCustom": "正在加载自定义宠物",
+    "settings.pets.loadCustomError": "无法加载自定义宠物",
+    "settings.pets.custom.create.title": "创建你自己的宠物",
     "settings.memory.enableMemoriesLabel": "启用记忆",
     "settings.memory.enableMemoriesDescription": "从聊天中生成新记忆，并在新聊天中调用",
     "settings.memory.enableMemoriesAriaLabel": "启用记忆",

@@ -8,12 +8,24 @@ name = "codex_app_replica"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
+base64 = "0.22.1"
+codex-client = { path = "../../codex-rs/codex-client" }
+codex-login = { path = "../../codex-rs/login" }
+reqwest = { version = "0.12", default-features = false, features = ["cookies", "json", "rustls-tls"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tauri = { version = "2.11.0", features = ["tray-icon"] }
 tauri-plugin-shell = "2.3.5"
+tauri-winrt-notification = "0.7"
 tokio = { version = "1.48.0", features = ["io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
 toml = "0.8.2"
 
 [build-dependencies]
 tauri-build = { version = "2.6.0", features = [] }
+
+[patch.crates-io]
+tokio-tungstenite = { git = "https://github.com/openai-oss-forks/tokio-tungstenite", rev = "132f5b39c862e3a970f731d709608b3e6276d5f6" }
+tungstenite = { git = "https://github.com/openai-oss-forks/tungstenite-rs", rev = "9200079d3b54a1ff51072e24d81fd354f085156f" }
+
+[patch."ssh://git@github.com/openai-oss-forks/tungstenite-rs.git"]
+tungstenite = { git = "https://github.com/openai-oss-forks/tungstenite-rs", rev = "9200079d3b54a1ff51072e24d81fd354f085156f" }

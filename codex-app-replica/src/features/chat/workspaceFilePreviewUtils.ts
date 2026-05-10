@@ -41,7 +41,7 @@ export type WorkspaceFilePreviewState =
       kind: "error";
     };
 
-export const WORKSPACE_FILE_PREVIEW_LIMIT_BYTES = 10 * 1024 * 1024;
+export const WORKSPACE_FILE_PREVIEW_LIMIT_BYTES = 40 * 1024 * 1024;
 
 export function normalizePreviewText(contents: string) {
   return contents.replace(/\r\n/g, "\n");

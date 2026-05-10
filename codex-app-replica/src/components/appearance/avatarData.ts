@@ -12,8 +12,15 @@ export type AvatarOption = {
   assetRef: BuiltInAvatarId;
   description: string;
   displayName: string;
-  id: BuiltInAvatarId;
+  id: string;
   spritesheetUrl: string;
+};
+
+export type CustomAvatarRecord = {
+  id: string;
+  description: string;
+  displayName: string;
+  spritesheetDataUrl: string;
 };
 
 export const DEFAULT_AVATAR_ID: BuiltInAvatarId = "codex";
@@ -76,3 +83,24 @@ export const BUILTIN_AVATARS: AvatarOption[] = [
     spritesheetUrl: new URL("../../assets/avatars/null-signal-spritesheet-v4-CCoTR-8t.webp", import.meta.url).href,
   },
 ];
+
+export function buildAvatarOptions(customAvatars: CustomAvatarRecord[] | null | undefined) {
+  if (customAvatars == null || customAvatars.length === 0) {
+    return BUILTIN_AVATARS;
+  }
+
+  return [
+    ...BUILTIN_AVATARS,
+    ...customAvatars.map((avatar) => ({
+      assetRef: "codex" as const,
+      description: avatar.description,
+      displayName: avatar.displayName,
+      id: avatar.id,
+      spritesheetUrl: avatar.spritesheetDataUrl,
+    })),
+  ];
+}
+
+export function resolveAvatarOption(id: string, avatarOptions: AvatarOption[] = BUILTIN_AVATARS) {
+  return avatarOptions.find((avatar) => avatar.id === id) ?? avatarOptions.find((avatar) => avatar.id === DEFAULT_AVATAR_ID) ?? avatarOptions[0] ?? BUILTIN_AVATARS[0];
+}

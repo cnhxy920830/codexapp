@@ -8,6 +8,7 @@ use tokio::process::{ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc, oneshot, Mutex as AsyncMutex, Notify};
 use tokio::time::{sleep, Duration};
 
+use crate::query_cache::emit_query_cache_invalidate;
 use crate::thread_history::append_agent_message_delta;
 use crate::thread_history::append_command_execution_output_delta;
 use crate::thread_history::append_plan_delta;
@@ -1114,6 +1115,9 @@ pub struct AuthBridgeState {
     auto_review_interruption_warnings:
         Mutex<HashMap<String, Vec<AutoReviewInterruptionWarningCacheEntry>>>,
     latest_turn_ids: Mutex<HashMap<String, String>>,
+    observed_turn_agent_messages: Mutex<HashMap<String, String>>,
+    observed_turn_completions: Mutex<HashMap<String, ObservedTurnCompletion>>,
+    observed_turn_completion_notify: Notify,
     turn_errors: Mutex<HashMap<String, Vec<TurnErrorCacheEntry>>>,
     forked_from_conversations: Mutex<HashMap<String, ForkedFromConversationCacheEntry>>,
     external_agent_import_completed_generation: Mutex<u64>,
@@ -1132,6 +1136,12 @@ impl AuthBridgeState {
 pub(crate) struct ExternalAgentImportCompletedWaiter {
     state: Arc<AuthBridgeState>,
     seen_generation: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ObservedTurnCompletion {
+    pub status: String,
+    pub error: Option<String>,
 }
 
 impl ExternalAgentImportCompletedWaiter {
@@ -1379,6 +1389,9 @@ impl Default for AuthBridgeState {
             automatic_approval_reviews: Mutex::new(HashMap::new()),
             auto_review_interruption_warnings: Mutex::new(HashMap::new()),
             latest_turn_ids: Mutex::new(HashMap::new()),
+            observed_turn_agent_messages: Mutex::new(HashMap::new()),
+            observed_turn_completions: Mutex::new(HashMap::new()),
+            observed_turn_completion_notify: Notify::new(),
             turn_errors: Mutex::new(HashMap::new()),
             forked_from_conversations: Mutex::new(HashMap::new()),
             external_agent_import_completed_generation: Mutex::new(0),
@@ -1967,25 +1980,34 @@ async fn write_config_value_inner(
 
 #[tauri::command]
 pub async fn batch_write_config_values(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: ConfigBatchWriteParams,
 ) -> Result<(), String> {
-    batch_write_config_values_inner(state.inner(), params).await
+    batch_write_config_values_inner(&app, state.inner(), params).await
 }
 
 #[tauri::command(rename = "batch-write-config-value")]
 pub async fn batch_write_config_value_command(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: ConfigBatchWriteForHostParams,
 ) -> Result<(), String> {
     ensure_supported_host_id(params.host_id.as_deref(), "batch-write-config-value")?;
-    batch_write_config_values_inner(state.inner(), params.write).await
+    batch_write_config_values_inner(&app, state.inner(), params.write).await
 }
 
 async fn batch_write_config_values_inner(
+    app: &AppHandle,
     state: &Arc<AuthBridgeState>,
     params: ConfigBatchWriteParams,
 ) -> Result<(), String> {
+    let query_cache_invalidations = params
+        .edits
+        .iter()
+        .filter_map(|edit| query_cache_invalidation_root(&edit.key_path))
+        .map(str::to_string)
+        .collect::<std::collections::BTreeSet<_>>();
     let edits = params
         .edits
         .into_iter()
@@ -2008,7 +2030,12 @@ async fn batch_write_config_values_inner(
         }),
     )
     .await
-    .map(|_| ())
+    .map(|_| ())?;
+
+    for root in query_cache_invalidations {
+        emit_query_cache_invalidate(app, vec![serde_json::Value::String(root)]);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -2088,6 +2115,17 @@ fn ensure_supported_host_id(host_id: Option<&str>, command_name: &str) -> Result
         Some(host_id) => Err(format!(
             "{command_name} does not support host id: {host_id}"
         )),
+    }
+}
+
+fn query_cache_invalidation_root(key_path: &str) -> Option<&'static str> {
+    match key_path.split('.').next()? {
+        "apps" => Some("apps"),
+        "hooks" => Some("hooks"),
+        "plugins" => Some("plugins"),
+        "skills" => Some("skills"),
+        "mcp_servers" | "mcpServers" => Some("config"),
+        _ => Some("config"),
     }
 }
 
@@ -3430,6 +3468,21 @@ pub async fn start_thread_with_personality(
     Ok(response.thread.id)
 }
 
+pub(crate) async fn start_ephemeral_thread(state: &Arc<AuthBridgeState>) -> Result<String, String> {
+    let value = send_request(
+        state,
+        AppServerRequestKind::ThreadStart,
+        serde_json::json!({
+            "ephemeral": true,
+            "persistExtendedHistory": false,
+        }),
+    )
+    .await?;
+    let response = serde_json::from_value::<ThreadStartResponse>(value)
+        .map_err(|err| format!("failed to decode ephemeral thread start response: {err}"))?;
+    Ok(response.thread.id)
+}
+
 pub async fn start_turn_with_personality(
     state: &Arc<AuthBridgeState>,
     thread_id: String,
@@ -3475,6 +3528,73 @@ pub async fn start_turn_with_input_and_personality(
     let response = serde_json::from_value::<TurnStartResponse>(value)
         .map_err(|err| format!("failed to decode turn start response: {err}"))?;
     Ok(response.turn.id)
+}
+
+pub(crate) async fn unsubscribe_thread(
+    state: &Arc<AuthBridgeState>,
+    thread_id: &str,
+) -> Result<(), String> {
+    send_request(
+        state,
+        AppServerRequestKind::ThreadUnsubscribe,
+        serde_json::json!({
+            "threadId": thread_id,
+        }),
+    )
+    .await
+    .map(|_| ())
+}
+
+pub(crate) async fn wait_for_turn_completion(
+    state: &Arc<AuthBridgeState>,
+    thread_id: &str,
+    turn_id: &str,
+    timeout_duration: Duration,
+) -> Result<ObservedTurnCompletion, String> {
+    let cache_key = thread_turn_cache_key(thread_id, turn_id);
+    tokio::time::timeout(timeout_duration, async {
+        loop {
+            let notified = state.observed_turn_completion_notify.notified();
+            let observed_completion = state
+                .observed_turn_completions
+                .lock()
+                .map_err(|_| "failed to lock observed turn completion cache".to_string())?
+                .get(&cache_key)
+                .cloned();
+            if let Some(observed_completion) = observed_completion {
+                return Ok(observed_completion);
+            }
+            notified.await;
+        }
+    })
+    .await
+    .map_err(|_| format!("timed out waiting for turn completion: {turn_id}"))?
+}
+
+pub(crate) fn take_observed_turn_agent_message(
+    state: &Arc<AuthBridgeState>,
+    thread_id: &str,
+    turn_id: &str,
+) -> Result<Option<String>, String> {
+    state
+        .observed_turn_agent_messages
+        .lock()
+        .map_err(|_| "failed to lock observed agent message cache".to_string())
+        .map(|mut messages| messages.remove(&thread_turn_cache_key(thread_id, turn_id)))
+}
+
+pub(crate) fn clear_observed_turn_completion(
+    state: &Arc<AuthBridgeState>,
+    thread_id: &str,
+    turn_id: &str,
+) -> Result<(), String> {
+    state
+        .observed_turn_completions
+        .lock()
+        .map_err(|_| "failed to lock observed turn completion cache".to_string())
+        .map(|mut completions| {
+            completions.remove(&thread_turn_cache_key(thread_id, turn_id));
+        })
 }
 
 pub async fn start(app: AppHandle) -> Result<(), String> {
@@ -3758,7 +3878,12 @@ async fn run_client(
                             }
                             "item/completed" => {
                                 remember_latest_turn_from_notification(&state, &params);
-                                handle_item_completed(&app, params, &mut pending_thread_items);
+                                handle_item_completed(
+                                    &app,
+                                    &state,
+                                    params,
+                                    &mut pending_thread_items,
+                                );
                             }
                             "hook/started" => {
                                 remember_latest_turn_from_notification(&state, &params);
@@ -3778,7 +3903,12 @@ async fn run_client(
                             }
                             "item/agentMessage/delta" => {
                                 remember_latest_turn_from_notification(&state, &params);
-                                handle_agent_message_delta(&app, params, &mut pending_thread_items);
+                                handle_agent_message_delta(
+                                    &app,
+                                    &state,
+                                    params,
+                                    &mut pending_thread_items,
+                                );
                             }
                             "item/plan/delta" => {
                                 remember_latest_turn_from_notification(&state, &params);
@@ -3829,7 +3959,7 @@ async fn run_client(
                             }
                             "turn/completed" => {
                                 remember_latest_turn_from_notification(&state, &params);
-                                handle_turn_completed(&app, params);
+                                handle_turn_completed(&app, &state, params);
                             }
                             "item/autoApprovalReview/started"
                             | "item/autoApprovalReview/completed" => {
@@ -4045,6 +4175,7 @@ fn handle_external_agent_import_completed(state: &Arc<AuthBridgeState>) {
 
 fn handle_item_completed(
     app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
     params: serde_json::Value,
     pending_thread_items: &mut HashMap<String, ThreadConversationItem>,
 ) {
@@ -4069,7 +4200,8 @@ fn handle_item_completed(
     ) {
         pending_thread_items.remove(thread_item_id(&thread_item));
     }
-    if matches!(thread_item, ThreadConversationItem::AgentMessage { .. }) {
+    if let ThreadConversationItem::AgentMessage { text, .. } = &thread_item {
+        cache_observed_turn_agent_message(state, thread_id, turn_id, text);
         pending_thread_items.remove(thread_item_id(&thread_item));
     }
     let _ = app.emit(
@@ -4113,6 +4245,7 @@ fn handle_hook_notification(
 
 fn handle_agent_message_delta(
     app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
     params: serde_json::Value,
     pending_thread_items: &mut HashMap<String, ThreadConversationItem>,
 ) {
@@ -4140,6 +4273,9 @@ fn handle_agent_message_delta(
     let Some(updated_item) = append_agent_message_delta(item, delta) else {
         return;
     };
+    if let ThreadConversationItem::AgentMessage { text, .. } = &updated_item {
+        cache_observed_turn_agent_message(state, thread_id, turn_id, text);
+    }
     let _ = app.emit(
         THREAD_EVENT,
         ThreadEventPayload::ThreadItemUpdated {
@@ -4324,7 +4460,7 @@ fn handle_reasoning_text_delta(
     );
 }
 
-fn handle_turn_completed(app: &AppHandle, params: serde_json::Value) {
+fn handle_turn_completed(app: &AppHandle, state: &Arc<AuthBridgeState>, params: serde_json::Value) {
     let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
         return;
     };
@@ -4342,6 +4478,16 @@ fn handle_turn_completed(app: &AppHandle, params: serde_json::Value) {
         .and_then(|value| value.get("message"))
         .and_then(serde_json::Value::as_str)
         .map(str::to_string);
+    if let Ok(mut observed_turn_completions) = state.observed_turn_completions.lock() {
+        observed_turn_completions.insert(
+            thread_turn_cache_key(thread_id, turn_id),
+            ObservedTurnCompletion {
+                status: status.to_string(),
+                error: error.clone(),
+            },
+        );
+    }
+    state.observed_turn_completion_notify.notify_waiters();
     let _ = app.emit(
         THREAD_EVENT,
         ThreadEventPayload::TurnCompleted {
@@ -4928,6 +5074,24 @@ fn handle_server_request_resolved(app: &AppHandle, params: serde_json::Value) {
 
 fn thread_turn_cache_key(thread_id: &str, turn_id: &str) -> String {
     format!("{thread_id}:{turn_id}")
+}
+
+fn cache_observed_turn_agent_message(
+    state: &Arc<AuthBridgeState>,
+    thread_id: &str,
+    turn_id: &str,
+    text: &str,
+) {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    if let Ok(mut observed_turn_agent_messages) = state.observed_turn_agent_messages.lock() {
+        observed_turn_agent_messages.insert(
+            thread_turn_cache_key(thread_id, turn_id),
+            trimmed.to_string(),
+        );
+    }
 }
 
 fn handle_tool_request_user_input_request(

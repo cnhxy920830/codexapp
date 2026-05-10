@@ -6,6 +6,8 @@ use std::path::PathBuf;
 use std::process::Command;
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::query_cache::emit_query_cache_invalidate;
+
 const GLOBAL_SETTINGS_FILE_NAME: &str = "global-settings.json";
 const GLOBAL_STATE_UPDATED_EVENT: &str = "global-state-updated";
 
@@ -51,9 +53,19 @@ pub fn set_global_state(app: AppHandle, key: String, value: Value) -> Result<(),
     let mut settings = read_global_settings(&app)?;
     settings.insert(key.clone(), value);
     write_global_settings(&app, &settings)?;
+    let query_key = key.clone();
     let _ = app.emit(
         GLOBAL_STATE_UPDATED_EVENT,
-        GlobalStateUpdatedNotification { keys: vec![key] },
+        GlobalStateUpdatedNotification {
+            keys: vec![key.clone()],
+        },
+    );
+    emit_query_cache_invalidate(
+        &app,
+        vec![
+            Value::String("get-global-state".to_string()),
+            serde_json::json!({ "key": query_key }),
+        ],
     );
     Ok(())
 }
@@ -84,6 +96,8 @@ fn ensure_supported_key(key: &str) -> Result<(), String> {
         | "appearanceDarkCodeThemeId"
         | "useFontSmoothing"
         | "selected-avatar-id"
+        | "electron-avatar-overlay-open"
+        | "electron-avatar-overlay-bounds"
         | "composerEnterBehavior"
         | "followUpQueueMode"
         | "reviewDelivery"

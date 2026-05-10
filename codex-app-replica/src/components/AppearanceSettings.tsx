@@ -27,8 +27,10 @@ import { ThemePreviewCard } from "./appearance/ThemePreviewCard";
 const SYSTEM_APPEARANCE_MEDIA_QUERY = "(prefers-color-scheme: dark)";
 
 export function AppearanceSettings({
+  onOpenChatWithPrompt,
   onShowToast,
 }: {
+  onOpenChatWithPrompt?: (prompt: string) => void;
   onShowToast?: (toast: AppToast) => void;
 }) {
   const { t } = useI18n();
@@ -350,7 +352,7 @@ export function AppearanceSettings({
               </SettingsRow>
             </SettingsSurface>
 
-            <PetsSection />
+            <PetsSection onOpenChatWithPrompt={onOpenChatWithPrompt} onShowToast={onShowToast} />
           </div>
         </div>
       </div>

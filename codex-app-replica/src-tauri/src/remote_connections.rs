@@ -8,6 +8,9 @@ use std::process::Command;
 use tauri::{AppHandle, Emitter};
 
 use crate::global_settings::{read_global_settings, write_global_settings};
+use crate::pending_worktrees::{
+    pending_worktrees_shared_object_key, pending_worktrees_snapshot_value,
+};
 
 const CODEX_MANAGED_REMOTE_CONNECTIONS_KEY: &str = "codex-managed-remote-connections";
 const SHARED_OBJECT_UPDATED_EVENT: &str = "shared-object-updated";
@@ -208,13 +211,37 @@ pub async fn save_codex_managed_remote_ssh_connections(
 
 #[tauri::command(rename = "app-server-connection-state")]
 pub async fn app_server_connection_state(
+    registry: tauri::State<'_, crate::remote_app_server_registry::RemoteAppServerRegistry>,
     params: AppServerConnectionStateParams,
 ) -> Result<AppServerConnectionStateResponse, String> {
-    let _ = params;
-    Ok(AppServerConnectionStateResponse {
-        state: AppServerConnectionState::Disconnected,
-        error: None,
-    })
+    Ok(app_server_connection_state_for_registry(
+        &*registry, &params,
+    ))
+}
+
+fn app_server_connection_state_for_registry(
+    registry: &crate::remote_app_server_registry::RemoteAppServerRegistry,
+    params: &AppServerConnectionStateParams,
+) -> AppServerConnectionStateResponse {
+    let snapshot = registry.snapshot(&params.host_id);
+    let state = match snapshot.state {
+        crate::remote_app_server_registry::RemoteAppServerConnectionState::Disconnected => {
+            AppServerConnectionState::Disconnected
+        }
+        crate::remote_app_server_registry::RemoteAppServerConnectionState::Connecting => {
+            AppServerConnectionState::Connecting
+        }
+        crate::remote_app_server_registry::RemoteAppServerConnectionState::Connected => {
+            AppServerConnectionState::Connected
+        }
+        crate::remote_app_server_registry::RemoteAppServerConnectionState::Error => {
+            AppServerConnectionState::Error
+        }
+    };
+    let error = snapshot
+        .error
+        .map(|message| AppServerConnectionError::ConnectionFailed { message });
+    AppServerConnectionStateResponse { state, error }
 }
 
 #[tauri::command(rename = "get-shared-object-snapshot")]
@@ -222,6 +249,12 @@ pub async fn get_shared_object_snapshot(
     app: AppHandle,
     key: String,
 ) -> Result<SharedObjectSnapshotResponse, String> {
+    if key == pending_worktrees_shared_object_key() {
+        return Ok(SharedObjectSnapshotResponse {
+            value: pending_worktrees_snapshot_value(&app).await?,
+        });
+    }
+
     let value = tauri::async_runtime::spawn_blocking(move || {
         shared_object_snapshot_value_blocking(&app, &key)
     })
@@ -1033,7 +1066,7 @@ fn trim_to_owned_option(value: Option<String>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::app_server_connection_state;
+    use super::app_server_connection_state_for_registry;
     use super::build_codex_managed_host_id;
     use super::build_discovered_host_id;
     use super::collect_ssh_aliases;
@@ -1268,11 +1301,13 @@ mod tests {
 
     #[tokio::test]
     async fn app_server_connection_state_defaults_to_disconnected_without_registry() {
-        let response = app_server_connection_state(AppServerConnectionStateParams {
-            host_id: "remote-ssh-discovered:demo-alias".to_string(),
-        })
-        .await
-        .expect("command should succeed");
+        let registry = crate::remote_app_server_registry::RemoteAppServerRegistry::default();
+        let response = app_server_connection_state_for_registry(
+            &registry,
+            &AppServerConnectionStateParams {
+                host_id: "remote-ssh-discovered:demo-alias".to_string(),
+            },
+        );
 
         assert_eq!(
             response,

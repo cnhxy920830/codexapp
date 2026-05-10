@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-shell";
+import { openFile } from "./hostFiles";
 
 export type WorkspaceFileSearchResult = {
   name: string;
@@ -58,5 +58,5 @@ export async function readWorkspaceFileMetadata(params: { workspaceRoot: string;
 }
 
 export async function openWorkspaceFileInEditor(path: string) {
-  return open(path);
+  return openFile({ path });
 }

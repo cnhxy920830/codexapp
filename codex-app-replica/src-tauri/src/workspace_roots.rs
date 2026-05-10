@@ -26,6 +26,8 @@ const WORKSPACE_ROOT_OPTION_ADDED_EVENT: &str = "workspace-root-option-added";
 const WORKSPACE_ROOT_OPTIONS_UPDATED_EVENT: &str = "workspace-root-options-updated";
 const ACTIVE_WORKSPACE_ROOTS_UPDATED_EVENT: &str = "active-workspace-roots-updated";
 const ONBOARDING_SKIP_WORKSPACE_RESULT_EVENT: &str = "electron-onboarding-skip-workspace-result";
+const ONBOARDING_PICK_WORKSPACE_OR_CREATE_DEFAULT_RESULT_EVENT: &str =
+    "electron-onboarding-pick-workspace-or-create-default-result";
 const NAVIGATE_TO_ROUTE_EVENT: &str = "navigate-to-route";
 const UNIQUE_WORKSPACE_SUFFIX_START: u32 = 2;
 
@@ -63,6 +65,17 @@ struct WorkspaceRootOptionAddedNotification {
 #[serde(rename_all = "camelCase")]
 struct OnboardingSkipWorkspaceResultNotification {
     success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    root: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct OnboardingPickWorkspaceOrCreateDefaultResultNotification {
+    success: bool,
+    source: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     root: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -175,6 +188,35 @@ pub fn add_new_workspace_root_option(
     emit_navigate_to_route(&window)
 }
 
+#[tauri::command(rename = "electron-create-new-workspace-root-option")]
+pub fn create_new_workspace_root_option(
+    window: Window,
+    app: AppHandle,
+    project_name: Option<String>,
+) -> Result<(), String> {
+    let mut settings = read_global_settings(&app)?;
+    let requested_name = project_name.as_deref().unwrap_or(DEFAULT_PROJECT_NAME);
+    let root = create_default_workspace_root(&app, &mut settings, requested_name)?;
+    write_global_settings(&app, &settings)?;
+    add_new_workspace_root_option(window, app, Some(root))
+}
+
+#[tauri::command(rename = "electron-rename-workspace-root-option")]
+pub fn rename_workspace_root_option(
+    window: Window,
+    app: AppHandle,
+    root: String,
+    label: String,
+) -> Result<(), String> {
+    let mut settings = read_global_settings(&app)?;
+    if !apply_rename_workspace_root_option(&mut settings, &root, &label)? {
+        return Ok(());
+    }
+
+    write_global_settings(&app, &settings)?;
+    emit_no_payload_event(&window, WORKSPACE_ROOT_OPTIONS_UPDATED_EVENT)
+}
+
 #[tauri::command(rename = "electron-update-workspace-root-options")]
 pub fn update_workspace_root_options(
     window: Window,
@@ -241,6 +283,59 @@ pub fn onboarding_skip_workspace(
         Ok(()) => Ok(()),
         Err(err) => {
             emit_onboarding_skip_result(&window, false, created_root, Some(err))?;
+            Ok(())
+        }
+    }
+}
+
+#[tauri::command(rename = "electron-onboarding-pick-workspace-or-create-default")]
+pub fn onboarding_pick_workspace_or_create_default(
+    window: Window,
+    app: AppHandle,
+    default_project_name: Option<String>,
+) -> Result<(), String> {
+    let mut source = "picked";
+    let mut selected_root = None;
+    let result = (|| -> Result<(), String> {
+        let mut settings = read_global_settings(&app)?;
+        let root = match pick_folder_path()? {
+            Some(root) if Path::new(&root).is_dir() => root,
+            _ => {
+                source = "created_default";
+                create_default_workspace_root(
+                    &app,
+                    &mut settings,
+                    default_project_name
+                        .as_deref()
+                        .unwrap_or(DEFAULT_PROJECT_NAME),
+                )?
+            }
+        };
+        selected_root = Some(root.clone());
+        apply_onboarding_workspace(&mut settings, &root)?;
+        write_global_settings(&app, &settings)?;
+        emit_no_payload_event(&window, WORKSPACE_ROOT_OPTIONS_UPDATED_EVENT)?;
+        emit_no_payload_event(&window, ACTIVE_WORKSPACE_ROOTS_UPDATED_EVENT)?;
+        emit_onboarding_pick_workspace_or_create_default_result(
+            &window,
+            true,
+            source,
+            Some(root),
+            None,
+        )?;
+        emit_navigate_to_route(&window)
+    })();
+
+    match result {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            emit_onboarding_pick_workspace_or_create_default_result(
+                &window,
+                false,
+                source,
+                selected_root,
+                Some(err),
+            )?;
             Ok(())
         }
     }
@@ -388,6 +483,30 @@ fn apply_add_workspace_root_option(
     Ok(AddWorkspaceRootOptionOutcome { options_changed })
 }
 
+fn apply_rename_workspace_root_option(
+    settings: &mut Map<String, Value>,
+    requested_root: &str,
+    requested_label: &str,
+) -> Result<bool, String> {
+    let Some(root) = normalize_optional_root(requested_root) else {
+        return Ok(false);
+    };
+    if !read_workspace_root_options(settings).contains(&root) {
+        return Ok(false);
+    }
+
+    let mut labels = read_workspace_root_labels(settings);
+    let label = requested_label.trim();
+    if label.is_empty() {
+        labels.remove(&root);
+    } else {
+        labels.insert(root, label.to_string());
+    }
+    write_workspace_root_labels(settings, &labels, true);
+
+    Ok(true)
+}
+
 fn apply_onboarding_workspace(
     settings: &mut Map<String, Value>,
     requested_root: &str,
@@ -481,6 +600,30 @@ fn emit_onboarding_skip_result(
             },
         )
         .map_err(|err| format!("failed to emit {ONBOARDING_SKIP_WORKSPACE_RESULT_EVENT}: {err}"))
+}
+
+fn emit_onboarding_pick_workspace_or_create_default_result(
+    window: &Window,
+    success: bool,
+    source: &str,
+    root: Option<String>,
+    error: Option<String>,
+) -> Result<(), String> {
+    window
+        .emit(
+            ONBOARDING_PICK_WORKSPACE_OR_CREATE_DEFAULT_RESULT_EVENT,
+            OnboardingPickWorkspaceOrCreateDefaultResultNotification {
+                success,
+                source: source.to_string(),
+                root,
+                error,
+            },
+        )
+        .map_err(|err| {
+            format!(
+                "failed to emit {ONBOARDING_PICK_WORKSPACE_OR_CREATE_DEFAULT_RESULT_EVENT}: {err}"
+            )
+        })
 }
 
 fn emit_navigate_to_route(window: &Window) -> Result<(), String> {
@@ -690,6 +833,7 @@ fn ensure_supported_host_id(host_id: Option<&str>, command_name: &str) -> Result
 mod tests {
     use super::apply_add_workspace_root_option;
     use super::apply_onboarding_workspace;
+    use super::apply_rename_workspace_root_option;
     use super::apply_set_active_workspace_root;
     use super::apply_workspace_root_options_update;
     use super::normalize_optional_root;
@@ -697,6 +841,7 @@ mod tests {
     use super::workspace_root_basename;
     use super::ActiveWorkspaceRootsResponse;
     use super::AddWorkspaceRootOptionOutcome;
+    use super::OnboardingPickWorkspaceOrCreateDefaultResultNotification;
     use super::OnboardingSkipWorkspaceResultNotification;
     use super::SetActiveWorkspaceRootOutcome;
     use super::UpdateWorkspaceRootOptionsOutcome;
@@ -785,6 +930,27 @@ mod tests {
         .expect("notification should serialize");
 
         assert_eq!(value, json!({ "success": false, "error": "boom" }));
+    }
+
+    #[test]
+    fn onboarding_pick_result_serializes_expected_shape() {
+        let value =
+            serde_json::to_value(OnboardingPickWorkspaceOrCreateDefaultResultNotification {
+                success: true,
+                source: "picked".to_string(),
+                root: Some("C:\\workspace".to_string()),
+                error: None,
+            })
+            .expect("notification should serialize");
+
+        assert_eq!(
+            value,
+            json!({
+                "success": true,
+                "source": "picked",
+                "root": "C:\\workspace"
+            })
+        );
     }
 
     #[test]
@@ -922,6 +1088,67 @@ mod tests {
             settings.get(ACTIVE_WORKSPACE_ROOTS_KEY),
             Some(&json!(["C:\\existing"]))
         );
+    }
+
+    #[test]
+    fn rename_workspace_root_option_updates_label_and_trims_input() {
+        let mut settings = Map::new();
+        settings.insert(
+            WORKSPACE_ROOT_OPTIONS_KEY.to_string(),
+            json!(["C:\\existing"]),
+        );
+        settings.insert(
+            WORKSPACE_ROOT_LABELS_KEY.to_string(),
+            json!({
+                "C:\\existing": "Old"
+            }),
+        );
+
+        let changed =
+            apply_rename_workspace_root_option(&mut settings, "  C:\\existing  ", "  New label  ")
+                .expect("rename workspace root option should succeed");
+
+        assert!(changed);
+        assert_eq!(
+            settings.get(WORKSPACE_ROOT_LABELS_KEY),
+            Some(&json!({ "C:\\existing": "New label" }))
+        );
+    }
+
+    #[test]
+    fn rename_workspace_root_option_skips_missing_root() {
+        let mut settings = Map::new();
+        settings.insert(
+            WORKSPACE_ROOT_OPTIONS_KEY.to_string(),
+            json!(["C:\\existing"]),
+        );
+
+        let changed = apply_rename_workspace_root_option(&mut settings, "C:\\missing", "Label")
+            .expect("rename workspace root option should succeed");
+
+        assert!(!changed);
+        assert!(!settings.contains_key(WORKSPACE_ROOT_LABELS_KEY));
+    }
+
+    #[test]
+    fn rename_workspace_root_option_removes_label_when_blank() {
+        let mut settings = Map::new();
+        settings.insert(
+            WORKSPACE_ROOT_OPTIONS_KEY.to_string(),
+            json!(["C:\\existing"]),
+        );
+        settings.insert(
+            WORKSPACE_ROOT_LABELS_KEY.to_string(),
+            json!({
+                "C:\\existing": "Old"
+            }),
+        );
+
+        let changed = apply_rename_workspace_root_option(&mut settings, "C:\\existing", "   ")
+            .expect("rename workspace root option should succeed");
+
+        assert!(changed);
+        assert_eq!(settings.get(WORKSPACE_ROOT_LABELS_KEY), Some(&json!({})));
     }
 
     #[test]

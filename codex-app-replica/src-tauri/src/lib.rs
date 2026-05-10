@@ -1,29 +1,46 @@
+mod app_shell_signals;
 mod auth_bridge;
 mod automations;
+mod avatar_overlay;
+mod browser_session_data;
 mod browser_use_settings;
+mod chronicle;
 mod codex_home;
 mod computer_use_settings;
+mod custom_avatars;
+mod debug_modal;
+mod desktop_notifications;
 mod external_agent_import;
 mod fast_mode_rollout_metrics;
 mod global_dictation;
+mod global_dictation_window;
 mod global_settings;
 mod host_files;
 mod hotkey_window;
 mod keyboard_shortcuts;
 mod local_environments;
 mod open_targets;
+mod pending_worktrees;
 mod power_save_blocker;
 mod projectless_threads;
 mod pull_requests;
+mod query_cache;
+mod remote_app_server_registry;
 mod remote_connections;
+mod remote_control;
 mod scratchpad;
+mod taskbar_badge;
 mod terminal_shell_options;
 mod thread_history;
+mod usage_billing;
+mod window_mode;
 mod window_navigation;
 mod workspace_agents;
 mod workspace_files;
 mod workspace_roots;
 mod worktrees;
+use app_shell_signals::electron_window_focus_request;
+use app_shell_signals::view_focused;
 use auth_bridge::add_marketplace;
 use auth_bridge::add_marketplace_command;
 use auth_bridge::archive_conversation_command;
@@ -121,6 +138,17 @@ use automations::save_automation;
 use automations::set_automation_status;
 use automations::spawn_heartbeat_automation_scheduler;
 use automations::HeartbeatAutomationSchedulerState;
+use avatar_overlay::avatar_overlay_drag_end;
+use avatar_overlay::avatar_overlay_drag_move;
+use avatar_overlay::avatar_overlay_drag_release;
+use avatar_overlay::avatar_overlay_drag_start;
+use avatar_overlay::avatar_overlay_element_size_changed;
+use avatar_overlay::avatar_overlay_keyboard_interaction_changed;
+use avatar_overlay::avatar_overlay_open;
+use avatar_overlay::avatar_overlay_open_state_request;
+use avatar_overlay::avatar_overlay_pointer_interaction_changed;
+use avatar_overlay::AvatarOverlayState;
+use browser_session_data::browser_browsing_data_clear;
 use browser_use_settings::add_browser_use_file_transfer_origin;
 use browser_use_settings::add_browser_use_origin;
 use browser_use_settings::browser_use_approval_mode_write;
@@ -134,6 +162,7 @@ use browser_use_settings::remove_browser_use_origin;
 use browser_use_settings::write_browser_use_approval_mode;
 use browser_use_settings::write_browser_use_file_transfer_approval_mode;
 use browser_use_settings::write_browser_use_history_approval_mode;
+use chronicle::chronicle_permissions;
 use codex_home::get_codex_home;
 use computer_use_settings::chrome_extension_installed_read;
 use computer_use_settings::chrome_extension_settings_open;
@@ -145,11 +174,34 @@ use computer_use_settings::computer_use_sound_mode_write;
 use computer_use_settings::read_computer_use_approvals;
 use computer_use_settings::read_computer_use_approvals_visibility;
 use computer_use_settings::remove_computer_use_approval;
+use custom_avatars::read_custom_avatars;
+use debug_modal::ambient_suggestions_generation_statuses;
+use debug_modal::debug_run_app_action_request;
+use debug_modal::debug_run_app_action_response;
+use debug_modal::AmbientSuggestionsCache;
+use debug_modal::DebugActionRequestSources;
+use desktop_notifications::desktop_notification_hide;
+use desktop_notifications::desktop_notification_show;
+use desktop_notifications::DesktopNotificationsState;
 use external_agent_import::external_agent_import_detect;
 use external_agent_import::external_agent_import_import;
 use external_agent_import::external_agent_import_status;
 use fast_mode_rollout_metrics::fast_mode_rollout_metrics;
 use global_dictation::request_microphone_permission;
+use global_dictation_window::global_dictation_completed;
+use global_dictation_window::global_dictation_dismiss;
+use global_dictation_window::global_dictation_enabled_changed;
+use global_dictation_window::global_dictation_failed;
+use global_dictation_window::global_dictation_force_lock_changed;
+use global_dictation_window::global_dictation_hide;
+use global_dictation_window::global_dictation_in_app_started;
+use global_dictation_window::global_dictation_prewarm;
+use global_dictation_window::global_dictation_record_history_item;
+use global_dictation_window::global_dictation_recording_stopped;
+use global_dictation_window::global_dictation_show_and_start;
+use global_dictation_window::global_dictation_stop;
+use global_dictation_window::global_dictation_window_layout;
+use global_dictation_window::GlobalDictationWindowState;
 use global_settings::get_global_state;
 use global_settings::get_global_state_command;
 use global_settings::set_global_state;
@@ -158,6 +210,8 @@ use global_settings::wsl_bash_availability;
 use host_files::open_file;
 use host_files::open_in_browser;
 use host_files::read_file;
+use host_files::read_file_binary;
+use host_files::read_file_metadata;
 use host_files::third_party_notices;
 use hotkey_window::hotkey_window_home_pointer_interaction_changed;
 use hotkey_window::hotkey_window_hotkey_state;
@@ -173,6 +227,12 @@ use local_environments::upstream_local_environments;
 use local_environments::write_local_environment_config;
 use open_targets::open_in_targets;
 use open_targets::set_preferred_app;
+use pending_worktrees::pending_worktree_cancel;
+use pending_worktrees::pending_worktree_create;
+use pending_worktrees::pending_worktree_dismiss;
+use pending_worktrees::pending_worktree_retry;
+use pending_worktrees::pending_worktree_update_metadata;
+use pending_worktrees::PendingWorktreesState;
 use power_save_blocker::power_save_blocker_set;
 use power_save_blocker::PowerSaveBlockerState;
 use projectless_threads::projectless_thread_cwd;
@@ -187,17 +247,36 @@ use pull_requests::gh_pr_diff;
 use pull_requests::gh_pr_merge;
 use pull_requests::gh_pr_status;
 use pull_requests::gh_pr_update;
+use remote_app_server_registry::disconnect_remote_connection;
+use remote_app_server_registry::ensure_remote_connection_connected;
+use remote_app_server_registry::set_remote_connection_auto_connect;
+use remote_app_server_registry::RemoteAppServerRegistry;
 use remote_connections::app_server_connection_state;
 use remote_connections::discover_remote_ssh_connections;
 use remote_connections::get_shared_object_snapshot;
 use remote_connections::refresh_remote_connections;
 use remote_connections::save_codex_managed_remote_ssh_connections;
+use remote_control::mfa_info_read;
+use remote_control::remote_control_clients_list;
+use remote_control::remote_control_mfa_required_but_disabled_read;
+use remote_control::remote_control_mfa_requirement_read;
 use scratchpad::generate_scratchpad_completion_summary;
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
+use taskbar_badge::electron_set_badge_count;
+use tauri::Manager;
 use terminal_shell_options::terminal_shell_options;
+use usage_billing::disable_usage_auto_top_up;
+use usage_billing::enable_usage_auto_top_up;
+use usage_billing::read_usage_auto_top_up_settings;
+use usage_billing::read_usage_billing_currency;
+use usage_billing::read_usage_customer_portal;
+use usage_billing::read_usage_pricing;
+use usage_billing::update_usage_auto_top_up;
+use window_mode::electron_set_window_mode;
+use window_mode::PrimaryWindowModeState;
 use window_navigation::debug_window_origin_conversation_changed;
 use window_navigation::open_current_main_window;
 use window_navigation::open_debug_window;
@@ -225,8 +304,11 @@ use workspace_files::search_workspace_files;
 use workspace_roots::active_workspace_roots;
 use workspace_roots::add_new_workspace_root_option;
 use workspace_roots::clear_active_workspace_root;
+use workspace_roots::create_new_workspace_root_option;
+use workspace_roots::onboarding_pick_workspace_or_create_default;
 use workspace_roots::onboarding_skip_workspace;
 use workspace_roots::pick_workspace_root_option;
+use workspace_roots::rename_workspace_root_option;
 use workspace_roots::set_active_workspace_root;
 use workspace_roots::update_workspace_root_options;
 use workspace_roots::workspace_root_options;
@@ -257,20 +339,66 @@ pub fn run() {
             .expect("launch state mutex poisoned") = Some(path.to_string_lossy().to_string());
     }
     tauri::Builder::default()
+        .on_window_event(|window, event| {
+            app_shell_signals::handle_window_event(window, event);
+            avatar_overlay::handle_window_event(window, event);
+        })
         .manage(auth_state.clone())
         .manage(heartbeat_automation_scheduler_state.clone())
         .manage(launch_state)
         .manage(PowerSaveBlockerState::default())
+        .manage(AvatarOverlayState::default())
+        .manage(PrimaryWindowModeState::default())
         .manage(DebugWindowOriginConversations::default())
         .manage(PendingPlanSummaries::default())
         .manage(PendingDebugWindowOriginConversations::default())
         .manage(PendingWindowRoutes::default())
+        .manage(AmbientSuggestionsCache::default())
+        .manage(DebugActionRequestSources::default())
+        .manage(GlobalDictationWindowState::default())
+        .manage(DesktopNotificationsState::default())
+        .manage(RemoteAppServerRegistry::default())
+        .manage(Arc::new(PendingWorktreesState::default()))
         .invoke_handler(tauri::generate_handler![
             get_launch_context,
             get_auth_state,
             read_account_info,
             read_account_rate_limits,
+            read_usage_auto_top_up_settings,
+            enable_usage_auto_top_up,
+            update_usage_auto_top_up,
+            disable_usage_auto_top_up,
+            read_usage_billing_currency,
+            read_usage_pricing,
+            read_usage_customer_portal,
             send_add_credits_nudge_email,
+            read_custom_avatars,
+            ambient_suggestions_generation_statuses,
+            debug_run_app_action_request,
+            debug_run_app_action_response,
+            global_dictation_prewarm,
+            global_dictation_show_and_start,
+            global_dictation_stop,
+            global_dictation_window_layout,
+            global_dictation_hide,
+            global_dictation_recording_stopped,
+            global_dictation_dismiss,
+            global_dictation_completed,
+            global_dictation_failed,
+            global_dictation_in_app_started,
+            global_dictation_record_history_item,
+            global_dictation_enabled_changed,
+            global_dictation_force_lock_changed,
+            desktop_notification_show,
+            desktop_notification_hide,
+            browser_browsing_data_clear,
+            ensure_remote_connection_connected,
+            disconnect_remote_connection,
+            set_remote_connection_auto_connect,
+            remote_control_mfa_requirement_read,
+            mfa_info_read,
+            remote_control_clients_list,
+            remote_control_mfa_required_but_disabled_read,
             list_apps,
             read_app_tools,
             read_app_tools_command,
@@ -318,6 +446,7 @@ pub fn run() {
             browser_use_origin_remove,
             remove_browser_use_file_transfer_origin,
             get_codex_home,
+            chronicle_permissions,
             read_computer_use_approvals_visibility,
             computer_use_app_approvals_visibility,
             read_computer_use_approvals,
@@ -329,6 +458,15 @@ pub fn run() {
             chrome_extension_installed_read,
             chrome_extension_settings_open,
             request_microphone_permission,
+            avatar_overlay_open,
+            avatar_overlay_open_state_request,
+            avatar_overlay_drag_start,
+            avatar_overlay_drag_move,
+            avatar_overlay_drag_end,
+            avatar_overlay_drag_release,
+            avatar_overlay_element_size_changed,
+            avatar_overlay_pointer_interaction_changed,
+            avatar_overlay_keyboard_interaction_changed,
             open_in_hotkey_window,
             hotkey_window_hotkey_state,
             hotkey_window_home_pointer_interaction_changed,
@@ -388,6 +526,7 @@ pub fn run() {
             set_global_state,
             set_global_state_command,
             power_save_blocker_set,
+            electron_set_window_mode,
             set_command_keybinding,
             set_personality,
             batch_write_config_values,
@@ -403,6 +542,8 @@ pub fn run() {
             delete_automation,
             run_automation_now,
             read_file,
+            read_file_metadata,
+            read_file_binary,
             open_file,
             open_in_browser,
             open_in_targets,
@@ -434,11 +575,14 @@ pub fn run() {
             workspace_root_options,
             active_workspace_roots,
             add_new_workspace_root_option,
+            create_new_workspace_root_option,
             pick_workspace_root_option,
+            rename_workspace_root_option,
             update_workspace_root_options,
             set_active_workspace_root,
             clear_active_workspace_root,
             onboarding_skip_workspace,
+            onboarding_pick_workspace_or_create_default,
             third_party_notices,
             search_workspace_files,
             list_workspace_directory_entries,
@@ -458,12 +602,20 @@ pub fn run() {
             read_local_environment_config,
             write_local_environment_config,
             terminal_shell_options,
+            electron_set_badge_count,
             wsl_bash_availability,
             reload_mcp_server_config,
             codex_app_server_restart,
             codex_worktrees,
             worktree_delete,
-            worktree_set_owner_thread
+            worktree_set_owner_thread,
+            pending_worktree_create,
+            pending_worktree_update_metadata,
+            pending_worktree_retry,
+            pending_worktree_cancel,
+            pending_worktree_dismiss,
+            electron_window_focus_request,
+            view_focused
         ])
         .plugin(tauri_plugin_shell::init())
         .setup(move |app| {
@@ -471,6 +623,13 @@ pub fn run() {
             spawn_heartbeat_automation_scheduler(
                 auth_state.clone(),
                 heartbeat_automation_scheduler_state.clone(),
+            );
+            let avatar_overlay_state = app.state::<AvatarOverlayState>();
+            let main_window = handle.get_webview_window("main");
+            let _ = avatar_overlay::restore_open_state(
+                &handle,
+                main_window.as_ref(),
+                &avatar_overlay_state,
             );
             if cfg!(target_os = "windows") && should_register_windows_context_menu() {
                 let _ = register_windows_folder_context_menu();

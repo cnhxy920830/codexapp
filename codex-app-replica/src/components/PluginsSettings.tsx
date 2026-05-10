@@ -1,6 +1,6 @@
 import { emit } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-shell";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import { usePluginsRouteEnabled } from "../features/skills/usePluginsRouteEnabled";
 import { useI18n } from "../i18n/i18n";
 import type { MessageKey } from "../i18n/messages";
@@ -28,6 +28,11 @@ import {
   type ConfigSnapshot,
   type ConfigWriteTarget,
 } from "../services/settings";
+import {
+  onQueryCacheInvalidated,
+  queryKeyMatchesPrefix,
+  type QueryCacheInvalidateNotification,
+} from "../services/queryCache";
 import { readSkillsSnapshot, setSkillEnabled, type SkillSummary } from "../services/skills";
 import type { AppToast } from "./AppToastRegion";
 import { ForwardNavigationIcon } from "./AppShellIcons";
@@ -44,6 +49,10 @@ import { SettingsContentLayout } from "./SettingsContentLayout";
 import { ToggleSwitch } from "./ToggleSwitch";
 
 const NAVIGATE_TO_ROUTE_EVENT = "navigate-to-route";
+const PLUGIN_QUERY_KEY = ["plugins"] as const;
+const APPS_QUERY_KEY = ["apps", "list"] as const;
+const CONFIG_QUERY_KEY = ["config"] as const;
+const SKILLS_QUERY_KEY = ["skills"] as const;
 
 type ManageTab = "plugins" | "apps" | "mcps" | "skills" | "marketplace";
 
@@ -231,6 +240,46 @@ export function PluginsSettings({
     setLoadError(null);
     return nextState;
   };
+
+  const handleQueryCacheInvalidate = useEffectEvent((notification: QueryCacheInvalidateNotification) => {
+    const shouldRefreshPage =
+      queryKeyMatchesPrefix(notification.queryKey, PLUGIN_QUERY_KEY) ||
+      queryKeyMatchesPrefix(notification.queryKey, APPS_QUERY_KEY) ||
+      queryKeyMatchesPrefix(notification.queryKey, CONFIG_QUERY_KEY) ||
+      queryKeyMatchesPrefix(notification.queryKey, SKILLS_QUERY_KEY);
+
+    if (!shouldRefreshPage || !isPluginsRouteEnabled) {
+      return;
+    }
+
+    void refreshPageAfterMutation({
+      forceRefetchApps: true,
+      forceReloadSkills: true,
+    });
+  });
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void onQueryCacheInvalidated((notification) => {
+      if (!disposed) {
+        handleQueryCacheInvalidate(notification);
+      }
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+
+      unlisten = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     if (!isPluginsRouteEnabled) {

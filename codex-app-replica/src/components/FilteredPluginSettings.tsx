@@ -1,6 +1,11 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useMemo, useState, type ReactNode } from "react";
 import { useI18n } from "../i18n/i18n";
 import { selectPluginCandidatesByName, type PluginCandidate } from "../lib/pluginSelectors";
+import {
+  onQueryCacheInvalidated,
+  queryKeyMatchesPrefix,
+  type QueryCacheInvalidateNotification,
+} from "../services/queryCache";
 import {
   installPlugin,
   readPlugin,
@@ -10,6 +15,8 @@ import {
   type PluginListSnapshot,
   type PluginReadParams,
 } from "../services/plugins";
+
+const PLUGIN_QUERY_KEY = ["plugins"] as const;
 
 export type FilteredPluginSettingsRenderContext = {
   selectedPlugins: PluginCandidate[];
@@ -101,6 +108,51 @@ export function FilteredPluginSettings({
     () => selectPluginCandidatesByName(pluginsSnapshot, pluginNames),
     [pluginNames, pluginsSnapshot],
   );
+
+  useEffect(() => {
+    if (activePlugin == null) {
+      return;
+    }
+
+    const nextActivePlugin =
+      selectedPlugins.find((candidate) => candidate.plugin.id === activePlugin.plugin.id) ?? null;
+    if (nextActivePlugin === activePlugin) {
+      return;
+    }
+
+    setActivePlugin(nextActivePlugin);
+  }, [activePlugin, selectedPlugins]);
+
+  const handleQueryCacheInvalidate = useEffectEvent((notification: QueryCacheInvalidateNotification) => {
+    if (!queryKeyMatchesPrefix(notification.queryKey, PLUGIN_QUERY_KEY)) {
+      return;
+    }
+
+    void refreshPlugins();
+  });
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void onQueryCacheInvalidated((notification) => {
+      if (!disposed) {
+        handleQueryCacheInvalidate(notification);
+      }
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+
+      unlisten = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   const retryLoad = () => {
     void refreshPlugins();

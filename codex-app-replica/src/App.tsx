@@ -1,6 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
 import { open } from "@tauri-apps/plugin-shell";
 import {
   cancelLogin,
@@ -63,7 +63,11 @@ import {
   type ConfigSnapshot,
 } from "./services/settings";
 import { AppearanceSettings } from "./components/AppearanceSettings";
-import { BUILTIN_AVATARS, DEFAULT_AVATAR_ID, type BuiltInAvatarId } from "./components/appearance/avatarData";
+import {
+  DEFAULT_AVATAR_ID,
+  buildAvatarOptions,
+  resolveAvatarOption,
+} from "./components/appearance/avatarData";
 import {
   BackNavigationIcon,
   BrowserTabIcon,
@@ -205,6 +209,11 @@ import {
   type AutomationRecord,
   type HeartbeatAutomationRecord,
 } from "./services/automations";
+import {
+  ensureCustomAvatarsLoaded,
+  getCustomAvatarsSnapshot,
+  subscribeCustomAvatars,
+} from "./services/customAvatars";
 
 const appWindow = getCurrentWindow();
 const AGENT_SETTINGS_DOCS_URL = "https://developers.openai.com/codex/app/local-environments";
@@ -713,7 +722,8 @@ function App() {
   const [followUpQueueMode, setFollowUpQueueMode] = useState<FollowUpQueueMode>("queue");
   const [reviewDelivery, setReviewDelivery] = useState<ReviewDelivery>("inline");
   const [preventSleepWhileRunning, setPreventSleepWhileRunning] = useState(false);
-  const [selectedAvatarId, setSelectedAvatarId] = useState<BuiltInAvatarId>(DEFAULT_AVATAR_ID);
+  const [customAvatarsSnapshot, setCustomAvatarsSnapshot] = useState(getCustomAvatarsSnapshot());
+  const [selectedAvatarId, setSelectedAvatarId] = useState<string>(DEFAULT_AVATAR_ID);
   const [activeTurn, setActiveTurn] = useState<{ threadId: string; turnId: string } | null>(null);
   const [turnError, setTurnError] = useState<string | null>(null);
   const [queuedFollowUps, setQueuedFollowUps] = useState<QueuedLocalFollowUp[]>([]);
@@ -764,7 +774,14 @@ function App() {
   const [agentConfigControlErrors, setAgentConfigControlErrors] = useState<AgentConfigControlErrors>({});
   const [configError, setConfigError] = useState<string | null>(null);
   const [commandKeymapState, setCommandKeymapState] = useState<CommandKeymapState | null>(null);
-  const selectedAvatar = BUILTIN_AVATARS.find((avatar) => avatar.id === selectedAvatarId) ?? BUILTIN_AVATARS[0];
+  const avatarOptions = useMemo(
+    () => buildAvatarOptions(customAvatarsSnapshot.avatars),
+    [customAvatarsSnapshot.avatars],
+  );
+  const selectedAvatar = useMemo(
+    () => resolveAvatarOption(selectedAvatarId, avatarOptions),
+    [avatarOptions, selectedAvatarId],
+  );
   const isPluginsRouteEnabled = usePluginsRouteEnabled(selectedSettingsHostId);
   const queuedFollowUpsRef = useRef<QueuedLocalFollowUp[]>([]);
   const drainingQueuedThreadIdsRef = useRef(new Set<string>());
@@ -1165,22 +1182,54 @@ function App() {
   }, [managesPowerSaveBlocker]);
 
   useEffect(() => {
-    let cancelled = false;
+    const unsubscribe = subscribeCustomAvatars((nextSnapshot) => {
+      setCustomAvatarsSnapshot(nextSnapshot);
+    });
 
-    void readSelectedAvatarId()
-      .then((value) => {
+    void ensureCustomAvatarsLoaded();
+
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlistenGlobalStateUpdated: (() => void) | null = null;
+
+    const syncSelectedAvatarId = async () => {
+      try {
+        const value = await readSelectedAvatarId();
         if (!cancelled) {
-          setSelectedAvatarId(normalizeAvatarId(value));
+          setSelectedAvatarId(value);
         }
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) {
           setSelectedAvatarId(DEFAULT_AVATAR_ID);
         }
-      });
+      }
+    };
+
+    void syncSelectedAvatarId();
+
+    void onGlobalStateUpdated((notification) => {
+      if (!notification.keys.includes("selected-avatar-id")) {
+        return;
+      }
+
+      void syncSelectedAvatarId();
+    }).then((dispose) => {
+      if (cancelled) {
+        void dispose();
+        return;
+      }
+
+      unlistenGlobalStateUpdated = () => {
+        void dispose();
+      };
+    });
 
     return () => {
       cancelled = true;
+      unlistenGlobalStateUpdated?.();
     };
   }, []);
 
@@ -2030,40 +2079,51 @@ function App() {
     setIsWorkspaceFileSearchOpen(true);
   };
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const accelerator = buildAcceleratorFromKeyboardEvent(event);
-      if (!accelerator) {
-        return;
-      }
+  const handleGlobalShortcutKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    const accelerator = buildAcceleratorFromKeyboardEvent(event);
+    if (!accelerator) {
+      return;
+    }
 
-      const isMac = typeof navigator !== "undefined" && (navigator.platform ?? "").startsWith("Mac");
-      const matchingCommandId = ["searchFiles", "openCommandMenu"].find((commandId) =>
-        getCommandShortcutAccelerators(commandId, commandKeymapState).some((binding) =>
-          binding
-            .replaceAll("CmdOrCtrl", isMac ? "Command" : "Ctrl")
-            .replaceAll("Cmd", "Command")
-            .replaceAll("Control", "Ctrl") === accelerator,
-        ),
-      );
+    const isMac = typeof navigator !== "undefined" && (navigator.platform ?? "").startsWith("Mac");
+    const matchingCommandId = ["closeTabOrWindow", "searchFiles", "openCommandMenu"].find((commandId) =>
+      getCommandShortcutAccelerators(commandId, commandKeymapState).some((binding) =>
+        binding
+          .replaceAll("CmdOrCtrl", isMac ? "Command" : "Ctrl")
+          .replaceAll("Cmd", "Command")
+          .replaceAll("Control", "Ctrl") === accelerator,
+      ),
+    );
 
-      if (!matchingCommandId) {
-        return;
-      }
+    if (!matchingCommandId) {
+      return;
+    }
 
-      if (chatWorkspaceRoot === null) {
-        return;
-      }
-
+    if (matchingCommandId === "closeTabOrWindow") {
       event.preventDefault();
-      openWorkspaceFileSearch();
-    };
+      if (activeRightPanelTab !== null) {
+        closeRightPanelTab(activeRightPanelTab.id);
+        return;
+      }
 
-    window.addEventListener("keydown", handleKeyDown);
+      void closeWindow();
+      return;
+    }
+
+    if (chatWorkspaceRoot === null) {
+      return;
+    }
+
+    event.preventDefault();
+    openWorkspaceFileSearch();
+  });
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleGlobalShortcutKeyDown);
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keydown", handleGlobalShortcutKeyDown);
     };
-  }, [commandKeymapState, chatWorkspaceRoot]);
+  }, [handleGlobalShortcutKeyDown]);
 
   const handleWorkspaceFileSelected = (file: WorkspaceFilePreviewTarget) => {
     const workspaceFileTab = createWorkspaceFileRightPanelTab(file);
@@ -3194,7 +3254,12 @@ function App() {
     }
 
     if (settingsSection === "appearance") {
-      return <AppearanceSettings onShowToast={(toast) => setAppToast(toast)} />;
+      return (
+        <AppearanceSettings
+          onOpenChatWithPrompt={(prompt) => openNewConversation({ prefillPrompt: prompt })}
+          onShowToast={(toast) => setAppToast(toast)}
+        />
+      );
     }
 
     if (settingsSection === "personalization") {
@@ -4290,10 +4355,6 @@ function isSettingsInputElement(element: HTMLElement) {
     return true;
   }
   return element.closest("[contenteditable='true']") != null;
-}
-
-function normalizeAvatarId(value: string): BuiltInAvatarId {
-  return BUILTIN_AVATARS.some((avatar) => avatar.id === value) ? (value as BuiltInAvatarId) : DEFAULT_AVATAR_ID;
 }
 
 function orderSettingsNavigationItems(
