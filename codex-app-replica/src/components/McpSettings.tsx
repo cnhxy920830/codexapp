@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
 import { open } from "@tauri-apps/plugin-shell";
 import { useI18n } from "../i18n/i18n";
 import { type MessageKey, type MessageValues } from "../i18n/messages";
@@ -9,6 +9,12 @@ import {
   resolveConfigWriteTargetForKeyPath,
   writeConfigValueForHost,
 } from "../services/settings";
+import {
+  emitQueryCacheInvalidated,
+  onQueryCacheInvalidated,
+  queryKeyMatchesPrefix,
+  type QueryCacheInvalidateNotification,
+} from "../services/queryCache";
 import {
   createBlankMcpServerDraft,
   listMcpServerStatuses,
@@ -27,6 +33,7 @@ import { ToggleSwitch } from "./ToggleSwitch";
 
 const MCP_DOCS_URL = "https://developers.openai.com/codex/mcp/";
 const LOCAL_HOST_ID = "local";
+const CONFIG_QUERY_KEY = ["config"] as const;
 
 type EditorKey = string | null | undefined;
 type Translate = (key: MessageKey, values?: MessageValues) => string;
@@ -49,35 +56,38 @@ export function McpSettings({
   const [configResponse, setConfigResponse] = useState<Awaited<ReturnType<typeof readConfigForHost>> | null>(null);
   const [serverStatuses, setServerStatuses] = useState<McpServerStatusEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isStatusLoading, setIsStatusLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [editorKey, setEditorKey] = useState<EditorKey>(undefined);
   const [draft, setDraft] = useState<McpServerDraft | null>(null);
   const [dirtyHostIds, setDirtyHostIds] = useState<string[]>([]);
+  const loadRequestIdRef = useRef(0);
   const effectiveWorkspaceRoot = selectedHostId === LOCAL_HOST_ID ? workspaceRoot : null;
-  const isLocalHost = selectedHostId === LOCAL_HOST_ID;
 
   const load = async () => {
+    const requestId = ++loadRequestIdRef.current;
     setIsLoading(true);
-    setLoadError(null);
-    try {
-      const [config, statuses] = await Promise.all([
-        readConfigForHost({
-          hostId: selectedHostId,
-          cwd: effectiveWorkspaceRoot,
-          includeLayers: true,
-        }),
-        listMcpServerStatuses(selectedHostId),
-      ]);
-      setConfigResponse(config);
-      setServerStatuses(statuses.data);
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : String(error));
-      setConfigResponse(null);
-      setServerStatuses([]);
-    } finally {
-      setIsLoading(false);
+    setIsStatusLoading(true);
+
+    const [configResult, statusesResult] = await Promise.allSettled([
+      readConfigForHost({
+        hostId: selectedHostId,
+        cwd: effectiveWorkspaceRoot,
+        includeLayers: true,
+      }),
+      listMcpServerStatuses(selectedHostId),
+    ]);
+
+    if (requestId !== loadRequestIdRef.current) {
+      return;
     }
+
+    setConfigResponse(
+      configResult.status === "fulfilled" ? configResult.value : createEmptyConfigReadResponse(),
+    );
+    setServerStatuses(statusesResult.status === "fulfilled" ? statusesResult.value.data : []);
+    setIsLoading(false);
+    setIsStatusLoading(false);
   };
 
   useEffect(() => {
@@ -85,10 +95,20 @@ export function McpSettings({
   }, [effectiveWorkspaceRoot, selectedHostId]);
 
   useEffect(() => {
+    return () => {
+      loadRequestIdRef.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
     let unlisten: (() => void) | undefined;
 
     void onMcpOauthLoginCompleted((notification) => {
+      if (notification.hostId !== selectedHostId) {
+        return;
+      }
       if (notification.success) {
+        markSelectedHostDirty();
         void load();
       }
     }).then((dispose) => {
@@ -118,6 +138,37 @@ export function McpSettings({
     };
   }, [effectiveWorkspaceRoot, selectedHostId]);
 
+  const handleQueryCacheInvalidate = useEffectEvent((notification: QueryCacheInvalidateNotification) => {
+    if (!queryKeyMatchesPrefix(notification.queryKey, CONFIG_QUERY_KEY)) {
+      return;
+    }
+
+    void load();
+  });
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void onQueryCacheInvalidated((notification) => {
+      if (!disposed) {
+        handleQueryCacheInvalidate(notification);
+      }
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+
+      unlisten = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
   const config = configResponse?.config ?? null;
   const servers = useMemo(() => parseMcpServers(config), [config]);
   const writeTarget = useMemo(() => {
@@ -140,14 +191,18 @@ export function McpSettings({
         isReadOnly: serverOrigins[name]?.name.type === "project",
         name,
         server,
-      })),
+      })).sort((left, right) => {
+        return formatMcpServerLabel(left.name, left.server)
+          .localeCompare(formatMcpServerLabel(right.name, right.server))
+          || left.name.localeCompare(right.name);
+      }),
     [serverOrigins, serverStatuses, servers],
   );
   const selectedExistingServer = useMemo(
     () => (typeof editorKey === "string" ? servers.find((entry) => entry.name === editorKey) ?? null : null),
     [editorKey, servers],
   );
-  const isRestartRequired = isLocalHost && dirtyHostIds.includes(LOCAL_HOST_ID);
+  const isRestartRequired = dirtyHostIds.includes(selectedHostId);
   const initialDraft = useMemo(() => {
     if (editorKey === undefined) {
       return null;
@@ -186,27 +241,17 @@ export function McpSettings({
     setDraft(null);
   };
 
-  const markLocalHostDirty = () => {
-    if (!isLocalHost) {
-      return;
-    }
+  const markSelectedHostDirty = () => {
     setDirtyHostIds((current) =>
-      current.includes(LOCAL_HOST_ID) ? current : [...current, LOCAL_HOST_ID],
+      current.includes(selectedHostId) ? current : [...current, selectedHostId],
     );
   };
 
   const restartAppServer = async () => {
-    if (!isLocalHost) {
-      return;
-    }
-    await restartCodexAppServer(LOCAL_HOST_ID);
+    await restartCodexAppServer(selectedHostId);
   };
 
   const persistEnabled = async (name: string, enabled: boolean) => {
-    if (!writeTarget?.filePath) {
-      return;
-    }
-
     setIsSaving(true);
     try {
       await writeConfigValueForHost({
@@ -214,11 +259,10 @@ export function McpSettings({
         keyPath: `mcp_servers.${name}.enabled`,
         value: enabled,
         mergeStrategy: "upsert",
-        filePath: writeTarget.filePath,
-        expectedVersion: writeTarget.expectedVersion,
       });
-      markLocalHostDirty();
+      markSelectedHostDirty();
       await load();
+      await emitQueryCacheInvalidated(CONFIG_QUERY_KEY);
     } finally {
       setIsSaving(false);
     }
@@ -267,7 +311,7 @@ export function McpSettings({
         expectedVersion: writeTarget.expectedVersion,
         reloadUserConfig: true,
       });
-      markLocalHostDirty();
+      markSelectedHostDirty();
       await load();
       closeEditor();
     } finally {
@@ -295,7 +339,7 @@ export function McpSettings({
         expectedVersion: writeTarget.expectedVersion,
         reloadUserConfig: true,
       });
-      markLocalHostDirty();
+      markSelectedHostDirty();
       await load();
       closeEditor();
     } finally {
@@ -338,11 +382,13 @@ export function McpSettings({
       <SettingsGroup>
         <SettingsGroupHeader
           actions={
-            <ToolbarButton
-              label={t("settings.mcp.addServer")}
-              icon={<PlusIcon className="icon-xs" />}
-              onClick={openEditorForNewServer}
-            />
+            serverListItems.length > 0 ? (
+              <ToolbarButton
+                label={t("settings.mcp.addServer")}
+                icon={<PlusIcon className="icon-xs" />}
+                onClick={openEditorForNewServer}
+              />
+            ) : null
           }
           title={t("settings.mcp.myServers")}
         />
@@ -350,21 +396,6 @@ export function McpSettings({
           <SettingsSurface>
             {isLoading ? (
               <SettingsRow label={t("settings.mcp.loading")} />
-            ) : loadError ? (
-              <SettingsRow
-                label={
-                  <div className="flex flex-col gap-1">
-                    <span>{t("settings.mcp.loadError.title")}</span>
-                    <span className="text-xs text-token-text-secondary">{loadError}</span>
-                  </div>
-                }
-                control={
-                  <ToolbarButton
-                    label={t("settings.mcp.loadError.retry")}
-                    onClick={() => void load()}
-                  />
-                }
-              />
             ) : serverListItems.length === 0 ? (
               <SettingsRow
                 label={t("settings.mcp.empty")}
@@ -381,6 +412,7 @@ export function McpSettings({
                 <McpServerRow
                   key={server.name}
                   isSaving={isSaving}
+                  isStatusLoading={isStatusLoading}
                   server={server}
                   onAuthenticate={authenticateServer}
                   onOpenEditor={openEditorForExistingServer}
@@ -397,12 +429,14 @@ export function McpSettings({
 
 function McpServerRow({
   isSaving,
+  isStatusLoading,
   server,
   onAuthenticate,
   onOpenEditor,
   onToggleEnabled,
 }: {
   isSaving: boolean;
+  isStatusLoading: boolean;
   server: McpServerListItem;
   onAuthenticate: (name: string) => Promise<void>;
   onOpenEditor: (name: string) => void;
@@ -410,6 +444,7 @@ function McpServerRow({
 }) {
   const { t } = useI18n();
   const showAuthenticate =
+    !isStatusLoading &&
     server.authStatus != null &&
     server.authStatus !== "unsupported" &&
     server.authStatus !== "bearerToken" &&
@@ -439,7 +474,7 @@ function McpServerRow({
           />
           <ToggleSwitch
             checked={server.server.base.enabled}
-            disabled={isSaving || server.isReadOnly}
+            disabled={isSaving || isStatusLoading || server.isReadOnly}
             ariaLabel={t("settings.mcp.server.enable")}
             onChange={(checked) => void onToggleEnabled(server.name, checked)}
           />
@@ -882,6 +917,22 @@ function formatMcpServerLabel(name: string, server: McpServerDraft | null) {
   return trimmedName === trimmedName.toLowerCase()
     ? `${trimmedName[0]?.toUpperCase() ?? ""}${trimmedName.slice(1)}`
     : trimmedName;
+}
+
+function createEmptyConfigReadResponse(): Awaited<ReturnType<typeof readConfigForHost>> {
+  return {
+    config: {
+      approvalPolicy: null,
+      sandboxMode: null,
+      sandboxWorkspaceWrite: null,
+      personality: null,
+      modelPersonality: null,
+      memories: null,
+      mcpServers: {},
+    },
+    origins: {},
+    layers: null,
+  };
 }
 
 function hasMcpDraftChanges(draft: McpServerDraft, initialDraft: McpServerDraft) {

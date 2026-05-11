@@ -5,6 +5,7 @@ use std::env;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 use crate::global_settings::{read_global_settings, write_global_settings};
@@ -93,6 +94,14 @@ pub struct RemoteConnection {
 #[serde(rename_all = "camelCase")]
 pub struct RefreshRemoteConnectionsResponse {
     pub remote_connections: Vec<RemoteConnection>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SetRemoteConnectionAutoConnectResponse {
+    pub remote_connections: Vec<RemoteConnection>,
+    pub state: AppServerConnectionState,
+    pub error: Option<AppServerConnectionError>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -217,19 +226,20 @@ pub async fn save_codex_managed_remote_ssh_connections(
 #[tauri::command(rename = "set-remote-connection-auto-connect")]
 pub async fn set_remote_connection_auto_connect(
     app: AppHandle,
-    _registry: tauri::State<'_, crate::remote_app_server_registry::RemoteAppServerRegistry>,
+    registry: tauri::State<'_, crate::remote_app_server_registry::RemoteAppServerRegistry>,
     params: SetRemoteConnectionAutoConnectParams,
-) -> Result<RefreshRemoteConnectionsResponse, String> {
+) -> Result<SetRemoteConnectionAutoConnectResponse, String> {
     let blocking_app = app.clone();
     let host_id = params.host_id;
+    let host_id_for_write = host_id.clone();
     let auto_connect = params.auto_connect;
     let remote_connections = tauri::async_runtime::spawn_blocking(move || {
         let mut settings = read_global_settings(&blocking_app)?;
         let mut auto_connect_by_host_id = read_auto_connect_by_host_id(&settings);
         if auto_connect {
-            auto_connect_by_host_id.insert(host_id.clone(), Value::Bool(true));
+            auto_connect_by_host_id.insert(host_id_for_write, Value::Bool(true));
         } else {
-            auto_connect_by_host_id.remove(&host_id);
+            auto_connect_by_host_id.remove(&host_id_for_write);
         }
         settings.insert(
             REMOTE_CONNECTION_AUTO_CONNECT_BY_HOST_ID_KEY.to_string(),
@@ -240,7 +250,43 @@ pub async fn set_remote_connection_auto_connect(
     })
     .await
     .map_err(|err| format!("set-remote-connection-auto-connect task failed: {err}"))??;
-    apply_remote_connections_runtime(&app, remote_connections).await
+    let refreshed = apply_remote_connections_runtime(&app, remote_connections).await?;
+    if !refreshed
+        .remote_connections
+        .iter()
+        .any(|connection| connection.host_id == host_id)
+    {
+        return Err(format!("remote connection for host ID {host_id} not found"));
+    }
+
+    if auto_connect {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let snapshot = registry.snapshot(&host_id);
+            if !matches!(
+                snapshot.state,
+                crate::remote_app_server_registry::RemoteAppServerConnectionState::Connecting
+                    | crate::remote_app_server_registry::RemoteAppServerConnectionState::Restarting
+            ) || tokio::time::Instant::now() >= deadline
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    let connection_state = app_server_connection_state_for_registry(
+        &registry,
+        &AppServerConnectionStateParams {
+            host_id: host_id.clone(),
+        },
+    );
+
+    Ok(SetRemoteConnectionAutoConnectResponse {
+        remote_connections: refreshed.remote_connections,
+        state: connection_state.state,
+        error: connection_state.error,
+    })
 }
 
 #[tauri::command(rename = "app-server-connection-state")]
@@ -1142,6 +1188,7 @@ mod tests {
     use super::RemoteConnection;
     use super::SavedRemoteConnection;
     use super::SavedRemoteConnectionInput;
+    use super::SetRemoteConnectionAutoConnectResponse;
     use super::SharedObjectSnapshotResponse;
     use serde_json::json;
     use serde_json::Map;
@@ -1373,6 +1420,44 @@ mod tests {
             serde_json::to_value(&response).expect("response should serialize"),
             json!({
                 "state": "disconnected",
+                "error": null
+            })
+        );
+    }
+
+    #[test]
+    fn set_remote_connection_auto_connect_response_serializes_to_upstream_shape() {
+        let response = SetRemoteConnectionAutoConnectResponse {
+            remote_connections: vec![RemoteConnection {
+                host_id: "remote-ssh-discovered:demo-alias".to_string(),
+                display_name: "Demo Alias".to_string(),
+                source: "discovered".to_string(),
+                auto_connect: true,
+                ssh_alias: Some("demo-alias".to_string()),
+                ssh_host: Some("demo.example.com".to_string()),
+                ssh_port: Some(2222),
+                identity: Some("~/.ssh/id_demo".to_string()),
+            }],
+            state: AppServerConnectionState::Connected,
+            error: None,
+        };
+
+        assert_eq!(
+            serde_json::to_value(&response).expect("response should serialize"),
+            json!({
+                "remoteConnections": [
+                    {
+                        "hostId": "remote-ssh-discovered:demo-alias",
+                        "displayName": "Demo Alias",
+                        "source": "discovered",
+                        "autoConnect": true,
+                        "sshAlias": "demo-alias",
+                        "sshHost": "demo.example.com",
+                        "sshPort": 2222,
+                        "identity": "~/.ssh/id_demo"
+                    }
+                ],
+                "state": "connected",
                 "error": null
             })
         );

@@ -118,6 +118,8 @@ import { PullRequestsRoutePage } from "./features/pullRequests/PullRequestsRoute
 import { ThreadHeartbeatAutomationDialog } from "./features/automations/ThreadHeartbeatAutomationDialog";
 import { formatHeartbeatAutomationTooltip } from "./features/automations/time";
 import { FirstRunPage } from "./features/firstRun/FirstRunPage";
+import { WelcomePage } from "./features/onboarding/WelcomePage";
+import { DebugWindowPage as DebugWindowPageContent } from "./features/debug/DebugWindowPage";
 import {
   createStaticRightPanelTab,
   createWorkspaceFileRightPanelTab,
@@ -182,11 +184,17 @@ import {
   FIRST_RUN_ROUTE_PATH,
   notifyDebugWindowOriginConversationChanged,
   PLAN_SUMMARY_ROUTE_PATH,
+  WELCOME_ROUTE_PATH,
   takePendingDebugWindowOriginConversation,
   takePendingPlanSummary,
   takePendingWindowRoute,
   type PendingPlanSummaryState,
 } from "./services/windowNavigation";
+import {
+  onDebugRunAppActionRequest,
+  respondToDebugRunAppAction,
+  type DebugRunAppActionRequestNotification,
+} from "./services/debug";
 import {
   estimateUtf8Bytes,
   notifyViewFocused,
@@ -231,7 +239,9 @@ const CONFIG_TOML_DOCS_URL = "https://developers.openai.com/codex/config-basic";
 const IMPLEMENT_PLAN_PROMPT_PREFIX = "PLEASE IMPLEMENT THIS PLAN:";
 const USER_MESSAGE_REQUEST_HEADING = "## My request for Codex:";
 const NAVIGATE_TO_ROUTE_EVENT = "navigate-to-route";
+const TOGGLE_DIFF_PANEL_EVENT = "toggle-diff-panel";
 const APP_STATE_SNAPSHOT_WINDOW_MS = 30_000;
+const WELCOME_V2_ONBOARDING_QUERY_PARAM = "welcomeV2Onboarding";
 type WorkspaceFileRightPanelTabState = Extract<RightPanelTab, { kind: "workspaceFile" }>;
 type PersistedWorkspaceFileRightPanelTabState = {
   workspaceFileTabsByThreadId: Array<[string, WorkspaceFileRightPanelTabState[]]>;
@@ -269,6 +279,7 @@ type AppRoute =
   | "scratchpad"
   | "automations"
   | "pull-requests"
+  | "welcome"
   | "first-run"
   | "plan-summary"
   | "debug";
@@ -287,6 +298,9 @@ type NavigateToRouteState = {
 type NavigateToRouteNotification = {
   path: string;
   state?: NavigateToRouteState | null;
+};
+type ToggleDiffPanelNotification = {
+  open: boolean;
 };
 type DebugWindowOriginConversationChangedNotification = {
   conversationId: string;
@@ -442,13 +456,29 @@ function isFirstRunRoute(path: string) {
   return path === FIRST_RUN_ROUTE_PATH;
 }
 
+function isWelcomeRoute(path: string) {
+  return path === WELCOME_ROUTE_PATH;
+}
+
 function isDebugWindowRoute(path: string) {
   return path === DEBUG_WINDOW_ROUTE_PATH;
 }
 
+function isPullRequestsRoute(path: string) {
+  return path === "/pull-requests";
+}
+
 function readInitialAppRoute(): AppRoute {
+  if (typeof window !== "undefined" && isWelcomeRoute(window.location.pathname)) {
+    return "welcome";
+  }
+
   if (typeof window !== "undefined" && isFirstRunRoute(window.location.pathname)) {
     return "first-run";
+  }
+
+  if (typeof window !== "undefined" && isPullRequestsRoute(window.location.pathname)) {
+    return "pull-requests";
   }
 
   return "chat";
@@ -461,7 +491,7 @@ function shouldWindowManagePowerSaveBlocker() {
   }
 
   const { pathname } = window.location;
-  if (isDebugWindowRoute(pathname) || isPlanSummaryRoute(pathname) || isFirstRunRoute(pathname)) {
+  if (isDebugWindowRoute(pathname) || isPlanSummaryRoute(pathname) || isFirstRunRoute(pathname) || isWelcomeRoute(pathname)) {
     return false;
   }
 
@@ -876,7 +906,9 @@ function App() {
     () => resolveAvatarOption(selectedAvatarId, avatarOptions),
     [avatarOptions, selectedAvatarId],
   );
-  const isPluginsRouteEnabled = usePluginsRouteEnabled(selectedSettingsHostId);
+  const isPluginsRouteEnabled = usePluginsRouteEnabled(selectedSettingsHostId, {
+    allowRemoteHost: true,
+  });
   const queuedFollowUpsRef = useRef<QueuedLocalFollowUp[]>([]);
   const drainingQueuedThreadIdsRef = useRef(new Set<string>());
   const threadActionsMenuRef = useRef<HTMLDivElement | null>(null);
@@ -1009,7 +1041,11 @@ function App() {
     !hasLoadedAuthSnapshot ||
     !hasLoadedLaunchContext ||
     !hasLoadedInitialWindowRoute ||
-    (!hasLoadedInitialThreadSnapshot && currentRoute !== "plan-summary" && currentRoute !== "first-run");
+    (!hasLoadedInitialThreadSnapshot &&
+      currentRoute !== "plan-summary" &&
+      currentRoute !== "first-run" &&
+      currentRoute !== "pull-requests" &&
+      currentRoute !== "welcome");
   const isTurnInProgress = activeTurn !== null && activeTurn.threadId === selectedThreadId;
   const editableUserMessage = findLastEditableUserMessage(threadConversation, activeTurn);
   const submitButtonMode = isTurnInProgress && composerDraft.trim().length === 0 ? "stop" : "send";
@@ -1736,6 +1772,59 @@ function App() {
     }
   });
 
+  const handleDebugRunAppActionRequest = useEffectEvent(async (notification: DebugRunAppActionRequestNotification) => {
+    const actionType =
+      notification.action !== null &&
+      typeof notification.action === "object" &&
+      !Array.isArray(notification.action) &&
+      typeof notification.action.type === "string"
+        ? notification.action.type
+        : null;
+
+    if (actionType !== "app.get_summary") {
+      await respondToDebugRunAppAction({
+        requestId: notification.requestId,
+        ok: false,
+        errorMessage: `Unsupported debug action: ${actionType ?? "unknown"}`,
+      }).catch(() => undefined);
+      return;
+    }
+
+    const currentThread = threadConversationRef.current;
+    const result = {
+      action: actionType,
+      auth: {
+        authMethod: authSnapshot.authState.authMethod,
+        email: authSnapshot.authState.email,
+        accountId: authSnapshot.authState.accountId,
+        userId: authSnapshot.authState.userId,
+      },
+      conversationId: currentThread?.id ?? notification.sourceThreadId ?? null,
+      recentThreads: recentThreadsRef.current.slice(0, 5).map((thread) => ({
+        id: thread.id,
+        title: thread.name ?? thread.preview,
+        updatedAt: thread.updatedAt,
+      })),
+      route: currentRoute,
+      selectedHostId: selectedSettingsHostId,
+      thread: currentThread
+        ? {
+            cwd: currentThread.cwd,
+            id: currentThread.id,
+            items: currentThread.items.length,
+            title: currentThread.title ?? null,
+            turns: currentThread.turns.length,
+          }
+        : null,
+    };
+
+    await respondToDebugRunAppAction({
+      requestId: notification.requestId,
+      ok: true,
+      result,
+    }).catch(() => undefined);
+  });
+
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
@@ -1746,6 +1835,30 @@ function App() {
         void handleDebugWindowOriginConversationChanged(event.payload.conversationId);
       },
     )
+      .then((dispose) => {
+        if (disposed) {
+          void dispose();
+          return;
+        }
+        unlisten = dispose;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      if (unlisten) {
+        void unlisten();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void onDebugRunAppActionRequest((notification) => {
+      void handleDebugRunAppActionRequest(notification);
+    })
       .then((dispose) => {
         if (disposed) {
           void dispose();
@@ -1805,6 +1918,12 @@ function App() {
           return;
         }
 
+        if (isWelcomeRoute(path)) {
+          setThreadShellVariant("default");
+          setCurrentRoute("welcome");
+          return;
+        }
+
         if (isDebugWindowRoute(path)) {
           setThreadShellVariant("default");
           initialWindowPageKindRef.current = "debug";
@@ -1812,6 +1931,12 @@ function App() {
             initialWindowThreadIdRef.current = normalizedDebugWindowConversationId;
           }
           setCurrentRoute("debug");
+          return;
+        }
+
+        if (isPullRequestsRoute(path)) {
+          setThreadShellVariant("default");
+          setCurrentRoute("pull-requests");
           return;
         }
 
@@ -2110,7 +2235,11 @@ function App() {
       return;
     }
 
-    if (initialWindowPageKindRef.current === "plan-summary" || currentRoute === "first-run") {
+    if (
+      initialWindowPageKindRef.current === "plan-summary" ||
+      currentRoute === "first-run" ||
+      currentRoute === "welcome"
+    ) {
       initialThreadSnapshotLoadedRef.current = true;
       setHasLoadedInitialThreadSnapshot(true);
       return;
@@ -2610,10 +2739,24 @@ function App() {
       return;
     }
 
+    if (isWelcomeRoute(path)) {
+      setThreadShellVariant("default");
+      setSkillsRouteState(null);
+      setCurrentRoute("welcome");
+      return;
+    }
+
     if (isDebugWindowRoute(path)) {
       setThreadShellVariant("default");
       setSkillsRouteState(null);
       setCurrentRoute("debug");
+      return;
+    }
+
+    if (isPullRequestsRoute(path)) {
+      setThreadShellVariant("default");
+      setSkillsRouteState(null);
+      setCurrentRoute("pull-requests");
       return;
     }
 
@@ -2655,12 +2798,50 @@ function App() {
     await selectThread(threadRoute.threadId, threadRoute.shell);
   });
 
+  const handleToggleDiffPanel = useEffectEvent((open: boolean) => {
+    if (open) {
+      openRightPanelTab("review");
+      return;
+    }
+
+    const hasReviewTab = openRightPanelTabsRef.current.some((tab) => tab.kind === "review");
+    if (!hasReviewTab) {
+      return;
+    }
+
+    const nextTabs = openRightPanelTabsRef.current.filter((tab) => tab.kind !== "review");
+    closeRightPanelTab("review");
+    if (nextTabs.length === 0) {
+      setIsRightPanelOpen(false);
+    }
+  });
+
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
 
     void listen<NavigateToRouteNotification>(NAVIGATE_TO_ROUTE_EVENT, (event) => {
       void handleNavigateToRoute(event.payload.path, event.payload.state);
+    }).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+        return;
+      }
+      unlisten = cleanup;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void listen<ToggleDiffPanelNotification>(TOGGLE_DIFF_PANEL_EVENT, (event) => {
+      void handleToggleDiffPanel(event.payload.open);
     }).then((cleanup) => {
       if (disposed) {
         cleanup();
@@ -3539,8 +3720,8 @@ function App() {
     if (settingsSection === "local-environments") {
       return (
         <LocalEnvironmentsSettings
-          isCodexWorktree={isWorktreeThread}
-          workspaceRoot={settingsWorkspaceRoot}
+          codexHome={codexHome}
+          selectedHostId={selectedSettingsHostId}
           onShowToast={(toast) => setAppToast(toast)}
         />
       );
@@ -3798,6 +3979,29 @@ function App() {
           setCurrentRoute("chat");
         }}
         t={t}
+      />
+    );
+  }
+
+  if (currentRoute === "welcome") {
+    return (
+      <WelcomePage
+        onCompleteToHome={() => {
+          if (typeof window !== "undefined") {
+            window.history.replaceState(
+              window.history.state,
+              "",
+              `/?${WELCOME_V2_ONBOARDING_QUERY_PARAM}=1`,
+            );
+          }
+          openNewConversation({ focusComposerNonce: Date.now() });
+        }}
+        onContinueToWorkspace={() => {
+          if (typeof window !== "undefined") {
+            window.history.replaceState(window.history.state, "", "/select-workspace");
+          }
+          openNewConversation({ focusComposerNonce: Date.now() });
+        }}
       />
     );
   }
@@ -4364,7 +4568,7 @@ function App() {
                 </div>
               ) : currentRoute === "pull-requests" ? (
                 <div className="min-h-0 flex-1 overflow-hidden">
-                  <PullRequestsRoutePage />
+                  <PullRequestsRoutePage onShowToast={(toast) => setAppToast(toast)} />
                 </div>
               ) : currentRoute === "automations" ? (
                 <div className="min-h-0 flex-1 overflow-hidden">
@@ -4527,51 +4731,7 @@ function DebugWindowPage({
   onClose: () => void;
   threadConversation: ThreadConversation | null;
 }) {
-  return (
-    <main className="h-dvh w-full overflow-hidden bg-[var(--app-shell-main-surface)] text-[var(--app-shell-text)]">
-      <div className="flex h-full flex-col">
-        <div className="flex h-[var(--app-shell-toolbar-sm)] items-center justify-between border-b border-[var(--app-shell-border)] px-3">
-          <h1 className="text-[13px] font-medium">Debug</h1>
-          <button
-            type="button"
-            onClick={onClose}
-            className="app-control-weak rounded-[8px] px-2.5 py-1 text-[12px]"
-          >
-            Close
-          </button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-auto p-4">
-          {isLoading ? (
-            <div className="relative h-full min-h-[240px]">
-              <LoadingPage fillParent debugName="DebugWindowPage" />
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="app-card rounded-[16px] px-4 py-3">
-                <div className="app-text-subtle text-[11px] font-medium tracking-[0.08em]">Conversation ID</div>
-                <div className="mt-2 break-all text-[13px] leading-6">
-                  {conversationId ?? "Unavailable"}
-                </div>
-              </div>
-              <div className="app-card rounded-[16px] px-4 py-3">
-                <div className="app-text-subtle text-[11px] font-medium tracking-[0.08em]">Thread Summary</div>
-                {threadConversation ? (
-                  <div className="mt-2 space-y-2 text-[13px] leading-6">
-                    <div>Title: {threadConversation.title || "Untitled"}</div>
-                    <div>CWD: {threadConversation.cwd || "Unavailable"}</div>
-                    <div>Turns: {threadConversation.turns.length}</div>
-                    <div>Items: {threadConversation.items.length}</div>
-                  </div>
-                ) : (
-                  <div className="mt-2 text-[13px] leading-6">No thread data loaded.</div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </main>
-  );
+  return <DebugWindowPageContent conversationId={conversationId} isLoading={isLoading} threadConversation={threadConversation} onClose={onClose} />;
 }
 
 export default App;

@@ -1,0 +1,5 @@
+{
+  "binaryPdf": "<div class=\"-mx-4 -my-4 flex h-[calc(100%+2rem)] min-h-full flex-col bg-token-main-surface-primary\"><div class=\"border-b border-token-border px-3 py-2 text-sm font-medium text-token-text-primary\">report.pdf</div><div class=\"flex flex-1 items-center justify-center\"><div class=\"text-[13px] leading-6 text-token-text-secondary\">wham.diff.binaryFile</div></div></div>",
+  "plainText": "<div class=\"-mx-4 -my-4 flex h-[calc(100%+2rem)] min-h-full flex-col bg-token-main-surface-primary\"><div class=\"border-b border-token-border px-3 py-2 text-sm font-medium text-token-text-primary\">example.ts</div><div class=\"flex-1 overflow-auto\"><div class=\"p-panel overflow-visible\"><code class=\"block whitespace-pre-wrap break-words\">line one\nline two</code></div></div></div>",
+  "pdbLoadingOverlay": "<div class=\"pointer-events-none absolute inset-0 flex items-center justify-center bg-white/70\"><div class=\"h-4 w-4 animate-spin rounded-full border-2 border-token-text-secondary border-t-transparent\"></div></div>"
+}

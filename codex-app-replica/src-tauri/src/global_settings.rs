@@ -106,6 +106,19 @@ fn ensure_supported_key(key: &str) -> Result<(), String> {
         | "integratedTerminalShell"
         | "preventSleepWhileRunning"
         | "runCodexInWindowsSubsystemForLinux"
+        | "electron:onboarding-override"
+        | "electron:onboarding-welcome-pending"
+        | "electron:onboarding-projectless-completed"
+        | "electron:onboarding-hide-first-new-thread-promos"
+        | "electron:onboarding-plugin-checklist-active"
+        | "electron:onboarding-primary-runtime-install-requested"
+        | "electron:onboarding-primary-runtime-install-ready"
+        | "electron:onboarding-workspace-experiment-assignment"
+        | "electron:onboarding-workspace-autolaunch-applied"
+        | "electron:onboarding-welcome-v2-state"
+        | "electron:onboarding-welcome-v2-role-state"
+        | "electron:onboarding-welcome-v2-role-selection-debug-override"
+        | "last_completed_onboarding"
         | "git-branch-prefix"
         | "git-always-force-push"
         | "git-create-pull-request-as-draft"
@@ -265,6 +278,19 @@ mod tests {
             "integratedTerminalShell",
             "preventSleepWhileRunning",
             "runCodexInWindowsSubsystemForLinux",
+            "electron:onboarding-override",
+            "electron:onboarding-welcome-pending",
+            "electron:onboarding-projectless-completed",
+            "electron:onboarding-hide-first-new-thread-promos",
+            "electron:onboarding-plugin-checklist-active",
+            "electron:onboarding-primary-runtime-install-requested",
+            "electron:onboarding-primary-runtime-install-ready",
+            "electron:onboarding-workspace-experiment-assignment",
+            "electron:onboarding-workspace-autolaunch-applied",
+            "electron:onboarding-welcome-v2-state",
+            "electron:onboarding-welcome-v2-role-state",
+            "electron:onboarding-welcome-v2-role-selection-debug-override",
+            "last_completed_onboarding",
             "viewed2025-09-15-nux",
             "viewed2025-09-15-full-chatgpt-auth-nux",
             "viewed2025-09-15-apikey-auth-nux",

@@ -29,8 +29,10 @@ type UsageLimitRowData = {
 
 export function UsageSettings({
   authMethod,
+  onShowToast,
 }: {
   authMethod: string | null;
+  onShowToast?: (toast: AppToast) => void;
 }) {
   const { locale, t } = useI18n();
   const [isUsageSettingsVisible, setIsUsageSettingsVisible] = useState(false);

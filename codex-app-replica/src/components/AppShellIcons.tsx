@@ -376,6 +376,109 @@ export function MoreActionsIcon({ className }: IconProps) {
   );
 }
 
+export function ExpandAllDiffsIcon({ className }: IconProps) {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
+      <path d="M12.8 8L19.8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M12.8 12L19.8 12.002" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M12.8 16L16.8 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M6.24013 6V18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3.74022 7.50012L6.24022 5.00012L8.74022 7.50012" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.74022 16.5L6.24022 19L3.74022 16.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function CollapseAllDiffsIcon({ className }: IconProps) {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
+      <path d="M13 9.50004L20 9.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M13 14.5L17 14.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M6.23999 4V9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M6.23999 15V20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3.74009 16.5L6.24009 14L8.74009 16.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.74009 7.5L6.24009 10L3.74009 7.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function RefreshIcon({ className }: IconProps) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <path
+        d="M3.50205 16.6664V13.3333C3.50205 12.9661 3.79982 12.6683 4.16709 12.6683H7.5001L7.63389 12.682C7.93696 12.7439 8.16514 13.0119 8.16514 13.3333C8.16514 13.6547 7.93696 13.9227 7.63389 13.9847L7.5001 13.9984H5.47471C6.58687 15.2249 8.21848 16.0013 10.0001 16.0013C13.06 16.0013 15.586 13.711 15.9552 10.7513L15.9854 10.6195C16.0846 10.3266 16.3786 10.1335 16.6974 10.1732C17.0617 10.2186 17.3198 10.551 17.2745 10.9154L17.2247 11.2523C16.6301 14.7051 13.6225 17.3313 10.0001 17.3314C8.01108 17.3314 6.17193 16.5383 4.83213 15.2474V16.6664C4.83213 17.0335 4.53416 17.3312 4.16709 17.3314C3.79982 17.3314 3.50205 17.0336 3.50205 16.6664ZM4.04502 9.24936C3.99941 9.61354 3.66706 9.87179 3.30283 9.82651C2.93839 9.78106 2.67926 9.44877 2.72471 9.08432L4.04502 9.24936ZM10.0001 2.6683C11.994 2.66834 13.8372 3.46552 15.1778 4.76205V3.33334C15.1778 2.96617 15.4757 2.66846 15.8429 2.6683C16.2101 2.6683 16.5079 2.96607 16.5079 3.33334V6.66635C16.5079 7.03362 16.2101 7.33139 15.8429 7.33139H12.5099C12.1426 7.33139 11.8448 7.03362 11.8448 6.66635C11.845 6.29923 12.1427 6.00131 12.5099 6.00131H14.5255C13.4134 4.77489 11.7816 3.99842 10.0001 3.99838C6.94004 3.99838 4.41411 6.28948 4.04502 9.24936L3.38486 9.16635L2.72471 9.08432C3.1758 5.46703 6.26081 2.6683 10.0001 2.6683Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+export function DiffSplitIcon({ className }: IconProps) {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
+      <path d="M12.8 8L19.8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M12.8 12L19.8 12.002" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M12.8 16L16.8 16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M6.24013 6V18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3.74022 7.50012L6.24022 5.00012L8.74022 7.50012" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.74022 16.5L6.24022 19L3.74022 16.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function DiffUnifiedIcon({ className }: IconProps) {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
+      <path d="M13 9.50004L20 9.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M13 14.5L17 14.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M6.23999 4V9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M6.23999 15V20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3.74009 16.5L6.24009 14L8.74009 16.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M8.74009 7.5L6.24009 10L3.74009 7.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function WordDiffsEnabledIcon({ className }: IconProps) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" className={className}>
+      <path d="M12.084 12.668a.666.666 0 0 1 0 1.33H7.917a.665.665 0 1 1 0-1.33h4.167ZM10 5.585c.367 0 .665.298.665.665v1.418h1.419a.666.666 0 0 1 0 1.33h-1.419v1.419a.666.666 0 0 1-1.33 0V8.998H7.917a.665.665 0 0 1 0-1.33h1.418V6.25c0-.367.298-.665.665-.665Z" />
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M12.667 2.668c.689 0 1.246 0 1.696.036.458.038.865.117 1.242.309a3.163 3.163 0 0 1 1.382 1.383c.192.377.272.783.309 1.24.037.45.036 1.008.036 1.697v5.333c0 .689 0 1.246-.036 1.696-.037.458-.117.865-.309 1.242a3.166 3.166 0 0 1-1.382 1.382c-.377.192-.784.271-1.242.309-.45.037-1.007.036-1.696.036H7.334c-.689 0-1.246 0-1.696-.036-.458-.038-.864-.117-1.24-.309a3.166 3.166 0 0 1-1.384-1.383c-.192-.376-.271-.783-.309-1.24-.037-.45-.036-1.008-.036-1.697V7.333c0-.689 0-1.246.036-1.696.038-.458.117-.864.309-1.24a3.17 3.17 0 0 1 1.383-1.384c.377-.192.783-.272 1.24-.309.45-.037 1.008-.036 1.697-.036h5.333Zm-5.333 1.33c-.71 0-1.204.001-1.588.032-.375.03-.587.088-.745.168A1.836 1.836 0 0 0 4.199 5c-.08.158-.137.37-.168.745C4 6.13 4 6.622 4 7.333v5.333c0 .71.001 1.204.032 1.588.03.375.088.587.168.745.176.345.457.627.802.803.158.08.37.137.745.168.384.031.877.031 1.588.031h5.333c.71 0 1.204 0 1.588-.031.375-.031.587-.088.745-.168a1.84 1.84 0 0 0 .803-.803c.08-.158.137-.37.168-.745.031-.383.031-.877.031-1.588V7.333c0-.71 0-1.204-.031-1.588-.031-.375-.088-.587-.168-.745A1.838 1.838 0 0 0 15 4.198c-.158-.08-.37-.137-.745-.168-.384-.031-.877-.032-1.588-.032H7.334Z"
+      />
+    </svg>
+  );
+}
+
+export function WordDiffsDisabledIcon({ className }: IconProps) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" className={className}>
+      <path d="M14.375 9.502a3.165 3.165 0 0 1 0 6.33h-2.77l.949.948a.666.666 0 0 1-.942.94L9.53 15.639a.667.667 0 0 1 0-.942l2.083-2.083a.666.666 0 0 1 .942.94l-.949.949h2.77a1.836 1.836 0 0 0 0-3.67H3.333a.666.666 0 0 1 0-1.33h11.042Zm-7.709 5a.665.665 0 1 1 0 1.33H3.333a.666.666 0 0 1 0-1.33h3.333Zm10-10a.665.665 0 1 1 0 1.33H3.333a.666.666 0 0 1 0-1.33h13.333Z" />
+    </svg>
+  );
+}
+
+export function WhitespaceIcon({ className }: IconProps) {
+  return (
+    <svg width="21" height="21" viewBox="0 0 21 21" fill="none" aria-hidden="true" className={className}>
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M10.8 7.20081C12.6973 7.20093 14.2363 8.73902 14.2365 10.6364C14.2363 12.5337 12.6973 14.0728 10.8 14.0729C8.90266 14.0727 7.36459 12.5336 7.36441 10.6364C7.36458 8.73905 8.90265 7.20098 10.8 7.20081ZM10.8 8.53088C9.63719 8.53106 8.69466 9.47359 8.69449 10.6364C8.69467 11.7991 9.6372 12.7426 10.8 12.7428C11.9628 12.7427 12.9062 11.7991 12.9064 10.6364C12.9062 9.47356 11.9628 8.53101 10.8 8.53088Z"
+        fill="currentColor"
+      />
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M10.8 3.47131C13.2616 3.47131 15.1979 4.65538 16.5998 6.00061C17.999 7.34335 18.9111 8.88809 19.3478 9.7262L19.4464 9.94495C19.6143 10.3912 19.6143 10.8815 19.4464 11.3278L19.3478 11.5465C18.9111 12.3846 17.9989 13.9294 16.5998 15.2721C15.1979 16.6173 13.2616 17.8014 10.8 17.8014C8.33838 17.8013 6.40196 16.6173 5.00015 15.2721C3.7758 14.0971 2.92396 12.7676 2.43765 11.8922L2.2521 11.5465C1.95397 10.9742 1.95397 10.2985 2.2521 9.7262L2.43765 9.38049C2.92396 8.50512 3.7758 7.17559 5.00015 6.00061C6.40196 4.65537 8.33838 3.47138 10.8 3.47131ZM10.8 4.80139C8.79567 4.80146 7.17197 5.76012 5.92105 6.96057C4.8244 8.01304 4.04928 9.21984 3.60269 10.0231L3.43081 10.3405C3.33334 10.5276 3.33334 10.7451 3.43081 10.9323L3.60269 11.2496C4.04928 12.0529 4.8244 13.2597 5.92105 14.3121C7.17197 15.5126 8.79567 16.4712 10.8 16.4713C12.8043 16.4713 14.4279 15.5126 15.6789 14.3121C16.9321 13.1094 17.7661 11.7056 18.1691 10.9323L18.2003 10.86C18.2551 10.7149 18.2551 10.5578 18.2003 10.4127L18.1691 10.3405C17.7661 9.56708 16.9321 8.16328 15.6789 6.96057C14.4279 5.76012 12.8043 4.80139 10.8 4.80139Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
 export function CloseTabIcon({ className }: IconProps) {
   return (
     <svg width="21" height="21" viewBox="0 0 21 21" fill="none" aria-hidden="true" className={className}>

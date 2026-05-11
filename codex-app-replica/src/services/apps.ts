@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { batchWriteConfigValueForHost } from "./settings";
 
 export type AppsListParams = {
+  hostId?: string | null;
   cursor?: string | null;
   limit?: number | null;
   threadId?: string | null;
@@ -49,7 +50,13 @@ export type ReadAppToolsResponse = {
 };
 
 export async function readAppsSnapshot(params: AppsListParams = {}) {
-  return invoke<AppsListResponse>("list_apps", { params });
+  const { hostId = null, ...rest } = params;
+  return invoke<AppsListResponse>("list_apps", {
+    params: {
+      hostId,
+      ...rest,
+    },
+  });
 }
 
 export async function readAppTools(params: ReadAppToolsParams) {

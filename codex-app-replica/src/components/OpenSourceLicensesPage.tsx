@@ -66,7 +66,7 @@ export function OpenSourceLicensesPage({
         <SettingsGroupContent>
           <SettingsSurface>
             {isLoading ? (
-              <div className="p-3 text-sm text-token-text-secondary">
+              <div className="text-sm text-token-text-secondary">
                 {t("settings.openSourceLicenses.loading")}
               </div>
             ) : text ? (
@@ -74,7 +74,7 @@ export function OpenSourceLicensesPage({
                 {text}
               </pre>
             ) : (
-              <div className="p-3 text-sm text-token-text-secondary">
+              <div className="text-sm text-token-text-secondary">
                 {t("settings.openSourceLicenses.missing")}
               </div>
             )}
@@ -98,20 +98,20 @@ function SettingsContentLayout({
 }) {
   return (
     <div className="main-surface flex h-full min-h-0 flex-col">
-      {backSlot ? (
-        <div className="draggable flex items-center px-5 pt-4">
-          {backSlot}
-        </div>
-      ) : null}
-      <div className="scrollbar-stable flex-1 overflow-y-auto p-5">
-        <div className="mx-auto flex w-full max-w-2xl flex-col">
-          <div className="flex items-start justify-between gap-3 pb-5">
-            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-              <h1 className="text-[20px] font-medium leading-7 text-token-text-primary">{title}</h1>
-              {subtitle ? <div className="text-base text-token-text-secondary">{subtitle}</div> : null}
+      <div className="draggable flex h-toolbar items-center px-panel">
+        {backSlot}
+      </div>
+      <div className="scrollbar-stable flex-1 overflow-y-auto p-panel">
+        <div className="mx-auto flex w-full max-w-2xl min-w-[calc(320px*var(--codex-window-zoom))] flex-col">
+          <div className="flex items-center justify-between gap-3 pb-panel">
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5 pb-panel">
+              <div className="heading-lg truncate text-token-text-primary">{title}</div>
+              {subtitle ? (
+                <div className="text-base text-token-text-secondary truncate">{subtitle}</div>
+              ) : null}
             </div>
           </div>
-          <div className="flex flex-col gap-5">{children}</div>
+          <div className="flex flex-col gap-[var(--padding-panel)]">{children}</div>
         </div>
       </div>
     </div>

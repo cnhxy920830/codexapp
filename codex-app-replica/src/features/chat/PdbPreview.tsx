@@ -72,6 +72,12 @@ export function PdbPreview({ contents, t }: PdbPreviewProps) {
     setViewerResetToken((value) => value + 1);
   }, [contents]);
 
+  useEffect(() => {
+    if (activeModelIndex >= data.models.length) {
+      setActiveModelIndex(0);
+    }
+  }, [activeModelIndex, data.models.length]);
+
   const activeModel = data.models[activeModelIndex] ?? null;
   const activeChain =
     activeModel?.residueChains.find((chain) => chain.chainId === activeChainId) ?? activeModel?.residueChains[0] ?? null;
@@ -294,9 +300,7 @@ export function PdbPreview({ contents, t }: PdbPreviewProps) {
           className="h-full w-full overflow-hidden"
         />
         {viewerStatus === "loading" ? (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/70">
-            <div className="text-sm text-token-text-secondary">{t("review.fileSource.loading")}</div>
-          </div>
+          <PdbPreviewLoadingOverlay />
         ) : null}
         {viewerStatus === "error" ? (
           <div className="absolute inset-0 flex items-center justify-center bg-token-main-surface-primary">
@@ -693,4 +697,12 @@ function getCreateViewer(module: unknown) {
 
 function formatScore(score: number | null) {
   return score == null ? "n/a" : score.toFixed(1);
+}
+
+export function PdbPreviewLoadingOverlay() {
+  return (
+    <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/70">
+      <div className="h-4 w-4 animate-spin rounded-full border-2 border-token-text-secondary border-t-transparent" />
+    </div>
+  );
 }

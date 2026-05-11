@@ -161,6 +161,10 @@ This directory is for building a Windows Codex App replica with Tauri + React.
 ## Blocked Handling
 
 - If parity requires backend modification, login-state incompatibility, unverifiable target behavior, or any deviation from the required backend integration model, mark the work as `blocked`.
+- A technology-stack difference is not by itself a blocker. When the extracted upstream implementation is Electron-specific, faithfully reimplement the same client-visible UI, behavior, state ownership, event flow, and command contract in the replica's Tauri + React + Rust stack using best-practice native equivalents.
+- Missing local owner code in the current replica is not by itself a blocker. Add the required replica-side owner when the upstream source proves the behavior and it can be implemented without changing this project's `codex` backend/source crates, without inventing new product behavior, and without replacing the original flow with a fallback or approximation.
+- Treat a technology-stack-related path as `blocked` only when a faithful equivalent cannot be implemented under the above constraints, when required upstream behavior cannot be proven through allowed evidence, when implementation would require modifying the forbidden backend/source area, or when the only available path would change the original client-visible contract.
+- Existing tracker items that were blocked only because the upstream owner was Electron-specific or absent from the current Tauri replica must be re-evaluated before being left blocked.
 - When a path is `blocked`, stop dependent work on that path and wait for user confirmation.
 - Independent non-blocked work may continue if it does not hide, bypass, or dilute the blocker.
 - Keep blocked items visible in the tracker until the user resolves them.

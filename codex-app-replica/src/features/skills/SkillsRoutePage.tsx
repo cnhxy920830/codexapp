@@ -42,7 +42,7 @@ import {
   type PluginReadParams,
 } from "../../services/plugins";
 import {
-  readConfig,
+  readConfigForHost,
   resolveUserConfigWriteTarget,
   type ConfigWriteTarget,
 } from "../../services/settings";
@@ -145,8 +145,7 @@ export function SkillsRoutePage({
     readStoredBoolean(SKILL_CREATOR_PREFILL_STORAGE_KEY),
   );
 
-  const isSupportedHost = selectedHostId === LOCAL_SETTINGS_HOST_ID;
-  const canShowUnifiedPluginsPage = isPluginsRouteEnabled && authMethod !== "apikey" && isSupportedHost;
+  const canShowUnifiedPluginsPage = isPluginsRouteEnabled && authMethod !== "apikey";
   const canInstallRecommendedSkills = authMethod === "chatgpt";
   const skillCreatorPath = useMemo(() => {
     if (!codexHome || selectedHostId !== LOCAL_SETTINGS_HOST_ID) {
@@ -1148,9 +1147,10 @@ async function loadSkills({
   const requestId = ++requestIdRef.current;
   onLoading(true);
   onError(null);
+  const effectiveWorkspaceRoot = hostId === LOCAL_SETTINGS_HOST_ID ? workspaceRoot : null;
 
   try {
-    const nextSkills = await readSkillsSnapshot(workspaceRoot, {
+    const nextSkills = await readSkillsSnapshot(effectiveWorkspaceRoot, {
       forceReload,
       hostId,
     });
@@ -1275,17 +1275,23 @@ async function readPluginBrowseState(
   selectedHostId: string,
   options?: { forceRefetchApps?: boolean },
 ) {
+  const effectiveWorkspaceRoot = selectedHostId === LOCAL_SETTINGS_HOST_ID ? workspaceRoot : null;
   const [pluginsResult, configResult, appsResult, importsResult] = await Promise.allSettled([
-    readPluginsSnapshot(workspaceRoot, selectedHostId),
-    readConfig(workspaceRoot),
+    readPluginsSnapshot(effectiveWorkspaceRoot, selectedHostId),
+    readConfigForHost({
+      hostId: selectedHostId,
+      cwd: effectiveWorkspaceRoot,
+      includeLayers: true,
+    }),
     readAppsSnapshot({
+      hostId: selectedHostId,
       forceRefetch: options?.forceRefetchApps ?? false,
     }),
     detectExternalAgentImports({
       hostId: selectedHostId,
       includeHome: true,
       providers: IMPORT_PROVIDER_IDS,
-      workspaceRoots: workspaceRoot ? [workspaceRoot] : null,
+      workspaceRoots: effectiveWorkspaceRoot ? [effectiveWorkspaceRoot] : null,
     }),
   ]);
 

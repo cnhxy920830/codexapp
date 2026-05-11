@@ -6,11 +6,21 @@ function resolvePluginsRouteEnabled(data: Array<{ name: string; isEnabled: boole
   return data.find((app) => app.name === "plugins")?.isEnabled ?? true;
 }
 
-export function usePluginsRouteEnabled(hostId: string = LOCAL_SETTINGS_HOST_ID) {
-  const [isPluginsRouteEnabled, setIsPluginsRouteEnabled] = useState(hostId === LOCAL_SETTINGS_HOST_ID);
+type PluginsRouteEnabledOptions = {
+  allowRemoteHost?: boolean;
+};
+
+export function usePluginsRouteEnabled(
+  hostId: string = LOCAL_SETTINGS_HOST_ID,
+  options: PluginsRouteEnabledOptions = {},
+) {
+  const allowRemoteHost = options.allowRemoteHost === true;
+  const [isPluginsRouteEnabled, setIsPluginsRouteEnabled] = useState(
+    allowRemoteHost || hostId === LOCAL_SETTINGS_HOST_ID,
+  );
 
   useEffect(() => {
-    if (hostId !== LOCAL_SETTINGS_HOST_ID) {
+    if (!allowRemoteHost && hostId !== LOCAL_SETTINGS_HOST_ID) {
       setIsPluginsRouteEnabled(false);
       return;
     }
@@ -18,7 +28,7 @@ export function usePluginsRouteEnabled(hostId: string = LOCAL_SETTINGS_HOST_ID) 
     let cancelled = false;
     let unlisten: (() => void) | undefined;
 
-    void readAppsSnapshot()
+    void readAppsSnapshot({ hostId })
       .then((response) => {
         if (!cancelled) {
           setIsPluginsRouteEnabled(resolvePluginsRouteEnabled(response.data));
@@ -30,19 +40,21 @@ export function usePluginsRouteEnabled(hostId: string = LOCAL_SETTINGS_HOST_ID) 
         }
       });
 
-    void onAppsSnapshotUpdated((snapshot) => {
-      if (!cancelled) {
-        setIsPluginsRouteEnabled(resolvePluginsRouteEnabled(snapshot.data));
-      }
-    }).then((dispose) => {
-      unlisten = dispose;
-    });
+    if (hostId === LOCAL_SETTINGS_HOST_ID) {
+      void onAppsSnapshotUpdated((snapshot) => {
+        if (!cancelled) {
+          setIsPluginsRouteEnabled(resolvePluginsRouteEnabled(snapshot.data));
+        }
+      }).then((dispose) => {
+        unlisten = dispose;
+      });
+    }
 
     return () => {
       cancelled = true;
       unlisten?.();
     };
-  }, [hostId]);
+  }, [allowRemoteHost, hostId]);
 
   return isPluginsRouteEnabled;
 }

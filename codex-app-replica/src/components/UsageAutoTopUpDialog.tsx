@@ -12,6 +12,7 @@ import {
   type UsageCreditsSnapshot,
   type UsagePricingInfo,
 } from "../services/usage";
+import type { AppToast } from "./AppToastRegion";
 
 const CREDIT_PURCHASE_URL = "https://chatgpt.com/codex/settings/usage?credit_modal=true";
 const DEFAULT_THRESHOLD = "125";
@@ -43,12 +44,14 @@ export function UsageAutoTopUpDialog({
   creditDetails,
   onClose,
   onSaved,
+  onShowToast,
   open,
   serverState,
 }: {
   creditDetails: UsageCreditsSnapshot | null;
   onClose: () => void;
   onSaved: (response: UsageAutoTopUpSettings) => void;
+  onShowToast?: (toast: AppToast) => void;
   open: boolean;
   serverState: UsageAutoTopUpSettings;
 }) {
@@ -286,8 +289,10 @@ export function UsageAutoTopUpDialog({
                 void handleDisable({
                   onClose,
                   onSaved,
+                  onShowToast,
                   setIsSavingDisable,
                   setSaveError,
+                  t,
                 })
               }
               className="rounded-lg border border-token-border px-3 py-1.5 text-sm text-token-text-primary disabled:opacity-60"
@@ -313,12 +318,14 @@ export function UsageAutoTopUpDialog({
                 immediateTopUpEstimate,
                 onClose,
                 onSaved,
+                onShowToast,
                 saveIntent,
                 setHasImmediateTopUpFailure,
                 setImmediateTopUpFailureAmount,
                 setIsSavingEnableOrUpdate,
                 setSaveError,
                 setSubmissionAttempts,
+                t,
               })
             }
             className="rounded-lg bg-token-text-primary px-3 py-1.5 text-sm text-token-main-surface-primary disabled:opacity-60"
@@ -430,23 +437,27 @@ async function handleSave({
   immediateTopUpEstimate,
   onClose,
   onSaved,
+  onShowToast,
   saveIntent,
   setHasImmediateTopUpFailure,
   setImmediateTopUpFailureAmount,
   setIsSavingEnableOrUpdate,
   setSaveError,
   setSubmissionAttempts,
+  t,
 }: {
   draftState: DraftState;
   immediateTopUpEstimate: ImmediateTopUpEstimate | null;
   onClose: () => void;
   onSaved: (response: UsageAutoTopUpSettings) => void;
+  onShowToast?: (toast: AppToast) => void;
   saveIntent: SaveIntent;
   setHasImmediateTopUpFailure: (value: boolean) => void;
   setImmediateTopUpFailureAmount: (value: string | null) => void;
   setIsSavingEnableOrUpdate: (value: boolean) => void;
   setSaveError: (value: string | null) => void;
   setSubmissionAttempts: (value: number | ((current: number) => number)) => void;
+  t: (key: MessageKey) => string;
 }) {
   setSubmissionAttempts((value) => value + 1);
   if (saveIntent !== "enable" && saveIntent !== "update") {
@@ -472,9 +483,25 @@ async function handleSave({
       return;
     }
 
+    onShowToast?.({
+      tone: "success",
+      message: t(
+        saveIntent === "enable"
+          ? "settings.usage.autoTopUp.enable.success"
+          : "settings.usage.autoTopUp.update.success",
+      ),
+    });
     onClose();
   } catch (error) {
     setSaveError(error instanceof Error ? error.message : String(error));
+    onShowToast?.({
+      tone: "error",
+      message: t(
+        saveIntent === "enable"
+          ? "settings.usage.autoTopUp.enable.error"
+          : "settings.usage.autoTopUp.update.error",
+      ),
+    });
   } finally {
     setIsSavingEnableOrUpdate(false);
   }
@@ -483,13 +510,17 @@ async function handleSave({
 async function handleDisable({
   onClose,
   onSaved,
+  onShowToast,
   setIsSavingDisable,
   setSaveError,
+  t,
 }: {
   onClose: () => void;
   onSaved: (response: UsageAutoTopUpSettings) => void;
+  onShowToast?: (toast: AppToast) => void;
   setIsSavingDisable: (value: boolean) => void;
   setSaveError: (value: string | null) => void;
+  t: (key: MessageKey) => string;
 }) {
   setIsSavingDisable(true);
   setSaveError(null);
@@ -497,9 +528,17 @@ async function handleDisable({
   try {
     const response = await disableUsageAutoTopUp();
     onSaved(response);
+    onShowToast?.({
+      tone: "success",
+      message: t("settings.usage.autoTopUp.disable.success"),
+    });
     onClose();
   } catch (error) {
     setSaveError(error instanceof Error ? error.message : String(error));
+    onShowToast?.({
+      tone: "error",
+      message: t("settings.usage.autoTopUp.disable.error"),
+    });
   } finally {
     setIsSavingDisable(false);
   }

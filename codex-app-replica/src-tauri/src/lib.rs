@@ -16,6 +16,7 @@ mod fast_mode_rollout_metrics;
 mod global_dictation;
 mod global_dictation_window;
 mod global_settings;
+mod git_origins;
 mod host_files;
 mod hotkey_window;
 mod keyboard_shortcuts;
@@ -213,6 +214,7 @@ use global_settings::get_global_state_command;
 use global_settings::set_global_state;
 use global_settings::set_global_state_command;
 use global_settings::wsl_bash_availability;
+use git_origins::git_origins;
 use host_files::open_file;
 use host_files::open_in_browser;
 use host_files::read_file;
@@ -584,6 +586,7 @@ pub fn run() {
             gh_pr_comment,
             gh_pr_merge,
             gh_pr_update,
+            git_origins,
             projectless_thread_cwd,
             open_current_main_window,
             open_debug_window,

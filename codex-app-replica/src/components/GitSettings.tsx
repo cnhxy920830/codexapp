@@ -8,6 +8,9 @@ import {
   setGitCommitInstructions,
   setGitCreateDraftPullRequest,
   setGitPullRequestInstructions,
+  setGitPullRequestMergeMethod,
+  setGitShowSidebarPrIcons,
+  type GitMergeMethod,
 } from "../services/gitSettings";
 import {
   DEFAULT_WORKTREES_SETTINGS,
@@ -22,6 +25,8 @@ type SaveState = {
   branchPrefix: boolean;
   alwaysForcePush: boolean;
   createDraftPullRequest: boolean;
+  pullRequestMergeMethod: boolean;
+  showSidebarPrIcons: boolean;
   commitInstructions: boolean;
   pullRequestInstructions: boolean;
   worktreeAutoCleanup: boolean;
@@ -32,6 +37,8 @@ const DEFAULT_SAVE_STATE: SaveState = {
   branchPrefix: false,
   alwaysForcePush: false,
   createDraftPullRequest: false,
+  pullRequestMergeMethod: false,
+  showSidebarPrIcons: false,
   commitInstructions: false,
   pullRequestInstructions: false,
   worktreeAutoCleanup: false,
@@ -190,6 +197,45 @@ export function GitSettings({
       showToast("error", "settings.git.createDraftPullRequest.save.error");
     } finally {
       setSavingFlag("createDraftPullRequest", false);
+    }
+  };
+
+  const savePullRequestMergeMethod = async (value: GitMergeMethod) => {
+    if (isGitLoading || saving.pullRequestMergeMethod || value === gitState.pullRequestMergeMethod) {
+      return;
+    }
+
+    setSavingFlag("pullRequestMergeMethod", true);
+    try {
+      await setGitPullRequestMergeMethod(value);
+      setGitState((current) => ({ ...current, pullRequestMergeMethod: value }));
+      showToast("success", "settings.git.pullRequestMergeMethod.save.success");
+    } catch {
+      showToast("error", "settings.git.pullRequestMergeMethod.save.error");
+    } finally {
+      setSavingFlag("pullRequestMergeMethod", false);
+    }
+  };
+
+  const saveShowSidebarPrIcons = async (value: boolean) => {
+    if (isGitLoading || saving.showSidebarPrIcons) {
+      return;
+    }
+
+    setSavingFlag("showSidebarPrIcons", true);
+    try {
+      await setGitShowSidebarPrIcons(value);
+      setGitState((current) => ({ ...current, showSidebarPrIcons: value }));
+      showToast(
+        "success",
+        value
+          ? "settings.git.showSidebarPrIcons.save.enabled"
+          : "settings.git.showSidebarPrIcons.save.disabled",
+      );
+    } catch {
+      showToast("error", "settings.git.showSidebarPrIcons.save.error");
+    } finally {
+      setSavingFlag("showSidebarPrIcons", false);
     }
   };
 
@@ -384,6 +430,41 @@ export function GitSettings({
               ariaLabel={t("settings.git.createDraftPullRequest.ariaLabel")}
               onChange={(checked) => {
                 void saveCreateDraftPullRequest(checked);
+              }}
+            />
+          </SettingRow>
+
+          <SettingRow
+            label={t("settings.git.pullRequestMergeMethod.label")}
+            description={t("settings.git.pullRequestMergeMethod.description")}
+          >
+            <select
+              aria-label={t("settings.git.pullRequestMergeMethod.ariaLabel")}
+              value={gitState.pullRequestMergeMethod}
+              disabled={isGitLoading || saving.pullRequestMergeMethod}
+              onChange={(event) => {
+                const next = event.target.value;
+                if (next === "merge" || next === "squash") {
+                  void savePullRequestMergeMethod(next);
+                }
+              }}
+              className="app-control h-9 rounded-[10px] px-3 text-[13px]"
+            >
+              <option value="merge">{t("settings.git.pullRequestMergeMethod.merge")}</option>
+              <option value="squash">{t("settings.git.pullRequestMergeMethod.squash")}</option>
+            </select>
+          </SettingRow>
+
+          <SettingRow
+            label={t("settings.git.showSidebarPrIcons.label")}
+            description={t("settings.git.showSidebarPrIcons.description")}
+          >
+            <ToggleSwitch
+              checked={gitState.showSidebarPrIcons}
+              disabled={isGitLoading || saving.showSidebarPrIcons}
+              ariaLabel={t("settings.git.showSidebarPrIcons.ariaLabel")}
+              onChange={(checked) => {
+                void saveShowSidebarPrIcons(checked);
               }}
             />
           </SettingRow>

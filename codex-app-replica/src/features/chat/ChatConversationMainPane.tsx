@@ -24,6 +24,7 @@ import type {
 } from "../../services/history";
 import type { ToolRequestUserInputQuestion } from "../../services/history";
 import type { ComposerEnterBehavior, FollowUpQueueMode, ReviewDelivery } from "../../services/settings";
+import { updateDiffIfOpen } from "../../services/windowNavigation";
 import type { QueuedLocalFollowUp } from "./localFollowUpQueue";
 import {
   approvalRequestKey,
@@ -38,6 +39,7 @@ import { renderMessageContent } from "./messageContent";
 import { LatestTurnPreview } from "./LatestTurnPreview";
 import { MultiAgentGroupSummary } from "./MultiAgentGroupSummary";
 import { PlanSummaryItemCard } from "./PlanSummaryItemCard";
+import { TurnDiffCard } from "./TurnDiffCard";
 import { UserMessageCollapsibleContent } from "./UserMessageCollapsibleContent";
 import {
   attachTurnScopedItemsToRenderableConversationGroups,
@@ -244,11 +246,22 @@ export function ChatConversationMainPane({
   const latestConversationGroup = conversationGroups.at(-1) ?? null;
   const latestConversationGroupTurnId = conversationGroups.at(-1)?.turnId ?? null;
   const conversationId = threadConversation?.id ?? null;
+  const latestUnifiedDiff = latestConversationGroup?.unifiedDiffItem?.unifiedDiff ?? "";
   const hasTurnContent = threadConversation !== null && conversationGroups.length > 0;
   const hasUnmatchedBodyContent =
     groupedConversation.unmatchedApprovalItems.length > 0 ||
     currentThreadQueuedFollowUps.length > 0;
   const showBlankConversationBody = !hasTurnContent && !hasUnmatchedBodyContent;
+  useEffect(() => {
+    if (!conversationId || latestUnifiedDiff.trim().length === 0) {
+      return;
+    }
+
+    void updateDiffIfOpen({
+      conversationId,
+      unifiedDiff: latestUnifiedDiff,
+    }).catch(() => undefined);
+  }, [conversationId, latestUnifiedDiff]);
   const latestTurnPreviewContent =
     latestConversationGroup !== null && conversationId !== null ? (
       <ConversationGroupContent
@@ -262,6 +275,7 @@ export function ChatConversationMainPane({
         onEditUserMessage={onEditUserMessage}
         onSelectThread={onSelectThread}
         onToolRequestUserInputSubmit={onToolRequestUserInputSubmit}
+        conversationCwd={threadConversation?.cwd ?? null}
         planSummaryIsWriting={submitButtonMode === "stop" && latestConversationGroup.assistantMessage === null}
         respondingApprovalKeys={respondingApprovalKeys}
         t={t}
@@ -313,6 +327,7 @@ export function ChatConversationMainPane({
                   <ConversationGroupContent
                     key={group.id}
                     conversationId={conversationId ?? ""}
+                    conversationCwd={threadConversation?.cwd ?? null}
                     group={group}
                     approvalActionErrors={approvalActionErrors}
                     onApprovalDecision={onApprovalDecision}
@@ -896,6 +911,7 @@ function ApprovalRequestCard({
 
 function ConversationGroupContent({
   conversationId,
+  conversationCwd = null,
   group,
   approvalActionErrors,
   onApprovalDecision,
@@ -911,6 +927,7 @@ function ConversationGroupContent({
   userMessageSentAtMsByTurnId,
 }: {
   conversationId: string;
+  conversationCwd?: string | null;
   group: RenderableConversationGroup;
   approvalActionErrors: Record<string, string>;
   onApprovalDecision: (approval: PendingApproval, decision: ApprovalDecision) => void;
@@ -962,7 +979,16 @@ function ConversationGroupContent({
         <ConversationItemCard conversationId={conversationId} item={group.systemEventItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       ) : null}
       {group.unifiedDiffItem ? (
-        <ConversationItemCard conversationId={conversationId} item={group.unifiedDiffItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+        <ConversationItemCard
+          conversationId={conversationId}
+          conversationCwd={conversationCwd}
+          item={group.unifiedDiffItem}
+          onEditUserMessage={onEditUserMessage}
+          onOpenRemoteTask={onOpenRemoteTask}
+          onSelectThread={onSelectThread}
+          t={t}
+          userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId}
+        />
       ) : null}
       <ConversationItemList conversationId={conversationId} items={group.remoteTaskCreatedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       <ConversationItemList conversationId={conversationId} items={group.personalityChangedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
@@ -1031,6 +1057,7 @@ function ConversationItemList({
 
 function ConversationItemCard({
   conversationId,
+  conversationCwd = null,
   item,
   planSummaryIsWriting = false,
   onEditUserMessage,
@@ -1040,6 +1067,7 @@ function ConversationItemCard({
   userMessageSentAtMsByTurnId,
 }: {
   conversationId: string;
+  conversationCwd?: string | null;
   item: RenderableConversationItem;
   planSummaryIsWriting?: boolean;
   onEditUserMessage: (text: string) => void | Promise<void>;
@@ -1109,18 +1137,7 @@ function ConversationItemCard({
   }
 
   if (item.type === "turnDiff") {
-    const unifiedDiff = item.unifiedDiff.trim();
-    if (unifiedDiff.length === 0) {
-      return null;
-    }
-    return (
-      <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="app-title text-[14px] font-medium">Diff</div>
-        <pre className="app-code-block mt-3 overflow-x-auto rounded-[14px] px-4 py-3 text-[12px] leading-6 whitespace-pre-wrap">
-          {item.unifiedDiff}
-        </pre>
-      </div>
-    );
+    return <TurnDiffCard conversationCwd={conversationCwd} conversationId={conversationId} item={item} t={t} />;
   }
 
   if (item.type === "modelRerouted") {

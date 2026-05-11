@@ -57,7 +57,7 @@ function LoadingLogo({ className }: { className?: string }) {
 
   return (
     <div aria-hidden="true" className={joinClasses("relative inline-flex shrink-0 items-center justify-center", className)}>
-      <HomepageLogo aria-hidden="true" className="codex-logo-shimmer-base h-full w-full" />
+      <HomepageLogo aria-hidden="true" className="codex-logo-shimmer-base size-full" />
       <div
         className={joinClasses("pointer-events-none absolute inset-0", !prefersReducedMotion && "codex-logo-shimmer-overlay")}
         style={{
@@ -89,7 +89,7 @@ export function LoadingPage({
           ? "absolute inset-0 z-10"
           : fillParent
             ? "absolute inset-0 bg-transparent"
-            : "relative h-full w-full bg-transparent",
+            : "relative size-full bg-transparent",
       )}
       style={
         overlay
@@ -100,10 +100,10 @@ export function LoadingPage({
       }
     >
       {overlay || fillParent ? null : (
-        <div data-tauri-drag-region className="draggable absolute inset-x-0 top-0 h-[var(--app-shell-toolbar-sm)]" />
+        <div data-tauri-drag-region className="draggable absolute inset-x-0 top-0 h-[var(--app-shell-toolbar)]" />
       )}
       <div className="flex flex-col items-center gap-2">
-        {showLogo ? <LoadingLogo className="h-14 w-14" /> : null}
+        {showLogo ? <LoadingLogo className="size-14" /> : null}
       </div>
     </div>
   );

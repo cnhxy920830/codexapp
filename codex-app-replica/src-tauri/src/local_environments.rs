@@ -347,22 +347,24 @@ fn collect_local_environment_entries(
 fn collect_upstream_local_environment_entries(
     root_path: &Path,
 ) -> Result<Vec<UpstreamLocalEnvironmentEntry>, String> {
-    let environments_dir = root_path.join(LOCAL_ENVIRONMENTS_DIR);
-    if !environments_dir.is_dir() {
-        return Ok(Vec::new());
-    }
-
     let mut paths = Vec::new();
-    for entry in fs::read_dir(&environments_dir)
-        .map_err(|err| format!("failed to read local environments directory: {err}"))?
-    {
-        let entry =
-            entry.map_err(|err| format!("failed to read local environment entry: {err}"))?;
-        let path = entry.path();
-        if !path.is_file() || path.extension() != Some(OsStr::new("toml")) {
+    for ancestor in root_path.ancestors() {
+        let environments_dir = ancestor.join(LOCAL_ENVIRONMENTS_DIR);
+        if !environments_dir.is_dir() {
             continue;
         }
-        paths.push(path);
+
+        for entry in fs::read_dir(&environments_dir)
+            .map_err(|err| format!("failed to read local environments directory: {err}"))?
+        {
+            let entry =
+                entry.map_err(|err| format!("failed to read local environment entry: {err}"))?;
+            let path = entry.path();
+            if !path.is_file() || path.extension() != Some(OsStr::new("toml")) {
+                continue;
+            }
+            paths.push(path);
+        }
     }
     paths.sort();
 

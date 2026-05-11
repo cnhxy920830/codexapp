@@ -14,6 +14,7 @@ const CLIENT_NAME: &str = "codex-app-replica";
 const CLIENT_TITLE: &str = "Codex App Replica";
 const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CODEX_APP_SERVER_INITIALIZED_EVENT: &str = "codex-app-server-initialized";
+const MCP_OAUTH_EVENT: &str = "mcp-oauth-login-completed";
 const REMOTE_APP_SERVER_COMMAND: &str = "codex app-server --listen stdio://";
 
 #[derive(Default)]
@@ -82,6 +83,15 @@ struct CodexAppServerInitializedNotification {
     host_id: String,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct McpOauthLoginCompletedNotification {
+    host_id: Option<String>,
+    name: String,
+    success: bool,
+    error: Option<String>,
+}
+
 pub async fn send_request(
     app: &AppHandle,
     host_id: &str,
@@ -135,12 +145,27 @@ pub async fn reconcile(
         registry.ensure_host(&connection.host_id);
         registry.set_auto_connect(&connection.host_id, connection.auto_connect);
         if connection.auto_connect {
-            ensure_connected(app, &runtime_state, &registry, connection.clone()).await;
+            ensure_connected(app, &runtime_state, &registry, connection.clone(), false).await;
         } else {
             ensure_stopped(&runtime_state, &registry, &connection.host_id).await;
         }
     }
 
+    Ok(())
+}
+
+pub async fn restart(app: &AppHandle, host_id: &str) -> Result<(), String> {
+    let runtime_state = app.state::<RemoteAppServerRuntimeState>();
+    let registry = app.state::<RemoteAppServerRegistry>();
+    let _reconcile_lock = runtime_state.reconcile_lock.lock().await;
+    let connection = {
+        let entries = runtime_state.entries.lock().await;
+        entries
+            .get(host_id)
+            .map(|entry| entry.connection.clone())
+            .ok_or_else(|| format!("remote app-server is not running for {host_id}"))?
+    };
+    ensure_connected(app, &runtime_state, &registry, connection, true).await;
     Ok(())
 }
 
@@ -198,19 +223,22 @@ async fn ensure_connected(
     runtime_state: &RemoteAppServerRuntimeState,
     registry: &RemoteAppServerRegistry,
     connection: RemoteConnection,
+    force_restart: bool,
 ) {
     let existing_process = {
         let mut entries = runtime_state.entries.lock().await;
         match entries.get_mut(&connection.host_id) {
             Some(entry) => match entry.child.try_wait() {
-                Ok(None) if same_connection(&entry.connection, &connection) => return,
+                Ok(None) if same_connection(&entry.connection, &connection) && !force_restart => {
+                    return;
+                }
                 Ok(_) | Err(_) => entries.remove(&connection.host_id),
             },
             None => None,
         }
     };
 
-    let restarting = existing_process.is_some();
+    let restarting = existing_process.is_some() || force_restart;
     if restarting {
         registry.set_state(
             &connection.host_id,
@@ -270,13 +298,16 @@ fn next_generation(runtime_state: &RemoteAppServerRuntimeState) -> u64 {
 fn spawn_remote_app_server_process(
     connection: &RemoteConnection,
     generation: u64,
-) -> Result<(
-    RemoteAppServerProcess,
-    ChildStdin,
-    ChildStdout,
-    ChildStderr,
-    mpsc::UnboundedReceiver<RemoteAppServerMessage>,
-), String> {
+) -> Result<
+    (
+        RemoteAppServerProcess,
+        ChildStdin,
+        ChildStdout,
+        ChildStderr,
+        mpsc::UnboundedReceiver<RemoteAppServerMessage>,
+    ),
+    String,
+> {
     let args = build_ssh_command_args(connection)?;
     let mut child = Command::new("ssh")
         .args(&args)
@@ -393,7 +424,8 @@ async fn run_remote_app_server_client(
     let mut initialized = false;
     let mut error_message = None;
     let mut next_request_id: i64 = 2;
-    let mut pending_result = HashMap::<RemoteJsonRpcId, oneshot::Sender<Result<Value, String>>>::new();
+    let mut pending_result =
+        HashMap::<RemoteJsonRpcId, oneshot::Sender<Result<Value, String>>>::new();
 
     if let Err(err) = write_json(
         &mut stdin,
@@ -510,7 +542,14 @@ async fn run_remote_app_server_client(
                                     let _ = (id, method, params);
                                 }
                                 RemoteJsonRpcMessage::Notification { method, params } => {
-                                    let _ = (method, params);
+                                    match method.as_str() {
+                                        "mcpServer/oauthLogin/completed" => {
+                                            handle_mcp_oauth_login_completed(&app, &host_id, params);
+                                        }
+                                        _ => {
+                                            let _ = params;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -638,6 +677,15 @@ async fn write_json(stdin: &mut ChildStdin, value: &Value) -> Result<(), String>
         .flush()
         .await
         .map_err(|err| format!("failed to flush remote app-server json: {err}"))
+}
+
+fn handle_mcp_oauth_login_completed(app: &AppHandle, host_id: &str, params: Value) {
+    let Ok(mut notification) = serde_json::from_value::<McpOauthLoginCompletedNotification>(params)
+    else {
+        return;
+    };
+    notification.host_id = Some(host_id.to_string());
+    let _ = app.emit(MCP_OAUTH_EVENT, notification);
 }
 
 #[cfg(test)]

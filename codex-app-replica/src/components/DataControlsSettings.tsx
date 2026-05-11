@@ -65,28 +65,25 @@ export function DataControlsSettings({
   const unarchiveArchivedThread = async (thread: ThreadHistoryEntry) => {
     setPendingThreadIds((current) => [...current, thread.id]);
     try {
-      const unarchivedThreadId = await unarchiveConversationForHost({
+      await unarchiveConversationForHost({
         hostId: selectedHostId,
         conversationId: thread.id,
       });
       setArchivedThreads((current) => current.filter((entry) => entry.id !== thread.id));
-      void onThreadUnarchived?.(unarchivedThreadId, selectedHostId);
+      void onThreadUnarchived?.(thread.id, selectedHostId);
       onShowToast?.({
         tone: "info",
         message: (
           <span>
             {t("settings.dataControls.archivedChats.unarchiveSuccessPlain")}
             {onViewThread ? (
-              <>
-                {" "}
-                <button
-                  type="button"
-                  onClick={() => openUnarchivedConversation(unarchivedThreadId)}
-                  className="cursor-interaction text-[var(--app-shell-accent)] underline underline-offset-2 hover:opacity-80"
-                >
-                  {t("settings.dataControls.archivedChats.viewNow")}
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={() => openUnarchivedConversation(thread.id)}
+                className="pointer-events-auto ml-1 cursor-pointer text-[var(--app-shell-accent)] underline-offset-2 hover:underline"
+              >
+                {t("settings.dataControls.archivedChats.viewNow")}
+              </button>
             ) : null}
           </span>
         ),

@@ -1,4 +1,4 @@
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 
 export type QueryCacheInvalidateNotification = {
   queryKey: QueryCacheKey;
@@ -23,6 +23,12 @@ export function onQueryCacheInvalidated(
 ) {
   return listen<QueryCacheInvalidateNotification>("query-cache-invalidate", (event) => {
     handler(event.payload);
+  });
+}
+
+export async function emitQueryCacheInvalidated(queryKey: QueryCacheKey) {
+  await emit<QueryCacheInvalidateNotification>("query-cache-invalidate", {
+    queryKey: [...queryKey],
   });
 }
 

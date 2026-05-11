@@ -13,7 +13,6 @@ import {
   LOCAL_ENVIRONMENT_ACTION_ICONS,
   LOCAL_ENVIRONMENT_ACTION_PLACEHOLDER,
   LOCAL_ENVIRONMENT_CLEANUP_PLACEHOLDER,
-  LOCAL_ENVIRONMENT_HOST_ID,
   LOCAL_ENVIRONMENT_PLATFORMS,
   LOCAL_ENVIRONMENT_SETUP_PLACEHOLDER,
   createDefaultLocalEnvironmentConfigPath,
@@ -34,10 +33,21 @@ import {
   type LocalEnvironmentPlatform,
   type LocalEnvironmentScriptSection,
 } from "../services/localEnvironments";
+import {
+  addNewWorkspaceRootOption,
+  onActiveWorkspaceRootsUpdated,
+  onWorkspaceRootOptionAdded,
+  onWorkspaceRootOptionsUpdated,
+  readActiveWorkspaceRoots,
+  readWorkspaceRootOptions,
+} from "../services/workspaceRoots";
 import { buildConfigScopeOptions, readConfig, writeConfigValue } from "../services/settings";
+import { isWithinCodexWorktrees } from "../services/codexHome";
 
 const SCRIPT_PLATFORM_OPTIONS = ["default", ...LOCAL_ENVIRONMENT_PLATFORMS] as const;
 const LOCAL_ENVIRONMENT_CONFIG_KEY_PATH = "codex.localEnvironmentConfigPath";
+const LOCAL_ENVIRONMENT_LEARN_MORE_URL = "https://developers.openai.com/codex/app/local-environments";
+const LOCAL_ENVIRONMENT_LOCAL_HOST_ID = "local";
 
 type ScriptPlatformSelection = (typeof SCRIPT_PLATFORM_OPTIONS)[number];
 
@@ -50,15 +60,21 @@ type EditableLocalEnvironmentDocument = Omit<LocalEnvironmentDocument, "actions"
 };
 
 export function LocalEnvironmentsSettings({
-  isCodexWorktree = false,
-  workspaceRoot,
+  codexHome,
+  selectedHostId,
   onShowToast,
 }: {
-  isCodexWorktree?: boolean;
-  workspaceRoot: string | null;
+  codexHome: string | null;
+  selectedHostId: string;
   onShowToast?: (toast: AppToast) => void;
 }) {
   const { t } = useI18n();
+  const [workspaceRoots, setWorkspaceRoots] = useState<string[]>([]);
+  const [workspaceRootLabels, setWorkspaceRootLabels] = useState<Record<string, string>>({});
+  const [activeWorkspaceRoots, setActiveWorkspaceRoots] = useState<string[]>([]);
+  const [isWorkspaceRootsLoading, setIsWorkspaceRootsLoading] = useState(false);
+  const [workspaceRootsErrorMessage, setWorkspaceRootsErrorMessage] = useState<string | null>(null);
+  const [selectedWorkspaceRoot, setSelectedWorkspaceRoot] = useState<string | null>(null);
   const [environmentEntries, setEnvironmentEntries] = useState<LocalEnvironmentConfigEntry[]>([]);
   const [selectedConfigPath, setSelectedConfigPath] = useState<string | null>(null);
   const [configSnapshot, setConfigSnapshot] = useState<Awaited<
@@ -78,18 +94,44 @@ export function LocalEnvironmentsSettings({
   const [setupPlatform, setSetupPlatform] = useState<ScriptPlatformSelection>("default");
   const [cleanupPlatform, setCleanupPlatform] = useState<ScriptPlatformSelection>("default");
   const [isSetupEnvVarsOpen, setIsSetupEnvVarsOpen] = useState(false);
+  const [workspaceRootsReloadVersion, setWorkspaceRootsReloadVersion] = useState(0);
 
   const selectedWorkspacePath = useMemo(() => {
-    if (!workspaceRoot) {
+    if (!selectedWorkspaceRoot) {
       return null;
     }
 
-    return selectConfigPathForWorkspace(workspaceRoot, environmentEntries, selectedConfigPath);
-  }, [environmentEntries, selectedConfigPath, workspaceRoot]);
+    return selectConfigPathForWorkspace(selectedWorkspaceRoot, environmentEntries, selectedConfigPath);
+  }, [environmentEntries, selectedConfigPath, selectedWorkspaceRoot]);
+
+  const normalizedSelectedWorkspaceRoot = useMemo(() => {
+    if (selectedWorkspaceRoot === null) {
+      return null;
+    }
+
+    return workspaceRoots.includes(selectedWorkspaceRoot) ? selectedWorkspaceRoot : null;
+  }, [selectedWorkspaceRoot, workspaceRoots]);
+
+  const selectedWorkspaceLabel = useMemo(() => {
+    if (!normalizedSelectedWorkspaceRoot) {
+      return null;
+    }
+    return getWorkspaceRootLabel(normalizedSelectedWorkspaceRoot, workspaceRootLabels);
+  }, [normalizedSelectedWorkspaceRoot, workspaceRootLabels]);
+
+  const selectedWorkspaceIsCodexWorktree = useMemo(() => {
+    return normalizedSelectedWorkspaceRoot
+      ? isWithinCodexWorktrees(normalizedSelectedWorkspaceRoot, codexHome)
+      : false;
+  }, [codexHome, normalizedSelectedWorkspaceRoot]);
+
+  const isRemoteHost = selectedHostId.trim() !== LOCAL_ENVIRONMENT_LOCAL_HOST_ID;
+  const isSelectProjectMode = normalizedSelectedWorkspaceRoot === null;
+  const canAddProjectLocally = !isRemoteHost;
 
   const previewEnvironment = parsedEnvironment?.type === "success" ? parsedEnvironment.environment : null;
   const parseErrorMessage = parsedEnvironment?.type === "error" ? parsedEnvironment.error.message : null;
-  const readErrorMessage = detailsErrorMessage ?? listErrorMessage;
+  const readErrorMessage = detailsErrorMessage ?? listErrorMessage ?? workspaceRootsErrorMessage;
   const currentFingerprint = useMemo(
     () => (editableEnvironment ? JSON.stringify(toPersistedDocument(editableEnvironment)) : ""),
     [editableEnvironment],
@@ -111,7 +153,116 @@ export function LocalEnvironmentsSettings({
   }, [currentFingerprint, editableEnvironment, initialFingerprint, isSaving, parseErrorMessage, readErrorMessage, t]);
 
   useEffect(() => {
-    if (!workspaceRoot) {
+    if (isRemoteHost) {
+      setWorkspaceRoots([]);
+      setWorkspaceRootLabels({});
+      setActiveWorkspaceRoots([]);
+      setSelectedWorkspaceRoot(null);
+      setWorkspaceRootsErrorMessage(null);
+      setIsWorkspaceRootsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    setIsWorkspaceRootsLoading(true);
+    setWorkspaceRootsErrorMessage(null);
+
+    const loadWorkspaceRoots = async () => {
+      try {
+        const [workspaceRootOptionsResponse, activeWorkspaceRootsResponse] = await Promise.all([
+          readWorkspaceRootOptions(selectedHostId),
+          readActiveWorkspaceRoots(selectedHostId),
+        ]);
+        if (cancelled) {
+          return;
+        }
+
+        setWorkspaceRoots(workspaceRootOptionsResponse.roots);
+        setWorkspaceRootLabels(workspaceRootOptionsResponse.labels);
+        setActiveWorkspaceRoots(activeWorkspaceRootsResponse.roots);
+        setSelectedWorkspaceRoot((current) => {
+          if (current && workspaceRootOptionsResponse.roots.includes(current)) {
+            return current;
+          }
+          return activeWorkspaceRootsResponse.roots.find((root) => workspaceRootOptionsResponse.roots.includes(root)) ?? null;
+        });
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        setWorkspaceRoots([]);
+        setWorkspaceRootLabels({});
+        setActiveWorkspaceRoots([]);
+        setSelectedWorkspaceRoot(null);
+        setWorkspaceRootsErrorMessage(getErrorMessage(error));
+      } finally {
+        if (!cancelled) {
+          setIsWorkspaceRootsLoading(false);
+        }
+      }
+    };
+
+    void loadWorkspaceRoots();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isRemoteHost, selectedHostId, workspaceRootsReloadVersion]);
+
+  useEffect(() => {
+    let disposed = false;
+    let cleanupOptions: (() => void) | null = null;
+    let cleanupActive: (() => void) | null = null;
+    let cleanupAdded: (() => void) | null = null;
+
+    const reload = () => {
+      if (disposed) {
+        return;
+      }
+      setSelectedConfigPath(null);
+      setWorkspaceRootsReloadVersion((current) => current + 1);
+      setReloadVersion((current) => current + 1);
+    };
+
+    void onWorkspaceRootOptionsUpdated(reload).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+        return;
+      }
+      cleanupOptions = cleanup;
+    });
+
+    void onActiveWorkspaceRootsUpdated(reload).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+        return;
+      }
+      cleanupActive = cleanup;
+    });
+
+    void onWorkspaceRootOptionAdded((notification) => {
+      setSelectedWorkspaceRoot(notification.root);
+      setSelectedConfigPath(null);
+      setReloadVersion((current) => current + 1);
+    }).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+        return;
+      }
+      cleanupAdded = cleanup;
+    });
+
+    return () => {
+      disposed = true;
+      cleanupOptions?.();
+      cleanupActive?.();
+      cleanupAdded?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!normalizedSelectedWorkspaceRoot) {
       setEnvironmentEntries([]);
       setSelectedConfigPath(null);
       setConfigSnapshot(null);
@@ -120,7 +271,6 @@ export function LocalEnvironmentsSettings({
       setDetailsErrorMessage(null);
       setIsListLoading(false);
       setIsDetailsLoading(false);
-      setIsEditMode(false);
       setEditableEnvironment(null);
       setInitialFingerprint("");
       setIsSaving(false);
@@ -148,8 +298,8 @@ export function LocalEnvironmentsSettings({
     setListErrorMessage(null);
 
     void listLocalEnvironments({
-      hostId: LOCAL_ENVIRONMENT_HOST_ID,
-      workspaceRoot,
+      hostId: selectedHostId,
+      workspaceRoot: normalizedSelectedWorkspaceRoot,
     })
       .then((response) => {
         if (cancelled) {
@@ -158,7 +308,7 @@ export function LocalEnvironmentsSettings({
 
         setEnvironmentEntries(response.environments);
         setSelectedConfigPath((current) =>
-          selectConfigPathForWorkspace(workspaceRoot, response.environments, current),
+          selectConfigPathForWorkspace(normalizedSelectedWorkspaceRoot, response.environments, current),
         );
       })
       .catch((error) => {
@@ -169,9 +319,9 @@ export function LocalEnvironmentsSettings({
         setEnvironmentEntries([]);
         setListErrorMessage(getErrorMessage(error));
         setSelectedConfigPath((current) =>
-          current && isConfigPathForWorkspace(current, workspaceRoot)
+          current && isConfigPathForWorkspace(current, normalizedSelectedWorkspaceRoot)
             ? current
-            : createDefaultLocalEnvironmentConfigPath([], workspaceRoot),
+            : createDefaultLocalEnvironmentConfigPath([], normalizedSelectedWorkspaceRoot),
         );
       })
       .finally(() => {
@@ -183,7 +333,7 @@ export function LocalEnvironmentsSettings({
     return () => {
       cancelled = true;
     };
-  }, [reloadVersion, workspaceRoot]);
+  }, [normalizedSelectedWorkspaceRoot, reloadVersion, selectedHostId]);
 
   useEffect(() => {
     if (!selectedWorkspacePath) {
@@ -204,7 +354,7 @@ export function LocalEnvironmentsSettings({
     const load = async () => {
       try {
         const nextConfig = await readLocalEnvironmentConfig({
-          hostId: LOCAL_ENVIRONMENT_HOST_ID,
+          hostId: selectedHostId,
           configPath: selectedWorkspacePath,
         });
         if (cancelled) {
@@ -218,7 +368,7 @@ export function LocalEnvironmentsSettings({
 
         try {
           const nextEnvironment = await readLocalEnvironment({
-            hostId: LOCAL_ENVIRONMENT_HOST_ID,
+            hostId: selectedHostId,
             configPath: nextConfig.configPath,
           });
           if (!cancelled) {
@@ -245,20 +395,20 @@ export function LocalEnvironmentsSettings({
     return () => {
       cancelled = true;
     };
-  }, [reloadVersion, selectedWorkspacePath]);
+  }, [reloadVersion, selectedHostId, selectedWorkspacePath]);
 
   const openEditor = () => {
-    if (!workspaceRoot) {
+    if (!normalizedSelectedWorkspaceRoot) {
       return;
     }
 
     const nextConfigPath =
-      selectedWorkspacePath ?? createDefaultLocalEnvironmentConfigPath(environmentEntries, workspaceRoot);
+      selectedWorkspacePath ?? createDefaultLocalEnvironmentConfigPath(environmentEntries, normalizedSelectedWorkspaceRoot);
     if (!selectedWorkspacePath) {
       setSelectedConfigPath(nextConfigPath);
     }
 
-    const sourceDocument = previewEnvironment ?? createDefaultLocalEnvironmentDocument(workspaceRoot);
+    const sourceDocument = previewEnvironment ?? createDefaultLocalEnvironmentDocument(normalizedSelectedWorkspaceRoot);
     const editable = toEditableDocument(sourceDocument);
     setEditableEnvironment(editable);
     setInitialFingerprint(JSON.stringify(toPersistedDocument(editable)));
@@ -286,18 +436,18 @@ export function LocalEnvironmentsSettings({
     }
 
     const shouldPersistWorktreeConfigPath =
-      !configSnapshot?.exists && isCodexWorktree && workspaceRoot !== null;
+      !configSnapshot?.exists && selectedWorkspaceIsCodexWorktree && normalizedSelectedWorkspaceRoot !== null;
 
     setIsSaving(true);
     setSaveErrorMessage(null);
     try {
       await writeLocalEnvironmentConfig({
-        hostId: LOCAL_ENVIRONMENT_HOST_ID,
+        hostId: selectedHostId,
         configPath: selectedWorkspacePath,
         raw: renderLocalEnvironmentDocument(toPersistedDocument(editableEnvironment)),
       });
-      if (shouldPersistWorktreeConfigPath && workspaceRoot) {
-        void persistWorktreeLocalEnvironmentConfigPath(workspaceRoot, selectedWorkspacePath).catch(
+      if (shouldPersistWorktreeConfigPath && normalizedSelectedWorkspaceRoot) {
+        void persistWorktreeLocalEnvironmentConfigPath(normalizedSelectedWorkspaceRoot, selectedWorkspacePath).catch(
           () => undefined,
         );
       }
@@ -382,25 +532,97 @@ export function LocalEnvironmentsSettings({
     });
   };
 
-  if (!workspaceRoot) {
+  const openWorkspaceSelection = () => {
+    setSelectedWorkspaceRoot(null);
+    setSelectedConfigPath(null);
+    setIsEditMode(false);
+  };
+
+  const selectWorkspaceEnvironment = (workspaceRoot: string, configPath: string) => {
+    setSelectedWorkspaceRoot(workspaceRoot);
+    setSelectedConfigPath(configPath);
+    setIsEditMode(false);
+  };
+
+  const createWorkspaceEnvironment = (workspaceRoot: string) => {
+    const nextConfigPath = createDefaultLocalEnvironmentConfigPath(
+      environmentEntries.filter((entry) => isConfigPathForWorkspace(entry.configPath, workspaceRoot)),
+      workspaceRoot,
+    );
+    setSelectedWorkspaceRoot(workspaceRoot);
+    setSelectedConfigPath(nextConfigPath);
+    setIsEditMode(true);
+  };
+
+  const handleAddProject = async () => {
+    if (!canAddProjectLocally) {
+      return;
+    }
+    await addNewWorkspaceRootOption();
+  };
+
+  if (isRemoteHost) {
     return (
-      <UnavailableState
-        body={t("settings.localEnvironments.unavailable.body")}
-        title={t("settings.localEnvironments.unavailable.title")}
-      />
+      <PageFrame title={t("settings.nav.local-environments")}>
+        <InfoCard
+          body={t("settings.localEnvironments.unavailable.body")}
+          title={t("settings.localEnvironments.unavailable.title")}
+        />
+      </PageFrame>
     );
   }
 
-  if (isListLoading || isDetailsLoading || !selectedWorkspacePath) {
+  if (isWorkspaceRootsLoading) {
+    return (
+      <PageFrame
+        subtitle={t("settings.localEnvironments.workspaceSelect.description")}
+        title={t("settings.nav.local-environments")}
+      >
+        <InfoCard
+          body={t("settings.localEnvironments.loading.body")}
+          title={t("settings.localEnvironments.loading.title")}
+        />
+      </PageFrame>
+    );
+  }
+
+  if (isSelectProjectMode) {
+    return (
+      <PageFrame
+        subtitle={renderLearnMoreDescription(t("settings.localEnvironments.workspaceSelect.description"))}
+        title={t("settings.nav.local-environments")}
+      >
+        <WorkspaceSelectionCard
+          activeWorkspaceRoots={activeWorkspaceRoots}
+          environmentEntries={environmentEntries}
+          hostId={selectedHostId}
+          isAddProjectEnabled={canAddProjectLocally}
+          isLoading={isWorkspaceRootsLoading}
+          onAddProject={() => void handleAddProject()}
+          onCreateEnvironment={createWorkspaceEnvironment}
+          onSelectEnvironment={selectWorkspaceEnvironment}
+          selectedWorkspaceRoot={selectedWorkspaceRoot}
+          t={t}
+          workspaceRootLabels={workspaceRootLabels}
+          workspaceRoots={workspaceRoots}
+        />
+        {workspaceRootsErrorMessage ? <InlineError message={workspaceRootsErrorMessage} /> : null}
+      </PageFrame>
+    );
+  }
+
+  if (isListLoading || isDetailsLoading || !selectedWorkspacePath || !normalizedSelectedWorkspaceRoot) {
     return (
       <PageFrame
         breadcrumb={
           <Breadcrumbs
             mode={isEditMode ? "edit" : "preview"}
-            onBack={isEditMode ? closeEditor : null}
-            workspaceRoot={workspaceRoot}
+            onBack={isEditMode ? closeEditor : openWorkspaceSelection}
+            workspaceLabel={selectedWorkspaceLabel}
+            workspaceRoot={selectedWorkspaceRoot}
           />
         }
+        title={t("settings.nav.local-environments")}
       >
         <InfoCard
           body={t("settings.localEnvironments.loading.body")}
@@ -416,10 +638,12 @@ export function LocalEnvironmentsSettings({
         breadcrumb={
           <Breadcrumbs
             mode={isEditMode ? "edit" : "preview"}
-            onBack={isEditMode ? closeEditor : null}
-            workspaceRoot={workspaceRoot}
+            onBack={isEditMode ? closeEditor : openWorkspaceSelection}
+            workspaceLabel={selectedWorkspaceLabel}
+            workspaceRoot={selectedWorkspaceRoot}
           />
         }
+        title={t("settings.nav.local-environments")}
       >
         <InfoCard
           body={t("settings.localEnvironments.unavailable.body")}
@@ -433,7 +657,7 @@ export function LocalEnvironmentsSettings({
     editableEnvironment ? (
       <>
         <SectionCard title={t("settings.localEnvironments.editor.title")}>
-          <ProjectCard isCodexWorktree={isCodexWorktree} workspaceRoot={workspaceRoot} />
+          <ProjectCard isCodexWorktree={selectedWorkspaceIsCodexWorktree} workspaceRoot={normalizedSelectedWorkspaceRoot} />
           {parseErrorMessage ? <InlineError message={t("settings.localEnvironments.file.parseError", { error: parseErrorMessage })} /> : null}
           {readErrorMessage ? <InlineError message={t("settings.localEnvironments.file.readError", { error: readErrorMessage })} /> : null}
           <div className="mt-4 flex flex-col gap-2">
@@ -545,7 +769,7 @@ export function LocalEnvironmentsSettings({
   ) : (
     <>
       <SectionCard title={t("settings.localEnvironments.environment.title")}>
-        <ProjectCard isCodexWorktree={isCodexWorktree} workspaceRoot={workspaceRoot} />
+        <ProjectCard isCodexWorktree={selectedWorkspaceIsCodexWorktree} workspaceRoot={normalizedSelectedWorkspaceRoot} />
         {parseErrorMessage ? <InlineError message={t("settings.localEnvironments.file.parseError", { error: parseErrorMessage })} /> : null}
         {readErrorMessage ? <InlineError message={t("settings.localEnvironments.file.readError", { error: readErrorMessage })} /> : null}
         <div className="mt-5 space-y-5">
@@ -557,7 +781,7 @@ export function LocalEnvironmentsSettings({
                   "settings.localEnvironments.environment.setup.platformOverrides.description",
                 )}
                 platformOverridesTitle={t("settings.localEnvironments.environment.setup.platformOverrides")}
-                scriptSection={previewEnvironment?.setup ?? createDefaultLocalEnvironmentDocument(workspaceRoot).setup}
+                scriptSection={previewEnvironment?.setup ?? createDefaultLocalEnvironmentDocument(normalizedSelectedWorkspaceRoot).setup}
                 title={t("settings.localEnvironments.environment.setup")}
                 t={t}
               />
@@ -568,7 +792,7 @@ export function LocalEnvironmentsSettings({
                   "settings.localEnvironments.environment.cleanup.platformOverrides.description",
                 )}
                 platformOverridesTitle={t("settings.localEnvironments.environment.cleanup.platformOverrides")}
-                scriptSection={previewEnvironment?.cleanup ?? createDefaultLocalEnvironmentDocument(workspaceRoot).cleanup}
+                scriptSection={previewEnvironment?.cleanup ?? createDefaultLocalEnvironmentDocument(normalizedSelectedWorkspaceRoot).cleanup}
                 title={t("settings.localEnvironments.environment.cleanup.summaryTitle")}
                 t={t}
               />
@@ -603,10 +827,12 @@ export function LocalEnvironmentsSettings({
       breadcrumb={
         <Breadcrumbs
           mode={isEditMode ? "edit" : "preview"}
-          onBack={isEditMode ? closeEditor : null}
-          workspaceRoot={workspaceRoot}
+          onBack={isEditMode ? closeEditor : openWorkspaceSelection}
+          workspaceLabel={selectedWorkspaceLabel}
+          workspaceRoot={selectedWorkspaceRoot}
         />
       }
+      title={t("settings.nav.local-environments")}
     >
       {previewContent}
     </PageFrame>
@@ -614,14 +840,22 @@ export function LocalEnvironmentsSettings({
 }
 
 function PageFrame({
-  breadcrumb,
+  breadcrumb = null,
   children,
+  subtitle,
+  title,
 }: {
-  breadcrumb: ReactNode;
+  breadcrumb?: ReactNode;
   children: ReactNode;
+  subtitle?: ReactNode;
+  title: string;
 }) {
   return (
     <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-5 py-5">
+      <div className="flex flex-col gap-2">
+        <div className="text-[18px] font-medium text-token-text-primary">{title}</div>
+        {subtitle ? <div className="text-sm leading-6 text-token-text-secondary">{subtitle}</div> : null}
+      </div>
       {breadcrumb}
       {children}
     </div>
@@ -629,16 +863,20 @@ function PageFrame({
 }
 
 function Breadcrumbs({
+  workspaceLabel,
   workspaceRoot,
   mode,
   onBack,
 }: {
-  workspaceRoot: string;
+  workspaceLabel?: string | null;
+  workspaceRoot: string | null;
   mode: "preview" | "edit";
   onBack: (() => void) | null;
 }) {
   const { t } = useI18n();
-  const workspaceLabel = getLocalEnvironmentProjectName(workspaceRoot) ?? workspaceRoot;
+  const resolvedWorkspaceLabel =
+    workspaceLabel ??
+    (workspaceRoot ? getLocalEnvironmentProjectName(workspaceRoot) ?? workspaceRoot : t("settings.localEnvironments.breadcrumb.root"));
 
   return (
     <nav className="flex items-center gap-2 text-sm text-token-text-secondary">
@@ -655,7 +893,7 @@ function Breadcrumbs({
       <div className="flex items-center gap-1">
         <span>{t("settings.localEnvironments.breadcrumb.root")}</span>
         <ChevronRightIcon className="icon-xs text-token-text-secondary" />
-        <span className="text-token-text-primary">{workspaceLabel}</span>
+        <span className="text-token-text-primary">{resolvedWorkspaceLabel}</span>
         {mode === "edit" ? (
           <>
             <ChevronRightIcon className="icon-xs text-token-text-secondary" />
@@ -664,6 +902,304 @@ function Breadcrumbs({
         ) : null}
       </div>
     </nav>
+  );
+}
+
+function WorkspaceSelectionCard({
+  activeWorkspaceRoots,
+  environmentEntries: _environmentEntries,
+  hostId,
+  isAddProjectEnabled,
+  isLoading,
+  onAddProject,
+  onCreateEnvironment,
+  onSelectEnvironment,
+  selectedWorkspaceRoot,
+  t,
+  workspaceRootLabels,
+  workspaceRoots,
+}: {
+  activeWorkspaceRoots: string[];
+  environmentEntries: LocalEnvironmentConfigEntry[];
+  hostId: string;
+  isAddProjectEnabled: boolean;
+  isLoading: boolean;
+  onAddProject: () => void;
+  onCreateEnvironment: (workspaceRoot: string, entries: LocalEnvironmentConfigEntry[]) => void;
+  onSelectEnvironment: (workspaceRoot: string, configPath: string) => void;
+  selectedWorkspaceRoot: string | null;
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+  workspaceRootLabels: Record<string, string>;
+  workspaceRoots: string[];
+}) {
+  if (isLoading) {
+    return (
+      <SectionCard title={t("settings.localEnvironments.workspaceSelect.title")}>
+        <SurfaceCard>
+          <div className="text-sm text-token-text-secondary">
+            {t("settings.localEnvironments.workspaceSelect.loading")}
+          </div>
+        </SurfaceCard>
+      </SectionCard>
+    );
+  }
+
+  if (workspaceRoots.length === 0) {
+    return (
+      <SectionCard title={t("settings.localEnvironments.workspaceSelect.title")}>
+        <SurfaceCard>
+          <div className="flex flex-col gap-3">
+            <div className="text-sm text-token-text-secondary">
+              {t("settings.localEnvironments.workspaceSelect.empty")}
+            </div>
+            {isAddProjectEnabled ? (
+              <div>
+                <button
+                  type="button"
+                  onClick={onAddProject}
+                  className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
+                >
+                  {t("settings.localEnvironments.workspace.add")}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </SurfaceCard>
+      </SectionCard>
+    );
+  }
+
+  return (
+    <SectionCard
+      title={t("settings.localEnvironments.workspaceSelect.title")}
+      actions={
+        isAddProjectEnabled ? (
+          <button
+            type="button"
+            onClick={onAddProject}
+            className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
+          >
+            {t("settings.localEnvironments.workspace.add")}
+          </button>
+        ) : null
+      }
+    >
+      <div className="space-y-3" aria-label={t("settings.localEnvironments.workspaceSelect.listLabel")}>
+        {workspaceRoots.map((workspaceRoot) => (
+          <WorkspaceSelectionProjectCard
+            key={workspaceRoot}
+            hostId={hostId}
+            isActive={selectedWorkspaceRoot === workspaceRoot}
+            isCodexWorktree={false}
+            isInitiallyExpanded={activeWorkspaceRoots.includes(workspaceRoot)}
+            label={getWorkspaceRootLabel(workspaceRoot, workspaceRootLabels)}
+            onCreateEnvironment={onCreateEnvironment}
+            onSelectEnvironment={onSelectEnvironment}
+            t={t}
+            workspaceRoot={workspaceRoot}
+          />
+        ))}
+      </div>
+    </SectionCard>
+  );
+}
+
+function WorkspaceSelectionProjectCard({
+  hostId,
+  isActive,
+  isCodexWorktree,
+  isInitiallyExpanded,
+  label,
+  onCreateEnvironment,
+  onSelectEnvironment,
+  t,
+  workspaceRoot,
+}: {
+  hostId: string;
+  isActive: boolean;
+  isCodexWorktree: boolean;
+  isInitiallyExpanded: boolean;
+  label: string;
+  onCreateEnvironment: (workspaceRoot: string, entries: LocalEnvironmentConfigEntry[]) => void;
+  onSelectEnvironment: (workspaceRoot: string, configPath: string) => void;
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+  workspaceRoot: string;
+}) {
+  const [entries, setEntries] = useState<LocalEnvironmentConfigEntry[]>([]);
+  const [isExpanded, setIsExpanded] = useState(isInitiallyExpanded);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIsExpanded(isInitiallyExpanded);
+  }, [isInitiallyExpanded]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    void listLocalEnvironments({ hostId, workspaceRoot })
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+        setEntries(response.environments);
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        setEntries([]);
+        setErrorMessage(getErrorMessage(error));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hostId, workspaceRoot]);
+
+  const { projectEntries, inheritedEntries } = useMemo(
+    () => splitProjectAndInheritedEntries(entries, workspaceRoot),
+    [entries, workspaceRoot],
+  );
+  const preferredProjectEntry = useMemo(() => getPreferredLocalEnvironment(projectEntries), [projectEntries]);
+  const hasEntries = projectEntries.length > 0 || inheritedEntries.length > 0;
+  const ProjectIcon = isCodexWorktree ? WorktreeIcon : FolderIcon;
+
+  return (
+    <div className={["rounded-[16px] border border-[var(--app-shell-border)]", isActive ? "app-card" : "bg-[var(--app-shell-card)]"].join(" ")}>
+      <div className="flex items-center justify-between gap-3 px-4 py-3">
+        <button
+          type="button"
+          onClick={() => {
+            if (preferredProjectEntry) {
+              onSelectEnvironment(workspaceRoot, preferredProjectEntry.configPath);
+              return;
+            }
+            setIsExpanded((current) => !current);
+          }}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        >
+          <ProjectIcon className="icon-sm shrink-0 text-token-text-secondary" />
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium text-token-text-primary">{label}</div>
+            <div className="truncate text-xs text-token-text-secondary">{workspaceRoot}</div>
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => onCreateEnvironment(workspaceRoot, entries)}
+          className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
+          aria-label={t("settings.localEnvironments.workspaceSelect.addLabel")}
+        >
+          {t("settings.localEnvironments.workspaceSelect.addLabel")}
+        </button>
+      </div>
+
+      {isLoading ? (
+        <div className="border-t border-[var(--app-shell-border)] px-4 py-3 text-sm text-token-text-secondary">
+          {t("settings.localEnvironments.workspaceSelect.loadingLabel")}
+        </div>
+      ) : errorMessage ? (
+        <div className="border-t border-[var(--app-shell-border)] px-4 py-3 text-sm text-token-error-foreground">
+          {t("settings.localEnvironments.workspaceSelect.errorLabel")}
+        </div>
+      ) : hasEntries ? (
+        <div className="border-t border-[var(--app-shell-border)]">
+          <div className="divide-y divide-[var(--app-shell-border)]">
+            {projectEntries.map((entry: LocalEnvironmentConfigEntry) => (
+              <WorkspaceEnvironmentRow
+                key={entry.configPath}
+                actionLabel={t("settings.localEnvironments.workspaceSelect.viewAction")}
+                entry={entry}
+                errorLabel={t("settings.localEnvironments.workspaceSelect.errorLabel")}
+                onSelect={() => onSelectEnvironment(workspaceRoot, entry.configPath)}
+              />
+            ))}
+          </div>
+          {inheritedEntries.length > 0 ? (
+            <div className="border-t border-[var(--app-shell-border)]">
+              <button
+                type="button"
+                onClick={() => setIsExpanded((current) => !current)}
+                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm text-token-text-secondary"
+              >
+                <span>
+                  {t("settings.localEnvironments.workspaceSelect.inherited", {
+                    count: inheritedEntries.length,
+                  })}
+                </span>
+                <ChevronRightIcon
+                  className={[
+                    "icon-xs shrink-0 text-token-text-secondary transition-transform",
+                    isExpanded ? "rotate-90" : "",
+                  ].join(" ")}
+                />
+              </button>
+              {isExpanded ? (
+                <div className="divide-y divide-[var(--app-shell-border)] border-t border-[var(--app-shell-border)]">
+                  {inheritedEntries.map((entry: LocalEnvironmentConfigEntry) => (
+                    <WorkspaceEnvironmentRow
+                      key={entry.configPath}
+                      actionLabel={t("settings.localEnvironments.workspaceSelect.viewAction")}
+                      entry={entry}
+                      errorLabel={t("settings.localEnvironments.workspaceSelect.errorLabel")}
+                      onSelect={() => onSelectEnvironment(workspaceRoot, entry.configPath)}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function WorkspaceEnvironmentRow({
+  actionLabel,
+  entry,
+  errorLabel,
+  onSelect,
+}: {
+  actionLabel: string;
+  entry: LocalEnvironmentConfigEntry;
+  errorLabel: string;
+  onSelect: () => void;
+}) {
+  const fileLabel = getLocalEnvironmentConfigFileLabel(entry);
+  const title =
+    entry.type === "success" && entry.environment.name.trim().length > 0
+      ? entry.environment.name
+      : entry.type === "error"
+        ? errorLabel
+        : fileLabel;
+  const subtitle = entry.type === "error" || fileLabel !== title ? fileLabel : null;
+
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-3">
+      <button type="button" onClick={onSelect} className="min-w-0 flex-1 text-left">
+        <div className={entry.type === "error" ? "text-sm text-token-error-foreground" : "text-sm text-token-text-primary"}>
+          {title}
+        </div>
+        {subtitle ? <div className="text-xs text-token-text-secondary">{subtitle}</div> : null}
+      </button>
+      <button
+        type="button"
+        onClick={onSelect}
+        className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
+      >
+        {actionLabel}
+      </button>
+    </div>
   );
 }
 
@@ -1206,6 +1742,60 @@ function selectConfigPathForWorkspace(
 
 function isConfigPathForWorkspace(configPath: string, workspaceRoot: string) {
   return normalizeComparablePath(getLocalEnvironmentOwnerRoot(configPath)) === normalizeComparablePath(workspaceRoot);
+}
+
+function splitProjectAndInheritedEntries(entries: LocalEnvironmentConfigEntry[], workspaceRoot: string) {
+  const normalizedWorkspaceRoot = normalizeComparablePath(workspaceRoot);
+  const projectEntries: LocalEnvironmentConfigEntry[] = [];
+  const inheritedEntries: LocalEnvironmentConfigEntry[] = [];
+
+  entries.forEach((entry) => {
+    if (normalizeComparablePath(getLocalEnvironmentOwnerRoot(entry.configPath)) === normalizedWorkspaceRoot) {
+      projectEntries.push(entry);
+      return;
+    }
+    inheritedEntries.push(entry);
+  });
+
+  return { projectEntries, inheritedEntries };
+}
+
+function getLocalEnvironmentConfigFileLabel(entry: LocalEnvironmentConfigEntry) {
+  const segments = normalizeComparablePath(entry.configPath).split("/").filter(Boolean);
+  return segments.at(-1) ?? entry.configPath;
+}
+
+function getWorkspaceRootLabel(workspaceRoot: string, labels: Record<string, string>) {
+  const label = labels[workspaceRoot]?.trim();
+  if (label && label.length > 0) {
+    return label;
+  }
+  return getLocalEnvironmentProjectName(workspaceRoot) ?? workspaceRoot;
+}
+
+function renderLearnMoreDescription(description: string) {
+  const marker = "Learn more.";
+  const markerIndex = description.indexOf(marker);
+  if (markerIndex === -1) {
+    return description;
+  }
+
+  const prefix = description.slice(0, markerIndex);
+  const suffix = description.slice(markerIndex + marker.length);
+  return (
+    <>
+      {prefix}
+      <a
+        className="text-[var(--app-shell-accent)] underline underline-offset-2"
+        href={LOCAL_ENVIRONMENT_LEARN_MORE_URL}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {marker}
+      </a>
+      {suffix}
+    </>
+  );
 }
 
 function normalizeComparablePath(path: string) {

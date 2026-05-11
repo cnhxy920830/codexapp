@@ -457,6 +457,7 @@ pub struct HookLoadErrorInfo {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppsListParams {
+    pub host_id: Option<String>,
     pub cursor: Option<String>,
     pub limit: Option<u32>,
     pub thread_id: Option<String>,
@@ -1480,6 +1481,7 @@ struct LoginCompletedNotification {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct McpOauthLoginCompletedNotification {
+    host_id: Option<String>,
     name: String,
     success: bool,
     error: Option<String>,
@@ -1793,7 +1795,9 @@ async fn login_chatgpt_inner_for_host(
     let result = serde_json::from_value::<LoginStartResult>(value)
         .map_err(|err| format!("failed to decode chatgpt login response: {err}"))?;
     match result {
-        LoginStartResult::Chatgpt { login_id, auth_url } => Ok(ChatGptLoginStart { login_id, auth_url }),
+        LoginStartResult::Chatgpt { login_id, auth_url } => {
+            Ok(ChatGptLoginStart { login_id, auth_url })
+        }
         _ => Err("unexpected login response type".to_string()),
     }
 }
@@ -2282,7 +2286,10 @@ fn ensure_supported_host_id(host_id: Option<&str>, command_name: &str) -> Result
 }
 
 fn is_local_host_id(host_id: Option<&str>) -> bool {
-    matches!(host_id.map(str::trim).filter(|value| !value.is_empty()), None | Some(LOCAL_HOST_ID))
+    matches!(
+        host_id.map(str::trim).filter(|value| !value.is_empty()),
+        None | Some(LOCAL_HOST_ID)
+    )
 }
 
 fn remote_host_id(host_id: Option<&str>) -> Option<&str> {
@@ -2399,13 +2406,15 @@ fn skills_list_cwds(params: &SkillsListParams) -> Vec<String> {
 
 #[tauri::command]
 pub async fn list_skills(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: SkillsListParams,
 ) -> Result<SkillsListResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "list-skills-for-host")?;
     let cwds = skills_list_cwds(&params);
-    let value = send_request(
+    let value = send_request_for_host(
+        &app,
         state.inner(),
+        params.host_id.as_deref(),
         AppServerRequestKind::SkillsList,
         serde_json::json!({
             "cwds": cwds,
@@ -2419,18 +2428,20 @@ pub async fn list_skills(
 
 #[tauri::command]
 pub async fn write_skill_config(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: SkillsConfigWriteParams,
 ) -> Result<SkillsConfigWriteResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "skills-config-write")?;
     let SkillsConfigWriteParams {
-        host_id: _,
+        host_id,
         path,
         name,
         enabled,
     } = params;
-    let value = send_request(
+    let value = send_request_for_host(
+        &app,
         state.inner(),
+        host_id.as_deref(),
         AppServerRequestKind::SkillsConfigWrite,
         serde_json::json!({
             "path": path,
@@ -2445,28 +2456,32 @@ pub async fn write_skill_config(
 
 #[tauri::command(rename = "skills-config-write")]
 pub async fn write_skill_config_command(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: SkillsConfigWriteParams,
 ) -> Result<SkillsConfigWriteResponse, String> {
-    write_skill_config(state, params).await
+    write_skill_config(app, state, params).await
 }
 
 #[tauri::command(rename = "list-skills-for-host")]
 pub async fn list_skills_for_host(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: SkillsListParams,
 ) -> Result<SkillsListResponse, String> {
-    list_skills(state, params).await
+    list_skills(app, state, params).await
 }
 
 #[tauri::command(rename = "list-hooks-for-host")]
 pub async fn list_hooks_for_host(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: HooksListParams,
 ) -> Result<HooksListResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "list-hooks-for-host")?;
-    let value = send_request(
+    let value = send_request_for_host(
+        &app,
         state.inner(),
+        params.host_id.as_deref(),
         AppServerRequestKind::HooksList,
         serde_json::json!({
             "cwds": params.cwds,
@@ -2479,11 +2494,14 @@ pub async fn list_hooks_for_host(
 
 #[tauri::command]
 pub async fn list_apps(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: AppsListParams,
 ) -> Result<AppsListResponse, String> {
-    let value = send_request(
+    let value = send_request_for_host(
+        &app,
         state.inner(),
+        params.host_id.as_deref(),
         AppServerRequestKind::AppsList,
         serde_json::json!({
             "cursor": params.cursor,
@@ -2499,15 +2517,17 @@ pub async fn list_apps(
 
 #[tauri::command]
 pub async fn read_app_tools(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: ReadAppToolsParams,
 ) -> Result<ReadAppToolsResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "read-app-tools")?;
     let mut cursor = None;
 
     loop {
-        let value = send_request(
+        let value = send_request_for_host(
+            &app,
             state.inner(),
+            params.host_id.as_deref(),
             AppServerRequestKind::McpServerStatusList,
             serde_json::json!({
                 "cursor": cursor,
@@ -2538,21 +2558,24 @@ pub async fn read_app_tools(
 
 #[tauri::command(rename = "read-app-tools")]
 pub async fn read_app_tools_command(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: ReadAppToolsParams,
 ) -> Result<ReadAppToolsResponse, String> {
-    read_app_tools(state, params).await
+    read_app_tools(app, state, params).await
 }
 
 #[tauri::command]
 pub async fn list_plugins(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: PluginListParams,
 ) -> Result<PluginListResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "list-plugins")?;
     let cwds = plugin_list_cwds(&params);
-    let value = send_request(
+    let value = send_request_for_host(
+        &app,
         state.inner(),
+        params.host_id.as_deref(),
         AppServerRequestKind::PluginList,
         serde_json::json!({
             "cwds": cwds,
@@ -2565,26 +2588,29 @@ pub async fn list_plugins(
 
 #[tauri::command(rename = "list-plugins")]
 pub async fn list_plugins_command(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: PluginListParams,
 ) -> Result<PluginListResponse, String> {
-    list_plugins(state, params).await
+    list_plugins(app, state, params).await
 }
 
 #[tauri::command]
 pub async fn add_marketplace(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: MarketplaceAddParams,
 ) -> Result<MarketplaceAddResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "add-marketplace")?;
     let MarketplaceAddParams {
-        host_id: _,
+        host_id,
         source,
         ref_name,
         sparse_paths,
     } = params;
-    let value = send_request(
+    let value = send_request_for_host(
+        &app,
         state.inner(),
+        host_id.as_deref(),
         AppServerRequestKind::MarketplaceAdd,
         serde_json::json!({
             "source": source,
@@ -2599,24 +2625,27 @@ pub async fn add_marketplace(
 
 #[tauri::command(rename = "add-marketplace")]
 pub async fn add_marketplace_command(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: MarketplaceAddParams,
 ) -> Result<MarketplaceAddResponse, String> {
-    add_marketplace(state, params).await
+    add_marketplace(app, state, params).await
 }
 
 #[tauri::command]
 pub async fn remove_marketplace(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: MarketplaceRemoveParams,
 ) -> Result<MarketplaceRemoveResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "remove-marketplace")?;
     let MarketplaceRemoveParams {
-        host_id: _,
+        host_id,
         marketplace_name,
     } = params;
-    let value = send_request(
+    let value = send_request_for_host(
+        &app,
         state.inner(),
+        host_id.as_deref(),
         AppServerRequestKind::MarketplaceRemove,
         serde_json::json!({
             "marketplaceName": marketplace_name,
@@ -2629,24 +2658,27 @@ pub async fn remove_marketplace(
 
 #[tauri::command(rename = "remove-marketplace")]
 pub async fn remove_marketplace_command(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: MarketplaceRemoveParams,
 ) -> Result<MarketplaceRemoveResponse, String> {
-    remove_marketplace(state, params).await
+    remove_marketplace(app, state, params).await
 }
 
 #[tauri::command]
 pub async fn upgrade_marketplaces(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: MarketplaceUpgradeParams,
 ) -> Result<MarketplaceUpgradeResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "upgrade-marketplaces")?;
     let MarketplaceUpgradeParams {
-        host_id: _,
+        host_id,
         marketplace_name,
     } = params;
-    let value = send_request(
+    let value = send_request_for_host(
+        &app,
         state.inner(),
+        host_id.as_deref(),
         AppServerRequestKind::MarketplaceUpgrade,
         serde_json::json!({
             "marketplaceName": marketplace_name,
@@ -2659,20 +2691,21 @@ pub async fn upgrade_marketplaces(
 
 #[tauri::command(rename = "upgrade-marketplaces")]
 pub async fn upgrade_marketplaces_command(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: MarketplaceUpgradeParams,
 ) -> Result<MarketplaceUpgradeResponse, String> {
-    upgrade_marketplaces(state, params).await
+    upgrade_marketplaces(app, state, params).await
 }
 
 #[tauri::command]
 pub async fn read_plugin(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: PluginReadParams,
 ) -> Result<PluginReadResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "read-plugin")?;
     let PluginReadParams {
-        host_id: _,
+        host_id,
         marketplace_path,
         remote_marketplace_name,
         plugin_name,
@@ -2682,8 +2715,10 @@ pub async fn read_plugin(
             "plugin/read requires exactly one of marketplacePath or remoteMarketplaceName".into(),
         );
     }
-    let value = send_request(
+    let value = send_request_for_host(
+        &app,
         state.inner(),
+        host_id.as_deref(),
         AppServerRequestKind::PluginRead,
         serde_json::json!({
             "marketplacePath": marketplace_path,
@@ -2698,20 +2733,21 @@ pub async fn read_plugin(
 
 #[tauri::command(rename = "read-plugin")]
 pub async fn read_plugin_command(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: PluginReadParams,
 ) -> Result<PluginReadResponse, String> {
-    read_plugin(state, params).await
+    read_plugin(app, state, params).await
 }
 
 #[tauri::command]
 pub async fn install_plugin(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: PluginInstallParams,
 ) -> Result<PluginInstallResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "install-plugin")?;
     let PluginInstallParams {
-        host_id: _,
+        host_id,
         marketplace_path,
         remote_marketplace_name,
         plugin_name,
@@ -2722,8 +2758,10 @@ pub async fn install_plugin(
                 .into(),
         );
     }
-    let value = send_request(
+    let value = send_request_for_host(
+        &app,
         state.inner(),
+        host_id.as_deref(),
         AppServerRequestKind::PluginInstall,
         serde_json::json!({
             "marketplacePath": marketplace_path,
@@ -2738,20 +2776,23 @@ pub async fn install_plugin(
 
 #[tauri::command(rename = "install-plugin")]
 pub async fn install_plugin_command(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: PluginInstallParams,
 ) -> Result<PluginInstallResponse, String> {
-    install_plugin(state, params).await
+    install_plugin(app, state, params).await
 }
 
 #[tauri::command]
 pub async fn uninstall_plugin(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: PluginUninstallParams,
 ) -> Result<PluginUninstallResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "uninstall-plugin")?;
-    send_request(
+    send_request_for_host(
+        &app,
         state.inner(),
+        params.host_id.as_deref(),
         AppServerRequestKind::PluginUninstall,
         serde_json::json!({
             "pluginId": params.plugin_id,
@@ -2763,20 +2804,23 @@ pub async fn uninstall_plugin(
 
 #[tauri::command(rename = "uninstall-plugin")]
 pub async fn uninstall_plugin_command(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: PluginUninstallParams,
 ) -> Result<PluginUninstallResponse, String> {
-    uninstall_plugin(state, params).await
+    uninstall_plugin(app, state, params).await
 }
 
 #[tauri::command]
 pub async fn list_plugin_shares(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: PluginShareListParams,
 ) -> Result<PluginShareListResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "list-plugin-shares")?;
-    let value = send_request(
+    let value = send_request_for_host(
+        &app,
         state.inner(),
+        params.host_id.as_deref(),
         AppServerRequestKind::PluginShareList,
         serde_json::json!({}),
     )
@@ -2787,20 +2831,23 @@ pub async fn list_plugin_shares(
 
 #[tauri::command(rename = "list-plugin-shares")]
 pub async fn list_plugin_shares_command(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: PluginShareListParams,
 ) -> Result<PluginShareListResponse, String> {
-    list_plugin_shares(state, params).await
+    list_plugin_shares(app, state, params).await
 }
 
 #[tauri::command]
 pub async fn save_plugin_share(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: PluginShareSaveParams,
 ) -> Result<PluginShareSaveResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "save-plugin-share")?;
-    let value = send_request(
+    let value = send_request_for_host(
+        &app,
         state.inner(),
+        params.host_id.as_deref(),
         AppServerRequestKind::PluginShareSave,
         serde_json::json!({
             "pluginPath": params.plugin_path,
@@ -2814,20 +2861,23 @@ pub async fn save_plugin_share(
 
 #[tauri::command(rename = "save-plugin-share")]
 pub async fn save_plugin_share_command(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: PluginShareSaveParams,
 ) -> Result<PluginShareSaveResponse, String> {
-    save_plugin_share(state, params).await
+    save_plugin_share(app, state, params).await
 }
 
 #[tauri::command]
 pub async fn delete_plugin_share(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: PluginShareDeleteParams,
 ) -> Result<PluginShareDeleteResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "delete-plugin-share")?;
-    send_request(
+    send_request_for_host(
+        &app,
         state.inner(),
+        params.host_id.as_deref(),
         AppServerRequestKind::PluginShareDelete,
         serde_json::json!({
             "remotePluginId": params.remote_plugin_id,
@@ -2839,20 +2889,23 @@ pub async fn delete_plugin_share(
 
 #[tauri::command(rename = "delete-plugin-share")]
 pub async fn delete_plugin_share_command(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: PluginShareDeleteParams,
 ) -> Result<PluginShareDeleteResponse, String> {
-    delete_plugin_share(state, params).await
+    delete_plugin_share(app, state, params).await
 }
 
 #[tauri::command]
 pub async fn list_mcp_server_status(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: McpServerStatusListParams,
 ) -> Result<McpServerStatusListResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "list-mcp-server-status")?;
-    let value = send_request(
+    let value = send_request_for_host(
+        &app,
         state.inner(),
+        params.host_id.as_deref(),
         AppServerRequestKind::McpServerStatusList,
         serde_json::json!({
             "cursor": params.cursor,
@@ -2867,20 +2920,23 @@ pub async fn list_mcp_server_status(
 
 #[tauri::command(rename = "list-mcp-server-status")]
 pub async fn list_mcp_server_status_command(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: McpServerStatusListParams,
 ) -> Result<McpServerStatusListResponse, String> {
-    list_mcp_server_status(state, params).await
+    list_mcp_server_status(app, state, params).await
 }
 
 #[tauri::command]
 pub async fn login_mcp_server(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: McpServerOauthLoginParams,
 ) -> Result<McpServerOauthLoginResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "login-mcp-server")?;
-    let value = send_request(
+    let value = send_request_for_host(
+        &app,
         state.inner(),
+        params.host_id.as_deref(),
         AppServerRequestKind::McpServerOauthLogin,
         serde_json::json!({
             "name": params.name,
@@ -2893,10 +2949,11 @@ pub async fn login_mcp_server(
 
 #[tauri::command(rename = "login-mcp-server")]
 pub async fn login_mcp_server_command(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: McpServerOauthLoginParams,
 ) -> Result<McpServerOauthLoginResponse, String> {
-    login_mcp_server(state, params).await
+    login_mcp_server(app, state, params).await
 }
 
 #[tauri::command]
@@ -2918,8 +2975,11 @@ pub async fn codex_app_server_restart(
     state: State<'_, Arc<AuthBridgeState>>,
     params: HostScopedParams,
 ) -> Result<(), String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "codex-app-server-restart")?;
-    restart_app_server(&app, state.inner()).await
+    if let Some(host_id) = remote_host_id(params.host_id.as_deref()) {
+        remote_app_server_runtime::restart(&app, host_id).await
+    } else {
+        restart_app_server(&app, state.inner()).await
+    }
 }
 
 #[tauri::command]
@@ -2938,11 +2998,11 @@ pub async fn list_archived_threads(
 
 #[tauri::command(rename = "list-archived-threads")]
 pub async fn list_archived_threads_command(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: HostScopedParams,
 ) -> Result<Vec<ThreadHistoryEntry>, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "list-archived-threads")?;
-    list_threads(state.inner(), true).await
+    list_threads_for_host(&app, state.inner(), params.host_id.as_deref(), true).await
 }
 
 #[tauri::command(rename = "unsubscribe-thread-for-host")]
@@ -2967,16 +3027,43 @@ async fn list_threads(
     state: &Arc<AuthBridgeState>,
     archived: bool,
 ) -> Result<Vec<ThreadHistoryEntry>, String> {
-    let value = send_request(
-        state,
-        AppServerRequestKind::ThreadList,
-        serde_json::json!({
-            "archived": archived,
-            "limit": 100,
-            "sortKey": "updated_at",
-        }),
+    list_threads_from_value(
+        send_request(
+            state,
+            AppServerRequestKind::ThreadList,
+            serde_json::json!({
+                "archived": archived,
+                "limit": 100,
+                "sortKey": "updated_at",
+            }),
+        )
+        .await?,
     )
-    .await?;
+}
+
+async fn list_threads_for_host(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    host_id: Option<&str>,
+    archived: bool,
+) -> Result<Vec<ThreadHistoryEntry>, String> {
+    list_threads_from_value(
+        send_request_for_host(
+            app,
+            state,
+            host_id,
+            AppServerRequestKind::ThreadList,
+            serde_json::json!({
+                "archived": archived,
+                "limit": 100,
+                "sortKey": "updated_at",
+            }),
+        )
+        .await?,
+    )
+}
+
+fn list_threads_from_value(value: serde_json::Value) -> Result<Vec<ThreadHistoryEntry>, String> {
     let response = serde_json::from_value::<ThreadListResponse>(value)
         .map_err(|err| format!("failed to decode thread list response: {err}"))?;
     let mut threads = response
@@ -3126,11 +3213,38 @@ pub async fn unarchive_thread(
 
 #[tauri::command(rename = "unarchive-conversation")]
 pub async fn unarchive_conversation_command(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: UnarchiveConversationParams,
 ) -> Result<String, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "unarchive-conversation")?;
-    unarchive_thread(state, params.conversation_id).await
+    unarchive_thread_for_host(
+        &app,
+        state.inner(),
+        params.host_id.as_deref(),
+        params.conversation_id,
+    )
+    .await
+}
+
+async fn unarchive_thread_for_host(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    host_id: Option<&str>,
+    thread_id: String,
+) -> Result<String, String> {
+    let value = send_request_for_host(
+        app,
+        state,
+        host_id,
+        AppServerRequestKind::ThreadUnarchive,
+        serde_json::json!({
+            "threadId": thread_id,
+        }),
+    )
+    .await?;
+    let response = serde_json::from_value::<ThreadStartResponse>(value)
+        .map_err(|err| format!("failed to decode thread unarchive response: {err}"))?;
+    Ok(response.thread.id)
 }
 
 #[tauri::command]
@@ -3604,12 +3718,16 @@ pub(crate) fn register_external_agent_import_completed_waiter(
     }
 }
 
-pub(crate) async fn request_external_agent_config_detect(
+pub(crate) async fn request_external_agent_config_detect_for_host(
+    app: &AppHandle,
     state: &Arc<AuthBridgeState>,
+    host_id: Option<&str>,
     payload: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
-    send_request(
+    send_request_for_host(
+        app,
         state,
+        host_id,
         AppServerRequestKind::ExternalAgentConfigDetect,
         payload,
     )
@@ -4237,10 +4355,13 @@ fn handle_login_completed(
 }
 
 fn handle_mcp_oauth_login_completed(app: &AppHandle, params: serde_json::Value) {
-    let Ok(notification) = serde_json::from_value::<McpOauthLoginCompletedNotification>(params)
+    let Ok(mut notification) = serde_json::from_value::<McpOauthLoginCompletedNotification>(params)
     else {
         return;
     };
+    if notification.host_id.is_none() {
+        notification.host_id = Some(LOCAL_HOST_ID.to_string());
+    }
     let _ = app.emit(MCP_OAUTH_EVENT, notification);
 }
 
@@ -5762,12 +5883,14 @@ mod tests {
     use super::map_account_info_response;
     use super::map_app_tools;
     use super::plugin_list_cwds;
+    use super::remote_host_id;
     use super::skills_list_cwds;
     use super::Account;
     use super::AccountInfoResponse;
     use super::AccountReadResponse;
     use super::ApiKeyLoginParams;
     use super::AppToolInfo;
+    use super::AppsListParams;
     use super::ArchiveConversationParams;
     use super::AuthState;
     use super::ConfigBatchWriteForHostParams;
@@ -5789,6 +5912,7 @@ mod tests {
     use super::MarketplaceUpgradeErrorInfo;
     use super::MarketplaceUpgradeParams;
     use super::MarketplaceUpgradeResponse;
+    use super::McpOauthLoginCompletedNotification;
     use super::McpServerOauthLoginParams;
     use super::McpServerStatusEntry;
     use super::McpServerStatusListParams;
@@ -6010,14 +6134,6 @@ mod tests {
             "logout does not support host id: remote"
         );
 
-        assert!(ensure_supported_host_id(None, "list-archived-threads").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "list-archived-threads").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "list-archived-threads")
-                .expect_err("non-local host id should be rejected"),
-            "list-archived-threads does not support host id: remote"
-        );
-
         assert!(ensure_supported_host_id(None, "unsubscribe-thread-for-host").is_ok());
         assert!(ensure_supported_host_id(Some("local"), "unsubscribe-thread-for-host").is_ok());
         assert_eq!(
@@ -6025,13 +6141,17 @@ mod tests {
                 .expect_err("non-local host id should be rejected"),
             "unsubscribe-thread-for-host does not support host id: remote"
         );
+    }
 
-        assert!(ensure_supported_host_id(None, "unarchive-conversation").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "unarchive-conversation").is_ok());
+    #[test]
+    fn remote_host_id_distinguishes_local_and_remote_hosts() {
+        assert!(remote_host_id(None).is_none());
+        assert!(matches!(remote_host_id(Some("")), None));
+        assert!(matches!(remote_host_id(Some("local")), None));
+        assert_eq!(remote_host_id(Some("remote")), Some("remote"));
         assert_eq!(
-            ensure_supported_host_id(Some("remote"), "unarchive-conversation")
-                .expect_err("non-local host id should be rejected"),
-            "unarchive-conversation does not support host id: remote"
+            remote_host_id(Some("remote-ssh-discovered:demo")),
+            Some("remote-ssh-discovered:demo")
         );
     }
 
@@ -6148,47 +6268,11 @@ mod tests {
     }
 
     #[test]
-    fn config_host_scoped_commands_only_accept_local_host() {
-        assert!(ensure_supported_host_id(None, "read-config-for-host").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "read-config-for-host").is_ok());
+    fn config_host_scoped_commands_accept_remote_host_routing() {
+        assert_eq!(remote_host_id(Some("remote")), Some("remote"));
         assert_eq!(
-            ensure_supported_host_id(Some("remote"), "read-config-for-host")
-                .expect_err("non-local host id should be rejected"),
-            "read-config-for-host does not support host id: remote"
-        );
-
-        assert!(ensure_supported_host_id(None, "write-config-value").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "write-config-value").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "write-config-value")
-                .expect_err("non-local host id should be rejected"),
-            "write-config-value does not support host id: remote"
-        );
-
-        assert!(ensure_supported_host_id(None, "get-config-requirements-for-host").is_ok());
-        assert!(
-            ensure_supported_host_id(Some("local"), "get-config-requirements-for-host").is_ok()
-        );
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "get-config-requirements-for-host")
-                .expect_err("non-local host id should be rejected"),
-            "get-config-requirements-for-host does not support host id: remote"
-        );
-
-        assert!(ensure_supported_host_id(None, "batch-write-config-value").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "batch-write-config-value").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "batch-write-config-value")
-                .expect_err("non-local host id should be rejected"),
-            "batch-write-config-value does not support host id: remote"
-        );
-
-        assert!(ensure_supported_host_id(None, "skills-config-write").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "skills-config-write").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "skills-config-write")
-                .expect_err("non-local host id should be rejected"),
-            "skills-config-write does not support host id: remote"
+            remote_host_id(Some("remote-ssh-discovered:demo")),
+            Some("remote-ssh-discovered:demo")
         );
     }
 
@@ -6234,6 +6318,29 @@ mod tests {
     }
 
     #[test]
+    fn apps_list_params_accept_upstream_host_shape() {
+        let params: AppsListParams = serde_json::from_value(json!({
+            "hostId": "remote-ssh-discovered:demo",
+            "cursor": "cursor-1",
+            "limit": 25,
+            "threadId": "thread-1",
+            "forceRefetch": true
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            AppsListParams {
+                host_id: Some("remote-ssh-discovered:demo".to_string()),
+                cursor: Some("cursor-1".to_string()),
+                limit: Some(25),
+                thread_id: Some("thread-1".to_string()),
+                force_refetch: Some(true),
+            }
+        );
+    }
+
+    #[test]
     fn mcp_server_status_list_params_accept_host_id() {
         let params: McpServerStatusListParams = serde_json::from_value(json!({
             "hostId": "local",
@@ -6272,22 +6379,22 @@ mod tests {
     }
 
     #[test]
-    fn mcp_host_scoped_commands_only_accept_local_host() {
-        assert!(ensure_supported_host_id(None, "list-mcp-server-status").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "list-mcp-server-status").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "list-mcp-server-status")
-                .expect_err("non-local host id should be rejected"),
-            "list-mcp-server-status does not support host id: remote"
-        );
+    fn mcp_oauth_notification_accepts_host_id() {
+        let notification: McpOauthLoginCompletedNotification = serde_json::from_value(json!({
+            "hostId": "remote-ssh-discovered:demo",
+            "name": "demo-server",
+            "success": true,
+            "error": null
+        }))
+        .expect("notification should deserialize");
 
-        assert!(ensure_supported_host_id(None, "login-mcp-server").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "login-mcp-server").is_ok());
         assert_eq!(
-            ensure_supported_host_id(Some("remote"), "login-mcp-server")
-                .expect_err("non-local host id should be rejected"),
-            "login-mcp-server does not support host id: remote"
+            notification.host_id.as_deref(),
+            Some("remote-ssh-discovered:demo")
         );
+        assert_eq!(notification.name, "demo-server".to_string());
+        assert!(notification.success);
+        assert_eq!(notification.error, None);
     }
 
     #[test]
@@ -6308,13 +6415,10 @@ mod tests {
     }
 
     #[test]
-    fn read_app_tools_only_accepts_local_host() {
-        assert!(ensure_supported_host_id(None, "read-app-tools").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "read-app-tools").is_ok());
+    fn read_app_tools_can_route_remote_host() {
         assert_eq!(
-            ensure_supported_host_id(Some("remote"), "read-app-tools")
-                .expect_err("non-local host id should be rejected"),
-            "read-app-tools does not support host id: remote"
+            remote_host_id(Some("remote-ssh-discovered:demo")),
+            Some("remote-ssh-discovered:demo")
         );
     }
 
@@ -6569,14 +6673,8 @@ mod tests {
     }
 
     #[test]
-    fn list_hooks_only_accepts_local_host() {
-        assert!(ensure_supported_host_id(None, "list-hooks-for-host").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "list-hooks-for-host").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "list-hooks-for-host")
-                .expect_err("non-local host id should be rejected"),
-            "list-hooks-for-host does not support host id: remote"
-        );
+    fn list_hooks_can_route_remote_host() {
+        assert_eq!(remote_host_id(Some("remote")), Some("remote"));
     }
 
     #[test]
@@ -6618,14 +6716,8 @@ mod tests {
     }
 
     #[test]
-    fn list_plugins_only_accepts_local_host() {
-        assert!(ensure_supported_host_id(None, "list-plugins").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "list-plugins").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "list-plugins")
-                .expect_err("non-local host id should be rejected"),
-            "list-plugins does not support host id: remote"
-        );
+    fn list_plugins_can_route_remote_host() {
+        assert_eq!(remote_host_id(Some("remote")), Some("remote"));
     }
 
     #[test]
@@ -7103,30 +7195,8 @@ mod tests {
     }
 
     #[test]
-    fn marketplace_mutation_commands_only_accept_local_host() {
-        assert!(ensure_supported_host_id(None, "add-marketplace").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "add-marketplace").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "add-marketplace")
-                .expect_err("non-local host id should be rejected"),
-            "add-marketplace does not support host id: remote"
-        );
-
-        assert!(ensure_supported_host_id(None, "remove-marketplace").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "remove-marketplace").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "remove-marketplace")
-                .expect_err("non-local host id should be rejected"),
-            "remove-marketplace does not support host id: remote"
-        );
-
-        assert!(ensure_supported_host_id(None, "upgrade-marketplaces").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "upgrade-marketplaces").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "upgrade-marketplaces")
-                .expect_err("non-local host id should be rejected"),
-            "upgrade-marketplaces does not support host id: remote"
-        );
+    fn marketplace_mutation_commands_can_route_remote_host() {
+        assert_eq!(remote_host_id(Some("remote")), Some("remote"));
     }
 
     #[test]
@@ -7177,30 +7247,8 @@ mod tests {
     }
 
     #[test]
-    fn plugin_detail_and_mutation_commands_only_accept_local_host() {
-        assert!(ensure_supported_host_id(None, "read-plugin").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "read-plugin").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "read-plugin")
-                .expect_err("non-local host id should be rejected"),
-            "read-plugin does not support host id: remote"
-        );
-
-        assert!(ensure_supported_host_id(None, "install-plugin").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "install-plugin").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "install-plugin")
-                .expect_err("non-local host id should be rejected"),
-            "install-plugin does not support host id: remote"
-        );
-
-        assert!(ensure_supported_host_id(None, "uninstall-plugin").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "uninstall-plugin").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "uninstall-plugin")
-                .expect_err("non-local host id should be rejected"),
-            "uninstall-plugin does not support host id: remote"
-        );
+    fn plugin_detail_and_mutation_commands_can_route_remote_host() {
+        assert_eq!(remote_host_id(Some("remote")), Some("remote"));
     }
 
     #[test]
@@ -7263,30 +7311,8 @@ mod tests {
     }
 
     #[test]
-    fn plugin_share_commands_only_accept_local_host() {
-        assert!(ensure_supported_host_id(None, "list-plugin-shares").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "list-plugin-shares").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "list-plugin-shares")
-                .expect_err("non-local host id should be rejected"),
-            "list-plugin-shares does not support host id: remote"
-        );
-
-        assert!(ensure_supported_host_id(None, "save-plugin-share").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "save-plugin-share").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "save-plugin-share")
-                .expect_err("non-local host id should be rejected"),
-            "save-plugin-share does not support host id: remote"
-        );
-
-        assert!(ensure_supported_host_id(None, "delete-plugin-share").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "delete-plugin-share").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "delete-plugin-share")
-                .expect_err("non-local host id should be rejected"),
-            "delete-plugin-share does not support host id: remote"
-        );
+    fn plugin_share_commands_can_route_remote_host() {
+        assert_eq!(remote_host_id(Some("remote")), Some("remote"));
     }
 
     #[test]

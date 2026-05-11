@@ -1,3 +1,5 @@
+import { PULL_REQUESTS_PAGE_MESSAGES, type PullRequestsPageMessageKey } from "./pullRequestsPageMessages";
+
 export const UPSTREAM_LOCALE_CODES = [
   "en-US",
   "am",
@@ -508,6 +510,25 @@ export type MessageKey =
   | "localConversation.modelRerouted.warning.line2"
   | "codex.review.noDiff"
   | "codex.review.noDiff.baseDescription"
+  | "codex.review.header.moreOptions"
+  | "codex.review.wrap.enable"
+  | "codex.review.wrap.disable"
+  | "codex.review.expandOrCollapseDiffMenu.collapse"
+  | "codex.review.expandOrCollapseDiffMenu.expand"
+  | "codex.review.loadFullFiles.enable"
+  | "codex.review.loadFullFiles.disable"
+  | "codex.review.richPreview.enable"
+  | "codex.review.richPreview.disable"
+  | "codex.review.wordDiffs.enable"
+  | "codex.review.wordDiffs.disable"
+  | "codex.review.whitespace.show"
+  | "codex.review.whitespace.hide"
+  | "codex.review.copyGitApplyCommand"
+  | "codex.review.copyGitApplyCommand.toast"
+  | "codex.review.switchToSplit"
+  | "codex.review.switchToUnified"
+  | "codex.review.refreshGitQueries"
+  | "codex.unifiedDiff.reviewChanges"
   | "thread.sidePanel.browserTab"
   | "thread.sidePanel.diffTab"
   | "thread.sidePanel.empty.title"
@@ -525,6 +546,7 @@ export type MessageKey =
   | "codex.fileTreeSearch.label"
   | "codex.fileTreeSearch.placeholder"
   | "codex.fileTreeSearch.clear"
+  | "codex.review.fileSearch.empty"
   | "thread.fileTreePanel.noMatchingFiles"
   | "thread.fileTreePanel.searchingFiles"
   | "review.fileSource.breadcrumb.ariaLabel"
@@ -620,20 +642,7 @@ export type MessageKey =
   | "sidebarElectron.pluginsRouteNavLink"
   | "sidebarElectron.pluginsDisabledTooltip"
   | "sidebarElectron.scratchpadNavLink"
-  | "pullRequestsPage.title"
-  | "pullRequestsPage.filter.authored"
-  | "pullRequestsPage.filter.review"
-  | "pullRequestsPage.filter.ariaLabel"
-  | "pullRequestsPage.repo.allRepos"
-  | "pullRequestsPage.error.title"
-  | "pullRequestsPage.error.description"
-  | "pullRequestsPage.empty.noPullRequests.title"
-  | "pullRequestsPage.empty.noPullRequests.description"
-  | "pullRequestsPage.empty.noPullRequests.reviewDescription"
-  | "pullRequestsPage.empty.noPullRequests.allReposDescription"
-  | "pullRequestsPage.empty.noRepos.title"
-  | "pullRequestsPage.empty.noRepos.description"
-  | "pullRequestsPage.sectionsNav"
+  | PullRequestsPageMessageKey
   | "inbox.mode.automations"
   | "inbox.automations.createError"
   | "inbox.automations.loading"
@@ -955,9 +964,14 @@ export type MessageKey =
   | "settings.git.pullRequestMergeMethod.ariaLabel"
   | "settings.git.pullRequestMergeMethod.merge"
   | "settings.git.pullRequestMergeMethod.squash"
+  | "settings.git.pullRequestMergeMethod.save.success"
+  | "settings.git.pullRequestMergeMethod.save.error"
   | "settings.git.showSidebarPrIcons.label"
   | "settings.git.showSidebarPrIcons.description"
   | "settings.git.showSidebarPrIcons.ariaLabel"
+  | "settings.git.showSidebarPrIcons.save.enabled"
+  | "settings.git.showSidebarPrIcons.save.disabled"
+  | "settings.git.showSidebarPrIcons.save.error"
   | "settings.git.commitInstructions.label"
   | "settings.git.commitInstructions.description"
   | "settings.git.commitInstructions.save"
@@ -1039,6 +1053,13 @@ export type MessageKey =
   | "settings.usage.autoTopUp.immediateTopUpNotice.update"
   | "settings.usage.autoTopUp.immediateTopUpFailure.generic"
   | "settings.usage.autoTopUp.immediateTopUpFailure.amount"
+  | "settings.usage.autoTopUp.enable.success"
+  | "settings.usage.autoTopUp.enable.error"
+  | "settings.usage.autoTopUp.update.success"
+  | "settings.usage.autoTopUp.update.error"
+  | "settings.usage.autoTopUp.disable.success"
+  | "settings.usage.autoTopUp.disable.error"
+  | "settings.usage.autoTopUp.save.error"
   | "settings.usage.limits.title"
   | "settings.usage.limits.spark.title"
   | "settings.usage.limits.fiveHour.label"
@@ -1075,6 +1096,76 @@ export type MessageKey =
   | "settings.general.importExternalAgent.importAgain"
   | "settings.general.importExternalAgent.viewImportedFiles"
   | "settings.general.importExternalAgent.continueWithCodex"
+  | "onboarding.welcome.simple.title"
+  | "onboarding.welcome.simple.subtitle"
+  | "onboarding.welcome.continue"
+  | "onboarding.welcome.close"
+  | "onboarding.welcome.new.title.anon"
+  | "onboarding.welcome.debugFallback.description"
+  | "onboarding.welcomeV2.role.title"
+  | "onboarding.welcomeV2.role.subtitle"
+  | "onboarding.welcomeV2.role.engineering"
+  | "onboarding.welcomeV2.role.product"
+  | "onboarding.welcomeV2.role.finance"
+  | "onboarding.welcomeV2.role.marketing"
+  | "onboarding.welcomeV2.role.sales"
+  | "onboarding.welcomeV2.role.operations"
+  | "onboarding.welcomeV2.role.dataScience"
+  | "onboarding.welcomeV2.role.design"
+  | "onboarding.welcomeV2.role.student"
+  | "onboarding.welcomeV2.role.somethingElse"
+  | "onboarding.welcomeV2.intent.title"
+  | "onboarding.welcomeV2.intent.subtitle"
+  | "onboarding.welcomeV2.intent.buildSoftware"
+  | "onboarding.welcomeV2.intent.designProducts"
+  | "onboarding.welcomeV2.intent.manageProjects"
+  | "onboarding.welcomeV2.intent.searchEmailChat"
+  | "onboarding.welcomeV2.intent.manageCalendar"
+  | "onboarding.welcomeV2.intent.workWithDocs"
+  | "onboarding.welcomeV2.intent.analyzeData"
+  | "onboarding.welcomeV2.intent.other"
+  | "onboarding.welcomeV2.workMode.title"
+  | "onboarding.welcomeV2.workMode.subtitle"
+  | "onboarding.welcomeV2.workMode.coding.title"
+  | "onboarding.welcomeV2.workMode.coding.description"
+  | "onboarding.welcomeV2.workMode.nonCoding.title"
+  | "onboarding.welcomeV2.workMode.nonCoding.description"
+  | "onboarding.welcomeV2.workMode.settingsHint"
+  | "onboarding.welcomeV2.personalized.title"
+  | "onboarding.welcomeV2.personalized.description"
+  | "onboarding.welcomeV2.personalized.toggle"
+  | "onboarding.welcomeV2.personalizedSuggestions.title"
+  | "onboarding.welcomeV2.personalizedSuggestions.description"
+  | "onboarding.welcomeV2.personalizedSuggestions.toggle"
+  | "onboarding.welcomeV2.personalizedSuggestions.info"
+  | "onboarding.welcomeV2.skip"
+  | "onboarding.welcomeV2.externalAgentImport.providers.dialogTitle"
+  | "onboarding.welcomeV2.externalAgentImport.providers.title"
+  | "onboarding.welcomeV2.externalAgentImport.providers.subtitle"
+  | "onboarding.welcomeV2.externalAgentImport.providers.appsFound"
+  | "onboarding.welcomeV2.externalAgentImport.providers.list"
+  | "onboarding.welcomeV2.externalAgentImport.providers.claudeCode"
+  | "onboarding.welcomeV2.externalAgentImport.providers.claudeCowork"
+  | "onboarding.welcomeV2.externalAgentImport.providers.standardChatsUnsupported"
+  | "onboarding.welcomeV2.externalAgentImport.providers.toggle"
+  | "onboarding.welcomeV2.externalAgentImport.items.title"
+  | "onboarding.welcomeV2.externalAgentImport.items.subtitle"
+  | "onboarding.welcomeV2.externalAgentImport.items.list"
+  | "onboarding.welcomeV2.externalAgentImport.items.bothProvidersNote"
+  | "onboarding.welcomeV2.externalAgentImport.toolsAndSetup.title"
+  | "onboarding.welcomeV2.externalAgentImport.toolsAndSetup.description"
+  | "onboarding.welcomeV2.externalAgentImport.projects.title"
+  | "onboarding.welcomeV2.externalAgentImport.projects.description"
+  | "onboarding.welcomeV2.externalAgentImport.recentChats.title"
+  | "onboarding.welcomeV2.externalAgentImport.recentChats.description"
+  | "onboarding.welcomeV2.externalAgentImport.customize"
+  | "onboarding.welcomeV2.externalAgentImport.customize.title"
+  | "onboarding.welcomeV2.externalAgentImport.customize.description"
+  | "onboarding.welcomeV2.externalAgentImport.customize.confirm"
+  | "onboarding.welcomeV2.externalAgentImport.customize.projects"
+  | "onboarding.welcomeV2.externalAgentImport.customize.projectsDescription"
+  | "onboarding.welcomeV2.externalAgentImport.customize.pluginsWithCount"
+  | "onboarding.welcomeV2.externalAgentImport.error"
   | "settings.openIn.integratedTerminalShell.label"
   | "settings.openIn.integratedTerminalShell.description"
   | "settings.openIn.integratedTerminalShell.unavailable"
@@ -1852,6 +1943,25 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
       "Think this is a mistake? Request a review at <link>chatgpt.com/cyber</link> or report via /feedback",
     "codex.review.noDiff": "No file changes yet",
     "codex.review.noDiff.baseDescription": "Changes in this project will appear here.",
+    "codex.review.header.moreOptions": "Review options",
+    "codex.review.wrap.enable": "Enable word wrap",
+    "codex.review.wrap.disable": "Disable word wrap",
+    "codex.review.expandOrCollapseDiffMenu.collapse": "Collapse all diffs",
+    "codex.review.expandOrCollapseDiffMenu.expand": "Expand all diffs",
+    "codex.review.loadFullFiles.enable": "Load full files",
+    "codex.review.loadFullFiles.disable": "Don't load full files",
+    "codex.review.richPreview.enable": "Enable rich preview",
+    "codex.review.richPreview.disable": "Disable rich preview",
+    "codex.review.wordDiffs.enable": "Enable word diffs",
+    "codex.review.wordDiffs.disable": "Disable word diffs",
+    "codex.review.whitespace.show": "Show white space",
+    "codex.review.whitespace.hide": "Hide white space",
+    "codex.review.copyGitApplyCommand": "Copy git apply command",
+    "codex.review.copyGitApplyCommand.toast": "Copied git apply command to the clipboard",
+    "codex.review.switchToSplit": "Switch to split diff",
+    "codex.review.switchToUnified": "Switch to unified diff",
+    "codex.review.refreshGitQueries": "Refresh",
+    "codex.unifiedDiff.reviewChanges": "Review changes",
     "thread.sidePanel.browserTab": "Browser",
     "thread.sidePanel.diffTab": "Review",
     "thread.sidePanel.empty.title": "Nothing here yet",
@@ -1869,6 +1979,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.fileTreeSearch.label": "Filter files",
     "codex.fileTreeSearch.placeholder": "Filter files…",
     "codex.fileTreeSearch.clear": "Clear file filter",
+    "codex.review.fileSearch.empty": "No matching files",
     "thread.fileTreePanel.noMatchingFiles": "No matching files",
     "thread.fileTreePanel.searchingFiles": "Searching files...",
     "review.fileSource.breadcrumb.ariaLabel": "File path",
@@ -1966,20 +2077,6 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "sidebarElectron.pluginsRouteNavLink": "Plugins",
     "sidebarElectron.pluginsDisabledTooltip": "Please sign in with ChatGPT to use plugins",
     "sidebarElectron.scratchpadNavLink": "Scratchpad",
-    "pullRequestsPage.title": "Pull requests",
-    "pullRequestsPage.filter.authored": "Authored",
-    "pullRequestsPage.filter.review": "Review",
-    "pullRequestsPage.filter.ariaLabel": "Pull request views",
-    "pullRequestsPage.repo.allRepos": "All repos",
-    "pullRequestsPage.error.title": "Couldn’t load pull requests",
-    "pullRequestsPage.error.description": "Check your GitHub CLI auth and try again in a moment",
-    "pullRequestsPage.empty.noPullRequests.title": "No pull requests yet",
-    "pullRequestsPage.empty.noPullRequests.description": "Your recent authored pull requests for this repo will appear here",
-    "pullRequestsPage.empty.noPullRequests.reviewDescription": "Pull requests requesting your review for this repo will appear here",
-    "pullRequestsPage.empty.noPullRequests.allReposDescription": "Pull requests across your GitHub repos will appear here",
-    "pullRequestsPage.empty.noRepos.title": "No GitHub repos available",
-    "pullRequestsPage.empty.noRepos.description": "Add a workspace with a GitHub remote to populate this board",
-    "pullRequestsPage.sectionsNav": "Pull request sections",
     "inbox.mode.automations": "Automations",
     "inbox.automations.createError": "Could not create automation",
     "inbox.automations.loading": "Loading…",
@@ -2307,9 +2404,14 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.git.pullRequestMergeMethod.ariaLabel": "Pull request merge method",
     "settings.git.pullRequestMergeMethod.merge": "Merge",
     "settings.git.pullRequestMergeMethod.squash": "Squash",
+    "settings.git.pullRequestMergeMethod.save.success": "Saved pull request merge method",
+    "settings.git.pullRequestMergeMethod.save.error": "Failed to save pull request merge method",
     "settings.git.showSidebarPrIcons.label": "Show PR icons in sidebar",
     "settings.git.showSidebarPrIcons.description": "Display PR status icons on chat rows in the sidebar",
     "settings.git.showSidebarPrIcons.ariaLabel": "Show PR icons in sidebar",
+    "settings.git.showSidebarPrIcons.save.enabled": "Sidebar PR icons enabled",
+    "settings.git.showSidebarPrIcons.save.disabled": "Sidebar PR icons disabled",
+    "settings.git.showSidebarPrIcons.save.error": "Failed to save sidebar PR icon setting",
     "settings.git.commitInstructions.label": "Commit instructions",
     "settings.git.commitInstructions.description": "Added to commit message generation prompts",
     "settings.git.commitInstructions.save": "Save",
@@ -2395,6 +2497,13 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.usage.autoTopUp.immediateTopUpNotice.update": "Updating your settings will trigger a one-time purchase of {creditCount} credit with an estimated cost of {amount}.",
     "settings.usage.autoTopUp.immediateTopUpFailure.generic": "The initial top-up failed.",
     "settings.usage.autoTopUp.immediateTopUpFailure.amount": "The initial top-up for an estimated {amount} failed.",
+    "settings.usage.autoTopUp.enable.success": "Enabled auto reload",
+    "settings.usage.autoTopUp.enable.error": "Failed to enable auto reload",
+    "settings.usage.autoTopUp.update.success": "Updated auto reload settings",
+    "settings.usage.autoTopUp.update.error": "Failed to update auto reload",
+    "settings.usage.autoTopUp.disable.success": "Disabled auto reload",
+    "settings.usage.autoTopUp.disable.error": "Failed to disable auto reload",
+    "settings.usage.autoTopUp.save.error": "Failed to save auto reload settings",
     "settings.usage.limits.title": "General usage limits",
     "settings.usage.limits.spark.title": "GPT-5.3-Codex-Spark usage limits",
     "settings.usage.limits.fiveHour.label": "5 hour usage limit",
@@ -2436,6 +2545,88 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.general.importExternalAgent.importAgain": "Import again",
     "settings.general.importExternalAgent.viewImportedFiles": "View imported files",
     "settings.general.importExternalAgent.continueWithCodex": "Continue with Codex",
+    "onboarding.welcome.simple.title": "Welcome!",
+    "onboarding.welcome.simple.subtitle": "Continue to choose your workspace",
+    "onboarding.welcome.continue": "Continue",
+    "onboarding.welcome.close": "Close",
+    "onboarding.welcome.new.title.anon": "Welcome!",
+    "onboarding.welcome.debugFallback.description":
+      "Debug override is forcing the welcome screen. Continue to test the onboarding flow.",
+    "onboarding.welcomeV2.role.title": "What type of work do you do?",
+    "onboarding.welcomeV2.role.subtitle": "Customize Codex to fit the way you work",
+    "onboarding.welcomeV2.role.engineering": "Engineering",
+    "onboarding.welcomeV2.role.product": "Product",
+    "onboarding.welcomeV2.role.finance": "Finance",
+    "onboarding.welcomeV2.role.marketing": "Marketing",
+    "onboarding.welcomeV2.role.sales": "Sales",
+    "onboarding.welcomeV2.role.operations": "Operations",
+    "onboarding.welcomeV2.role.dataScience": "Data Science",
+    "onboarding.welcomeV2.role.design": "Design",
+    "onboarding.welcomeV2.role.student": "Student",
+    "onboarding.welcomeV2.role.somethingElse": "Something else",
+    "onboarding.welcomeV2.intent.title": "What can Codex help with?",
+    "onboarding.welcomeV2.intent.subtitle": "Choose what you want to work on first",
+    "onboarding.welcomeV2.intent.buildSoftware": "Build software",
+    "onboarding.welcomeV2.intent.designProducts": "Design products",
+    "onboarding.welcomeV2.intent.manageProjects": "Manage projects",
+    "onboarding.welcomeV2.intent.searchEmailChat": "Manage inbox",
+    "onboarding.welcomeV2.intent.manageCalendar": "Organize calendar",
+    "onboarding.welcomeV2.intent.workWithDocs": "Work with docs",
+    "onboarding.welcomeV2.intent.analyzeData": "Analyze data",
+    "onboarding.welcomeV2.intent.other": "Something else",
+    "onboarding.welcomeV2.workMode.title": "How technical should Codex feel?",
+    "onboarding.welcomeV2.workMode.subtitle": "Choose how much detail Codex shows",
+    "onboarding.welcomeV2.workMode.coding.title": "For coding",
+    "onboarding.welcomeV2.workMode.coding.description": "More technical responses and code detail",
+    "onboarding.welcomeV2.workMode.nonCoding.title": "For everyday work",
+    "onboarding.welcomeV2.workMode.nonCoding.description": "Same powerful agent, less technical detail",
+    "onboarding.welcomeV2.workMode.settingsHint": "You can always change this later in settings",
+    "onboarding.welcomeV2.personalized.title": "Suggest personalized tasks",
+    "onboarding.welcomeV2.personalized.description":
+      "Codex can suggest what to do next by searching project files and connected apps",
+    "onboarding.welcomeV2.personalized.toggle": "Enable personalized suggestions",
+    "onboarding.welcomeV2.personalizedSuggestions.title": "Suggest personalized tasks",
+    "onboarding.welcomeV2.personalizedSuggestions.description":
+      "Codex can suggest what to do next by searching project files and connected apps",
+    "onboarding.welcomeV2.personalizedSuggestions.toggle": "Enable personalized suggestions",
+    "onboarding.welcomeV2.personalizedSuggestions.info": "About personalized suggestions",
+    "onboarding.welcomeV2.skip": "Skip",
+    "onboarding.welcomeV2.externalAgentImport.providers.dialogTitle": "Import from other AI apps",
+    "onboarding.welcomeV2.externalAgentImport.providers.title": "Import work from other AI apps",
+    "onboarding.welcomeV2.externalAgentImport.providers.subtitle":
+      "Bring over your setup, projects, and recent chats",
+    "onboarding.welcomeV2.externalAgentImport.providers.appsFound": "Apps found",
+    "onboarding.welcomeV2.externalAgentImport.providers.list": "Apps found",
+    "onboarding.welcomeV2.externalAgentImport.providers.claudeCode": "Claude Code",
+    "onboarding.welcomeV2.externalAgentImport.providers.claudeCowork": "Claude Cowork",
+    "onboarding.welcomeV2.externalAgentImport.providers.standardChatsUnsupported":
+      "Standard Claude Chat data cannot be imported",
+    "onboarding.welcomeV2.externalAgentImport.providers.toggle": "Import {provider}",
+    "onboarding.welcomeV2.externalAgentImport.items.title": "Select items to import",
+    "onboarding.welcomeV2.externalAgentImport.items.subtitle":
+      "Import all your work or handpick what to bring over",
+    "onboarding.welcomeV2.externalAgentImport.items.list": "Import options",
+    "onboarding.welcomeV2.externalAgentImport.items.bothProvidersNote":
+      "Claude Code and Claude Cowork projects and chat sessions will be imported to Codex",
+    "onboarding.welcomeV2.externalAgentImport.toolsAndSetup.title": "Tools & setup",
+    "onboarding.welcomeV2.externalAgentImport.toolsAndSetup.description":
+      "Settings, instructions, plugins, skills",
+    "onboarding.welcomeV2.externalAgentImport.projects.title": "Projects ({count})",
+    "onboarding.welcomeV2.externalAgentImport.projects.description":
+      "Work inside your existing projects",
+    "onboarding.welcomeV2.externalAgentImport.recentChats.title": "Chat sessions ({count})",
+    "onboarding.welcomeV2.externalAgentImport.recentChats.description": "Last 30 days of chats",
+    "onboarding.welcomeV2.externalAgentImport.customize": "Customize",
+    "onboarding.welcomeV2.externalAgentImport.customize.title": "Choose what to import",
+    "onboarding.welcomeV2.externalAgentImport.customize.description":
+      "Select which detected items to import",
+    "onboarding.welcomeV2.externalAgentImport.customize.confirm": "Confirm",
+    "onboarding.welcomeV2.externalAgentImport.customize.projects": "Projects ({count})",
+    "onboarding.welcomeV2.externalAgentImport.customize.projectsDescription":
+      "Work inside your existing projects",
+    "onboarding.welcomeV2.externalAgentImport.customize.pluginsWithCount": "Plugins ({count})",
+    "onboarding.welcomeV2.externalAgentImport.error":
+      "Couldn't finish the import. Try again, or skip for now.",
     "settings.openIn.integratedTerminalShell.label": "Integrated terminal shell",
     "settings.openIn.integratedTerminalShell.description": "Choose which shell opens in the integrated terminal.",
     "settings.openIn.integratedTerminalShell.unavailable": "No shells available",
@@ -2714,6 +2905,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "auth.openBrowser": "Open browser",
     "auth.copy": "Copy",
     "history.noMessageYet": "(no message yet)",
+    ...PULL_REQUESTS_PAGE_MESSAGES["en-US"],
   },
   "zh-CN": {
     "app.menu.file": "文件",
@@ -3178,6 +3370,25 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
       "认为这是误操作？可通过 <link>chatgpt.com/cyber 申请复核</link>或通过 /feedback 报告",
     "codex.review.noDiff": "尚无文件更改",
     "codex.review.noDiff.baseDescription": "此项目中的更改将显示在此处。",
+    "codex.review.header.moreOptions": "查看选项",
+    "codex.review.wrap.enable": "启用自动换行",
+    "codex.review.wrap.disable": "禁用自动换行",
+    "codex.review.expandOrCollapseDiffMenu.collapse": "折叠全部差异",
+    "codex.review.expandOrCollapseDiffMenu.expand": "展开全部差异",
+    "codex.review.loadFullFiles.enable": "加载完整文件",
+    "codex.review.loadFullFiles.disable": "不加载完整文件",
+    "codex.review.richPreview.enable": "启用富文本预览",
+    "codex.review.richPreview.disable": "禁用富文本预览",
+    "codex.review.wordDiffs.enable": "启用文字差异",
+    "codex.review.wordDiffs.disable": "禁用文字差异",
+    "codex.review.whitespace.show": "显示空白字符",
+    "codex.review.whitespace.hide": "隐藏空白字符",
+    "codex.review.copyGitApplyCommand": "复制 git apply 命令",
+    "codex.review.copyGitApplyCommand.toast": "已将 git apply 命令复制到剪贴板",
+    "codex.review.switchToSplit": "切换到分栏差异",
+    "codex.review.switchToUnified": "切换到统一差异",
+    "codex.review.refreshGitQueries": "刷新",
+    "codex.unifiedDiff.reviewChanges": "审查更改",
     "thread.sidePanel.browserTab": "浏览器",
     "thread.sidePanel.diffTab": "审查",
     "thread.sidePanel.empty.title": "这里还没有内容",
@@ -3195,6 +3406,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.fileTreeSearch.label": "筛选文件",
     "codex.fileTreeSearch.placeholder": "筛选文件…",
     "codex.fileTreeSearch.clear": "清除文件筛选",
+    "codex.review.fileSearch.empty": "没有匹配的文件",
     "thread.fileTreePanel.noMatchingFiles": "没有匹配的文件",
     "thread.fileTreePanel.searchingFiles": "正在搜索文件…",
     "review.fileSource.breadcrumb.ariaLabel": "文件路径",
@@ -3292,20 +3504,6 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "sidebarElectron.pluginsRouteNavLink": "插件",
     "sidebarElectron.pluginsDisabledTooltip": "请登录 ChatGPT 以使用插件",
     "sidebarElectron.scratchpadNavLink": "草稿区",
-    "pullRequestsPage.title": "拉取请求",
-    "pullRequestsPage.filter.authored": "我发起的",
-    "pullRequestsPage.filter.review": "待我审查",
-    "pullRequestsPage.filter.ariaLabel": "拉取请求视图",
-    "pullRequestsPage.repo.allRepos": "所有仓库",
-    "pullRequestsPage.error.title": "无法加载拉取请求",
-    "pullRequestsPage.error.description": "请检查 GitHub CLI 身份验证，稍后重试",
-    "pullRequestsPage.empty.noPullRequests.title": "还没有拉取请求",
-    "pullRequestsPage.empty.noPullRequests.description": "此仓库中你最近发起的拉取请求会显示在这里",
-    "pullRequestsPage.empty.noPullRequests.reviewDescription": "此仓库中请求你审查的拉取请求会显示在这里",
-    "pullRequestsPage.empty.noPullRequests.allReposDescription": "你的 GitHub 仓库中的拉取请求会显示在这里",
-    "pullRequestsPage.empty.noRepos.title": "没有可用的 GitHub 仓库",
-    "pullRequestsPage.empty.noRepos.description": "添加带有 GitHub 远程地址的工作区以填充此看板",
-    "pullRequestsPage.sectionsNav": "拉取请求分区",
     "inbox.mode.automations": "自动化",
     "inbox.automations.createError": "无法创建自动化",
     "inbox.automations.loading": "正在加载…",
@@ -3624,9 +3822,14 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.git.pullRequestMergeMethod.ariaLabel": "拉取请求合并方法",
     "settings.git.pullRequestMergeMethod.merge": "合并",
     "settings.git.pullRequestMergeMethod.squash": "压缩",
+    "settings.git.pullRequestMergeMethod.save.success": "已保存拉取请求合并方法",
+    "settings.git.pullRequestMergeMethod.save.error": "保存拉取请求合并方法失败",
     "settings.git.showSidebarPrIcons.label": "在侧边栏显示 PR 图标",
     "settings.git.showSidebarPrIcons.description": "在侧边栏的对话行中显示 PR 状态图标",
     "settings.git.showSidebarPrIcons.ariaLabel": "在侧边栏显示 PR 图标",
+    "settings.git.showSidebarPrIcons.save.enabled": "已启用侧边栏 PR 图标",
+    "settings.git.showSidebarPrIcons.save.disabled": "已禁用侧边栏 PR 图标",
+    "settings.git.showSidebarPrIcons.save.error": "保存侧边栏 PR 图标设置失败",
     "settings.git.commitInstructions.label": "提交指令",
     "settings.git.commitInstructions.description": "已添加到提交信息生成提示中",
     "settings.git.commitInstructions.save": "保存",
@@ -3708,6 +3911,13 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.usage.autoTopUp.immediateTopUpNotice.update": "更新设置后，会立即一次性购买 {creditCount} 额度，预计费用为 {amount}。",
     "settings.usage.autoTopUp.immediateTopUpFailure.generic": "首次充值失败。",
     "settings.usage.autoTopUp.immediateTopUpFailure.amount": "预计金额为 {amount} 的首次充值失败。",
+    "settings.usage.autoTopUp.enable.success": "已启用自动充值",
+    "settings.usage.autoTopUp.enable.error": "启用自动充值失败",
+    "settings.usage.autoTopUp.update.success": "已更新自动充值设置",
+    "settings.usage.autoTopUp.update.error": "更新自动充值设置失败",
+    "settings.usage.autoTopUp.disable.success": "已关闭自动充值",
+    "settings.usage.autoTopUp.disable.error": "关闭自动充值失败",
+    "settings.usage.autoTopUp.save.error": "保存自动充值设置失败",
     "settings.usage.limits.title": "常规使用限制",
     "settings.usage.limits.spark.title": "GPT-5.3-Codex-Spark 使用限制",
     "settings.usage.limits.fiveHour.label": "5 小时使用限制",
@@ -3746,6 +3956,82 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.general.importExternalAgent.importAgain": "再次导入",
     "settings.general.importExternalAgent.viewImportedFiles": "查看已导入的文件",
     "settings.general.importExternalAgent.continueWithCodex": "继续使用 Codex",
+    "onboarding.welcome.simple.title": "欢迎！",
+    "onboarding.welcome.simple.subtitle": "继续选择你的工作区",
+    "onboarding.welcome.continue": "继续",
+    "onboarding.welcome.close": "关闭",
+    "onboarding.welcome.new.title.anon": "欢迎",
+    "onboarding.welcome.debugFallback.description": "调试覆盖强制显示欢迎界面。继续测试引导流程。",
+    "onboarding.welcomeV2.role.title": "你主要做什么类型的工作？",
+    "onboarding.welcomeV2.role.subtitle": "按你的工作方式自定义 Codex",
+    "onboarding.welcomeV2.role.engineering": "工程",
+    "onboarding.welcomeV2.role.product": "产品",
+    "onboarding.welcomeV2.role.finance": "财务",
+    "onboarding.welcomeV2.role.marketing": "市场",
+    "onboarding.welcomeV2.role.sales": "销售",
+    "onboarding.welcomeV2.role.operations": "运营",
+    "onboarding.welcomeV2.role.dataScience": "数据科学",
+    "onboarding.welcomeV2.role.design": "设计",
+    "onboarding.welcomeV2.role.student": "学生",
+    "onboarding.welcomeV2.role.somethingElse": "其他",
+    "onboarding.welcomeV2.intent.title": "Codex 可以帮你做什么？",
+    "onboarding.welcomeV2.intent.subtitle": "选择要最先处理的内容",
+    "onboarding.welcomeV2.intent.buildSoftware": "开发软件",
+    "onboarding.welcomeV2.intent.designProducts": "设计产品",
+    "onboarding.welcomeV2.intent.manageProjects": "管理项目",
+    "onboarding.welcomeV2.intent.searchEmailChat": "管理收件箱",
+    "onboarding.welcomeV2.intent.manageCalendar": "整理日历",
+    "onboarding.welcomeV2.intent.workWithDocs": "处理文档",
+    "onboarding.welcomeV2.intent.analyzeData": "分析数据",
+    "onboarding.welcomeV2.intent.other": "其他",
+    "onboarding.welcomeV2.workMode.title": "你希望 Codex 呈现出多强的技术性？",
+    "onboarding.welcomeV2.workMode.subtitle": "选择 Codex 显示的详细程度",
+    "onboarding.welcomeV2.workMode.coding.title": "适用于编程",
+    "onboarding.welcomeV2.workMode.coding.description": "更偏技术性的回答和代码细节",
+    "onboarding.welcomeV2.workMode.nonCoding.title": "适用于日常工作",
+    "onboarding.welcomeV2.workMode.nonCoding.description": "同样强大的智能体，技术细节更少",
+    "onboarding.welcomeV2.workMode.settingsHint": "你之后随时可在设置中更改",
+    "onboarding.welcomeV2.personalized.title": "建议个性化任务",
+    "onboarding.welcomeV2.personalized.description":
+      "Codex 可以通过搜索项目文件和已连接应用来建议下一步操作",
+    "onboarding.welcomeV2.personalized.toggle": "启用个性化建议",
+    "onboarding.welcomeV2.personalizedSuggestions.title": "建议个性化任务",
+    "onboarding.welcomeV2.personalizedSuggestions.description":
+      "Codex 可通过搜索项目文件和已连接的应用，建议接下来该做什么",
+    "onboarding.welcomeV2.personalizedSuggestions.toggle": "启用个性化建议",
+    "onboarding.welcomeV2.personalizedSuggestions.info": "关于个性化建议",
+    "onboarding.welcomeV2.skip": "跳过",
+    "onboarding.welcomeV2.externalAgentImport.providers.dialogTitle": "从其他 AI 应用导入",
+    "onboarding.welcomeV2.externalAgentImport.providers.title": "从其他 AI 应用导入工作",
+    "onboarding.welcomeV2.externalAgentImport.providers.subtitle":
+      "导入你的设置、项目和最近的聊天记录",
+    "onboarding.welcomeV2.externalAgentImport.providers.appsFound": "找到的应用",
+    "onboarding.welcomeV2.externalAgentImport.providers.list": "找到的应用",
+    "onboarding.welcomeV2.externalAgentImport.providers.claudeCode": "Claude Code",
+    "onboarding.welcomeV2.externalAgentImport.providers.claudeCowork": "Claude Cowork",
+    "onboarding.welcomeV2.externalAgentImport.providers.standardChatsUnsupported":
+      "无法导入标准 Claude Chat 数据",
+    "onboarding.welcomeV2.externalAgentImport.providers.toggle": "导入 {provider}",
+    "onboarding.welcomeV2.externalAgentImport.items.title": "选择要导入的项目",
+    "onboarding.welcomeV2.externalAgentImport.items.subtitle":
+      "导入所有工作内容，或手动挑选要迁移的内容",
+    "onboarding.welcomeV2.externalAgentImport.items.list": "导入选项",
+    "onboarding.welcomeV2.externalAgentImport.items.bothProvidersNote":
+      "Claude Code 和 Claude Cowork 的项目和聊天会话将导入 Codex",
+    "onboarding.welcomeV2.externalAgentImport.toolsAndSetup.title": "工具和设置",
+    "onboarding.welcomeV2.externalAgentImport.toolsAndSetup.description": "设置、说明、插件、技能",
+    "onboarding.welcomeV2.externalAgentImport.projects.title": "项目（{count}）",
+    "onboarding.welcomeV2.externalAgentImport.projects.description": "在现有项目中工作",
+    "onboarding.welcomeV2.externalAgentImport.recentChats.title": "聊天会话（{count}）",
+    "onboarding.welcomeV2.externalAgentImport.recentChats.description": "最近30天的聊天",
+    "onboarding.welcomeV2.externalAgentImport.customize": "自定义",
+    "onboarding.welcomeV2.externalAgentImport.customize.title": "选择要导入的内容",
+    "onboarding.welcomeV2.externalAgentImport.customize.description": "选择要导入的已检测项目",
+    "onboarding.welcomeV2.externalAgentImport.customize.confirm": "确认",
+    "onboarding.welcomeV2.externalAgentImport.customize.projects": "项目（{count}）",
+    "onboarding.welcomeV2.externalAgentImport.customize.projectsDescription": "在现有项目中工作",
+    "onboarding.welcomeV2.externalAgentImport.customize.pluginsWithCount": "插件（{count}）",
+    "onboarding.welcomeV2.externalAgentImport.error": "无法完成导入。请重试，或暂时跳过。",
     "settings.openIn.integratedTerminalShell.label": "集成终端 Shell",
     "settings.openIn.integratedTerminalShell.description": "选择要在集成终端中打开的 Shell。",
     "settings.openIn.integratedTerminalShell.unavailable": "无可用 Shell",
@@ -4017,5 +4303,6 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "auth.openBrowser": "打开浏览器",
     "auth.copy": "复制",
     "history.noMessageYet": "(暂无消息)",
+    ...PULL_REQUESTS_PAGE_MESSAGES["zh-CN"],
   },
 };

@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { DEFAULT_LOCALE, MESSAGES, getMessageLocale, type LocaleCode, type MessageKey, type MessageValues } from "./messages";
-import { getGlobalState, resolveLocalePreference } from "../services/settings";
 
 type I18nContextValue = {
   locale: LocaleCode;
@@ -8,7 +7,7 @@ type I18nContextValue = {
   t: (key: MessageKey, values?: MessageValues) => string;
 };
 
-const I18N_CONTEXT = createContext<I18nContextValue | null>(null);
+export const I18N_CONTEXT = createContext<I18nContextValue | null>(null);
 
 function formatMessage(template: string, values?: MessageValues) {
   if (!values) {
@@ -43,13 +42,15 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
 
-    void getGlobalState("localeOverride")
-      .then((response) => {
-        if (cancelled) {
-          return;
-        }
-        setLocaleState(resolveLocalePreference(response.value));
-      })
+    void import("../services/settings")
+      .then(({ getGlobalState, resolveLocalePreference }) =>
+        getGlobalState("localeOverride").then((response) => {
+          if (cancelled) {
+            return;
+          }
+          setLocaleState(resolveLocalePreference(response.value));
+        }),
+      )
       .catch(() => {
         if (!cancelled) {
           setLocaleState(DEFAULT_LOCALE);

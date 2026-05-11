@@ -13,6 +13,7 @@ export type McpServerStatusListResponse = {
 };
 
 export type McpOauthLoginCompletedNotification = {
+  hostId: string | null;
   name: string;
   success: boolean;
   error: string | null;

@@ -1,5 +1,5 @@
 use crate::auth_bridge::register_external_agent_import_completed_waiter;
-use crate::auth_bridge::request_external_agent_config_detect;
+use crate::auth_bridge::request_external_agent_config_detect_for_host;
 use crate::auth_bridge::request_external_agent_config_import;
 use crate::auth_bridge::AuthBridgeState;
 use crate::codex_home::resolve_codex_home;
@@ -9,10 +9,11 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{AppHandle, State};
 use tokio::time::Duration;
 
 const CLAUDE_CODE_PROVIDER_ID: &str = "claude-code";
+const CLAUDE_COWORK_PROVIDER_ID: &str = "claude-cowork";
 const LOCAL_HOST_ID: &str = "local";
 const EXTERNAL_AGENT_IMPORT_COMPLETION_TIMEOUT_MS: u64 = 120_000;
 const EXTERNAL_AGENT_SESSION_IMPORT_LEDGER_FILE: &str = "external_agent_session_imports.json";
@@ -186,25 +187,29 @@ struct ExternalAgentSessionImportLedgerRecord {
 
 #[tauri::command(rename = "external-agent-import-detect")]
 pub async fn external_agent_import_detect(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: ExternalAgentImportDetectParams,
 ) -> Result<ExternalAgentImportDetectResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "external-agent-import-detect")?;
-
     let providers = normalize_provider_ids(params.providers);
-    if !providers.contains(CLAUDE_CODE_PROVIDER_ID) {
+    if providers.is_empty() {
         return Ok(ExternalAgentImportDetectResponse {
             items: Vec::new(),
             unsupported_projects: Vec::new(),
         });
     }
 
-    let items =
-        detect_claude_code_items(state.inner(), params.include_home, params.workspace_roots)
-            .await?;
+    let items = detect_external_agent_items(
+        &app,
+        state.inner(),
+        params.host_id.as_deref(),
+        params.include_home,
+        params.workspace_roots,
+    )
+    .await?;
 
     Ok(ExternalAgentImportDetectResponse {
-        items,
+        items: filter_items_by_provider_ids(items, &providers),
         unsupported_projects: Vec::new(),
     })
 }
@@ -216,26 +221,20 @@ pub async fn external_agent_import_import(
 ) -> Result<ExternalAgentImportImportResponse, String> {
     ensure_supported_host_id(params.host_id.as_deref(), "external-agent-import-import")?;
 
-    let mut claude_code_items = params
-        .items
-        .into_iter()
-        .filter(is_claude_code_item)
-        .map(clear_provider_id)
-        .collect::<Vec<_>>();
-
-    if claude_code_items.is_empty() {
+    if params.items.is_empty() {
         return Ok(ExternalAgentImportImportResponse {
             project_roots: Vec::new(),
         });
     }
 
-    let project_roots = collect_project_roots(&claude_code_items);
-    let waiter = claude_code_items
+    let project_roots = collect_project_roots(&params.items);
+    let waiter = params
+        .items
         .iter()
         .any(|item| item.item_type == ExternalAgentImportItemType::Sessions)
         .then(|| register_external_agent_import_completed_waiter(state.inner()));
 
-    request_import(state.inner(), std::mem::take(&mut claude_code_items)).await?;
+    request_import(state.inner(), params.items).await?;
 
     if let Some(waiter) = waiter {
         waiter
@@ -259,7 +258,7 @@ pub fn external_agent_import_status(
     ensure_supported_host_id(params.host_id.as_deref(), "external-agent-import-status")?;
 
     let providers = normalize_provider_ids(params.providers.unwrap_or_default());
-    if !providers.contains(CLAUDE_CODE_PROVIDER_ID) {
+    if providers.is_empty() {
         return Ok(ExternalAgentImportStatusResponse {
             imported_session_count: 0,
             latest_imported_at_ms: None,
@@ -267,11 +266,13 @@ pub fn external_agent_import_status(
     }
 
     let codex_home = resolve_codex_home()?;
-    Ok(read_claude_code_import_status(&codex_home))
+    Ok(read_external_agent_import_status(&codex_home))
 }
 
-async fn detect_claude_code_items(
+async fn detect_external_agent_items(
+    app: &AppHandle,
     state: &Arc<AuthBridgeState>,
+    host_id: Option<&str>,
     include_home: bool,
     workspace_roots: Option<Vec<String>>,
 ) -> Result<Vec<ExternalAgentImportItem>, String> {
@@ -279,7 +280,8 @@ async fn detect_claude_code_items(
         return Ok(Vec::new());
     }
 
-    let root_items = request_detect(state, include_home, workspace_roots.clone()).await?;
+    let root_items =
+        request_detect(app, state, host_id, include_home, workspace_roots.clone()).await?;
     if !include_home || workspace_roots.is_some() {
         return Ok(root_items);
     }
@@ -289,14 +291,16 @@ async fn detect_claude_code_items(
         return Ok(root_items);
     }
 
-    let project_items = request_detect(state, false, Some(project_roots)).await?;
+    let project_items = request_detect(app, state, host_id, false, Some(project_roots)).await?;
     let mut combined = root_items;
     combined.extend(project_items);
     Ok(deduplicate_items(combined))
 }
 
 async fn request_detect(
+    app: &AppHandle,
     state: &Arc<AuthBridgeState>,
+    host_id: Option<&str>,
     include_home: bool,
     workspace_roots: Option<Vec<String>>,
 ) -> Result<Vec<ExternalAgentImportItem>, String> {
@@ -306,15 +310,11 @@ async fn request_detect(
     })
     .map_err(|err| format!("failed to encode external agent detect params: {err}"))?;
 
-    let value = request_external_agent_config_detect(state, payload).await?;
+    let value = request_external_agent_config_detect_for_host(app, state, host_id, payload).await?;
     let response = serde_json::from_value::<AppServerExternalAgentImportDetectResponse>(value)
         .map_err(|err| format!("failed to decode external agent detect response: {err}"))?;
 
-    Ok(response
-        .items
-        .into_iter()
-        .map(tag_with_claude_code_provider)
-        .collect())
+    Ok(response.items)
 }
 
 async fn request_import(
@@ -363,44 +363,35 @@ fn deduplicate_items(items: Vec<ExternalAgentImportItem>) -> Vec<ExternalAgentIm
     deduplicated
 }
 
-fn tag_with_claude_code_provider(mut item: ExternalAgentImportItem) -> ExternalAgentImportItem {
-    item.provider_id = Some(CLAUDE_CODE_PROVIDER_ID.to_string());
-    item
-}
-
-fn clear_provider_id(mut item: ExternalAgentImportItem) -> ExternalAgentImportItem {
-    item.provider_id = None;
-    item
-}
-
-fn is_claude_code_item(item: &ExternalAgentImportItem) -> bool {
-    match item.provider_id.as_deref() {
-        None | Some(CLAUDE_CODE_PROVIDER_ID) => true,
-        Some(_) => false,
-    }
+fn filter_items_by_provider_ids(
+    items: Vec<ExternalAgentImportItem>,
+    provider_ids: &BTreeSet<String>,
+) -> Vec<ExternalAgentImportItem> {
+    items
+        .into_iter()
+        .filter(|item| {
+            matches!(
+                item.provider_id.as_deref(),
+                Some(provider_id) if provider_ids.contains(provider_id)
+            )
+        })
+        .collect()
 }
 
 fn normalize_provider_ids(providers: Vec<String>) -> BTreeSet<String> {
-    let normalized = providers
+    providers
         .into_iter()
         .filter_map(|provider| {
             let trimmed = provider.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed.to_string())
+            match trimmed {
+                CLAUDE_CODE_PROVIDER_ID | CLAUDE_COWORK_PROVIDER_ID => Some(trimmed.to_string()),
+                _ => None,
             }
         })
-        .collect::<BTreeSet<_>>();
-
-    if normalized.is_empty() {
-        BTreeSet::from([CLAUDE_CODE_PROVIDER_ID.to_string()])
-    } else {
-        normalized
-    }
+        .collect()
 }
 
-fn read_claude_code_import_status(codex_home: &PathBuf) -> ExternalAgentImportStatusResponse {
+fn read_external_agent_import_status(codex_home: &PathBuf) -> ExternalAgentImportStatusResponse {
     let path = codex_home.join(EXTERNAL_AGENT_SESSION_IMPORT_LEDGER_FILE);
     let contents = match fs::read_to_string(path) {
         Ok(contents) => contents,
@@ -441,19 +432,19 @@ fn ensure_supported_host_id(host_id: Option<&str>, command_name: &str) -> Result
 
 #[cfg(test)]
 mod tests {
-    use super::clear_provider_id;
     use super::collect_project_roots;
     use super::deduplicate_items;
     use super::ensure_supported_host_id;
-    use super::is_claude_code_item;
+    use super::filter_items_by_provider_ids;
     use super::normalize_provider_ids;
-    use super::read_claude_code_import_status;
+    use super::read_external_agent_import_status;
     use super::ExternalAgentImportItem;
     use super::ExternalAgentImportItemType;
     use super::ExternalAgentImportMigrationDetails;
     use super::ExternalAgentImportSessionMigration;
     use super::ExternalAgentImportStatusResponse;
 
+    use serde_json::json;
     use std::env;
     use std::fs;
 
@@ -513,40 +504,116 @@ mod tests {
     }
 
     #[test]
-    fn clear_provider_id_strips_provider_before_import() {
-        let item = ExternalAgentImportItem {
-            item_type: ExternalAgentImportItemType::Config,
-            description: "settings".to_string(),
-            cwd: Some("D:/repo".to_string()),
-            details: None,
-            provider_id: Some("claude-code".to_string()),
-        };
-
+    fn provider_normalization_keeps_only_known_values() {
         assert_eq!(
-            clear_provider_id(item),
-            ExternalAgentImportItem {
-                item_type: ExternalAgentImportItemType::Config,
-                description: "settings".to_string(),
-                cwd: Some("D:/repo".to_string()),
-                details: None,
-                provider_id: None,
-            }
+            normalize_provider_ids(vec![
+                " claude-code ".to_string(),
+                "claude-cowork".to_string(),
+                "unknown".to_string(),
+                "".to_string(),
+            ]),
+            std::collections::BTreeSet::from([
+                "claude-code".to_string(),
+                "claude-cowork".to_string(),
+            ])
         );
     }
 
     #[test]
-    fn provider_normalization_defaults_to_claude_code() {
+    fn filter_items_by_provider_ids_keeps_only_selected_providers() {
+        let items = vec![
+            ExternalAgentImportItem {
+                item_type: ExternalAgentImportItemType::Config,
+                description: "code".to_string(),
+                cwd: Some("D:/repo-a".to_string()),
+                details: None,
+                provider_id: Some("claude-code".to_string()),
+            },
+            ExternalAgentImportItem {
+                item_type: ExternalAgentImportItemType::Config,
+                description: "cowork".to_string(),
+                cwd: Some("D:/repo-b".to_string()),
+                details: None,
+                provider_id: Some("claude-cowork".to_string()),
+            },
+            ExternalAgentImportItem {
+                item_type: ExternalAgentImportItemType::Config,
+                description: "unknown".to_string(),
+                cwd: Some("D:/repo-c".to_string()),
+                details: None,
+                provider_id: None,
+            },
+        ];
+
         assert_eq!(
-            normalize_provider_ids(vec![]),
-            std::collections::BTreeSet::from(["claude-code".to_string()])
+            filter_items_by_provider_ids(
+                items,
+                &std::collections::BTreeSet::from(["claude-cowork".to_string()])
+            ),
+            vec![ExternalAgentImportItem {
+                item_type: ExternalAgentImportItemType::Config,
+                description: "cowork".to_string(),
+                cwd: Some("D:/repo-b".to_string()),
+                details: None,
+                provider_id: Some("claude-cowork".to_string()),
+            }]
         );
-        assert!(is_claude_code_item(&ExternalAgentImportItem {
+    }
+
+    #[test]
+    fn provider_id_serializes_through_import_payload() {
+        let payload = serde_json::to_value(super::AppServerExternalAgentImportImportParams {
+            migration_items: vec![ExternalAgentImportItem {
+                item_type: ExternalAgentImportItemType::Config,
+                description: "settings".to_string(),
+                cwd: Some("D:/repo".to_string()),
+                details: None,
+                provider_id: Some("claude-cowork".to_string()),
+            }],
+        })
+        .expect("payload should serialize");
+
+        assert_eq!(
+            payload,
+            json!({
+                "migrationItems": [
+                    {
+                        "itemType": "CONFIG",
+                        "description": "settings",
+                        "cwd": "D:/repo",
+                        "details": null,
+                        "providerId": "claude-cowork"
+                    }
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn provider_normalization_rejects_unknown_values() {
+        assert_eq!(
+            normalize_provider_ids(vec!["unknown".to_string(), " ".to_string()]),
+            std::collections::BTreeSet::new()
+        );
+    }
+
+    #[test]
+    fn missing_provider_is_not_accepted() {
+        let item = ExternalAgentImportItem {
             item_type: ExternalAgentImportItemType::Config,
             description: "settings".to_string(),
             cwd: None,
             details: None,
             provider_id: None,
-        }));
+        };
+
+        assert_eq!(
+            filter_items_by_provider_ids(
+                vec![item],
+                &std::collections::BTreeSet::from(["claude-code".to_string()])
+            ),
+            Vec::<ExternalAgentImportItem>::new()
+        );
     }
 
     #[test]
@@ -566,7 +633,7 @@ mod tests {
         .expect("fixture ledger should be written");
 
         assert_eq!(
-            read_claude_code_import_status(&root),
+            read_external_agent_import_status(&root),
             ExternalAgentImportStatusResponse {
                 imported_session_count: 3,
                 latest_imported_at_ms: Some(25_000),
@@ -585,7 +652,7 @@ mod tests {
         .expect("fixture ledger should be written");
 
         assert_eq!(
-            read_claude_code_import_status(&root),
+            read_external_agent_import_status(&root),
             ExternalAgentImportStatusResponse {
                 imported_session_count: 0,
                 latest_imported_at_ms: None,
@@ -594,14 +661,18 @@ mod tests {
     }
 
     #[test]
-    fn external_agent_import_commands_only_accept_local_host() {
-        assert!(ensure_supported_host_id(None, "external-agent-import-detect").is_ok());
+    fn external_agent_import_non_detect_commands_stay_local_only() {
         assert!(ensure_supported_host_id(Some(""), "external-agent-import-import").is_ok());
         assert!(ensure_supported_host_id(Some("local"), "external-agent-import-status").is_ok());
         assert_eq!(
-            ensure_supported_host_id(Some("remote"), "external-agent-import-detect")
+            ensure_supported_host_id(Some("remote"), "external-agent-import-import")
                 .expect_err("non-local host id should be rejected"),
-            "external-agent-import-detect does not support host id: remote"
+            "external-agent-import-import does not support host id: remote"
+        );
+        assert_eq!(
+            ensure_supported_host_id(Some("remote"), "external-agent-import-status")
+                .expect_err("non-local host id should be rejected"),
+            "external-agent-import-status does not support host id: remote"
         );
     }
 

@@ -14,10 +14,16 @@ type Translate = (key: MessageKey, values?: Record<string, number | string>) => 
 type PlanSummaryItemCardProps = {
   conversationId: string;
   defaultCollapsed?: boolean;
-  item: ThreadConversationPlan;
+  item: ThreadConversationPlan | PlanSummaryAssistantMessageItem;
   isWriting?: boolean;
   showOpenButton?: boolean;
   t: Translate;
+};
+
+type PlanSummaryAssistantMessageItem = {
+  type: "assistant-message";
+  content: string;
+  completed: boolean;
 };
 
 const PLAN_DOWNLOAD_NAME = "PLAN.md";
@@ -30,12 +36,15 @@ export function PlanSummaryItemCard({
   showOpenButton = true,
   t,
 }: PlanSummaryItemCardProps) {
-  const text = item.text.trim();
-  const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed ?? !isWriting);
+  const summaryText = "text" in item ? item.text : item.content;
+  const completed = "completed" in item ? item.completed : true;
+  const isWritingPlan = isWriting || !completed;
+  const text = summaryText.trim();
+  const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed ?? !isWritingPlan);
 
   useEffect(() => {
-    setIsCollapsed(defaultCollapsed ?? !isWriting);
-  }, [defaultCollapsed, isWriting]);
+    setIsCollapsed(defaultCollapsed ?? !isWritingPlan);
+  }, [defaultCollapsed, isWritingPlan]);
 
   useEffect(() => {
     if (isWriting) {
@@ -47,18 +56,18 @@ export function PlanSummaryItemCard({
     return null;
   }
 
-  const showCompletedActions = !isWriting;
+  const showCompletedActions = !isWritingPlan;
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(item.text);
+      await navigator.clipboard.writeText(summaryText);
     } catch {
       // Keep the plan summary visible if clipboard access is unavailable.
     }
   };
 
   const handleDownload = () => {
-    const blob = new Blob([item.text], {
+    const blob = new Blob([summaryText], {
       type: "text/markdown;charset=utf-8",
     });
     const url = URL.createObjectURL(blob);
@@ -73,7 +82,7 @@ export function PlanSummaryItemCard({
     try {
       await showPlanSummary({
         conversationId,
-        planContent: item.text,
+        planContent: summaryText,
       });
     } catch {
       // Keep the inline plan summary usable when desktop handoff fails.
@@ -86,10 +95,10 @@ export function PlanSummaryItemCard({
         <div
           className={[
             "text-[16px] font-semibold leading-tight text-[var(--app-shell-text)]",
-            isWriting ? "loading-shimmer-pure-text" : "",
+            isWritingPlan ? "loading-shimmer-pure-text" : "",
           ].join(" ")}
         >
-          {isWriting ? t("localConversation.planSummary.titleWriting") : t("localConversation.planSummary.title")}
+          {isWritingPlan ? t("localConversation.planSummary.titleWriting") : t("localConversation.planSummary.title")}
         </div>
         <div className="flex items-center gap-1">
           {showCompletedActions ? (
@@ -142,7 +151,7 @@ export function PlanSummaryItemCard({
       </div>
 
       <div className={isCollapsed ? "relative max-h-[320px] overflow-hidden" : undefined}>
-        <div className="px-4 pb-4">{renderMessageContent(item.text)}</div>
+        <div className="px-4 pb-4">{renderMessageContent(summaryText)}</div>
         {isCollapsed ? (
           <>
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[var(--app-shell-card-bg)] to-transparent" />

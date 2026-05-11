@@ -1,6 +1,8 @@
 import { useState, type MouseEvent, type ReactNode, type SVGProps } from "react";
 import { MESSAGES, getMessageLocale, type LocaleCode, type MessageKey, type MessageValues } from "../../i18n/messages";
 import { setGlobalState } from "../../services/settings";
+import { FirstRunButton } from "./FirstRunButton";
+import { FirstRunAsciiBackground } from "./FirstRunAsciiBackground";
 
 const INTRO_STEP = 0;
 const CLOUD_STEP = 1;
@@ -15,7 +17,6 @@ const CODEX_IDE_DOCS_URL = "https://developers.openai.com/codex/ide";
 const OPENAI_CODEX_TOS_URL = "https://openai.com/policies/row-terms-of-use/";
 const GITHUB_TOS_URL = "https://docs.github.com/en/site-policy/github-terms/github-terms-of-service";
 const CHATGPT_DATA_CONTROLS_URL = "https://chatgpt.com/#settings/DataControls";
-
 const INTRO_SNIPPET = `import mongoose, { Schema } from "mongoose";
 export const collection = "Product";`;
 const TODO_HEADING_SNIPPET = `const schema = new Schema(`;
@@ -26,16 +27,6 @@ const TODO_SCHEMA_SNIPPET = `  {
       trim: true,
     },
     description: {`;
-const BACKGROUND_LINES = Array.from({ length: 18 }, (_, index) => {
-  const variant = index % 3;
-  if (variant === 0) {
-    return INTRO_SNIPPET;
-  }
-  if (variant === 1) {
-    return TODO_HEADING_SNIPPET;
-  }
-  return TODO_SCHEMA_SNIPPET;
-});
 
 type FirstRunNuxVariant = "none" | "2025-09-15-full-chatgpt-auth" | "2025-09-15-apikey-auth";
 type Translate = (key: MessageKey, values?: MessageValues) => string;
@@ -110,12 +101,12 @@ export function FirstRunPage({ authMethod, locale, onAccept, t }: FirstRunPagePr
 
   return (
     <main className="relative h-full overflow-hidden bg-[var(--color-background-panel)] text-[var(--color-text-foreground)]">
-      <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-[var(--app-shell-toolbar-sm)]" />
+      <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-[var(--app-shell-toolbar)]" />
       <BackgroundCode />
 
-      <div className="relative flex h-full items-center justify-center px-4">
+      <div className="relative flex h-full w-full items-center justify-center overflow-hidden px-4">
         {slideVariant ? (
-          <div className="pointer-events-none absolute top-1/2 left-1/2 hidden -translate-x-1/2 -translate-y-1/2 sm:block">
+          <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 [@media(max-height:500px)]:hidden">
             <SlidePreview t={t} variant={slideVariant} />
           </div>
         ) : null}
@@ -139,27 +130,20 @@ export function FirstRunPage({ authMethod, locale, onAccept, t }: FirstRunPagePr
             )}
           </div>
 
-          <div className="mt-10 px-2">
+          <div className="mt-10 mb-0 px-2">
             <div className="mx-auto flex w-full max-w-[400px] items-center justify-between gap-2">
               {hasCloudAccess ? (
-                <button
-                  type="button"
+                <FirstRunButton
+                  color="outline"
                   onClick={handleBack}
                   disabled={step === INTRO_STEP || isSaving}
-                  className="app-control-weak rounded-full px-4 py-2 text-sm font-medium"
                 >
                   {t("codex.legal.backButton")}
-                </button>
+                </FirstRunButton>
               ) : null}
-              <button
-                type="button"
-                onClick={() => void handleContinue()}
-                disabled={isSaving}
-                className="rounded-full px-4 py-2 text-sm font-medium text-[var(--color-background-surface)] disabled:opacity-70"
-                style={{ backgroundColor: "var(--color-text-foreground)" }}
-              >
+              <FirstRunButton onClick={() => void handleContinue()} disabled={isSaving}>
                 {hasCloudAccess ? t("codex.legal.continueButton") : t("codex.legal.continue.apikey")}
-              </button>
+              </FirstRunButton>
             </div>
           </div>
         </div>
@@ -169,28 +153,7 @@ export function FirstRunPage({ authMethod, locale, onAccept, t }: FirstRunPagePr
 }
 
 function BackgroundCode() {
-  return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none absolute inset-0 -ml-6 opacity-[0.15]"
-      style={{
-        WebkitMaskImage:
-          "radial-gradient(ellipse at center, rgba(0,0,0,1) 35%, rgba(0,0,0,0.6) 60%, rgba(0,0,0,0) 78%)",
-        maskImage:
-          "radial-gradient(ellipse at center, rgba(0,0,0,1) 35%, rgba(0,0,0,0.6) 60%, rgba(0,0,0,0) 78%)",
-        WebkitMaskRepeat: "no-repeat",
-        maskRepeat: "no-repeat",
-        WebkitMaskSize: "100% 100%",
-        maskSize: "100% 100%",
-      }}
-    >
-      <div className="flex h-full items-center justify-center">
-        <pre className="w-full max-w-[980px] overflow-hidden px-6 text-[11px] leading-6 text-[var(--color-text-foreground)]">
-          {BACKGROUND_LINES.join("\n")}
-        </pre>
-      </div>
-    </div>
-  );
+  return <FirstRunAsciiBackground />;
 }
 
 function SlidePreview({ t, variant }: { t: Translate; variant: "intro" | "cloud" | "todo" }) {
