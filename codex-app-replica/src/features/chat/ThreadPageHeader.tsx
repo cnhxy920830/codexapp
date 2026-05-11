@@ -19,6 +19,7 @@ type ThreadPageHeaderProps = {
   onCopySessionId: () => void;
   onCopyWorkingDirectory: () => void;
   onForkThread: () => void;
+  onOpenSideChat: () => void;
   onOpenAttachedHeartbeatAutomation: () => void;
   onOpenThreadHeartbeatAutomationAction: () => void;
   onOpenRenameDialog: () => void;
@@ -43,6 +44,7 @@ export function ThreadPageHeader({
   onCopySessionId,
   onCopyWorkingDirectory,
   onForkThread,
+  onOpenSideChat,
   onOpenAttachedHeartbeatAutomation,
   onOpenThreadHeartbeatAutomationAction,
   onOpenRenameDialog,
@@ -156,6 +158,14 @@ export function ThreadPageHeader({
                   className="app-nav-item-idle flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
                 >
                   {t(isWorktreeThread ? "threadHeader.forkIntoSameWorktree" : "threadHeader.forkIntoLocal")}
+                </button>
+                <button
+                  type="button"
+                  disabled={isTurnInProgress}
+                  onClick={onOpenSideChat}
+                  className="app-nav-item-idle mt-1 flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
+                >
+                  {t("threadHeader.openSideChat")}
                 </button>
                 {isThreadHeartbeatAutomationActionVisible ? (
                   <button

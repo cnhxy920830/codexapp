@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { CheckIcon } from "./AppShellIcons";
+import type { AppToast } from "./AppToastRegion";
 import { UsageAutoTopUpDialog } from "./UsageAutoTopUpDialog";
 import { useI18n } from "../i18n/i18n";
 import type { MessageKey } from "../i18n/messages";
@@ -210,6 +211,7 @@ export function UsageSettings({
                 });
             }
           }}
+          onShowToast={onShowToast}
           serverState={autoTopUpSettings}
         />
       ) : null}

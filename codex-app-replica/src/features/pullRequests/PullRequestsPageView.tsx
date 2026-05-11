@@ -18,6 +18,7 @@ type PullRequestsPageViewProps = {
   detailLoading: boolean;
   diffFiles: PullRequestDiffFile[];
   codeReviewError: string | null;
+  cwd: string | null;
   isCodeReviewLoading: boolean;
   noRepos: boolean;
   onCloseDetail: () => void;
@@ -36,6 +37,7 @@ type PullRequestsPageViewProps = {
   onSelectRepo: (repoKey: string) => void;
   onSelectTab: (tab: PullRequestDetailTab) => void;
   onToggleAutoMerge: () => void | Promise<void>;
+  hostId: string | null;
   pageError: string | null;
   pageErrorDetail: string | null;
   repoOptions: PullRequestRepoOption[];
@@ -56,6 +58,7 @@ export function PullRequestsPageView({
   detailLoading,
   diffFiles,
   codeReviewError,
+  cwd,
   isCodeReviewLoading,
   noRepos,
   onCloseDetail,
@@ -74,6 +77,7 @@ export function PullRequestsPageView({
   onSelectRepo,
   onSelectTab,
   onToggleAutoMerge,
+  hostId,
   pageError,
   pageErrorDetail,
   repoOptions,
@@ -171,6 +175,7 @@ export function PullRequestsPageView({
               boardItem={selectedBoardItem}
               codeReviewError={codeReviewError}
               commentAttachments={detail?.commentAttachments ?? []}
+              cwd={cwd}
               detail={detail}
               detailError={detailError}
               detailKey={detailKey}
@@ -190,6 +195,7 @@ export function PullRequestsPageView({
               onMarkAsDraft={onMarkAsDraft}
               onMarkAsReady={onMarkAsReady}
               onToggleAutoMerge={onToggleAutoMerge}
+              hostId={hostId}
               selectedTab={selectedTab}
             />
           ) : null}

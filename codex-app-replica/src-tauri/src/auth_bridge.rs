@@ -98,6 +98,14 @@ pub struct HostScopedParams {
     pub host_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ForkConversationFromLatestParams {
+    pub conversation_id: String,
+    pub cwd: Option<String>,
+    pub developer_instructions: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct CodexAppServerInitializedNotification {
@@ -3166,6 +3174,90 @@ pub async fn fork_thread(
         );
     }
     Ok(forked_thread_id)
+}
+
+#[tauri::command(rename = "fork-conversation-from-latest")]
+pub async fn fork_conversation_from_latest(
+    app: AppHandle,
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: ForkConversationFromLatestParams,
+) -> Result<String, String> {
+    let source_thread_title = send_request(
+        state.inner(),
+        AppServerRequestKind::ThreadRead,
+        serde_json::json!({
+            "threadId": params.conversation_id.clone(),
+            "includeTurns": true,
+        }),
+    )
+    .await
+    .ok()
+    .and_then(|value| serde_json::from_value::<ThreadReadResponse>(value).ok())
+    .map(|response| resolved_thread_title(&response.thread))
+    .filter(|value| !value.is_empty());
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::ThreadFork,
+        serde_json::json!({
+            "threadId": params.conversation_id.clone(),
+            "cwd": params.cwd,
+            "developerInstructions": params.developer_instructions,
+            "ephemeral": true,
+            "persistExtendedHistory": false,
+        }),
+    )
+    .await?;
+    let response = serde_json::from_value::<ThreadStartResponse>(value)
+        .map_err(|err| format!("failed to decode side-chat thread fork response: {err}"))?;
+    let forked_thread_id = response.thread.id;
+    let forked_turn_id = send_request(
+        state.inner(),
+        AppServerRequestKind::ThreadRead,
+        serde_json::json!({
+            "threadId": forked_thread_id.clone(),
+            "includeTurns": true,
+        }),
+    )
+    .await
+    .ok()
+    .and_then(|value| serde_json::from_value::<ThreadReadResponse>(value).ok())
+    .and_then(|response| response.thread.turns.last().map(|turn| turn.id.clone()))
+    .unwrap_or_else(|| format!("forked-from-conversation:{forked_thread_id}"));
+    if let Ok(mut forked_from_conversations) = state.forked_from_conversations.lock() {
+        forked_from_conversations.insert(
+            forked_thread_id.clone(),
+            ForkedFromConversationCacheEntry {
+                turn_id: forked_turn_id.clone(),
+                source_conversation_id: params.conversation_id.clone(),
+                source_conversation_title: source_thread_title.clone(),
+            },
+        );
+    }
+    if let Some(item) = build_forked_from_conversation_item(
+        &forked_turn_id,
+        format!("forked-from-conversation:{forked_thread_id}"),
+        params.conversation_id,
+        source_thread_title,
+    ) {
+        let _ = app.emit(
+            THREAD_EVENT,
+            ThreadEventPayload::ThreadItemUpdated {
+                thread_id: forked_thread_id.clone(),
+                turn_id: forked_turn_id,
+                phase: ThreadItemUpdatePhase::Completed,
+                item,
+            },
+        );
+    }
+    Ok(forked_thread_id)
+}
+
+#[tauri::command(rename = "discard-conversation-from-cache")]
+pub async fn discard_conversation_from_cache(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: UnsubscribeThreadForHostParams,
+) -> Result<ThreadUnsubscribeResponse, String> {
+    unsubscribe_thread_for_host(state, params).await
 }
 
 #[tauri::command]

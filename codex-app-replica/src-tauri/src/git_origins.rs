@@ -39,9 +39,10 @@ pub async fn git_origins(params: GitOriginsParams) -> Result<GitOriginsResponse,
     ensure_supported_host_id(params.host_id.as_deref(), "git-origins")?;
 
     let dirs = params.dirs.unwrap_or_default();
-    let origins = spawn_blocking(move || dirs.into_iter().map(resolve_git_origin).collect::<Vec<_>>())
-        .await
-        .map_err(|error| format!("failed to resolve git origins: {error}"))?;
+    let origins =
+        spawn_blocking(move || dirs.into_iter().map(resolve_git_origin).collect::<Vec<_>>())
+            .await
+            .map_err(|error| format!("failed to resolve git origins: {error}"))?;
 
     Ok(GitOriginsResponse { origins })
 }

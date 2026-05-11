@@ -340,8 +340,13 @@ fn compute_bounds(
     layout: GlobalDictationLayout,
 ) -> Result<DictationBounds, String> {
     let scale = window.scale_factor().unwrap_or(1.0);
-    let monitor = preferred_monitor(window)?;
-    let work_area = monitor_work_area_physical(&monitor, scale);
+    let work_area = cursor_work_area_physical(window)
+        .or_else(|| {
+            preferred_monitor(window)
+                .ok()
+                .map(|monitor| monitor_work_area_physical(&monitor, scale))
+        })
+        .ok_or_else(|| "no monitor available for global-dictation window".to_string())?;
 
     let logical_width = layout.width();
     let logical_height = WINDOW_HEIGHT;
@@ -365,6 +370,16 @@ fn compute_bounds(
 }
 
 fn preferred_monitor(window: &WebviewWindow) -> Result<tauri::Monitor, String> {
+    if let (Ok(cursor), Ok(monitors)) = (window.cursor_position(), window.available_monitors()) {
+        if let Some(monitor) = monitors.into_iter().min_by(|left, right| {
+            distance_to_rect(cursor.x, cursor.y, monitor_rect(left))
+                .partial_cmp(&distance_to_rect(cursor.x, cursor.y, monitor_rect(right)))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }) {
+            return Ok(monitor);
+        }
+    }
+
     if let Ok(Some(current)) = window.current_monitor() {
         return Ok(current);
     }
@@ -382,18 +397,113 @@ struct PhysicalRect {
     height: u32,
 }
 
-fn monitor_work_area_physical(monitor: &tauri::Monitor, _scale: f64) -> PhysicalRect {
-    // Tauri exposes the full monitor bounds in physical pixels. Tauri does not
-    // currently expose the OS-reported "work area" (excluding taskbar), so we
-    // fall back to the full bounds; on Windows the taskbar overlap is usually
-    // <= BOTTOM_MARGIN, which the layout offset already accommodates.
-    let position = monitor.position();
-    let size = monitor.size();
+fn monitor_rect(monitor: &tauri::Monitor) -> PhysicalRect {
     PhysicalRect {
-        x: position.x,
-        y: position.y,
-        width: size.width,
-        height: size.height,
+        x: monitor.position().x,
+        y: monitor.position().y,
+        width: monitor.size().width,
+        height: monitor.size().height,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn cursor_work_area_physical(window: &WebviewWindow) -> Option<PhysicalRect> {
+    let cursor = window.cursor_position().ok()?;
+    let point = WinPoint {
+        x: cursor.x.round() as i32,
+        y: cursor.y.round() as i32,
+    };
+    let monitor = unsafe { monitor_from_point(point, MONITOR_DEFAULTTONEAREST) };
+    if monitor.is_null() {
+        return None;
+    }
+
+    let mut monitor_info = WinMonitorInfo {
+        cb_size: std::mem::size_of::<WinMonitorInfo>() as u32,
+        rc_monitor: WinRect::default(),
+        rc_work: WinRect::default(),
+        dw_flags: 0,
+    };
+    let loaded = unsafe { get_monitor_info_w(monitor, &mut monitor_info) };
+    if loaded == 0 {
+        return None;
+    }
+
+    Some(physical_rect_from_win_rect(monitor_info.rc_work))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn cursor_work_area_physical(_window: &WebviewWindow) -> Option<PhysicalRect> {
+    None
+}
+
+fn monitor_work_area_physical(monitor: &tauri::Monitor, _scale: f64) -> PhysicalRect {
+    // On Windows we prefer `cursor_work_area_physical(...)`, which reads the
+    // monitor work area directly from Win32 so the bubble sits above the
+    // taskbar like upstream. Other platforms still fall back to the full
+    // monitor bounds because Tauri does not expose per-monitor work areas.
+    monitor_rect(monitor)
+}
+
+fn distance_to_rect(x: f64, y: f64, rect: PhysicalRect) -> f64 {
+    let left = f64::from(rect.x);
+    let top = f64::from(rect.y);
+    let right = left + f64::from(rect.width);
+    let bottom = top + f64::from(rect.height);
+    let clamped_x = x.clamp(left, right);
+    let clamped_y = y.clamp(top, bottom);
+    (x - clamped_x).hypot(y - clamped_y)
+}
+
+#[cfg(target_os = "windows")]
+const MONITOR_DEFAULTTONEAREST: u32 = 2;
+
+#[cfg(target_os = "windows")]
+type HMonitor = *mut core::ffi::c_void;
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+struct WinPoint {
+    x: i32,
+    y: i32,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+struct WinRect {
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+}
+
+#[cfg(target_os = "windows")]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+struct WinMonitorInfo {
+    cb_size: u32,
+    rc_monitor: WinRect,
+    rc_work: WinRect,
+    dw_flags: u32,
+}
+
+#[cfg(target_os = "windows")]
+unsafe extern "system" {
+    #[link_name = "MonitorFromPoint"]
+    fn monitor_from_point(point: WinPoint, flags: u32) -> HMonitor;
+    #[link_name = "GetMonitorInfoW"]
+    fn get_monitor_info_w(monitor: HMonitor, monitor_info: *mut WinMonitorInfo) -> i32;
+}
+
+#[cfg(target_os = "windows")]
+fn physical_rect_from_win_rect(rect: WinRect) -> PhysicalRect {
+    PhysicalRect {
+        x: rect.left,
+        y: rect.top,
+        width: (rect.right - rect.left).max(0) as u32,
+        height: (rect.bottom - rect.top).max(0) as u32,
     }
 }
 
@@ -475,5 +585,43 @@ mod tests {
         let guard = state.inner.lock().unwrap();
         assert_eq!(guard.layout, Some(GlobalDictationLayout::Error));
         assert_eq!(guard.active_session_id.as_deref(), Some("session"));
+    }
+
+    #[test]
+    fn distance_to_rect_is_zero_inside_bounds() {
+        let rect = PhysicalRect {
+            x: 100,
+            y: 200,
+            width: 300,
+            height: 400,
+        };
+        assert_eq!(distance_to_rect(250.0, 350.0, rect), 0.0);
+    }
+
+    #[test]
+    fn distance_to_rect_measures_gap_outside_bounds() {
+        let rect = PhysicalRect {
+            x: 100,
+            y: 200,
+            width: 300,
+            height: 400,
+        };
+        assert_eq!(distance_to_rect(500.0, 350.0, rect), 100.0);
+        assert_eq!(distance_to_rect(250.0, 700.0, rect), 100.0);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn physical_rect_from_win_rect_uses_work_area_edges() {
+        let rect = physical_rect_from_win_rect(WinRect {
+            left: 10,
+            top: 20,
+            right: 210,
+            bottom: 420,
+        });
+        assert_eq!(rect.x, 10);
+        assert_eq!(rect.y, 20);
+        assert_eq!(rect.width, 200);
+        assert_eq!(rect.height, 400);
     }
 }

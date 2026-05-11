@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ChevronDownIcon,
   FolderIcon,
@@ -7,16 +7,32 @@ import {
   WorkspaceFileIcon,
 } from "../../components/AppShellIcons";
 import { useI18n } from "../../i18n/i18n";
-import type { PullRequestCommentAttachment } from "../../services/pullRequests";
+import {
+  readPullRequestFileContent,
+  type PullRequestCommentAttachment,
+} from "../../services/pullRequests";
 import { renderMessageContent } from "../chat/messageContent";
 import type { PullRequestDiffFile } from "./pullRequestDiffModel";
+import {
+  buildPullRequestSplitPreviewRows,
+  buildPullRequestUnifiedPreviewLines,
+  type PullRequestDiffFragment,
+  type PullRequestSplitPreviewRow,
+  type PullRequestUnifiedPreviewLine,
+} from "./pullRequestDiffPreviewModel";
+import {
+  buildPullRequestFullFilePreview,
+  splitPullRequestFileContents,
+} from "./pullRequestFullFilePreview";
 import { PullRequestReviewToolbar } from "./PullRequestReviewToolbar";
 
 type PullRequestCodeReviewPaneProps = {
   codeReviewError: string | null;
   commentAttachments: PullRequestCommentAttachment[];
+  cwd: string | null;
   detailKey: string;
   diffFiles: PullRequestDiffFile[];
+  hostId: string | null;
   isCodeReviewLoading: boolean;
   onCopyGitApplyCommand: (() => void | Promise<void>) | null;
   onRefreshCodeReview: () => void;
@@ -45,11 +61,26 @@ type MutableFileTreeDirectoryNode = {
   children: Map<string, MutableFileTreeDirectoryNode | FileTreeFileNode>;
 };
 
+type FullFileContentState =
+  | {
+      status: "idle" | "loading";
+    }
+  | {
+      status: "loaded";
+      newLines: string[];
+      oldLines: string[];
+    }
+  | {
+      status: "error";
+    }
+
 export function PullRequestCodeReviewPane({
   codeReviewError,
   commentAttachments,
+  cwd,
   detailKey,
   diffFiles,
+  hostId,
   isCodeReviewLoading,
   onCopyGitApplyCommand,
   onRefreshCodeReview,
@@ -61,10 +92,16 @@ export function PullRequestCodeReviewPane({
   const [isAllDiffsExpanded, setIsAllDiffsExpanded] = useState(true);
   const [isRichPreviewEnabled, setIsRichPreviewEnabled] = useState(true);
   const [isSplitDiffEnabled, setIsSplitDiffEnabled] = useState(false);
+  const [isLoadFullFilesEnabled, setIsLoadFullFilesEnabled] = useState(false);
+  const [isWordDiffsEnabled, setIsWordDiffsEnabled] = useState(false);
+  const [isWhitespaceHidden, setIsWhitespaceHidden] = useState(false);
   const [isWrapEnabled, setIsWrapEnabled] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [fullFileContentByPath, setFullFileContentByPath] = useState<Record<string, FullFileContentState>>({});
   const fileCardRefs = useRef(new Map<string, HTMLDivElement>());
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const fullFileLoadGenerationRef = useRef(0);
+  const fullFileContentByPathRef = useRef(fullFileContentByPath);
 
   const allDirectoryPaths = useMemo(() => collectDirectoryPaths(diffFiles), [diffFiles]);
   const visibleTreeFiles = useMemo(() => {
@@ -82,14 +119,28 @@ export function PullRequestCodeReviewPane({
   const effectiveExpandedDirectories = searchQuery.trim().length > 0 ? new Set(visibleTreeDirectories) : expandedDirectories;
 
   useEffect(() => {
+    fullFileLoadGenerationRef.current += 1;
     setActiveFilePath(diffFiles[0]?.path ?? null);
     setIsAllDiffsExpanded(true);
+    setIsLoadFullFilesEnabled(false);
     setIsRichPreviewEnabled(true);
     setIsSplitDiffEnabled(false);
+    setIsWordDiffsEnabled(false);
+    setIsWhitespaceHidden(false);
     setIsWrapEnabled(true);
     setSearchQuery("");
     setExpandedDirectories(new Set());
+    setFullFileContentByPath({});
   }, [detailKey]);
+
+  useEffect(() => {
+    fullFileLoadGenerationRef.current += 1;
+    setFullFileContentByPath({});
+  }, [diffFiles]);
+
+  useEffect(() => {
+    fullFileContentByPathRef.current = fullFileContentByPath;
+  }, [fullFileContentByPath]);
 
   useEffect(() => {
     setExpandedDirectories((current) => {
@@ -173,6 +224,126 @@ export function PullRequestCodeReviewPane({
     });
   };
 
+  const loadFullFile = useCallback(async (file: PullRequestDiffFile, options?: { retry?: boolean }) => {
+    if (!isLoadFullFilesEnabled || cwd == null || file.isBinary) {
+      return;
+    }
+    if (file.oldObjectId == null && file.newObjectId == null) {
+      return;
+    }
+
+    const currentState = fullFileContentByPathRef.current[file.path];
+    if (!options?.retry && currentState != null && currentState.status !== "idle") {
+      return;
+    }
+
+    const generation = fullFileLoadGenerationRef.current;
+    const loadingState: FullFileContentState = { status: "loading" };
+    const errorState: FullFileContentState = { status: "error" };
+
+    setFullFileContentByPath((current) => {
+      const existing = current[file.path];
+      if (!options?.retry && existing != null && existing.status !== "idle") {
+        return current;
+      }
+
+      const next: Record<string, FullFileContentState> = {
+        ...current,
+        [file.path]: loadingState,
+      };
+      fullFileContentByPathRef.current = next;
+      return next;
+    });
+
+    try {
+      const [oldContentsResult, newContentsResult] = await Promise.all([
+        file.oldObjectId == null
+          ? null
+          : readPullRequestFileContent({
+              cwd,
+              hostId,
+              objectId: file.oldObjectId,
+            }),
+        file.newObjectId == null
+          ? null
+          : readPullRequestFileContent({
+              cwd,
+              hostId,
+              objectId: file.newObjectId,
+            }),
+      ]);
+
+      if (generation !== fullFileLoadGenerationRef.current) {
+        return;
+      }
+
+      if (oldContentsResult?.status === "error" || newContentsResult?.status === "error") {
+        setFullFileContentByPath((current) => {
+          const next: Record<string, FullFileContentState> = {
+            ...current,
+            [file.path]: errorState,
+          };
+          fullFileContentByPathRef.current = next;
+          return next;
+        });
+        return;
+      }
+
+      setFullFileContentByPath((current) => {
+        const next: Record<string, FullFileContentState> = {
+          ...current,
+          [file.path]: {
+            status: "loaded",
+            oldLines:
+              oldContentsResult == null
+                ? []
+                : splitPullRequestFileContents(oldContentsResult.contents),
+            newLines:
+              newContentsResult == null
+                ? []
+                : splitPullRequestFileContents(newContentsResult.contents),
+          },
+        };
+        fullFileContentByPathRef.current = next;
+        return next;
+      });
+    } catch {
+      if (generation !== fullFileLoadGenerationRef.current) {
+        return;
+      }
+
+      setFullFileContentByPath((current) => {
+        const next: Record<string, FullFileContentState> = {
+          ...current,
+          [file.path]: errorState,
+        };
+        fullFileContentByPathRef.current = next;
+        return next;
+      });
+    }
+  }, [cwd, hostId, isLoadFullFilesEnabled]);
+
+  const showLoadFullFiles = useMemo(
+    () =>
+      diffFiles.some(
+        (file) => file.isPartial && !file.isBinary && (file.oldObjectId != null || file.newObjectId != null),
+      ),
+    [diffFiles],
+  );
+
+  useEffect(() => {
+    if (!isLoadFullFilesEnabled || activeFilePath == null) {
+      return;
+    }
+
+    const file = diffFiles.find((entry) => entry.path === activeFilePath);
+    if (file == null) {
+      return;
+    }
+
+    void loadFullFile(file);
+  }, [activeFilePath, diffFiles, isLoadFullFilesEnabled, loadFullFile]);
+
   if (isCodeReviewLoading) {
     return (
       <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4">
@@ -209,15 +380,22 @@ export function PullRequestCodeReviewPane({
     <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4">
       <PullRequestReviewToolbar
         isAllDiffsExpanded={isAllDiffsExpanded}
+        isLoadFullFilesEnabled={isLoadFullFilesEnabled}
         isRichPreviewEnabled={isRichPreviewEnabled}
         isSplitDiffEnabled={isSplitDiffEnabled}
+        isWhitespaceHidden={isWhitespaceHidden}
+        isWordDiffsEnabled={isWordDiffsEnabled}
         isWrapEnabled={isWrapEnabled}
         onCopyGitApplyCommand={onCopyGitApplyCommand}
         onRefreshCodeReview={onRefreshCodeReview}
         onToggleAllDiffsExpanded={() => setIsAllDiffsExpanded((value) => !value)}
+        onToggleLoadFullFilesEnabled={() => setIsLoadFullFilesEnabled((value) => !value)}
         onToggleRichPreviewEnabled={() => setIsRichPreviewEnabled((value) => !value)}
+        onToggleWhitespaceHidden={() => setIsWhitespaceHidden((value) => !value)}
+        onToggleWordDiffsEnabled={() => setIsWordDiffsEnabled((value) => !value)}
         onToggleSplitDiffEnabled={() => setIsSplitDiffEnabled((value) => !value)}
         onToggleWrapEnabled={() => setIsWrapEnabled((value) => !value)}
+        showLoadFullFiles={showLoadFullFiles}
       />
 
       <div className="flex min-h-0 flex-1 gap-4 overflow-hidden">
@@ -268,47 +446,109 @@ export function PullRequestCodeReviewPane({
                 ].join(" ")}
                 onClick={() => setActiveFilePath(file.path)}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="app-title truncate text-[13px] font-medium">{file.path}</div>
-                    <div className="app-text-muted mt-1 text-[12px] leading-5">
-                      +{file.additions} / -{file.deletions}
-                    </div>
-                  </div>
-                </div>
+                {(() => {
+                  const fullFileContentState = fullFileContentByPath[file.path] ?? { status: "idle" as const };
+                  const fullFilePreview =
+                    isLoadFullFilesEnabled && fullFileContentState.status === "loaded"
+                      ? buildPullRequestFullFilePreview(
+                          file,
+                          fullFileContentState.oldLines,
+                          fullFileContentState.newLines,
+                          {
+                            hideWhitespace: isWhitespaceHidden,
+                            wordDiffsEnabled: isWordDiffsEnabled,
+                          },
+                        )
+                      : null;
 
-                {isAllDiffsExpanded ? (
-                  <>
-                    <div className="mt-3">
-                      {isSplitDiffEnabled ? (
-                        <SplitDiffPreview file={file} isWrapEnabled={isWrapEnabled} />
-                      ) : isRichPreviewEnabled ? (
-                        <RichDiffPreview file={file} isWrapEnabled={isWrapEnabled} />
-                      ) : (
-                        <pre
-                          className={[
-                            "app-code-block overflow-x-auto rounded-[12px] px-4 py-3 text-[12px] leading-6",
-                            isWrapEnabled ? "whitespace-pre-wrap" : "whitespace-pre",
-                          ].join(" ")}
-                        >
-                          <code>{file.patch}</code>
-                        </pre>
-                      )}
-                    </div>
-
-                    {(attachmentsByPath.get(file.path) ?? []).length > 0 ? (
-                      <div className="mt-3 space-y-3">
-                        {(attachmentsByPath.get(file.path) ?? []).map((attachment) => (
-                          <CodeReviewAttachmentCard
-                            key={attachmentKey(attachment)}
-                            attachment={attachment}
-                            onOpenCommentUrl={onOpenCommentUrl}
-                          />
-                        ))}
+                  return (
+                    <>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="app-title truncate text-[13px] font-medium">{file.path}</div>
+                          <div className="app-text-muted mt-1 text-[12px] leading-5">
+                            +{file.additions} / -{file.deletions}
+                          </div>
+                        </div>
                       </div>
-                    ) : null}
-                  </>
-                ) : null}
+
+                      {isLoadFullFilesEnabled && fullFileContentState.status === "error" ? (
+                        <div className="app-card-error mt-3 rounded-[12px] px-4 py-3 text-[12px] leading-5">
+                          <div className="flex items-center justify-between gap-3">
+                            <span>{t("codex.review.diff.fullContentLoadFailed")}</span>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void loadFullFile(file, { retry: true });
+                              }}
+                              className="app-control rounded-[10px] px-2 py-1 text-[12px]"
+                            >
+                              {t("codex.common.retry")}
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {isAllDiffsExpanded ? (
+                        <>
+                          <div className="mt-3">
+                            {fullFilePreview != null ? (
+                              isSplitDiffEnabled ? (
+                                <DiffPreviewShell isWrapEnabled={isWrapEnabled}>
+                                  {fullFilePreview.splitRows.map((row, index) =>
+                                    renderSplitPreviewRow(file.path, row, index, isWrapEnabled),
+                                  )}
+                                </DiffPreviewShell>
+                              ) : (
+                                <DiffPreviewShell isWrapEnabled={isWrapEnabled}>
+                                  {fullFilePreview.unifiedLines.map((line, index) =>
+                                    renderUnifiedPreviewLine(file.path, line, index, isWrapEnabled),
+                                  )}
+                                </DiffPreviewShell>
+                              )
+                            ) : isSplitDiffEnabled ? (
+                              <SplitDiffPreview
+                                file={file}
+                                isWhitespaceHidden={isWhitespaceHidden}
+                                isWordDiffsEnabled={isWordDiffsEnabled}
+                                isWrapEnabled={isWrapEnabled}
+                              />
+                            ) : isRichPreviewEnabled ? (
+                              <RichDiffPreview
+                                file={file}
+                                isWhitespaceHidden={isWhitespaceHidden}
+                                isWordDiffsEnabled={isWordDiffsEnabled}
+                                isWrapEnabled={isWrapEnabled}
+                              />
+                            ) : (
+                              <pre
+                                className={[
+                                  "app-code-block overflow-x-auto rounded-[12px] px-4 py-3 text-[12px] leading-6",
+                                  isWrapEnabled ? "whitespace-pre-wrap" : "whitespace-pre",
+                                ].join(" ")}
+                              >
+                                <code>{file.patch}</code>
+                              </pre>
+                            )}
+                          </div>
+
+                          {(attachmentsByPath.get(file.path) ?? []).length > 0 ? (
+                            <div className="mt-3 space-y-3">
+                              {(attachmentsByPath.get(file.path) ?? []).map((attachment) => (
+                                <CodeReviewAttachmentCard
+                                  key={attachmentKey(attachment)}
+                                  attachment={attachment}
+                                  onOpenCommentUrl={onOpenCommentUrl}
+                                />
+                              ))}
+                            </div>
+                          ) : null}
+                        </>
+                      ) : null}
+                    </>
+                  );
+                })()}
               </div>
             ))}
           </div>
@@ -425,129 +665,245 @@ function FileTreeNodes({
 
 function RichDiffPreview({
   file,
+  isWhitespaceHidden,
+  isWordDiffsEnabled,
   isWrapEnabled,
 }: {
   file: PullRequestDiffFile;
+  isWhitespaceHidden: boolean;
+  isWordDiffsEnabled: boolean;
   isWrapEnabled: boolean;
 }) {
-  const lines = useMemo(() => file.patch.split("\n"), [file.patch]);
+  const lines = useMemo(
+    () =>
+      buildPullRequestUnifiedPreviewLines(file.patch, {
+        hideWhitespace: isWhitespaceHidden,
+        wordDiffsEnabled: isWordDiffsEnabled,
+      }),
+    [file.patch, isWhitespaceHidden, isWordDiffsEnabled],
+  );
 
   return (
-    <div className="overflow-x-auto rounded-[12px] border border-[var(--app-shell-border)] bg-[var(--app-shell-surface)]">
-      <div className={["font-mono text-[12px] leading-6", isWrapEnabled ? "" : "min-w-max"].join(" ")}>
-        {lines.map((line, index) => (
-          <div
-            key={`${file.path}:${index}`}
-            className={[
-              "px-4",
-              isWrapEnabled ? "whitespace-pre-wrap break-all" : "whitespace-pre",
-              richDiffLineClassName(line),
-            ].join(" ")}
-          >
-            {line.length > 0 ? line : " "}
-          </div>
-        ))}
-      </div>
-    </div>
+    <DiffPreviewShell isWrapEnabled={isWrapEnabled}>
+      {lines.map((line, index) => renderUnifiedPreviewLine(file.path, line, index, isWrapEnabled))}
+    </DiffPreviewShell>
   );
 }
 
 function SplitDiffPreview({
   file,
+  isWhitespaceHidden,
+  isWordDiffsEnabled,
   isWrapEnabled,
 }: {
   file: PullRequestDiffFile;
+  isWhitespaceHidden: boolean;
+  isWordDiffsEnabled: boolean;
   isWrapEnabled: boolean;
 }) {
-  const lines = useMemo(() => file.patch.split("\n"), [file.patch]);
+  const rows = useMemo(
+    () =>
+      buildPullRequestSplitPreviewRows(file.patch, {
+        hideWhitespace: isWhitespaceHidden,
+        wordDiffsEnabled: isWordDiffsEnabled,
+      }),
+    [file.patch, isWhitespaceHidden, isWordDiffsEnabled],
+  );
 
   return (
-    <div className="overflow-hidden rounded-[12px] border border-[var(--app-shell-border)] bg-[var(--app-shell-surface)]">
-      <div className="font-mono text-[12px] leading-6">
-        {lines.map((line, index) => {
-          if (
-            line.startsWith("diff --git")
-            || line.startsWith("index ")
-            || line.startsWith("--- ")
-            || line.startsWith("+++ ")
-            || line.startsWith("rename from ")
-            || line.startsWith("rename to ")
-          ) {
-            return (
-              <div
-                key={`${file.path}:${index}`}
-                className="border-b border-[var(--app-shell-border)] bg-[var(--app-shell-card-bg-weak)] px-4 py-0.5 text-[var(--app-shell-subtle)]"
-              >
-                {line}
-              </div>
-            );
-          }
+    <DiffPreviewShell isWrapEnabled={isWrapEnabled}>
+      {rows.map((row, index) => renderSplitPreviewRow(file.path, row, index, isWrapEnabled))}
+    </DiffPreviewShell>
+  );
+}
 
-          if (line.startsWith("@@")) {
-            return (
-              <div
-                key={`${file.path}:${index}`}
-                className="border-b border-[var(--app-shell-border)] bg-sky-500/10 px-4 py-0.5 text-sky-700 dark:text-sky-300"
-              >
-                {line}
-              </div>
-            );
-          }
-
-          if (line.startsWith("-") && !line.startsWith("---")) {
-            return (
-              <div
-                key={`${file.path}:${index}`}
-                className={[
-                  "grid grid-cols-2 border-b border-[var(--app-shell-border)]",
-                  isWrapEnabled ? "whitespace-pre-wrap" : "whitespace-pre",
-                ].join(" ")}
-              >
-                <div className="min-w-0 border-r border-[var(--app-shell-border)] bg-red-500/10 px-4 py-0.5 text-red-700 dark:text-red-300">
-                  {line.slice(1)}
-                </div>
-                <div className="min-w-0 px-4 py-0.5 text-[var(--app-shell-muted)]">&nbsp;</div>
-              </div>
-            );
-          }
-
-          if (line.startsWith("+") && !line.startsWith("+++")) {
-            return (
-              <div
-                key={`${file.path}:${index}`}
-                className={[
-                  "grid grid-cols-2 border-b border-[var(--app-shell-border)]",
-                  isWrapEnabled ? "whitespace-pre-wrap" : "whitespace-pre",
-                ].join(" ")}
-              >
-                <div className="min-w-0 border-r border-[var(--app-shell-border)] px-4 py-0.5 text-[var(--app-shell-muted)]">
-                  &nbsp;
-                </div>
-                <div className="min-w-0 bg-emerald-500/10 px-4 py-0.5 text-emerald-700 dark:text-emerald-300">
-                  {line.slice(1)}
-                </div>
-              </div>
-            );
-          }
-
-          return (
-            <div
-              key={`${file.path}:${index}`}
-              className={[
-                "grid grid-cols-2 border-b border-[var(--app-shell-border)] text-[var(--app-shell-text)]",
-                isWrapEnabled ? "whitespace-pre-wrap" : "whitespace-pre",
-              ].join(" ")}
-            >
-              <div className="min-w-0 border-r border-[var(--app-shell-border)] px-4 py-0.5">
-                {line.length > 0 ? line : " "}
-              </div>
-              <div className="min-w-0 px-4 py-0.5">{line.length > 0 ? line : " "}</div>
-            </div>
-          );
-        })}
+function DiffPreviewShell({
+  children,
+  isWrapEnabled,
+}: {
+  children: ReactNode;
+  isWrapEnabled: boolean;
+}) {
+  return (
+    <div className="overflow-x-auto rounded-[12px] border border-[var(--app-shell-border)] bg-[var(--app-shell-surface)]">
+      <div className={["font-mono text-[12px] leading-6", isWrapEnabled ? "" : "min-w-max"].join(" ")}>
+        {children}
       </div>
     </div>
   );
+}
+
+function renderUnifiedPreviewLine(
+  filePath: string,
+  line: PullRequestUnifiedPreviewLine,
+  index: number,
+  isWrapEnabled: boolean,
+) {
+  if (!("prefix" in line)) {
+    return (
+      <div key={`${filePath}:u:${index}`} className={["px-4 py-0.5", unifiedPreviewLineClassName(line.kind)].join(" ")}>
+        {line.text}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      key={`${filePath}:u:${index}`}
+      className={[
+        "px-4 py-0.5",
+        isWrapEnabled ? "whitespace-pre-wrap break-all" : "whitespace-pre",
+        unifiedPreviewLineClassName(line.kind),
+      ].join(" ")}
+    >
+      <span className="select-none">{line.prefix === " " ? "\u00a0" : line.prefix}</span>
+      {renderPreviewFragments(line.fragments, line.kind, isWrapEnabled)}
+    </div>
+  );
+}
+
+function renderSplitPreviewRow(
+  filePath: string,
+  row: PullRequestSplitPreviewRow,
+  index: number,
+  isWrapEnabled: boolean,
+) {
+  if (!("leftFragments" in row)) {
+    return (
+      <div key={`${filePath}:s:${index}`} className={["border-b border-[var(--app-shell-border)] px-4 py-0.5", splitPreviewRowClassName(row.kind)].join(" ")}>
+        {row.text}
+      </div>
+    );
+  }
+
+  const leftCellClassName = splitPreviewCellClassName(row.kind, "left");
+  const rightCellClassName = splitPreviewCellClassName(row.kind, "right");
+
+  return (
+    <div
+      key={`${filePath}:s:${index}`}
+      className={[
+        "grid grid-cols-2 border-b border-[var(--app-shell-border)]",
+        isWrapEnabled ? "whitespace-pre-wrap" : "whitespace-pre",
+      ].join(" ")}
+    >
+      <div className={["min-w-0 border-r border-[var(--app-shell-border)] px-4 py-0.5", leftCellClassName].join(" ")}>
+        {renderPreviewCell(row.leftFragments, row.leftText, row.kind, "left", isWrapEnabled)}
+      </div>
+      <div className={["min-w-0 px-4 py-0.5", rightCellClassName].join(" ")}>
+        {renderPreviewCell(row.rightFragments, row.rightText, row.kind, "right", isWrapEnabled)}
+      </div>
+    </div>
+  );
+}
+
+function renderPreviewCell(
+  fragments: PullRequestDiffFragment[],
+  text: string | null,
+  rowKind: PullRequestSplitPreviewRow["kind"],
+  side: "left" | "right",
+  isWrapEnabled: boolean,
+) {
+  if (text == null) {
+    return <span className="text-[var(--app-shell-muted)]">&nbsp;</span>;
+  }
+
+  return (
+    <span className={isWrapEnabled ? "whitespace-pre-wrap break-all" : "whitespace-pre"}>
+      {renderPreviewFragments(fragments, rowKind, isWrapEnabled, side)}
+    </span>
+  );
+}
+
+function renderPreviewFragments(
+  fragments: PullRequestDiffFragment[],
+  lineKind: PullRequestUnifiedPreviewLine["kind"] | PullRequestSplitPreviewRow["kind"],
+  isWrapEnabled: boolean,
+  side?: "left" | "right",
+) {
+  return fragments.map((fragment, index) => {
+    if (!fragment.isChanged) {
+      return <span key={index}>{fragment.text || " "}</span>;
+    }
+
+    return (
+      <span
+        key={index}
+        className={[
+          "rounded-[3px] px-0.5 font-medium",
+          isWrapEnabled ? "whitespace-pre-wrap" : "whitespace-pre",
+          fragmentHighlightClassName(lineKind, side),
+        ].join(" ")}
+      >
+        {fragment.text}
+      </span>
+    );
+  });
+}
+
+function unifiedPreviewLineClassName(kind: PullRequestUnifiedPreviewLine["kind"]) {
+  if (kind === "hunk") {
+    return "border-b border-[var(--app-shell-border)] bg-sky-500/10 text-sky-700 dark:text-sky-300";
+  }
+
+  if (kind === "addition") {
+    return "border-b border-[var(--app-shell-border)] bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  }
+
+  if (kind === "deletion") {
+    return "border-b border-[var(--app-shell-border)] bg-red-500/10 text-red-700 dark:text-red-300";
+  }
+
+  if (kind === "context") {
+    return "border-b border-[var(--app-shell-border)] text-[var(--app-shell-text)]";
+  }
+
+  return "border-b border-[var(--app-shell-border)] bg-[var(--app-shell-card-bg-weak)] text-[var(--app-shell-subtle)]";
+}
+
+function splitPreviewRowClassName(kind: PullRequestSplitPreviewRow["kind"]) {
+  if (kind === "hunk") {
+    return "bg-sky-500/10 text-sky-700 dark:text-sky-300";
+  }
+
+  return "bg-[var(--app-shell-card-bg-weak)] text-[var(--app-shell-subtle)]";
+}
+
+function splitPreviewCellClassName(kind: PullRequestSplitPreviewRow["kind"], side: "left" | "right") {
+  if (kind === "context") {
+    return "text-[var(--app-shell-text)]";
+  }
+
+  if (kind === "paired") {
+    return side === "left"
+      ? "bg-red-500/10 text-red-700 dark:text-red-300"
+      : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  }
+
+  if (kind === "deletion") {
+    return side === "left" ? "bg-red-500/10 text-red-700 dark:text-red-300" : "text-[var(--app-shell-muted)]";
+  }
+
+  if (kind === "addition") {
+    return side === "right" ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "text-[var(--app-shell-muted)]";
+  }
+
+  return "text-[var(--app-shell-text)]";
+}
+
+function fragmentHighlightClassName(
+  lineKind: PullRequestUnifiedPreviewLine["kind"] | PullRequestSplitPreviewRow["kind"],
+  side?: "left" | "right",
+) {
+  if (lineKind === "deletion" || (lineKind === "paired" && side === "left")) {
+    return "bg-red-500/20";
+  }
+
+  if (lineKind === "addition" || (lineKind === "paired" && side === "right")) {
+    return "bg-emerald-500/20";
+  }
+
+  return "";
 }
 
 function CodeReviewAttachmentCard({
@@ -714,33 +1070,6 @@ function finalizeTreeNodes(
 
 function normalizeDiffPath(path: string) {
   return path.replaceAll("\\", "/");
-}
-
-function richDiffLineClassName(line: string) {
-  if (line.startsWith("@@")) {
-    return "bg-sky-500/10 text-sky-700 dark:text-sky-300";
-  }
-
-  if (line.startsWith("+") && !line.startsWith("+++")) {
-    return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
-  }
-
-  if (line.startsWith("-") && !line.startsWith("---")) {
-    return "bg-red-500/10 text-red-700 dark:text-red-300";
-  }
-
-  if (
-    line.startsWith("diff --git")
-    || line.startsWith("index ")
-    || line.startsWith("--- ")
-    || line.startsWith("+++ ")
-    || line.startsWith("rename from ")
-    || line.startsWith("rename to ")
-  ) {
-    return "bg-[var(--app-shell-card-bg-weak)] text-[var(--app-shell-subtle)]";
-  }
-
-  return "text-[var(--app-shell-text)]";
 }
 
 function attachmentKey(attachment: PullRequestCommentAttachment) {

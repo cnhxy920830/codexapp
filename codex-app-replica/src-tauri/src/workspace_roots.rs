@@ -51,6 +51,12 @@ pub struct ActiveWorkspaceRootsResponse {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct PathsExistResponse {
+    pub existing_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 struct WorkspaceRootOptionPickedNotification {
     root: String,
 }
@@ -133,6 +139,19 @@ pub fn active_workspace_roots(
     Ok(ActiveWorkspaceRootsResponse {
         roots: read_active_workspace_roots(&settings),
     })
+}
+
+#[tauri::command(rename = "paths-exist")]
+pub fn paths_exist(
+    host_id: Option<String>,
+    paths: Vec<String>,
+) -> Result<PathsExistResponse, String> {
+    ensure_supported_host_id(host_id.as_deref(), "paths-exist")?;
+    let existing_paths = normalize_workspace_roots(paths)
+        .into_iter()
+        .filter(|path| Path::new(path).exists())
+        .collect();
+    Ok(PathsExistResponse { existing_paths })
 }
 
 #[tauri::command(rename = "electron-pick-workspace-root-option")]

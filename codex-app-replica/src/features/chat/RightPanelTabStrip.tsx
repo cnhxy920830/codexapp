@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   BrowserTabIcon,
   CloseTabIcon,
+  ForkedConversationIcon,
   PlusIcon,
   ReviewTabIcon,
   SearchIcon,
@@ -287,6 +288,8 @@ function getRightPanelTabTitle(tab: RightPanelTab, t: Translate) {
       return t("thread.sidePanel.diffTab");
     case "browser":
       return t("thread.sidePanel.browserTab");
+    case "sideChat":
+      return tab.title;
     case "workspaceFile":
       return tab.title;
   }
@@ -305,6 +308,9 @@ function renderRightPanelTabIcon(tab: RightPanelTab) {
   }
   if (tab.kind === "browser") {
     return <BrowserTabIcon className="h-4 w-4 shrink-0" />;
+  }
+  if (tab.kind === "sideChat") {
+    return <ForkedConversationIcon className="h-4 w-4 shrink-0" />;
   }
   return <WorkspaceFileIcon className="h-4 w-4 shrink-0" />;
 }

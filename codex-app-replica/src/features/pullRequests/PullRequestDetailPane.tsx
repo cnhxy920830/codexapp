@@ -31,6 +31,7 @@ type PullRequestReplyTarget = {
 export function PullRequestDetailPane({
   boardItem,
   codeReviewError,
+  cwd,
   detail,
   detailError,
   detailKey,
@@ -48,6 +49,7 @@ export function PullRequestDetailPane({
   onPostComment,
   onPostReply,
   onRefreshCodeReview,
+  hostId,
   onToggleAutoMerge,
   onSelectTab,
   selectedTab,
@@ -56,6 +58,7 @@ export function PullRequestDetailPane({
   boardItem: PullRequestBoardItem | null;
   codeReviewError: string | null;
   commentAttachments: PullRequestCommentAttachment[];
+  cwd: string | null;
   detail: PullRequestStatusSuccess | null;
   detailError: string | null;
   detailKey: string;
@@ -73,6 +76,7 @@ export function PullRequestDetailPane({
   onPostComment: (body: string) => void | Promise<void>;
   onPostReply: (reviewThreadId: string, body: string) => void | Promise<void>;
   onRefreshCodeReview: () => void;
+  hostId: string | null;
   onSelectTab: (tab: PullRequestDetailTab) => void;
   onToggleAutoMerge: () => void | Promise<void>;
   selectedTab: PullRequestDetailTab;
@@ -381,9 +385,11 @@ export function PullRequestDetailPane({
           <PullRequestCodeReviewPane
             codeReviewError={codeReviewError}
             commentAttachments={commentAttachments}
+            cwd={cwd}
             detailKey={detailKey}
             diffFiles={diffFiles}
             isCodeReviewLoading={isCodeReviewLoading}
+            hostId={hostId}
             onCopyGitApplyCommand={onCopyGitApplyCommand}
             onRefreshCodeReview={onRefreshCodeReview}
             onOpenCommentUrl={(url) => void openCommentUrl(url)}

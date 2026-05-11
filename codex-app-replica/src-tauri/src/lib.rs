@@ -13,10 +13,10 @@ mod debug_modal;
 mod desktop_notifications;
 mod external_agent_import;
 mod fast_mode_rollout_metrics;
+mod git_origins;
 mod global_dictation;
 mod global_dictation_window;
 mod global_settings;
-mod git_origins;
 mod host_files;
 mod hotkey_window;
 mod keyboard_shortcuts;
@@ -26,6 +26,7 @@ mod pending_worktrees;
 mod power_save_blocker;
 mod primary_runtime;
 mod projectless_threads;
+mod pull_request_git;
 mod pull_requests;
 mod query_cache;
 mod remote_app_server_registry;
@@ -58,6 +59,8 @@ use auth_bridge::cancel_login;
 use auth_bridge::codex_app_server_restart;
 use auth_bridge::delete_plugin_share;
 use auth_bridge::delete_plugin_share_command;
+use auth_bridge::discard_conversation_from_cache;
+use auth_bridge::fork_conversation_from_latest;
 use auth_bridge::fork_thread;
 use auth_bridge::get_auth_state;
 use auth_bridge::get_config_requirements_for_host;
@@ -194,6 +197,7 @@ use external_agent_import::external_agent_import_detect;
 use external_agent_import::external_agent_import_import;
 use external_agent_import::external_agent_import_status;
 use fast_mode_rollout_metrics::fast_mode_rollout_metrics;
+use git_origins::git_origins;
 use global_dictation::request_microphone_permission;
 use global_dictation_window::global_dictation_completed;
 use global_dictation_window::global_dictation_dismiss;
@@ -214,7 +218,6 @@ use global_settings::get_global_state_command;
 use global_settings::set_global_state;
 use global_settings::set_global_state_command;
 use global_settings::wsl_bash_availability;
-use git_origins::git_origins;
 use host_files::open_file;
 use host_files::open_in_browser;
 use host_files::read_file;
@@ -254,6 +257,7 @@ use primary_runtime::reset_primary_runtime_dependencies;
 use primary_runtime::set_primary_runtime_install_release;
 use primary_runtime::PrimaryRuntimeState;
 use projectless_threads::projectless_thread_cwd;
+use pull_request_git::gh_pr_file_content;
 use pull_requests::gh_cli_status;
 use pull_requests::gh_current_user;
 use pull_requests::gh_pr_board;
@@ -324,6 +328,7 @@ use workspace_roots::clear_active_workspace_root;
 use workspace_roots::create_new_workspace_root_option;
 use workspace_roots::onboarding_pick_workspace_or_create_default;
 use workspace_roots::onboarding_skip_workspace;
+use workspace_roots::paths_exist;
 use workspace_roots::pick_workspace_root_option;
 use workspace_roots::rename_workspace_root_option;
 use workspace_roots::set_active_workspace_root;
@@ -508,8 +513,10 @@ pub fn run() {
             list_archived_threads,
             list_archived_threads_command,
             unsubscribe_thread_for_host,
+            discard_conversation_from_cache,
             start_thread,
             fork_thread,
+            fork_conversation_from_latest,
             archive_thread,
             archive_conversation_command,
             unarchive_thread,
@@ -583,6 +590,7 @@ pub fn run() {
             gh_pr_checks,
             gh_pr_comments,
             gh_pr_diff,
+            gh_pr_file_content,
             gh_pr_comment,
             gh_pr_merge,
             gh_pr_update,
@@ -602,6 +610,7 @@ pub fn run() {
             update_diff_if_open,
             workspace_root_options,
             active_workspace_roots,
+            paths_exist,
             add_new_workspace_root_option,
             create_new_workspace_root_option,
             pick_workspace_root_option,

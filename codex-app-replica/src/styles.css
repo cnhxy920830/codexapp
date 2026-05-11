@@ -52,6 +52,8 @@
   --app-shell-ui-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --app-shell-code-font-family: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono",
     monospace;
+  --spacing-token-button-composer: 28px;
+  --spacing-token-button-composer-sm: 28px;
 }
 
 html.electron-light {
@@ -203,6 +205,38 @@ pre,
 
 .app-text-error {
   color: var(--app-shell-error-text);
+}
+
+.text-token-link {
+  color: var(--app-shell-accent);
+}
+
+.h-token-button-composer {
+  height: var(--spacing-token-button-composer);
+}
+
+.h-token-button-composer-sm {
+  height: var(--spacing-token-button-composer-sm);
+}
+
+.icon-xxs {
+  width: 12px;
+  height: 12px;
+}
+
+.icon-2xs {
+  width: 14px;
+  height: 14px;
+}
+
+.icon-xs {
+  width: 16px;
+  height: 16px;
+}
+
+.icon-sm {
+  width: 18px;
+  height: 18px;
 }
 
 .p-panel {

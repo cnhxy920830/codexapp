@@ -61,6 +61,9 @@ export function GitSettings({
   const [pullRequestInstructionsDraft, setPullRequestInstructionsDraft] = useState<string | null>(null);
   const [keepCountDraft, setKeepCountDraft] = useState<string | null>(null);
   const [isDisableAutoCleanupConfirmOpen, setIsDisableAutoCleanupConfirmOpen] = useState(false);
+  // Upstream gates these rows through Statsig ids 2764989143 and 2553306736.
+  // Keep them hidden until the replica has a faithful gate source.
+  const shouldRenderGateConditionedPullRequestSettings = false;
 
   useEffect(() => {
     let cancelled = false;
@@ -434,40 +437,44 @@ export function GitSettings({
             />
           </SettingRow>
 
-          <SettingRow
-            label={t("settings.git.pullRequestMergeMethod.label")}
-            description={t("settings.git.pullRequestMergeMethod.description")}
-          >
-            <select
-              aria-label={t("settings.git.pullRequestMergeMethod.ariaLabel")}
-              value={gitState.pullRequestMergeMethod}
-              disabled={isGitLoading || saving.pullRequestMergeMethod}
-              onChange={(event) => {
-                const next = event.target.value;
-                if (next === "merge" || next === "squash") {
-                  void savePullRequestMergeMethod(next);
-                }
-              }}
-              className="app-control h-9 rounded-[10px] px-3 text-[13px]"
-            >
-              <option value="merge">{t("settings.git.pullRequestMergeMethod.merge")}</option>
-              <option value="squash">{t("settings.git.pullRequestMergeMethod.squash")}</option>
-            </select>
-          </SettingRow>
+          {shouldRenderGateConditionedPullRequestSettings ? (
+            <>
+              <SettingRow
+                label={t("settings.git.pullRequestMergeMethod.label")}
+                description={t("settings.git.pullRequestMergeMethod.description")}
+              >
+                <select
+                  aria-label={t("settings.git.pullRequestMergeMethod.ariaLabel")}
+                  value={gitState.pullRequestMergeMethod}
+                  disabled={isGitLoading || saving.pullRequestMergeMethod}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    if (next === "merge" || next === "squash") {
+                      void savePullRequestMergeMethod(next);
+                    }
+                  }}
+                  className="app-control h-9 rounded-[10px] px-3 text-[13px]"
+                >
+                  <option value="merge">{t("settings.git.pullRequestMergeMethod.merge")}</option>
+                  <option value="squash">{t("settings.git.pullRequestMergeMethod.squash")}</option>
+                </select>
+              </SettingRow>
 
-          <SettingRow
-            label={t("settings.git.showSidebarPrIcons.label")}
-            description={t("settings.git.showSidebarPrIcons.description")}
-          >
-            <ToggleSwitch
-              checked={gitState.showSidebarPrIcons}
-              disabled={isGitLoading || saving.showSidebarPrIcons}
-              ariaLabel={t("settings.git.showSidebarPrIcons.ariaLabel")}
-              onChange={(checked) => {
-                void saveShowSidebarPrIcons(checked);
-              }}
-            />
-          </SettingRow>
+              <SettingRow
+                label={t("settings.git.showSidebarPrIcons.label")}
+                description={t("settings.git.showSidebarPrIcons.description")}
+              >
+                <ToggleSwitch
+                  checked={gitState.showSidebarPrIcons}
+                  disabled={isGitLoading || saving.showSidebarPrIcons}
+                  ariaLabel={t("settings.git.showSidebarPrIcons.ariaLabel")}
+                  onChange={(checked) => {
+                    void saveShowSidebarPrIcons(checked);
+                  }}
+                />
+              </SettingRow>
+            </>
+          ) : null}
 
           <SettingRow
             label={t("settings.worktrees.autoCleanup.label")}

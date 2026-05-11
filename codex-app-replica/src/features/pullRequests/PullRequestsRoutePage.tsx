@@ -595,6 +595,7 @@ export function PullRequestsRoutePage({ onShowToast }: PullRequestsRoutePageProp
       boardLoading={boardLoading}
       boardSections={groupPullRequestBoardItems(boardItems)}
       codeReviewError={codeReviewError}
+      cwd={selectedBoardItemContext?.cwd ?? null}
       detail={detail}
       detailError={detailError}
       detailKey={detailKey}
@@ -618,6 +619,7 @@ export function PullRequestsRoutePage({ onShowToast }: PullRequestsRoutePageProp
       onSelectRepo={handleSelectRepo}
       onSelectTab={setSelectedTab}
       onToggleAutoMerge={handleToggleAutoMerge}
+      hostId={selectedBoardItemContext?.hostId ?? null}
       pageError={pageError}
       pageErrorDetail={pageErrorDetail}
       repoOptions={repoOptions}

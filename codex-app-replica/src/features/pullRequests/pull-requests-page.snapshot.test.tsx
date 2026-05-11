@@ -69,11 +69,13 @@ function buildSnapshots(): SnapshotMap {
             boardLoading={false}
             boardSections={[]}
             codeReviewError={null}
+            cwd={null}
             detail={null}
             detailError={null}
             detailKey="none"
             detailLoading={false}
             diffFiles={[]}
+            hostId={null}
             isCodeReviewLoading={false}
             isWorkspaceMetadataLoading={false}
             noRepos
@@ -112,11 +114,13 @@ function buildSnapshots(): SnapshotMap {
             boardLoading={false}
             boardSections={groupPullRequestBoardItems([boardItem])}
             codeReviewError={null}
+            cwd={boardItem.cwd}
             detail={detail}
             detailError={null}
             detailKey="board-item"
             detailLoading={false}
             diffFiles={[]}
+            hostId={boardItem.hostId}
             isCodeReviewLoading={false}
             isWorkspaceMetadataLoading={false}
             noRepos={false}
@@ -155,11 +159,13 @@ function buildSnapshots(): SnapshotMap {
             boardLoading={false}
             boardSections={groupPullRequestBoardItems([boardItem])}
             codeReviewError={null}
+            cwd={boardItem.cwd}
             detail={detail}
             detailError={null}
             detailKey="code-review"
             detailLoading={false}
             diffFiles={DIFF_FILES}
+            hostId={boardItem.hostId}
             isCodeReviewLoading={false}
             isWorkspaceMetadataLoading={false}
             noRepos={false}
@@ -328,8 +334,13 @@ const DIFF_FILES: PullRequestDiffFile[] = [
     additions: 12,
     deletions: 4,
     headerLines: ["diff --git a/src/App.tsx b/src/App.tsx"],
+    hunkMetadata: [],
     hunks: ["@@ -1,4 +1,4 @@"],
+    isBinary: false,
+    isPartial: false,
+    newObjectId: null,
     newPath: "src/App.tsx",
+    oldObjectId: null,
     oldPath: "src/App.tsx",
     path: "src/App.tsx",
     patch: "diff --git a/src/App.tsx b/src/App.tsx\n@@ -1,4 +1,4 @@\n-context\n+context updated",
@@ -339,8 +350,13 @@ const DIFF_FILES: PullRequestDiffFile[] = [
     additions: 8,
     deletions: 2,
     headerLines: ["diff --git a/src/components/Toolbar.tsx b/src/components/Toolbar.tsx"],
+    hunkMetadata: [],
     hunks: ["@@ -10,3 +10,9 @@"],
+    isBinary: false,
+    isPartial: false,
+    newObjectId: null,
     newPath: "src/components/Toolbar.tsx",
+    oldObjectId: null,
     oldPath: "src/components/Toolbar.tsx",
     path: "src/components/Toolbar.tsx",
     patch:
@@ -351,8 +367,13 @@ const DIFF_FILES: PullRequestDiffFile[] = [
     additions: 3,
     deletions: 1,
     headerLines: ["diff --git a/docs/pull-requests.md b/docs/pull-requests.md"],
+    hunkMetadata: [],
     hunks: ["@@ -1,2 +1,4 @@"],
+    isBinary: false,
+    isPartial: false,
+    newObjectId: null,
     newPath: "docs/pull-requests.md",
+    oldObjectId: null,
     oldPath: "docs/pull-requests.md",
     path: "docs/pull-requests.md",
     patch:

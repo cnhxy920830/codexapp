@@ -68,8 +68,6 @@ export function UsageAutoTopUpDialog({
   const [hasImmediateTopUpFailure, setHasImmediateTopUpFailure] = useState(false);
   const [immediateTopUpFailureAmount, setImmediateTopUpFailureAmount] = useState<string | null>(null);
   const [isManagePaymentPending, setIsManagePaymentPending] = useState(false);
-  const [managePaymentError, setManagePaymentError] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const [isSavingEnableOrUpdate, setIsSavingEnableOrUpdate] = useState(false);
   const [isSavingDisable, setIsSavingDisable] = useState(false);
 
@@ -82,8 +80,6 @@ export function UsageAutoTopUpDialog({
     setSubmissionAttempts(0);
     setHasImmediateTopUpFailure(false);
     setImmediateTopUpFailureAmount(null);
-    setManagePaymentError(null);
-    setSaveError(null);
   }, [open]);
 
   useEffect(() => {
@@ -200,7 +196,7 @@ export function UsageAutoTopUpDialog({
             label={t("settings.usage.autoTopUp.threshold.label")}
             onBlur={() => setSubmissionAttempts((value) => value + 1)}
             onChange={(value) => {
-              clearImmediateFailureState(setHasImmediateTopUpFailure, setImmediateTopUpFailureAmount, setManagePaymentError, setSaveError);
+              clearImmediateFailureState(setHasImmediateTopUpFailure, setImmediateTopUpFailureAmount);
               setDraftState((current) => ({ ...current, rechargeThreshold: value }));
             }}
             placeholder={DEFAULT_THRESHOLD}
@@ -222,7 +218,7 @@ export function UsageAutoTopUpDialog({
             label={t("settings.usage.autoTopUp.target.label")}
             onBlur={() => setSubmissionAttempts((value) => value + 1)}
             onChange={(value) => {
-              clearImmediateFailureState(setHasImmediateTopUpFailure, setImmediateTopUpFailureAmount, setManagePaymentError, setSaveError);
+              clearImmediateFailureState(setHasImmediateTopUpFailure, setImmediateTopUpFailureAmount);
               setDraftState((current) => ({ ...current, rechargeTarget: value }));
             }}
             placeholder={DEFAULT_TARGET}
@@ -257,8 +253,8 @@ export function UsageAutoTopUpDialog({
                   onClick={() =>
                     void handleManagePayment(
                       t("settings.usage.autoTopUp.managePayment.error"),
+                      onShowToast,
                       setIsManagePaymentPending,
-                      setManagePaymentError,
                     )
                   }
                   className="font-medium underline underline-offset-2 disabled:pointer-events-none disabled:opacity-60"
@@ -274,10 +270,8 @@ export function UsageAutoTopUpDialog({
                   {t("settings.usage.autoTopUp.purchaseCredit.action")}
                 </a>
               </div>
-              {managePaymentError ? <div className="mt-2">{managePaymentError}</div> : null}
             </DialogBanner>
           ) : null}
-          {saveError ? <DialogBanner tone="error">{saveError}</DialogBanner> : null}
         </div>
 
         <div className="mt-7 flex items-center justify-end gap-2">
@@ -291,7 +285,6 @@ export function UsageAutoTopUpDialog({
                   onSaved,
                   onShowToast,
                   setIsSavingDisable,
-                  setSaveError,
                   t,
                 })
               }
@@ -323,7 +316,6 @@ export function UsageAutoTopUpDialog({
                 setHasImmediateTopUpFailure,
                 setImmediateTopUpFailureAmount,
                 setIsSavingEnableOrUpdate,
-                setSaveError,
                 setSubmissionAttempts,
                 t,
               })
@@ -353,13 +345,9 @@ function buildDraftState(serverState: UsageAutoTopUpSettings): DraftState {
 function clearImmediateFailureState(
   setHasImmediateTopUpFailure: (value: boolean) => void,
   setImmediateTopUpFailureAmount: (value: string | null) => void,
-  setManagePaymentError: (value: string | null) => void,
-  setSaveError: (value: string | null) => void,
 ) {
   setHasImmediateTopUpFailure(false);
   setImmediateTopUpFailureAmount(null);
-  setManagePaymentError(null);
-  setSaveError(null);
 }
 
 function resolveThresholdError(validation: DialogValidationState, submissionAttempts: number) {
@@ -442,7 +430,6 @@ async function handleSave({
   setHasImmediateTopUpFailure,
   setImmediateTopUpFailureAmount,
   setIsSavingEnableOrUpdate,
-  setSaveError,
   setSubmissionAttempts,
   t,
 }: {
@@ -455,7 +442,6 @@ async function handleSave({
   setHasImmediateTopUpFailure: (value: boolean) => void;
   setImmediateTopUpFailureAmount: (value: string | null) => void;
   setIsSavingEnableOrUpdate: (value: boolean) => void;
-  setSaveError: (value: string | null) => void;
   setSubmissionAttempts: (value: number | ((current: number) => number)) => void;
   t: (key: MessageKey) => string;
 }) {
@@ -465,7 +451,6 @@ async function handleSave({
   }
 
   setIsSavingEnableOrUpdate(true);
-  setSaveError(null);
 
   try {
     const params = {
@@ -492,8 +477,7 @@ async function handleSave({
       ),
     });
     onClose();
-  } catch (error) {
-    setSaveError(error instanceof Error ? error.message : String(error));
+  } catch {
     onShowToast?.({
       tone: "error",
       message: t(
@@ -512,18 +496,15 @@ async function handleDisable({
   onSaved,
   onShowToast,
   setIsSavingDisable,
-  setSaveError,
   t,
 }: {
   onClose: () => void;
   onSaved: (response: UsageAutoTopUpSettings) => void;
   onShowToast?: (toast: AppToast) => void;
   setIsSavingDisable: (value: boolean) => void;
-  setSaveError: (value: string | null) => void;
   t: (key: MessageKey) => string;
 }) {
   setIsSavingDisable(true);
-  setSaveError(null);
 
   try {
     const response = await disableUsageAutoTopUp();
@@ -533,8 +514,7 @@ async function handleDisable({
       message: t("settings.usage.autoTopUp.disable.success"),
     });
     onClose();
-  } catch (error) {
-    setSaveError(error instanceof Error ? error.message : String(error));
+  } catch {
     onShowToast?.({
       tone: "error",
       message: t("settings.usage.autoTopUp.disable.error"),
@@ -546,17 +526,19 @@ async function handleDisable({
 
 async function handleManagePayment(
   errorMessage: string,
+  onShowToast: ((toast: AppToast) => void) | undefined,
   setIsManagePaymentPending: (value: boolean) => void,
-  setManagePaymentError: (value: string | null) => void,
 ) {
   setIsManagePaymentPending(true);
-  setManagePaymentError(null);
 
   try {
     const response = await readUsageCustomerPortal();
     window.open(response.url, "_blank", "noopener,noreferrer");
   } catch {
-    setManagePaymentError(errorMessage);
+    onShowToast?.({
+      tone: "error",
+      message: errorMessage,
+    });
   } finally {
     setIsManagePaymentPending(false);
   }

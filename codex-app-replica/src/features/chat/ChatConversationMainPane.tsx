@@ -107,6 +107,7 @@ type ChatConversationMainPaneProps = {
   isThreadHeartbeatAutomationActionDisabled: boolean;
   isThreadHeartbeatAutomationActionVisible: boolean;
   isWorktreeThread: boolean;
+  showThreadHeader?: boolean;
   heartbeatAutomationActionLabelKey: MessageKey;
   heartbeatAutomationButtonTooltip: string;
   currentThreadApprovals: PendingApproval[];
@@ -143,6 +144,7 @@ type ChatConversationMainPaneProps = {
   onCopySessionId: () => void;
   onCopyWorkingDirectory: () => void;
   onForkSelectedThread: () => void;
+  onOpenSideChat: () => void;
   onOpenAttachedHeartbeatAutomation: () => void;
   onOpenThreadHeartbeatAutomationAction: () => void;
   onOpenRenameDialog: () => void;
@@ -173,6 +175,7 @@ export function ChatConversationMainPane({
   isThreadHeartbeatAutomationActionDisabled,
   isThreadHeartbeatAutomationActionVisible,
   isWorktreeThread,
+  showThreadHeader = true,
   heartbeatAutomationActionLabelKey,
   heartbeatAutomationButtonTooltip,
   currentThreadApprovals,
@@ -195,6 +198,7 @@ export function ChatConversationMainPane({
   onCopySessionId,
   onCopyWorkingDirectory,
   onForkSelectedThread,
+  onOpenSideChat,
   onOpenAttachedHeartbeatAutomation,
   onOpenThreadHeartbeatAutomationAction,
   onOpenRenameDialog,
@@ -285,29 +289,32 @@ export function ChatConversationMainPane({
 
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col">
-      <ThreadPageHeader
-        actionsMenuRef={threadActionsMenuRef}
-        hasAttachedHeartbeatAutomation={hasAttachedHeartbeatAutomation}
-        heartbeatAutomationActionLabelKey={heartbeatAutomationActionLabelKey}
-        heartbeatAutomationButtonTooltip={heartbeatAutomationButtonTooltip}
-        isThreadActionsMenuOpen={isThreadActionsMenuOpen}
-        isThreadHeartbeatAutomationActionDisabled={isThreadHeartbeatAutomationActionDisabled}
-        isThreadHeartbeatAutomationActionVisible={isThreadHeartbeatAutomationActionVisible}
-        isTurnInProgress={submitButtonMode === "stop"}
-        isWorktreeThread={isWorktreeThread}
-        onArchive={onArchiveThread}
-        onCopyAppLink={onCopyAppLink}
-        onCopyConversationMarkdown={onCopyConversationMarkdown}
-        onCopySessionId={onCopySessionId}
-        onCopyWorkingDirectory={onCopyWorkingDirectory}
-        onForkThread={onForkSelectedThread}
-        onOpenAttachedHeartbeatAutomation={onOpenAttachedHeartbeatAutomation}
-        onOpenThreadHeartbeatAutomationAction={onOpenThreadHeartbeatAutomationAction}
-        onOpenRenameDialog={onOpenRenameDialog}
-        onToggleThreadActionsMenu={onToggleThreadActionsMenu}
-        t={t}
-        threadConversation={threadConversation}
-      />
+      {showThreadHeader ? (
+        <ThreadPageHeader
+          actionsMenuRef={threadActionsMenuRef}
+          hasAttachedHeartbeatAutomation={hasAttachedHeartbeatAutomation}
+          heartbeatAutomationActionLabelKey={heartbeatAutomationActionLabelKey}
+          heartbeatAutomationButtonTooltip={heartbeatAutomationButtonTooltip}
+          isThreadActionsMenuOpen={isThreadActionsMenuOpen}
+          isThreadHeartbeatAutomationActionDisabled={isThreadHeartbeatAutomationActionDisabled}
+          isThreadHeartbeatAutomationActionVisible={isThreadHeartbeatAutomationActionVisible}
+          isTurnInProgress={submitButtonMode === "stop"}
+          isWorktreeThread={isWorktreeThread}
+          onArchive={onArchiveThread}
+          onCopyAppLink={onCopyAppLink}
+          onCopyConversationMarkdown={onCopyConversationMarkdown}
+          onCopySessionId={onCopySessionId}
+          onCopyWorkingDirectory={onCopyWorkingDirectory}
+          onForkThread={onForkSelectedThread}
+          onOpenSideChat={onOpenSideChat}
+          onOpenAttachedHeartbeatAutomation={onOpenAttachedHeartbeatAutomation}
+          onOpenThreadHeartbeatAutomationAction={onOpenThreadHeartbeatAutomationAction}
+          onOpenRenameDialog={onOpenRenameDialog}
+          onToggleThreadActionsMenu={onToggleThreadActionsMenu}
+          t={t}
+          threadConversation={threadConversation}
+        />
+      ) : null}
 
       {showBlankConversationBody ? (
         <div

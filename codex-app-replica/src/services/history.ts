@@ -801,6 +801,29 @@ export async function forkThread(threadId: string) {
   return invoke<string>("fork_thread", { threadId });
 }
 
+export async function forkConversationFromLatest(params: {
+  conversationId: string;
+  cwd: string | null;
+  developerInstructions?: string | null;
+}) {
+  return invoke<string>("fork-conversation-from-latest", {
+    params: {
+      conversationId: params.conversationId,
+      cwd: params.cwd,
+      developerInstructions: params.developerInstructions ?? null,
+    },
+  });
+}
+
+export async function discardConversationFromCache(conversationId: string) {
+  return invoke<void>("discard-conversation-from-cache", {
+    params: {
+      conversationId,
+      hostId: null,
+    },
+  });
+}
+
 export async function archiveThread(threadId: string) {
   return invoke<void>("archive_thread", { threadId });
 }

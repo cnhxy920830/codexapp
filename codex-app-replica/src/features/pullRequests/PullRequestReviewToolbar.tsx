@@ -11,6 +11,7 @@ import {
   RichPreviewDisabledIcon,
   RichPreviewEnabledIcon,
   WhitespaceIcon,
+  WordDiffsEnabledIcon,
   WordDiffsDisabledIcon,
   WrapDisabledIcon,
   WrapEnabledIcon,
@@ -19,28 +20,42 @@ import { useI18n } from "../../i18n/i18n";
 
 type PullRequestReviewToolbarProps = {
   isAllDiffsExpanded: boolean;
+  isLoadFullFilesEnabled: boolean;
   isRichPreviewEnabled: boolean;
   isSplitDiffEnabled: boolean;
+  isWhitespaceHidden: boolean;
+  isWordDiffsEnabled: boolean;
   isWrapEnabled: boolean;
   onCopyGitApplyCommand: (() => void | Promise<void>) | null;
   onRefreshCodeReview: () => void;
   onToggleAllDiffsExpanded: () => void;
+  onToggleLoadFullFilesEnabled: () => void;
   onToggleRichPreviewEnabled: () => void;
+  onToggleWhitespaceHidden: () => void;
+  onToggleWordDiffsEnabled: () => void;
   onToggleSplitDiffEnabled: () => void;
   onToggleWrapEnabled: () => void;
+  showLoadFullFiles: boolean;
 };
 
 export function PullRequestReviewToolbar({
   isAllDiffsExpanded,
+  isLoadFullFilesEnabled,
   isRichPreviewEnabled,
   isSplitDiffEnabled,
+  isWhitespaceHidden,
+  isWordDiffsEnabled,
   isWrapEnabled,
   onCopyGitApplyCommand,
   onRefreshCodeReview,
   onToggleAllDiffsExpanded,
+  onToggleLoadFullFilesEnabled,
   onToggleRichPreviewEnabled,
+  onToggleWhitespaceHidden,
+  onToggleWordDiffsEnabled,
   onToggleSplitDiffEnabled,
   onToggleWrapEnabled,
+  showLoadFullFiles,
 }: PullRequestReviewToolbarProps) {
   const { t } = useI18n();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -55,9 +70,18 @@ export function PullRequestReviewToolbar({
   const splitDiffToggleLabel = isSplitDiffEnabled
     ? t("codex.review.switchToUnified")
     : t("codex.review.switchToSplit");
+  const loadFullFilesToggleLabel = isLoadFullFilesEnabled
+    ? t("codex.review.loadFullFiles.disable")
+    : t("codex.review.loadFullFiles.enable");
   const richPreviewToggleLabel = isRichPreviewEnabled
     ? t("codex.review.richPreview.disable")
     : t("codex.review.richPreview.enable");
+  const wordDiffsToggleLabel = isWordDiffsEnabled
+    ? t("codex.review.wordDiffs.disable")
+    : t("codex.review.wordDiffs.enable");
+  const whitespaceToggleLabel = isWhitespaceHidden
+    ? t("codex.review.whitespace.show")
+    : t("codex.review.whitespace.hide");
 
   useEffect(() => {
     if (!isMenuOpen) {
@@ -101,9 +125,17 @@ export function PullRequestReviewToolbar({
 
           {isMenuOpen ? (
             <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 min-w-[240px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
-              <ReviewOptionsMenuItem disabled icon={<OpenFilesIcon className="h-4 w-4" />}>
-                {t("codex.review.loadFullFiles.enable")}
-              </ReviewOptionsMenuItem>
+              {showLoadFullFiles ? (
+                <ReviewOptionsMenuItem
+                  icon={<OpenFilesIcon className="h-4 w-4" />}
+                  onSelect={() => {
+                    onToggleLoadFullFilesEnabled();
+                    setIsMenuOpen(false);
+                  }}
+                >
+                  {loadFullFilesToggleLabel}
+                </ReviewOptionsMenuItem>
+              ) : null}
               <ReviewOptionsMenuItem
                 icon={
                   isRichPreviewEnabled ? (
@@ -119,11 +151,29 @@ export function PullRequestReviewToolbar({
               >
                 {richPreviewToggleLabel}
               </ReviewOptionsMenuItem>
-              <ReviewOptionsMenuItem disabled icon={<WordDiffsDisabledIcon className="h-4 w-4" />}>
-                {t("codex.review.wordDiffs.enable")}
+              <ReviewOptionsMenuItem
+                icon={
+                  isWordDiffsEnabled ? (
+                    <WordDiffsEnabledIcon className="h-4 w-4" />
+                  ) : (
+                    <WordDiffsDisabledIcon className="h-4 w-4" />
+                  )
+                }
+                onSelect={() => {
+                  onToggleWordDiffsEnabled();
+                  setIsMenuOpen(false);
+                }}
+              >
+                {wordDiffsToggleLabel}
               </ReviewOptionsMenuItem>
-              <ReviewOptionsMenuItem disabled icon={<WhitespaceIcon className="h-4 w-4" />}>
-                {t("codex.review.whitespace.show")}
+              <ReviewOptionsMenuItem
+                icon={<WhitespaceIcon className="h-4 w-4" />}
+                onSelect={() => {
+                  onToggleWhitespaceHidden();
+                  setIsMenuOpen(false);
+                }}
+              >
+                {whitespaceToggleLabel}
               </ReviewOptionsMenuItem>
               <ReviewOptionsMenuItem
                 disabled={onCopyGitApplyCommand == null}

@@ -76,15 +76,20 @@ export async function readAccountInfo(): Promise<AccountInfoResponse> {
 }
 
 export async function loginApiKey(params: ApiKeyLoginParams) {
-  return invoke<void>("login_api_key", { params });
+  return invoke<void>("login-with-api-key", {
+    params: {
+      hostId: null,
+      apiKey: params.apiKey,
+    },
+  });
 }
 
 export async function loginChatGpt() {
-  return invoke<ChatGptLoginStart>("login_chatgpt");
+  return invoke<ChatGptLoginStart>("login-with-chatgpt");
 }
 
 export async function loginChatGptDeviceCode() {
-  return invoke<DeviceCodeLoginStart>("login_chatgpt_device_code");
+  return invoke<DeviceCodeLoginStart>("login-with-chatgpt-device-code");
 }
 
 export async function cancelLogin(loginId: string) {

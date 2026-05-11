@@ -113,6 +113,13 @@ export type PullRequestCommentAttachment = {
   url: string | null;
 };
 
+export type PullRequestFileContentSuccess = {
+  status: "success";
+  contents: string;
+};
+
+export type PullRequestFileContentResponse = PullRequestFileContentSuccess | ErrorEnvelope;
+
 export type PullRequestActivityReply = {
   id: string;
   authorLogin: string | null;
@@ -255,6 +262,20 @@ export async function readPullRequestDiff(params: {
       hostId: normalizeHostId(params.hostId),
       number: params.number,
       repo: normalizeOptionalString(params.repo),
+    },
+  });
+}
+
+export async function readPullRequestFileContent(params: {
+  cwd: string;
+  hostId?: string | null;
+  objectId: string;
+}) {
+  return invoke<PullRequestFileContentResponse>("gh-pr-file-content", {
+    params: {
+      cwd: params.cwd,
+      hostId: normalizeHostId(params.hostId),
+      objectId: params.objectId.trim(),
     },
   });
 }

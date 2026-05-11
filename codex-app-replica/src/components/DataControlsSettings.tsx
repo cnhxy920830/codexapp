@@ -6,6 +6,7 @@ import {
   type ThreadHistoryEntry,
 } from "../services/history";
 import type { AppToast } from "./AppToastRegion";
+import { Button } from "./Button";
 import { SettingsContentLayout } from "./SettingsContentLayout";
 
 export function DataControlsSettings({
@@ -80,7 +81,7 @@ export function DataControlsSettings({
               <button
                 type="button"
                 onClick={() => openUnarchivedConversation(thread.id)}
-                className="pointer-events-auto ml-1 cursor-pointer text-[var(--app-shell-accent)] underline-offset-2 hover:underline"
+                className="pointer-events-auto ml-1 cursor-interaction text-token-link underline-offset-2 hover:underline"
               >
                 {t("settings.dataControls.archivedChats.viewNow")}
               </button>
@@ -134,14 +135,16 @@ export function DataControlsSettings({
                         </div>
                       ) : null}
                     </div>
-                    <button
-                      type="button"
+                    <Button
+                      className="shrink-0"
+                      color="secondary"
+                      size="toolbar"
                       disabled={isPending}
+                      loading={isPending}
                       onClick={() => void unarchiveArchivedThread(thread)}
-                      className="app-control shrink-0 rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
                     >
                       {t("settings.dataControls.archivedChats.unarchive")}
-                    </button>
+                    </Button>
                   </div>
                 );
               })}

@@ -233,6 +233,7 @@ export type MessageKey =
   | "codex.alert.closeAriaLabel"
   | "codex.archiveInfo.electron"
   | "codex.archiveInfo.settingsLink"
+  | "codex.signInFailed.message"
   | "codex.legal.step.intro.title"
   | "codex.legal.step.intro.subtitle"
   | "codex.legal.step.cloud.title"
@@ -517,6 +518,8 @@ export type MessageKey =
   | "codex.review.expandOrCollapseDiffMenu.expand"
   | "codex.review.loadFullFiles.enable"
   | "codex.review.loadFullFiles.disable"
+  | "codex.review.diff.fullContentLoadFailed"
+  | "codex.common.retry"
   | "codex.review.richPreview.enable"
   | "codex.review.richPreview.disable"
   | "codex.review.wordDiffs.enable"
@@ -599,8 +602,16 @@ export type MessageKey =
   | "codex.filePreview.pdb.residueLabel"
   | "codex.filePreview.pdb.residueTitle"
   | "artifactTab.sourceOptions"
+  | "codex.diffView.failedToDecodeBase64Diff"
+  | "codex.diffView.filesChanged"
+  | "codex.diffView.linesAdded"
+  | "codex.diffView.linesDeleted"
+  | "codex.diffView.noDiffData"
   | "codex.diffView.richPreviewEnable"
   | "codex.diffView.richPreviewDisable"
+  | "codex.diffView.richPreviewToggle"
+  | "codex.diffView.switchToSplit"
+  | "codex.diffView.switchToUnified"
   | "wham.diff.contextMenu.copyPath"
   | "wham.diff.contextMenu.toggleWrap"
   | "wham.diff.binaryFile"
@@ -625,7 +636,11 @@ export type MessageKey =
   | "threadHeader.forkIntoLocal"
   | "threadHeader.forkIntoSameWorktree"
   | "threadHeader.forkThreadError"
+  | "threadHeader.openSideChat"
+  | "threadHeader.openSideChatError"
   | "threadHeader.moreActions"
+  | "localConversation.sideChat.title"
+  | "localConversation.sideChat.numberedTitle"
   | "sidebarElectron.archiveThread"
   | "sidebarElectron.renameThread"
   | "sidebarElectron.renameThreadDialogAriaLabel"
@@ -1166,6 +1181,22 @@ export type MessageKey =
   | "onboarding.welcomeV2.externalAgentImport.customize.projectsDescription"
   | "onboarding.welcomeV2.externalAgentImport.customize.pluginsWithCount"
   | "onboarding.welcomeV2.externalAgentImport.error"
+  | "electron.onboarding.workspace.title"
+  | "electron.onboarding.workspace.subtitle"
+  | "electron.onboarding.workspace.openFolder"
+  | "electron.onboarding.workspace.loading"
+  | "electron.onboarding.workspace.listLabel"
+  | "electron.onboarding.workspace.selectAll"
+  | "electron.onboarding.workspace.empty"
+  | "electron.onboarding.workspace.continue"
+  | "electron.onboarding.workspace.skip"
+  | "electron.onboarding.workspace.skipping"
+  | "electron.onboarding.workspace.skip.playground"
+  | "electron.onboarding.workspace.skipping.playground"
+  | "electron.onboarding.workspace.skip.error"
+  | "electron.onboarding.workspace.skip.error.unknown"
+  | "projectSetup.addProjectMenu.startFromScratch"
+  | "projectSetup.addProjectMenu.useExistingFolder"
   | "settings.openIn.integratedTerminalShell.label"
   | "settings.openIn.integratedTerminalShell.description"
   | "settings.openIn.integratedTerminalShell.unavailable"
@@ -1271,6 +1302,10 @@ export type MessageKey =
   | "settings.general.appearance.chromeTheme.import.dialog.submit"
   | "settings.configuration"
   | "settings.backToApp"
+  | "settings.nav.back"
+  | "settings.nav.account"
+  | "settings.nav.connections"
+  | "settings.nav.hooks-settings"
   | "settings.title"
   | "settings.nav.heading.app"
   | "settings.nav.heading.host"
@@ -1308,6 +1343,9 @@ export type MessageKey =
   | "settings.openSourceLicenses.subtitle"
   | "settings.openSourceLicenses.loading"
   | "settings.openSourceLicenses.missing"
+  | "settings.section.account"
+  | "settings.section.connections"
+  | "settings.section.hooks-settings"
   | "settings.mcp.loading"
   | "settings.mcp.loadError.title"
   | "settings.mcp.loadError.retry"
@@ -1428,6 +1466,17 @@ export type MessageKey =
   | "auth.completeBrowserSignIn"
   | "auth.openBrowser"
   | "auth.copy"
+  | "electron.onboarding.login.snake.start"
+  | "electron.onboarding.login.welcomeV2.title"
+  | "electron.onboarding.login.chatgpt.signIn"
+  | "electron.onboarding.login.chatgpt.cancel.welcomeV2"
+  | "electron.onboarding.login.apikey.open.welcomeV2"
+  | "electron.onboarding.login.apikey.label"
+  | "electron.onboarding.login.apikey.placeholder"
+  | "electron.onboarding.login.apikey.cancel"
+  | "electron.onboarding.login.apikey.continue"
+  | "electron.onboarding.login.browserPending.welcomeV2"
+  | "electron.onboarding.login.signup.welcomeV2"
   | "history.noMessageYet";
 
 type MessageDictionary = Record<MessageKey, string>;
@@ -1651,6 +1700,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.alert.closeAriaLabel": "Close",
     "codex.archiveInfo.electron": "View archived chats in {settingsLink}",
     "codex.archiveInfo.settingsLink": "Settings",
+    "codex.signInFailed.message": "Sign-in failed: {rawMessage}",
     "codex.legal.step.intro.title": "Codex in your IDE",
     "codex.legal.step.intro.subtitle":
       "Codex navigates, edits, runs commands, and executes tests directly in your repo. Powered by your ChatGPT account.",
@@ -1950,6 +2000,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.review.expandOrCollapseDiffMenu.expand": "Expand all diffs",
     "codex.review.loadFullFiles.enable": "Load full files",
     "codex.review.loadFullFiles.disable": "Don't load full files",
+    "codex.review.diff.fullContentLoadFailed": "Full file content failed to load",
+    "codex.common.retry": "Retry",
     "codex.review.richPreview.enable": "Enable rich preview",
     "codex.review.richPreview.disable": "Disable rich preview",
     "codex.review.wordDiffs.enable": "Enable word diffs",
@@ -2032,8 +2084,16 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.filePreview.pdb.residueLabel": "{residueName} {residueNumber} in chain {chainId}",
     "codex.filePreview.pdb.residueTitle": "{residueName} {residueNumber}",
     "artifactTab.sourceOptions": "Artifact viewer options",
+    "codex.diffView.failedToDecodeBase64Diff": "Couldn’t load this diff",
+    "codex.diffView.filesChanged": "{fileCount, plural, one {# file changed} other {# files changed}}",
+    "codex.diffView.linesAdded": "+{linesAdded}",
+    "codex.diffView.linesDeleted": "-{linesDeleted}",
+    "codex.diffView.noDiffData": "No diff available",
     "codex.diffView.richPreviewEnable": "Enable rich preview",
     "codex.diffView.richPreviewDisable": "Disable rich preview",
+    "codex.diffView.richPreviewToggle": "Toggle rich preview",
+    "codex.diffView.switchToSplit": "Switch to split diff",
+    "codex.diffView.switchToUnified": "Switch to unified diff",
     "wham.diff.contextMenu.copyPath": "Copy path",
     "wham.diff.contextMenu.toggleWrap": "Toggle word wrap",
     "wham.diff.binaryFile": "Binary file not shown",
@@ -2060,7 +2120,11 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "threadHeader.forkIntoLocal": "Fork into local",
     "threadHeader.forkIntoSameWorktree": "Fork into same worktree",
     "threadHeader.forkThreadError": "Failed to fork chat",
+    "threadHeader.openSideChat": "Open side chat",
+    "threadHeader.openSideChatError": "Failed to open side chat",
     "threadHeader.moreActions": "Thread actions",
+    "localConversation.sideChat.title": "Side chat",
+    "localConversation.sideChat.numberedTitle": "Side chat {index}",
     "sidebarElectron.archiveThread": "Archive chat",
     "sidebarElectron.renameThread": "Rename chat",
     "sidebarElectron.renameThreadDialogAriaLabel": "Chat title",
@@ -2627,6 +2691,23 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "onboarding.welcomeV2.externalAgentImport.customize.pluginsWithCount": "Plugins ({count})",
     "onboarding.welcomeV2.externalAgentImport.error":
       "Couldn't finish the import. Try again, or skip for now.",
+    "electron.onboarding.workspace.title": "Select a project",
+    "electron.onboarding.workspace.subtitle":
+      "Codex will be able to edit files and run commands in selected folders.",
+    "electron.onboarding.workspace.openFolder": "Add project",
+    "electron.onboarding.workspace.loading": "Loading projects...",
+    "electron.onboarding.workspace.listLabel": "Available projects",
+    "electron.onboarding.workspace.selectAll": "Select all",
+    "electron.onboarding.workspace.empty": "Add a project to continue.",
+    "electron.onboarding.workspace.continue": "Continue",
+    "electron.onboarding.workspace.skip": "Skip",
+    "electron.onboarding.workspace.skipping": "Creating a new project...",
+    "electron.onboarding.workspace.skip.playground": "Continue to playground",
+    "electron.onboarding.workspace.skipping.playground": "Opening playground...",
+    "electron.onboarding.workspace.skip.error": "Couldn't create a new project: {message}",
+    "electron.onboarding.workspace.skip.error.unknown": "Unknown error",
+    "projectSetup.addProjectMenu.startFromScratch": "Start from scratch",
+    "projectSetup.addProjectMenu.useExistingFolder": "Use an existing folder",
     "settings.openIn.integratedTerminalShell.label": "Integrated terminal shell",
     "settings.openIn.integratedTerminalShell.description": "Choose which shell opens in the integrated terminal.",
     "settings.openIn.integratedTerminalShell.unavailable": "No shells available",
@@ -2747,6 +2828,10 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.general.appearance.chromeTheme.import.dialog.submit": "Import theme",
     "settings.configuration": "Configuration",
     "settings.backToApp": "Back to app",
+    "settings.nav.back": "Back to app",
+    "settings.nav.account": "Account",
+    "settings.nav.connections": "Connections",
+    "settings.nav.hooks-settings": "Hooks",
     "settings.title": "SETTINGS",
     "settings.nav.heading.app": "APP",
     "settings.nav.heading.host": "HOST",
@@ -2784,6 +2869,9 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.openSourceLicenses.subtitle": "Third-party notices for dependencies included in this app",
     "settings.openSourceLicenses.loading": "Loading…",
     "settings.openSourceLicenses.missing": "No third-party notices were found.",
+    "settings.section.account": "Account",
+    "settings.section.connections": "Connections",
+    "settings.section.hooks-settings": "Hooks",
     "settings.mcp.loading": "Loading MCP servers…",
     "settings.mcp.loadError.title": "Unable to load MCP servers",
     "settings.mcp.loadError.retry": "Retry",
@@ -2904,6 +2992,17 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "auth.completeBrowserSignIn": "Complete sign-in in your browser.",
     "auth.openBrowser": "Open browser",
     "auth.copy": "Copy",
+    "electron.onboarding.login.snake.start": "Play Snake",
+    "electron.onboarding.login.welcomeV2.title": "Get started with Codex",
+    "electron.onboarding.login.chatgpt.signIn": "Sign in with ChatGPT",
+    "electron.onboarding.login.chatgpt.cancel.welcomeV2": "Cancel sign-in",
+    "electron.onboarding.login.apikey.open.welcomeV2": "Sign in another way",
+    "electron.onboarding.login.apikey.label": "OpenAI API key",
+    "electron.onboarding.login.apikey.placeholder": "sk-…",
+    "electron.onboarding.login.apikey.cancel": "Cancel",
+    "electron.onboarding.login.apikey.continue": "Continue",
+    "electron.onboarding.login.browserPending.welcomeV2": "Continue signing in with your browser",
+    "electron.onboarding.login.signup.welcomeV2": "Sign up",
     "history.noMessageYet": "(no message yet)",
     ...PULL_REQUESTS_PAGE_MESSAGES["en-US"],
   },
@@ -3081,6 +3180,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.alert.closeAriaLabel": "关闭",
     "codex.archiveInfo.electron": "查看已归档的聊天：{settingsLink}",
     "codex.archiveInfo.settingsLink": "设置",
+    "codex.signInFailed.message": "登录失败：{rawMessage}",
     "codex.legal.step.intro.title": "在 IDE 中使用 Codex",
     "codex.legal.step.intro.subtitle":
       "Codex 能直接在代码仓库内导航、编辑、运行命令、执行测试，均由你的 ChatGPT 帐户提供支持。",
@@ -3377,6 +3477,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.review.expandOrCollapseDiffMenu.expand": "展开全部差异",
     "codex.review.loadFullFiles.enable": "加载完整文件",
     "codex.review.loadFullFiles.disable": "不加载完整文件",
+    "codex.review.diff.fullContentLoadFailed": "完整文件内容加载失败",
+    "codex.common.retry": "重试",
     "codex.review.richPreview.enable": "启用富文本预览",
     "codex.review.richPreview.disable": "禁用富文本预览",
     "codex.review.wordDiffs.enable": "启用文字差异",
@@ -3459,8 +3561,16 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.filePreview.pdb.residueLabel": "链 {chainId} 中的 {residueName} {residueNumber}",
     "codex.filePreview.pdb.residueTitle": "{residueName} {residueNumber}",
     "artifactTab.sourceOptions": "制品查看器选项",
+    "codex.diffView.failedToDecodeBase64Diff": "无法加载此差异",
+    "codex.diffView.filesChanged": "{fileCount, plural, one {# 个文件已更改} other {# 个文件已更改}}",
+    "codex.diffView.linesAdded": "+{linesAdded}",
+    "codex.diffView.linesDeleted": "-{linesDeleted}",
+    "codex.diffView.noDiffData": "没有可用的差异",
     "codex.diffView.richPreviewEnable": "启用富文本预览",
     "codex.diffView.richPreviewDisable": "禁用富文本预览",
+    "codex.diffView.richPreviewToggle": "切换富文本预览",
+    "codex.diffView.switchToSplit": "切换到分栏差异",
+    "codex.diffView.switchToUnified": "切换到统一差异",
     "wham.diff.contextMenu.copyPath": "复制路径",
     "wham.diff.contextMenu.toggleWrap": "切换自动换行",
     "wham.diff.binaryFile": "未显示二进制文件",
@@ -3487,7 +3597,11 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "threadHeader.forkIntoLocal": "派生到本地",
     "threadHeader.forkIntoSameWorktree": "分叉到同一工作树",
     "threadHeader.forkThreadError": "创建对话分支失败",
+    "threadHeader.openSideChat": "打开侧边对话",
+    "threadHeader.openSideChatError": "打开侧边对话失败",
     "threadHeader.moreActions": "对话操作",
+    "localConversation.sideChat.title": "侧边对话",
+    "localConversation.sideChat.numberedTitle": "侧边对话 {index}",
     "sidebarElectron.archiveThread": "归档对话",
     "sidebarElectron.renameThread": "重命名对话",
     "sidebarElectron.renameThreadDialogAriaLabel": "对话标题",
@@ -4032,6 +4146,22 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "onboarding.welcomeV2.externalAgentImport.customize.projectsDescription": "在现有项目中工作",
     "onboarding.welcomeV2.externalAgentImport.customize.pluginsWithCount": "插件（{count}）",
     "onboarding.welcomeV2.externalAgentImport.error": "无法完成导入。请重试，或暂时跳过。",
+    "electron.onboarding.workspace.title": "选择项目",
+    "electron.onboarding.workspace.subtitle": "Codex 将能够在所选文件夹中编辑文件并运行命令。",
+    "electron.onboarding.workspace.openFolder": "添加项目",
+    "electron.onboarding.workspace.loading": "正在加载项目...",
+    "electron.onboarding.workspace.listLabel": "可用项目",
+    "electron.onboarding.workspace.selectAll": "全选",
+    "electron.onboarding.workspace.empty": "添加项目后即可继续。",
+    "electron.onboarding.workspace.continue": "继续",
+    "electron.onboarding.workspace.skip": "跳过",
+    "electron.onboarding.workspace.skipping": "正在创建新项目...",
+    "electron.onboarding.workspace.skip.playground": "继续进入 Playground",
+    "electron.onboarding.workspace.skipping.playground": "正在打开 Playground...",
+    "electron.onboarding.workspace.skip.error": "无法创建新项目：{message}",
+    "electron.onboarding.workspace.skip.error.unknown": "未知错误",
+    "projectSetup.addProjectMenu.startFromScratch": "从头开始",
+    "projectSetup.addProjectMenu.useExistingFolder": "使用现有文件夹",
     "settings.openIn.integratedTerminalShell.label": "集成终端 Shell",
     "settings.openIn.integratedTerminalShell.description": "选择要在集成终端中打开的 Shell。",
     "settings.openIn.integratedTerminalShell.unavailable": "无可用 Shell",
@@ -4145,6 +4275,10 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.general.appearance.chromeTheme.import.dialog.submit": "导入主题",
     "settings.configuration": "配置",
     "settings.backToApp": "返回应用",
+    "settings.nav.back": "返回应用",
+    "settings.nav.account": "账户",
+    "settings.nav.connections": "连接",
+    "settings.nav.hooks-settings": "Hooks",
     "settings.title": "设置",
     "settings.nav.heading.app": "应用",
     "settings.nav.heading.host": "主机",
@@ -4182,6 +4316,9 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.openSourceLicenses.subtitle": "本应用所含依赖项的第三方声明",
     "settings.openSourceLicenses.loading": "正在加载…",
     "settings.openSourceLicenses.missing": "找不到第三方声明。",
+    "settings.section.account": "账户",
+    "settings.section.connections": "连接",
+    "settings.section.hooks-settings": "Hooks",
     "settings.mcp.loading": "正在加载 MCP 服务器…",
     "settings.mcp.loadError.title": "无法加载 MCP 服务器",
     "settings.mcp.loadError.retry": "重试",
@@ -4302,6 +4439,17 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "auth.completeBrowserSignIn": "请在浏览器中完成登录。",
     "auth.openBrowser": "打开浏览器",
     "auth.copy": "复制",
+    "electron.onboarding.login.snake.start": "玩贪吃蛇",
+    "electron.onboarding.login.welcomeV2.title": "开始使用 Codex",
+    "electron.onboarding.login.chatgpt.signIn": "使用 ChatGPT 登录",
+    "electron.onboarding.login.chatgpt.cancel.welcomeV2": "取消登录",
+    "electron.onboarding.login.apikey.open.welcomeV2": "使用其他方式登录",
+    "electron.onboarding.login.apikey.label": "OpenAI API 密钥",
+    "electron.onboarding.login.apikey.placeholder": "sk-…",
+    "electron.onboarding.login.apikey.cancel": "取消",
+    "electron.onboarding.login.apikey.continue": "继续",
+    "electron.onboarding.login.browserPending.welcomeV2": "请继续在浏览器中登录。",
+    "electron.onboarding.login.signup.welcomeV2": "注册",
     "history.noMessageYet": "(暂无消息)",
     ...PULL_REQUESTS_PAGE_MESSAGES["zh-CN"],
   },
