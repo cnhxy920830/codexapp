@@ -24,6 +24,10 @@ export type ReadFileParams = {
   cwd?: string | null;
 };
 
+export type ReadFileTextResponse = {
+  contents: string;
+};
+
 export type ReadFileMetadataResponse = {
   isFile: boolean;
   sizeBytes: number | null;
@@ -37,6 +41,16 @@ export type ReadFileBinaryResponse = {
 export async function openFile(params: OpenFileParams) {
   await invoke<void>("open-file", { params });
   return { success: true as const };
+}
+
+export async function openInBrowser(url: string) {
+  await invoke<void>("open-in-browser", {
+    params: { url },
+  });
+}
+
+export async function readFileText(params: ReadFileParams) {
+  return invoke<ReadFileTextResponse>("read-file", { params });
 }
 
 export async function readFileMetadata(params: ReadFileParams) {

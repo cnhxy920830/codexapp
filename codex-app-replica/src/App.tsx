@@ -118,6 +118,7 @@ import { SkillsRoutePage } from "./features/skills/SkillsRoutePage";
 import { usePluginsRouteEnabled } from "./features/skills/usePluginsRouteEnabled";
 import { AutomationsRoutePage } from "./features/automations/AutomationsRoutePage";
 import { EditorDiffPage } from "./features/editorDiff/EditorDiffPage";
+import { GlobalDictationPage } from "./features/globalDictation/GlobalDictationPage";
 import { LoginRoutePage } from "./features/auth/LoginRoutePage";
 import {
   isLoginOnboardingRoute,
@@ -129,7 +130,9 @@ import { formatHeartbeatAutomationTooltip } from "./features/automations/time";
 import { FirstRunPage } from "./features/firstRun/FirstRunPage";
 import { SelectWorkspacePage } from "./features/onboarding/SelectWorkspacePage";
 import { WelcomePage } from "./features/onboarding/WelcomePage";
+import { AvatarOverlayPage } from "./features/avatarOverlay/AvatarOverlayPage";
 import { DebugWindowPage as DebugWindowPageContent } from "./features/debug/DebugWindowPage";
+import { WorktreeInitV2Page } from "./features/worktreeInit/WorktreeInitV2Page";
 import {
   createSideChatRightPanelTab,
   createStaticRightPanelTab,
@@ -192,13 +195,17 @@ import {
 } from "./services/keyboardShortcuts";
 import {
   DEBUG_WINDOW_ORIGIN_CONVERSATION_CHANGED_EVENT,
+  AVATAR_OVERLAY_ROUTE_PATH,
   DEBUG_WINDOW_ROUTE_PATH,
   EDITOR_DIFF_ROUTE_PATH,
   FIRST_RUN_ROUTE_PATH,
+  GLOBAL_DICTATION_ROUTE_PATH,
+  HOTKEY_WORKTREE_INIT_V2_ROUTE_PREFIX,
   LOGIN_ROUTE_PATH,
   notifyDebugWindowOriginConversationChanged,
   PLAN_SUMMARY_ROUTE_PATH,
   SELECT_WORKSPACE_ROUTE_PATH,
+  WORKTREE_INIT_V2_ROUTE_PREFIX,
   WELCOME_ROUTE_PATH,
   takePendingDebugWindowOriginConversation,
   takePendingPlanSummary,
@@ -292,6 +299,7 @@ type SettingsSection =
   | "data-controls";
 type SettingsSectionState = {
   licensesBackPath?: string;
+  localEnvironmentRouteSearch?: string;
 } | null;
 type AgentConfigControlErrors = Partial<Record<"approval" | "sandbox" | "network", string>>;
 type AppRoute =
@@ -307,6 +315,9 @@ type AppRoute =
   | "first-run"
   | "plan-summary"
   | "editor-diff"
+  | "global-dictation"
+  | "worktree-init"
+  | "avatar-overlay"
   | "debug";
 type SkillsRouteInitialTab = "plugins" | "skills";
 type SkillsPageRouteState = {
@@ -340,7 +351,19 @@ type ThreadShellRoute = {
   shell: ThreadShellVariant;
 };
 
-type PendingWindowPageKind = "thread" | "plan-summary" | "editor-diff" | "debug" | null;
+type WorktreeInitRoute = {
+  pendingWorktreeId: string;
+  shell: ThreadShellVariant;
+};
+
+type PendingWindowPageKind =
+  | "thread"
+  | "plan-summary"
+  | "editor-diff"
+  | "global-dictation"
+  | "worktree-init"
+  | "debug"
+  | null;
 
 const settingsNavItems = [
   { id: "general-settings" as const, labelKey: "settings.nav.general-settings" as const },
@@ -455,12 +478,16 @@ function isSettingsSection(value: string): value is SettingsSection {
 }
 
 function parseSettingsRoute(path: string): SettingsSection | null {
-  const section = path.startsWith("/settings/") ? path.slice("/settings/".length).split("/")[0] ?? "" : "";
+  const normalizedPath = stripRouteSearchAndHash(path);
+  const section = normalizedPath.startsWith("/settings/")
+    ? normalizedPath.slice("/settings/".length).split("/")[0] ?? ""
+    : "";
   return isSettingsSection(section) ? section : null;
 }
 
 function parseThreadShellRoute(path: string): ThreadShellRoute | null {
-  const defaultMatch = /^\/(local|remote)\/([A-Za-z0-9._~%-]+)$/.exec(path);
+  const normalizedPath = stripRouteSearchAndHash(path);
+  const defaultMatch = /^\/(local|remote)\/([A-Za-z0-9._~%-]+)$/.exec(normalizedPath);
   if (defaultMatch) {
     return {
       kind: defaultMatch[1] as ThreadShellRoute["kind"],
@@ -469,7 +496,7 @@ function parseThreadShellRoute(path: string): ThreadShellRoute | null {
     };
   }
 
-  const hotkeyThreadMatch = /^\/hotkey-window\/thread\/([A-Za-z0-9._~%-]+)$/.exec(path);
+  const hotkeyThreadMatch = /^\/hotkey-window\/thread\/([A-Za-z0-9._~%-]+)$/.exec(normalizedPath);
   if (hotkeyThreadMatch) {
     return {
       kind: "local",
@@ -478,13 +505,31 @@ function parseThreadShellRoute(path: string): ThreadShellRoute | null {
     };
   }
 
-  const hotkeyRemoteMatch = /^\/hotkey-window\/remote\/([A-Za-z0-9._~%-]+)$/.exec(path);
+  const hotkeyRemoteMatch = /^\/hotkey-window\/remote\/([A-Za-z0-9._~%-]+)$/.exec(normalizedPath);
   if (hotkeyRemoteMatch) {
     return {
       kind: "remote",
       threadId: hotkeyRemoteMatch[1],
       shell: "hotkey",
     };
+  }
+
+  return null;
+}
+
+function parseWorktreeInitRoute(path: string): WorktreeInitRoute | null {
+  const normalizedPath = stripRouteSearchAndHash(path);
+
+  if (normalizedPath.startsWith(WORKTREE_INIT_V2_ROUTE_PREFIX)) {
+    const pendingWorktreeId = decodeRouteSegment(normalizedPath.slice(WORKTREE_INIT_V2_ROUTE_PREFIX.length));
+    return pendingWorktreeId === null ? null : { pendingWorktreeId, shell: "default" };
+  }
+
+  if (normalizedPath.startsWith(HOTKEY_WORKTREE_INIT_V2_ROUTE_PREFIX)) {
+    const pendingWorktreeId = decodeRouteSegment(
+      normalizedPath.slice(HOTKEY_WORKTREE_INIT_V2_ROUTE_PREFIX.length),
+    );
+    return pendingWorktreeId === null ? null : { pendingWorktreeId, shell: "hotkey" };
   }
 
   return null;
@@ -502,6 +547,10 @@ function isFirstRunRoute(path: string) {
   return path === FIRST_RUN_ROUTE_PATH;
 }
 
+function isGlobalDictationRoute(path: string) {
+  return path === GLOBAL_DICTATION_ROUTE_PATH;
+}
+
 function isLoginRoute(path: string) {
   return path === LOGIN_ROUTE_PATH;
 }
@@ -514,6 +563,10 @@ function isSelectWorkspaceRoute(path: string) {
   return path === SELECT_WORKSPACE_ROUTE_PATH;
 }
 
+function isAvatarOverlayRoute(path: string) {
+  return path === AVATAR_OVERLAY_ROUTE_PATH;
+}
+
 function isDebugWindowRoute(path: string) {
   return path === DEBUG_WINDOW_ROUTE_PATH;
 }
@@ -523,6 +576,10 @@ function isPullRequestsRoute(path: string) {
 }
 
 function readInitialAppRoute(): AppRoute {
+  if (typeof window !== "undefined" && parseWorktreeInitRoute(window.location.pathname)) {
+    return "worktree-init";
+  }
+
   if (typeof window !== "undefined" && isLoginRoute(window.location.pathname)) {
     return "login";
   }
@@ -539,12 +596,20 @@ function readInitialAppRoute(): AppRoute {
     return "editor-diff";
   }
 
+  if (typeof window !== "undefined" && isGlobalDictationRoute(window.location.pathname)) {
+    return "global-dictation";
+  }
+
   if (typeof window !== "undefined" && isFirstRunRoute(window.location.pathname)) {
     return "first-run";
   }
 
   if (typeof window !== "undefined" && isPullRequestsRoute(window.location.pathname)) {
     return "pull-requests";
+  }
+
+  if (typeof window !== "undefined" && isAvatarOverlayRoute(window.location.pathname)) {
+    return "avatar-overlay";
   }
 
   return "chat";
@@ -561,15 +626,43 @@ function shouldWindowManagePowerSaveBlocker() {
     isDebugWindowRoute(pathname) ||
     isPlanSummaryRoute(pathname) ||
     isEditorDiffRoute(pathname) ||
+    isGlobalDictationRoute(pathname) ||
+    parseWorktreeInitRoute(pathname) !== null ||
     isFirstRunRoute(pathname) ||
     isLoginRoute(pathname) ||
     isSelectWorkspaceRoute(pathname) ||
-    isWelcomeRoute(pathname)
+    isWelcomeRoute(pathname) ||
+    isAvatarOverlayRoute(pathname)
   ) {
     return false;
   }
 
   return parseThreadShellRoute(pathname)?.shell !== "hotkey";
+}
+
+function stripRouteSearchAndHash(path: string) {
+  return path.split(/[?#]/, 1)[0] ?? path;
+}
+
+function decodeRouteSegment(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  try {
+    const decoded = decodeURIComponent(trimmed).trim();
+    return decoded.length > 0 ? decoded : null;
+  } catch {
+    return trimmed;
+  }
+}
+
+function buildLocalThreadRoutePath(threadId: string, shell: ThreadShellVariant) {
+  const encodedThreadId = encodeURIComponent(threadId);
+  return shell === "hotkey"
+    ? `/hotkey-window/thread/${encodedThreadId}`
+    : `/local/${encodedThreadId}`;
 }
 
 function getRightPanelTabLabel(tab: RightPanelTab, t: (key: MessageKey) => string) {
@@ -916,6 +1009,9 @@ function App() {
   const [editorDiffRouteState, setEditorDiffRouteState] = useState<unknown | null>(() =>
     typeof window === "undefined" ? null : window.history.state,
   );
+  const [worktreeInitRoute, setWorktreeInitRoute] = useState<WorktreeInitRoute | null>(() =>
+    typeof window === "undefined" ? null : parseWorktreeInitRoute(window.location.pathname),
+  );
   const [projectGroups, setProjectGroups] = useState<HistoryProjectGroup[]>([]);
   const [recentThreads, setRecentThreads] = useState<ThreadHistoryEntry[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
@@ -1134,9 +1230,11 @@ function App() {
     (!hasLoadedInitialThreadSnapshot &&
       currentRoute !== "plan-summary" &&
       currentRoute !== "editor-diff" &&
+      currentRoute !== "global-dictation" &&
       currentRoute !== "first-run" &&
       currentRoute !== "login" &&
       currentRoute !== "pull-requests" &&
+      currentRoute !== "worktree-init" &&
       currentRoute !== "welcome");
   const isTurnInProgress = activeTurn !== null && activeTurn.threadId === selectedThreadId;
   const editableUserMessage = findLastEditableUserMessage(threadConversation, activeTurn);
@@ -1400,6 +1498,7 @@ function App() {
       currentRoute === "login" ||
       currentRoute === "debug" ||
       currentRoute === "editor-diff" ||
+      currentRoute === "global-dictation" ||
       currentRoute === "plan-summary"
     ) {
       return;
@@ -2201,6 +2300,22 @@ function App() {
           return;
         }
 
+        if (isGlobalDictationRoute(path)) {
+          setThreadShellVariant("default");
+          initialWindowPageKindRef.current = "global-dictation";
+          setCurrentRoute("global-dictation");
+          return;
+        }
+
+        const nextWorktreeInitRoute = parseWorktreeInitRoute(path);
+        if (nextWorktreeInitRoute) {
+          setThreadShellVariant(nextWorktreeInitRoute.shell);
+          initialWindowPageKindRef.current = "worktree-init";
+          setWorktreeInitRoute(nextWorktreeInitRoute);
+          setCurrentRoute("worktree-init");
+          return;
+        }
+
         if (isFirstRunRoute(path)) {
           setThreadShellVariant("default");
           setCurrentRoute("first-run");
@@ -2624,9 +2739,13 @@ function App() {
     if (
       initialWindowPageKindRef.current === "plan-summary" ||
       initialWindowPageKindRef.current === "editor-diff" ||
+      initialWindowPageKindRef.current === "global-dictation" ||
+      initialWindowPageKindRef.current === "worktree-init" ||
       currentRoute === "editor-diff" ||
+      currentRoute === "global-dictation" ||
       currentRoute === "first-run" ||
       currentRoute === "login" ||
+      currentRoute === "worktree-init" ||
       currentRoute === "welcome"
     ) {
       initialThreadSnapshotLoadedRef.current = true;
@@ -3136,6 +3255,7 @@ function App() {
   const openNewConversation = useEffectEvent((state: NavigateToRouteState | null = null) => {
     setThreadShellVariant("default");
     setSkillsRouteState(null);
+    setWorktreeInitRoute(null);
     setSelectedThreadId(null);
     setThreadConversation(null);
     setIsThreadConversationLoading(false);
@@ -3167,6 +3287,22 @@ function App() {
       setSkillsRouteState(null);
       setEditorDiffRouteState(state ?? (typeof window === "undefined" ? null : window.history.state));
       setCurrentRoute("editor-diff");
+      return;
+    }
+
+    if (isGlobalDictationRoute(path)) {
+      setThreadShellVariant("default");
+      setSkillsRouteState(null);
+      setCurrentRoute("global-dictation");
+      return;
+    }
+
+    const nextWorktreeInitRoute = parseWorktreeInitRoute(path);
+    if (nextWorktreeInitRoute) {
+      setThreadShellVariant(nextWorktreeInitRoute.shell);
+      setSkillsRouteState(null);
+      setWorktreeInitRoute(nextWorktreeInitRoute);
+      setCurrentRoute("worktree-init");
       return;
     }
 
@@ -4337,7 +4473,13 @@ function App() {
         return null;
       }
 
-      return <ComputerUseSettings workspaceRoot={settingsWorkspaceRoot} onShowToast={(toast) => setAppToast(toast)} />;
+      return (
+        <ComputerUseSettings
+          selectedHostId={selectedSettingsHostId}
+          workspaceRoot={settingsWorkspaceRoot}
+          onShowToast={(toast) => setAppToast(toast)}
+        />
+      );
     }
 
     if (settingsSection === "usage") {
@@ -4370,6 +4512,15 @@ function App() {
       return (
         <LocalEnvironmentsSettings
           codexHome={codexHome}
+          routeSearch={
+            settingsSectionState != null &&
+            typeof settingsSectionState === "object" &&
+            !Array.isArray(settingsSectionState) &&
+            "localEnvironmentRouteSearch" in settingsSectionState &&
+            typeof settingsSectionState.localEnvironmentRouteSearch === "string"
+              ? settingsSectionState.localEnvironmentRouteSearch
+              : (typeof window === "undefined" ? "" : window.location.search)
+          }
           selectedHostId={selectedSettingsHostId}
           onShowToast={(toast) => setAppToast(toast)}
         />
@@ -4605,6 +4756,62 @@ function App() {
     return <LoadingPage debugName="PersistedStateProvider" />;
   }
 
+  if (currentRoute === "worktree-init") {
+    if (worktreeInitRoute === null) {
+      return null;
+    }
+
+    return (
+      <>
+        <WorktreeInitV2Page
+          pendingWorktreeId={worktreeInitRoute.pendingWorktreeId}
+          shell={worktreeInitRoute.shell}
+          onEditEnvironment={({ workspaceRoot, configPath, mode }) => {
+            const searchParams = new URLSearchParams({ workspaceRoot, mode });
+            if (configPath !== null) {
+              searchParams.set("configPath", configPath);
+            }
+            const nextPath = `/settings/local-environments?${searchParams.toString()}`;
+            if (typeof window !== "undefined" && window.location.pathname + window.location.search !== nextPath) {
+              window.history.replaceState(window.history.state, "", nextPath);
+            }
+            setThreadShellVariant("default");
+            setWorktreeInitRoute(null);
+            setSelectedSettingsHostId(LOCAL_SETTINGS_HOST_ID);
+            setSettingsSection("local-environments");
+            setSettingsSectionState({ localEnvironmentRouteSearch: `?${searchParams.toString()}` });
+            setCurrentRoute("settings");
+          }}
+          onNavigateHome={() => {
+            if (typeof window !== "undefined" && window.location.pathname !== "/") {
+              window.history.replaceState(window.history.state, "", "/");
+            }
+            openNewConversation();
+          }}
+          onOpenConversation={(conversationId, shell) => {
+            const nextPath = buildLocalThreadRoutePath(conversationId, shell);
+            if (typeof window !== "undefined" && window.location.pathname !== nextPath) {
+              window.history.replaceState(window.history.state, "", nextPath);
+            }
+            setWorktreeInitRoute(null);
+            return selectThread(conversationId, shell);
+          }}
+          onShowToast={(toast) => setAppToast(toast)}
+          onStartNewConversation={({ prefillPrompt }) => {
+            if (typeof window !== "undefined" && window.location.pathname !== "/") {
+              window.history.replaceState(window.history.state, "", "/");
+            }
+            openNewConversation({
+              focusComposerNonce: Date.now(),
+              prefillPrompt,
+            });
+          }}
+        />
+        <AppToastRegion toast={appToast} onDismiss={() => setAppToast(null)} />
+      </>
+    );
+  }
+
   if (currentRoute === "debug") {
     return (
       <DebugWindowPage
@@ -4618,6 +4825,14 @@ function App() {
 
   if (currentRoute === "editor-diff") {
     return <EditorDiffPage routeState={editorDiffRouteState} />;
+  }
+
+  if (currentRoute === "global-dictation") {
+    return <GlobalDictationPage />;
+  }
+
+  if (currentRoute === "avatar-overlay") {
+    return <AvatarOverlayPage />;
   }
 
   if (currentRoute === "login") {

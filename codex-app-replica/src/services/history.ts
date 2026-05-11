@@ -815,6 +815,34 @@ export async function forkConversationFromLatest(params: {
   });
 }
 
+export async function forkConversationFromTurn(params: {
+  conversationId: string;
+  targetTurnId: string;
+  cwd: string | null;
+  developerInstructions?: string | null;
+}) {
+  const sourceThread = await readThread(params.conversationId);
+  const targetTurnIndex = sourceThread.turns.findIndex((turn) => turn.id === params.targetTurnId);
+  if (targetTurnIndex < 0) {
+    throw new Error(`Target turn not found: ${params.targetTurnId}`);
+  }
+
+  const forkedThreadId = await forkConversationFromLatest({
+    conversationId: params.conversationId,
+    cwd: params.cwd,
+    developerInstructions: params.developerInstructions ?? null,
+  });
+  const rollbackTurns = Math.max(0, sourceThread.turns.length - (targetTurnIndex + 1));
+  if (rollbackTurns > 0) {
+    await rollbackThread({
+      threadId: forkedThreadId,
+      numTurns: rollbackTurns,
+    });
+  }
+
+  return forkedThreadId;
+}
+
 export async function discardConversationFromCache(conversationId: string) {
   return invoke<void>("discard-conversation-from-cache", {
     params: {
@@ -846,6 +874,15 @@ export async function unarchiveConversationForHost(params: {
 
 export async function setThreadName(params: { threadId: string; name: string | null }) {
   return invoke<void>("set_thread_name", params);
+}
+
+export async function setThreadGoal(params: { threadId: string; objective: string }) {
+  return invoke<void>("set-thread-goal", {
+    params: {
+      threadId: params.threadId,
+      objective: params.objective,
+    },
+  });
 }
 
 export async function startTurn(params: { threadId: string; text: string; cwd: string | null }) {

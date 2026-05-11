@@ -128,33 +128,37 @@ export function ScratchpadPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="border-b border-[var(--app-shell-border)] px-5 py-4">
-        <div className="mx-auto flex max-w-[820px] items-start justify-between gap-4">
-          <div className="min-w-0">
-            <div className="app-title text-[14px] font-medium">{t("scratchpadPage.headerTitle")}</div>
-            <div className="app-text-muted mt-1 text-[13px] leading-6">{t("scratchpadPage.headerSubtitle")}</div>
+      <div className="draggable grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-b border-[var(--app-shell-border)] px-5 electron:h-toolbar">
+        <div className="min-w-0">
+          <div className="text-md flex min-w-0 items-center gap-2 truncate text-base electron:font-medium">
+            <span className="app-title truncate">{t("scratchpadPage.headerTitle")}</span>
+            <span className="app-text-muted shrink-0 text-[12px] font-normal leading-[18px]">
+              {t("scratchpadPage.headerSubtitle")}
+            </span>
           </div>
+        </div>
+        <div className="flex items-center justify-end gap-1.5">
           <button
             type="button"
             onClick={clearRows}
-            className="app-control rounded-full px-3 py-1.5 text-[12px]"
+            className="app-control rounded-full px-3 py-1 text-[12px]"
           >
             {t("scratchpadPage.clearButton")}
           </button>
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex max-w-[820px] flex-col gap-3 px-5 py-5">
+      <div className="mx-auto flex min-h-0 w-full max-w-[var(--thread-composer-max-width)] flex-1 overflow-x-visible overflow-y-auto pt-panel pr-panel pb-panel pl-20">
+        <div className="flex w-full flex-col">
           {rows.map((row) => (
-            <ScratchpadRowCard key={row.id} row={row} t={t} />
+            <ScratchpadRowItem key={row.id} row={row} t={t} />
           ))}
 
-          <div className={["app-card rounded-[18px] px-4 py-4", draftIsIndented ? "ml-6" : ""].join(" ")}>
-            <div className="flex items-start gap-3">
-              <div className="pt-1 text-[12px] leading-6 text-[var(--app-shell-subtle)]">
-                {draftIsIndented ? "↳" : "•"}
-              </div>
+          <div className="group relative flex w-full items-start gap-2">
+            <div className="flex shrink-0 pt-1.5">
+              <UnselectedCircleIcon className="icon-sm shrink-0 text-token-input-placeholder-foreground/70" />
+            </div>
+            <div className="relative min-w-0 flex-1">
               <textarea
                 aria-label={t("scratchpadPage.headerTitle")}
                 autoFocus
@@ -173,8 +177,8 @@ export function ScratchpadPage() {
                   }
                 }}
                 placeholder={t(placeholderKey)}
-                rows={4}
-                className="app-text-input min-h-[104px] w-full resize-none border-0 bg-transparent text-[14px] leading-6 outline-none"
+                rows={1}
+                className="max-h-none min-h-9 min-w-0 w-full resize-none border-0 bg-transparent py-1.5 text-base outline-none placeholder:text-token-input-placeholder-foreground"
               />
             </div>
           </div>
@@ -184,26 +188,91 @@ export function ScratchpadPage() {
   );
 }
 
-function ScratchpadRowCard({ row, t }: { row: ScratchpadRow; t: ReturnType<typeof useI18n>["t"] }) {
+function ScratchpadRowItem({ row, t }: { row: ScratchpadRow; t: ReturnType<typeof useI18n>["t"] }) {
+  const hoverTimestamp = formatHoverTimestamp(row.createdAt);
+  const indentClass = row.isIndented ? "pl-6" : "";
+
   return (
-    <div className={row.isIndented ? "ml-6" : ""}>
-      <div className="app-card rounded-[18px] px-4 py-3">
-        <div className="flex items-start gap-3">
-          <div className="pt-1 text-[12px] leading-6 text-[var(--app-shell-subtle)]">
-            {row.isIndented ? "↳" : "•"}
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="whitespace-pre-wrap text-[14px] leading-6">{row.text}</div>
-            {row.status === "loading" ? (
-              <div className="app-text-muted mt-2 text-[12px] leading-5">{t("scratchpadPage.summaryLoading")}</div>
-            ) : row.summary ? (
-              <div className="app-text-muted mt-2 text-[12px] leading-5">{row.summary}</div>
-            ) : null}
-          </div>
+    <div className={["group relative flex w-full items-start gap-2", indentClass].filter(Boolean).join(" ")}>
+      <div className="invisible absolute top-0 left-[-4.5rem] flex h-full w-[4rem] items-start justify-end pt-1.5 pr-2 text-[12px] text-token-description-foreground opacity-0 transition-[opacity,visibility] group-hover:visible group-hover:opacity-100">
+        {hoverTimestamp}
+      </div>
+      <div className="flex shrink-0 pt-1.5">
+        {row.status === "loading" ? (
+          <SpinnerIcon className="icon-sm shrink-0 text-token-description-foreground" />
+        ) : (
+          <CheckCircleFilledIcon className="icon-sm text-token-success-foreground shrink-0" />
+        )}
+      </div>
+      <div className="min-w-0 flex-1 py-1.5">
+        <div className="min-w-0 truncate text-base text-token-foreground" title={row.text}>
+          {row.text}
         </div>
+        {row.status === "loading" ? (
+          <div className="app-text-muted mt-1 text-[12px] leading-5">
+            {t("scratchpadPage.summaryLoading")}
+          </div>
+        ) : row.summary ? (
+          <div className="app-text-muted mt-1 text-[12px] leading-5">{row.summary}</div>
+        ) : null}
       </div>
     </div>
   );
+}
+
+function UnselectedCircleIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" />
+    </svg>
+  );
+}
+
+function SpinnerIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" opacity="0.25" />
+      <path
+        d="M21 12a9 9 0 0 1-9 9"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      >
+        <animateTransform
+          attributeName="transform"
+          type="rotate"
+          from="0 12 12"
+          to="360 12 12"
+          dur="1s"
+          repeatCount="indefinite"
+        />
+      </path>
+    </svg>
+  );
+}
+
+function CheckCircleFilledIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.59L5.41 12l1.42-1.41L10 13.76l7.17-7.18 1.42 1.42L10 16.59z" />
+    </svg>
+  );
+}
+
+function formatHoverTimestamp(timestampMs: number) {
+  const date = new Date(timestampMs);
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
 }
 
 function buildScratchpadSummary(text: string) {

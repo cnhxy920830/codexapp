@@ -520,6 +520,18 @@ export type MessageKey =
   | "codex.review.loadFullFiles.disable"
   | "codex.review.diff.fullContentLoadFailed"
   | "codex.common.retry"
+  | "dictation.error.connection"
+  | "dictation.error.microphoneMissing"
+  | "dictation.error.microphonePermissionDenied"
+  | "dictation.error.microphoneUnavailable"
+  | "dictation.error.unsupported"
+  | "composer.dictation.startError"
+  | "composer.dictation.transcribeError"
+  | "globalDictation.dismissError"
+  | "globalDictation.listening"
+  | "globalDictation.retry"
+  | "globalDictation.transcribing"
+  | "globalDictation.waveformAriaLabel"
   | "codex.review.richPreview.enable"
   | "codex.review.richPreview.disable"
   | "codex.review.wordDiffs.enable"
@@ -809,6 +821,16 @@ export type MessageKey =
   | "settings.browserUse.historyApproval.neverAsk.label"
   | "settings.browserUse.historyApproval.neverAsk.description"
   | "settings.browserUse.historyApproval.saveError"
+  | "settings.browserUse.downloadApproval.label"
+  | "settings.browserUse.downloadApproval.description"
+  | "settings.browserUse.downloadApproval.alwaysAsk.description"
+  | "settings.browserUse.downloadApproval.neverAsk.description"
+  | "settings.browserUse.downloadApproval.saveError"
+  | "settings.browserUse.uploadApproval.label"
+  | "settings.browserUse.uploadApproval.description"
+  | "settings.browserUse.uploadApproval.alwaysAsk.description"
+  | "settings.browserUse.uploadApproval.neverAsk.description"
+  | "settings.browserUse.uploadApproval.saveError"
   | "settings.browserUse.allowedDomains.title"
   | "settings.browserUse.allowedDomains.subtitle"
   | "settings.browserUse.allowedDomains.emptyTitle"
@@ -821,6 +843,43 @@ export type MessageKey =
   | "settings.browserUse.blockedDomains.added"
   | "settings.browserUse.blockedDomains.addDialogTitle"
   | "settings.browserUse.blockedDomains.addDialogSubtitle"
+  | "settings.browserUse.blockedDomains.chromeSubtitle"
+  | "settings.browserUse.allowedDownloadDomains.title"
+  | "settings.browserUse.allowedDownloadDomains.subtitle"
+  | "settings.browserUse.allowedDownloadDomains.emptyTitle"
+  | "settings.browserUse.allowedDownloadDomains.added"
+  | "settings.browserUse.allowedDownloadDomains.removed"
+  | "settings.browserUse.allowedDownloadDomains.addDialogTitle"
+  | "settings.browserUse.allowedDownloadDomains.addDialogSubtitle"
+  | "settings.browserUse.allowedDownloadDomains.removeDialogTitle"
+  | "settings.browserUse.allowedDownloadDomains.removeDialogSubtitle"
+  | "settings.browserUse.blockedDownloadDomains.title"
+  | "settings.browserUse.blockedDownloadDomains.subtitle"
+  | "settings.browserUse.blockedDownloadDomains.emptyTitle"
+  | "settings.browserUse.blockedDownloadDomains.added"
+  | "settings.browserUse.blockedDownloadDomains.removed"
+  | "settings.browserUse.blockedDownloadDomains.addDialogTitle"
+  | "settings.browserUse.blockedDownloadDomains.addDialogSubtitle"
+  | "settings.browserUse.blockedDownloadDomains.removeDialogTitle"
+  | "settings.browserUse.blockedDownloadDomains.removeDialogSubtitle"
+  | "settings.browserUse.allowedUploadDomains.title"
+  | "settings.browserUse.allowedUploadDomains.subtitle"
+  | "settings.browserUse.allowedUploadDomains.emptyTitle"
+  | "settings.browserUse.allowedUploadDomains.added"
+  | "settings.browserUse.allowedUploadDomains.removed"
+  | "settings.browserUse.allowedUploadDomains.addDialogTitle"
+  | "settings.browserUse.allowedUploadDomains.addDialogSubtitle"
+  | "settings.browserUse.allowedUploadDomains.removeDialogTitle"
+  | "settings.browserUse.allowedUploadDomains.removeDialogSubtitle"
+  | "settings.browserUse.blockedUploadDomains.title"
+  | "settings.browserUse.blockedUploadDomains.subtitle"
+  | "settings.browserUse.blockedUploadDomains.emptyTitle"
+  | "settings.browserUse.blockedUploadDomains.added"
+  | "settings.browserUse.blockedUploadDomains.removed"
+  | "settings.browserUse.blockedUploadDomains.addDialogTitle"
+  | "settings.browserUse.blockedUploadDomains.addDialogSubtitle"
+  | "settings.browserUse.blockedUploadDomains.removeDialogTitle"
+  | "settings.browserUse.blockedUploadDomains.removeDialogSubtitle"
   | "settings.browserUse.domains.add"
   | "settings.browserUse.domains.addDialogAriaLabel"
   | "settings.browserUse.domains.addDialogPlaceholder"
@@ -841,6 +900,27 @@ export type MessageKey =
   | "settings.computerUse.install.title"
   | "settings.computerUse.install.button"
   | "settings.computerUse.install.empty"
+  | "settings.computerUse.subtitle"
+  | "settings.computerUse.sounds.foregroundClicks"
+  | "settings.computerUse.sounds.foregroundAndBackgroundClicks"
+  | "settings.computerUse.sounds.off"
+  | "settings.computerUse.anyApp.title"
+  | "settings.computerUse.anyApp.description"
+  | "settings.computerUse.chrome.pluginTitle"
+  | "settings.computerUse.chrome.pluginDescription"
+  | "settings.computerUse.chrome.pluginConnectedDescription"
+  | "settings.computerUse.chrome.pluginDisconnectedDescription"
+  | "settings.computerUse.chrome.manage"
+  | "settings.computerUse.chrome.title"
+  | "settings.computerUse.chrome.reinstallExtension"
+  | "settings.computerUse.chrome.openExtensionSettingsError"
+  | "settings.computerUse.chrome.removeExtension"
+  | "settings.computerUse.chrome.permissions.title"
+  | "settings.computerUse.chrome.connected"
+  | "settings.computerUse.chrome.notConnected"
+  | "settings.computerUse.chrome.back"
+  | "settings.computerUse.breadcrumb.computerUse"
+  | "settings.computerUse.chrome.breadcrumb.googleChrome"
   | "settings.computerUse.allowedApps.title"
   | "settings.computerUse.allowedApps.loading"
   | "settings.computerUse.allowedApps.loadError"
@@ -852,6 +932,10 @@ export type MessageKey =
   | "settings.computerUse.allowedApps.removeDialogConfirm"
   | "settings.computerUse.allowedApps.saved"
   | "settings.computerUse.allowedApps.saveError"
+  | "settings.pluginControls.disableToggleTooltip"
+  | "settings.pluginControls.enableToggleTooltip"
+  | "settings.pluginControls.toggleAria"
+  | "settings.pluginControls.installTooltip"
   | "plugins.installModal.about"
   | "plugins.installModal.capabilities"
   | "plugins.installModal.developedBy"
@@ -1477,6 +1561,43 @@ export type MessageKey =
   | "electron.onboarding.login.apikey.continue"
   | "electron.onboarding.login.browserPending.welcomeV2"
   | "electron.onboarding.login.signup.welcomeV2"
+  | "electron.onboarding.login.includedPlans.welcomeV2"
+  | "avatarOverlay.statusRunning"
+  | "avatarOverlay.statusRunningSubtitle"
+  | "avatarOverlay.statusWaiting"
+  | "avatarOverlay.statusReview"
+  | "avatarOverlay.statusFailed"
+  | "avatarOverlay.statusInfo"
+  | "avatarOverlay.session.calledTool"
+  | "avatarOverlay.session.callingTool"
+  | "avatarOverlay.session.callingToolName"
+  | "avatarOverlay.session.editedFiles"
+  | "avatarOverlay.session.editingFiles"
+  | "avatarOverlay.session.newThread"
+  | "avatarOverlay.session.ranCommand"
+  | "avatarOverlay.session.runningCommand"
+  | "avatarOverlay.openNotification"
+  | "avatarOverlay.dismissNotification"
+  | "avatarOverlay.dismissNotificationTooltip"
+  | "avatarOverlay.replyNotification"
+  | "avatarOverlay.replyNotificationButton"
+  | "avatarOverlay.sendNotificationReply"
+  | "avatarOverlay.notificationReplyPlaceholder"
+  | "avatarOverlay.notificationReplyError"
+  | "avatarOverlay.expandNotification"
+  | "avatarOverlay.collapseNotification"
+  | "avatarOverlay.expandNotificationTooltip"
+  | "avatarOverlay.collapseNotificationTooltip"
+  | "avatarOverlay.collapseNotificationTray"
+  | "avatarOverlay.notificationList"
+  | "avatarOverlay.latestNotifications"
+  | "avatarOverlay.showLatestNotifications"
+  | "avatarOverlay.showOlderNotifications"
+  | "avatarOverlay.olderNotificationCount"
+  | "avatarOverlay.compactOlderNotificationCount"
+  | "avatarOverlay.toggleNotificationTray"
+  | "petOverlay.mascotLabel"
+  | "petOverlay.closePet"
   | "history.noMessageYet";
 
 type MessageDictionary = Record<MessageKey, string>;
@@ -2002,6 +2123,18 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.review.loadFullFiles.disable": "Don't load full files",
     "codex.review.diff.fullContentLoadFailed": "Full file content failed to load",
     "codex.common.retry": "Retry",
+    "dictation.error.connection": "Check your connection and try again",
+    "dictation.error.microphoneMissing": "Connect a microphone to use dictation",
+    "dictation.error.microphonePermissionDenied": "Allow microphone access to use dictation",
+    "dictation.error.microphoneUnavailable": "Close other apps using the microphone",
+    "dictation.error.unsupported": "Dictation is not available on this device",
+    "composer.dictation.startError": "Unable to start dictation",
+    "composer.dictation.transcribeError": "Unable to transcribe audio",
+    "globalDictation.dismissError": "Dismiss",
+    "globalDictation.listening": "Listening",
+    "globalDictation.retry": "Retry",
+    "globalDictation.transcribing": "Transcribing…",
+    "globalDictation.waveformAriaLabel": "Global dictation waveform",
     "codex.review.richPreview.enable": "Enable rich preview",
     "codex.review.richPreview.disable": "Disable rich preview",
     "codex.review.wordDiffs.enable": "Enable word diffs",
@@ -2294,6 +2427,18 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.browserUse.historyApproval.neverAsk.label": "Always allow",
     "settings.browserUse.historyApproval.neverAsk.description": "Access history without asking",
     "settings.browserUse.historyApproval.saveError": "Unable to save history setting",
+    "settings.browserUse.downloadApproval.label": "Downloads",
+    "settings.browserUse.downloadApproval.description":
+      "Choose if Codex asks before downloading files from websites",
+    "settings.browserUse.downloadApproval.alwaysAsk.description": "Ask before downloading files",
+    "settings.browserUse.downloadApproval.neverAsk.description": "Download files without asking",
+    "settings.browserUse.downloadApproval.saveError": "Unable to save download setting",
+    "settings.browserUse.uploadApproval.label": "Uploads",
+    "settings.browserUse.uploadApproval.description":
+      "Choose if Codex asks before uploading files to websites",
+    "settings.browserUse.uploadApproval.alwaysAsk.description": "Ask before uploading files",
+    "settings.browserUse.uploadApproval.neverAsk.description": "Upload files without asking",
+    "settings.browserUse.uploadApproval.saveError": "Unable to save upload setting",
     "settings.browserUse.allowedDomains.title": "Allowed domains",
     "settings.browserUse.allowedDomains.subtitle": "Domains that open without asking",
     "settings.browserUse.allowedDomains.emptyTitle": "No allowed domains",
@@ -2307,6 +2452,60 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.browserUse.blockedDomains.added": "Blocked domain added",
     "settings.browserUse.blockedDomains.addDialogTitle": "Add blocked domain",
     "settings.browserUse.blockedDomains.addDialogSubtitle": "This means Codex will not open this URL.",
+    "settings.browserUse.blockedDomains.chromeSubtitle":
+      "Codex will never open these sites in your browser",
+    "settings.browserUse.allowedDownloadDomains.title": "Allowed download domains",
+    "settings.browserUse.allowedDownloadDomains.subtitle":
+      "Domains that can download files without asking",
+    "settings.browserUse.allowedDownloadDomains.emptyTitle": "No allowed download domains",
+    "settings.browserUse.allowedDownloadDomains.added": "Allowed download domain added",
+    "settings.browserUse.allowedDownloadDomains.removed": "Allowed download domain removed",
+    "settings.browserUse.allowedDownloadDomains.addDialogTitle": "Add allowed download domain",
+    "settings.browserUse.allowedDownloadDomains.addDialogSubtitle":
+      "This means Codex can download files from this URL without asking first",
+    "settings.browserUse.allowedDownloadDomains.removeDialogTitle":
+      "Remove “{origin}” from allowed download domains?",
+    "settings.browserUse.allowedDownloadDomains.removeDialogSubtitle":
+      "Codex will ask before downloading files from this domain",
+    "settings.browserUse.blockedDownloadDomains.title": "Blocked download domains",
+    "settings.browserUse.blockedDownloadDomains.subtitle":
+      "Codex will never download files from these sites",
+    "settings.browserUse.blockedDownloadDomains.emptyTitle": "No blocked download domains",
+    "settings.browserUse.blockedDownloadDomains.added": "Blocked download domain added",
+    "settings.browserUse.blockedDownloadDomains.removed": "Blocked download domain removed",
+    "settings.browserUse.blockedDownloadDomains.addDialogTitle": "Add blocked download domain",
+    "settings.browserUse.blockedDownloadDomains.addDialogSubtitle":
+      "This means Codex will not download files from this URL",
+    "settings.browserUse.blockedDownloadDomains.removeDialogTitle":
+      "Remove “{origin}” from blocked download domains?",
+    "settings.browserUse.blockedDownloadDomains.removeDialogSubtitle":
+      "Codex can ask again before downloading files from this domain",
+    "settings.browserUse.allowedUploadDomains.title": "Allowed upload domains",
+    "settings.browserUse.allowedUploadDomains.subtitle":
+      "Domains that can receive file uploads without asking",
+    "settings.browserUse.allowedUploadDomains.emptyTitle": "No allowed upload domains",
+    "settings.browserUse.allowedUploadDomains.added": "Allowed upload domain added",
+    "settings.browserUse.allowedUploadDomains.removed": "Allowed upload domain removed",
+    "settings.browserUse.allowedUploadDomains.addDialogTitle": "Add allowed upload domain",
+    "settings.browserUse.allowedUploadDomains.addDialogSubtitle":
+      "This means Codex can upload files to this URL without asking first",
+    "settings.browserUse.allowedUploadDomains.removeDialogTitle":
+      "Remove “{origin}” from allowed upload domains?",
+    "settings.browserUse.allowedUploadDomains.removeDialogSubtitle":
+      "Codex will ask before uploading files to this domain",
+    "settings.browserUse.blockedUploadDomains.title": "Blocked upload domains",
+    "settings.browserUse.blockedUploadDomains.subtitle":
+      "Codex will never upload files to these sites",
+    "settings.browserUse.blockedUploadDomains.emptyTitle": "No blocked upload domains",
+    "settings.browserUse.blockedUploadDomains.added": "Blocked upload domain added",
+    "settings.browserUse.blockedUploadDomains.removed": "Blocked upload domain removed",
+    "settings.browserUse.blockedUploadDomains.addDialogTitle": "Add blocked upload domain",
+    "settings.browserUse.blockedUploadDomains.addDialogSubtitle":
+      "This means Codex will not upload files to this URL",
+    "settings.browserUse.blockedUploadDomains.removeDialogTitle":
+      "Remove “{origin}” from blocked upload domains?",
+    "settings.browserUse.blockedUploadDomains.removeDialogSubtitle":
+      "Codex can ask again before uploading files to this domain",
     "settings.browserUse.domains.add": "Add",
     "settings.browserUse.domains.addDialogAriaLabel": "Domain",
     "settings.browserUse.domains.addDialogPlaceholder": "example.com",
@@ -2329,6 +2528,31 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.computerUse.install.title": "Plugin",
     "settings.computerUse.install.button": "Install",
     "settings.computerUse.install.empty": "Computer Use plugin unavailable",
+    "settings.computerUse.subtitle": "Manage how Codex uses other applications on your computer",
+    "settings.computerUse.sounds.foregroundClicks": "Play sounds for foreground clicks",
+    "settings.computerUse.sounds.foregroundAndBackgroundClicks":
+      "Play sounds for foreground and background clicks",
+    "settings.computerUse.sounds.off": "Don’t play sounds",
+    "settings.computerUse.anyApp.title": "Any App",
+    "settings.computerUse.anyApp.description": "Let Codex control apps on your computer",
+    "settings.computerUse.chrome.pluginTitle": "Google Chrome",
+    "settings.computerUse.chrome.pluginDescription":
+      "Use the browser extension for additional control",
+    "settings.computerUse.chrome.pluginConnectedDescription":
+      "Connected to browser extension for additional control",
+    "settings.computerUse.chrome.pluginDisconnectedDescription": "Browser extension not connected",
+    "settings.computerUse.chrome.manage": "Manage",
+    "settings.computerUse.chrome.title": "Google Chrome",
+    "settings.computerUse.chrome.reinstallExtension": "Reinstall extension",
+    "settings.computerUse.chrome.openExtensionSettingsError":
+      "Unable to open Chrome extension settings",
+    "settings.computerUse.chrome.removeExtension": "Remove extension",
+    "settings.computerUse.chrome.permissions.title": "Permissions",
+    "settings.computerUse.chrome.connected": "Connected",
+    "settings.computerUse.chrome.notConnected": "Not connected",
+    "settings.computerUse.chrome.back": "Back",
+    "settings.computerUse.breadcrumb.computerUse": "Computer use",
+    "settings.computerUse.chrome.breadcrumb.googleChrome": "Google Chrome",
     "settings.computerUse.allowedApps.title": "Always-allowed apps",
     "settings.computerUse.allowedApps.loading": "Loading allowed apps",
     "settings.computerUse.allowedApps.loadError": "Unable to load allowed apps.",
@@ -2342,6 +2566,10 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.computerUse.allowedApps.removeDialogConfirm": "Remove",
     "settings.computerUse.allowedApps.saved": "Allowed app removed",
     "settings.computerUse.allowedApps.saveError": "Unable to save allowed apps",
+    "settings.pluginControls.disableToggleTooltip": "Disable {pluginName}",
+    "settings.pluginControls.enableToggleTooltip": "Enable {pluginName}",
+    "settings.pluginControls.toggleAria": "Toggle {pluginName}",
+    "settings.pluginControls.installTooltip": "Install {pluginName}",
     "settings.localEnvironments.workspaceSelect.description":
       "Local environments tell Codex how to set up worktrees for a project. <a>Learn more.</a>",
     "settings.localEnvironments.workspaceSelect.title": "Select a project",
@@ -3003,6 +3231,43 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "electron.onboarding.login.apikey.continue": "Continue",
     "electron.onboarding.login.browserPending.welcomeV2": "Continue signing in with your browser",
     "electron.onboarding.login.signup.welcomeV2": "Sign up",
+    "electron.onboarding.login.includedPlans.welcomeV2": "Included with all ChatGPT plans",
+    "avatarOverlay.statusRunning": "Running",
+    "avatarOverlay.statusRunningSubtitle": "Thinking",
+    "avatarOverlay.statusWaiting": "Needs input",
+    "avatarOverlay.statusReview": "Ready",
+    "avatarOverlay.statusFailed": "Blocked",
+    "avatarOverlay.statusInfo": "Info",
+    "avatarOverlay.session.calledTool": "Called tool",
+    "avatarOverlay.session.callingTool": "Calling tool",
+    "avatarOverlay.session.callingToolName": "Calling {toolName}",
+    "avatarOverlay.session.editedFiles": "Edited {fileCount} files",
+    "avatarOverlay.session.editingFiles": "Editing {fileCount} files",
+    "avatarOverlay.session.newThread": "New chat",
+    "avatarOverlay.session.ranCommand": "Ran command",
+    "avatarOverlay.session.runningCommand": "Running command",
+    "avatarOverlay.openNotification": "Open notification",
+    "avatarOverlay.dismissNotification": "Dismiss {title}",
+    "avatarOverlay.dismissNotificationTooltip": "Dismiss",
+    "avatarOverlay.replyNotification": "Reply to {title}",
+    "avatarOverlay.replyNotificationButton": "Reply",
+    "avatarOverlay.sendNotificationReply": "Send reply to {title}",
+    "avatarOverlay.notificationReplyPlaceholder": "Reply",
+    "avatarOverlay.notificationReplyError": "Unable to send reply",
+    "avatarOverlay.expandNotification": "Expand {title}",
+    "avatarOverlay.collapseNotification": "Collapse {title}",
+    "avatarOverlay.expandNotificationTooltip": "Expand",
+    "avatarOverlay.collapseNotificationTooltip": "Collapse",
+    "avatarOverlay.collapseNotificationTray": "Collapse activity",
+    "avatarOverlay.notificationList": "Activity notifications",
+    "avatarOverlay.latestNotifications": "Latest",
+    "avatarOverlay.showLatestNotifications": "Show latest activity",
+    "avatarOverlay.showOlderNotifications": "Show {count} older activity items",
+    "avatarOverlay.olderNotificationCount": "{count} more",
+    "avatarOverlay.compactOlderNotificationCount": "+{count}",
+    "avatarOverlay.toggleNotificationTray": "Open activity tray, {count} items",
+    "petOverlay.mascotLabel": "{petName} pet",
+    "petOverlay.closePet": "Close pet",
     "history.noMessageYet": "(no message yet)",
     ...PULL_REQUESTS_PAGE_MESSAGES["en-US"],
   },
@@ -3479,6 +3744,18 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.review.loadFullFiles.disable": "不加载完整文件",
     "codex.review.diff.fullContentLoadFailed": "完整文件内容加载失败",
     "codex.common.retry": "重试",
+    "dictation.error.connection": "检查连接后重试",
+    "dictation.error.microphoneMissing": "连接麦克风以使用听写功能",
+    "dictation.error.microphonePermissionDenied": "要使用听写功能，请允许访问麦克风",
+    "dictation.error.microphoneUnavailable": "关闭其他正在使用麦克风的应用",
+    "dictation.error.unsupported": "此设备不支持听写",
+    "composer.dictation.startError": "无法开始听写",
+    "composer.dictation.transcribeError": "无法转录音频",
+    "globalDictation.dismissError": "关闭",
+    "globalDictation.listening": "正在听写",
+    "globalDictation.retry": "重试",
+    "globalDictation.transcribing": "转写中…",
+    "globalDictation.waveformAriaLabel": "全局听写波形",
     "codex.review.richPreview.enable": "启用富文本预览",
     "codex.review.richPreview.disable": "禁用富文本预览",
     "codex.review.wordDiffs.enable": "启用文字差异",
@@ -3771,6 +4048,16 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.browserUse.historyApproval.neverAsk.label": "始终允许",
     "settings.browserUse.historyApproval.neverAsk.description": "无需询问即可访问历史记录",
     "settings.browserUse.historyApproval.saveError": "无法保存历史记录设置",
+    "settings.browserUse.downloadApproval.label": "下载",
+    "settings.browserUse.downloadApproval.description": "选择 Codex 在从网站下载文件前是否先询问",
+    "settings.browserUse.downloadApproval.alwaysAsk.description": "下载文件前询问",
+    "settings.browserUse.downloadApproval.neverAsk.description": "下载文件时不询问",
+    "settings.browserUse.downloadApproval.saveError": "无法保存下载设置",
+    "settings.browserUse.uploadApproval.label": "上传",
+    "settings.browserUse.uploadApproval.description": "选择 Codex 在将文件上传到网站前是否先询问",
+    "settings.browserUse.uploadApproval.alwaysAsk.description": "上传文件前先询问",
+    "settings.browserUse.uploadApproval.neverAsk.description": "上传文件时无需询问",
+    "settings.browserUse.uploadApproval.saveError": "无法保存上传设置",
     "settings.browserUse.allowedDomains.title": "允许的域名",
     "settings.browserUse.allowedDomains.subtitle": "无需询问即可打开的域名",
     "settings.browserUse.allowedDomains.emptyTitle": "没有允许的域名",
@@ -3784,6 +4071,51 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.browserUse.blockedDomains.added": "已添加已屏蔽的域名",
     "settings.browserUse.blockedDomains.addDialogTitle": "添加已屏蔽域名",
     "settings.browserUse.blockedDomains.addDialogSubtitle": "这意味着 Codex 不会打开此 URL。",
+    "settings.browserUse.blockedDomains.chromeSubtitle": "Codex 绝不会在您的浏览器中打开这些网站",
+    "settings.browserUse.allowedDownloadDomains.title": "允许下载的域名",
+    "settings.browserUse.allowedDownloadDomains.subtitle": "无需询问即可下载文件的域名",
+    "settings.browserUse.allowedDownloadDomains.emptyTitle": "没有允许的下载域名",
+    "settings.browserUse.allowedDownloadDomains.added": "已添加允许下载的域名",
+    "settings.browserUse.allowedDownloadDomains.removed": "已移除允许的下载域名",
+    "settings.browserUse.allowedDownloadDomains.addDialogTitle": "添加允许的下载域名",
+    "settings.browserUse.allowedDownloadDomains.addDialogSubtitle":
+      "这意味着 Codex 无需事先询问即可从此 URL 下载文件",
+    "settings.browserUse.allowedDownloadDomains.removeDialogTitle": "从允许的下载域中移除“{origin}”？",
+    "settings.browserUse.allowedDownloadDomains.removeDialogSubtitle":
+      "Codex 从此域下载文件前会先询问",
+    "settings.browserUse.blockedDownloadDomains.title": "已阻止的下载域名",
+    "settings.browserUse.blockedDownloadDomains.subtitle": "Codex 绝不会从这些网站下载文件",
+    "settings.browserUse.blockedDownloadDomains.emptyTitle": "没有被阻止的下载域名",
+    "settings.browserUse.blockedDownloadDomains.added": "已添加受阻止的下载域名",
+    "settings.browserUse.blockedDownloadDomains.removed": "已移除被阻止的下载域名",
+    "settings.browserUse.blockedDownloadDomains.addDialogTitle": "添加被阻止的下载域名",
+    "settings.browserUse.blockedDownloadDomains.addDialogSubtitle":
+      "这意味着 Codex 不会从此 URL 下载文件",
+    "settings.browserUse.blockedDownloadDomains.removeDialogTitle": "将“{origin}”从已阻止的下载域中移除？",
+    "settings.browserUse.blockedDownloadDomains.removeDialogSubtitle":
+      "Codex 可以在从此域下载文件前再次询问",
+    "settings.browserUse.allowedUploadDomains.title": "允许上传的域名",
+    "settings.browserUse.allowedUploadDomains.subtitle": "无需询问即可接收文件上传的域名",
+    "settings.browserUse.allowedUploadDomains.emptyTitle": "没有允许的上传域名",
+    "settings.browserUse.allowedUploadDomains.added": "已添加允许上传域名",
+    "settings.browserUse.allowedUploadDomains.removed": "已移除允许上传的域名",
+    "settings.browserUse.allowedUploadDomains.addDialogTitle": "添加允许上传的域名",
+    "settings.browserUse.allowedUploadDomains.addDialogSubtitle":
+      "这意味着 Codex 无需事先询问即可将文件上传到此 URL",
+    "settings.browserUse.allowedUploadDomains.removeDialogTitle": "从允许上传域名中移除“{origin}”？",
+    "settings.browserUse.allowedUploadDomains.removeDialogSubtitle":
+      "Codex 在向此域名上传文件前会先询问",
+    "settings.browserUse.blockedUploadDomains.title": "已阻止的上传域名",
+    "settings.browserUse.blockedUploadDomains.subtitle": "Codex 绝不会将文件上传到这些网站",
+    "settings.browserUse.blockedUploadDomains.emptyTitle": "没有被阻止的上传域名",
+    "settings.browserUse.blockedUploadDomains.added": "已添加受阻止的上传域名",
+    "settings.browserUse.blockedUploadDomains.removed": "已移除受阻止的上传域名",
+    "settings.browserUse.blockedUploadDomains.addDialogTitle": "添加被阻止的上传域",
+    "settings.browserUse.blockedUploadDomains.addDialogSubtitle":
+      "这意味着 Codex 不会将文件上传到此 URL",
+    "settings.browserUse.blockedUploadDomains.removeDialogTitle": "要从已阻止的上传域中移除“{origin}”吗？",
+    "settings.browserUse.blockedUploadDomains.removeDialogSubtitle":
+      "Codex 在向此域上传文件前可以再次询问",
     "settings.browserUse.domains.add": "添加",
     "settings.browserUse.domains.addDialogAriaLabel": "域名",
     "settings.browserUse.domains.addDialogPlaceholder": "example.com",
@@ -3804,6 +4136,28 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.computerUse.install.title": "插件",
     "settings.computerUse.install.button": "安装",
     "settings.computerUse.install.empty": "电脑操控插件不可用",
+    "settings.computerUse.subtitle": "管理 Codex 如何使用您电脑上的其他应用程序",
+    "settings.computerUse.sounds.foregroundClicks": "为前台点击播放音效",
+    "settings.computerUse.sounds.foregroundAndBackgroundClicks": "为前台和后台点击播放音效",
+    "settings.computerUse.sounds.off": "不播放音效",
+    "settings.computerUse.anyApp.title": "任何应用",
+    "settings.computerUse.anyApp.description": "允许 Codex 控制您电脑上的应用",
+    "settings.computerUse.chrome.pluginTitle": "Google Chrome",
+    "settings.computerUse.chrome.pluginDescription": "使用浏览器扩展程序，以获得更多控制选项",
+    "settings.computerUse.chrome.pluginConnectedDescription":
+      "已连接到浏览器扩展程序，可进行更多控制",
+    "settings.computerUse.chrome.pluginDisconnectedDescription": "浏览器扩展程序未连接",
+    "settings.computerUse.chrome.manage": "管理",
+    "settings.computerUse.chrome.title": "Google Chrome",
+    "settings.computerUse.chrome.reinstallExtension": "重新安装扩展程序",
+    "settings.computerUse.chrome.openExtensionSettingsError": "无法打开 Chrome 扩展程序设置",
+    "settings.computerUse.chrome.removeExtension": "移除扩展程序",
+    "settings.computerUse.chrome.permissions.title": "权限",
+    "settings.computerUse.chrome.connected": "已连接",
+    "settings.computerUse.chrome.notConnected": "未连接",
+    "settings.computerUse.chrome.back": "返回",
+    "settings.computerUse.breadcrumb.computerUse": "Computer Use",
+    "settings.computerUse.chrome.breadcrumb.googleChrome": "Google Chrome",
     "settings.computerUse.allowedApps.title": "始终允许的应用",
     "settings.computerUse.allowedApps.loading": "正在加载允许使用的应用",
     "settings.computerUse.allowedApps.loadError": "无法加载允许使用的应用。",
@@ -3816,6 +4170,10 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.computerUse.allowedApps.removeDialogConfirm": "移除",
     "settings.computerUse.allowedApps.saved": "已移除允许使用的应用",
     "settings.computerUse.allowedApps.saveError": "无法保存允许使用的应用",
+    "settings.pluginControls.disableToggleTooltip": "禁用 {pluginName}",
+    "settings.pluginControls.enableToggleTooltip": "启用 {pluginName}",
+    "settings.pluginControls.toggleAria": "切换 {pluginName}",
+    "settings.pluginControls.installTooltip": "安装 {pluginName}",
     "settings.localEnvironments.workspaceSelect.description":
       "本地环境用于指示 Codex 如何为项目设置工作树。<a>了解更多。</a>",
     "settings.localEnvironments.workspaceSelect.title": "选择项目",
@@ -4450,6 +4808,43 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "electron.onboarding.login.apikey.continue": "继续",
     "electron.onboarding.login.browserPending.welcomeV2": "请继续在浏览器中登录。",
     "electron.onboarding.login.signup.welcomeV2": "注册",
+    "electron.onboarding.login.includedPlans.welcomeV2": "所有 ChatGPT 套餐均包含",
+    "avatarOverlay.statusRunning": "运行中",
+    "avatarOverlay.statusRunningSubtitle": "思考中",
+    "avatarOverlay.statusWaiting": "需要输入",
+    "avatarOverlay.statusReview": "已就绪",
+    "avatarOverlay.statusFailed": "已阻塞",
+    "avatarOverlay.statusInfo": "信息",
+    "avatarOverlay.session.calledTool": "调用了工具",
+    "avatarOverlay.session.callingTool": "正在调用工具",
+    "avatarOverlay.session.callingToolName": "正在调用 {toolName}",
+    "avatarOverlay.session.editedFiles": "编辑了 {fileCount} 个文件",
+    "avatarOverlay.session.editingFiles": "正在编辑 {fileCount} 个文件",
+    "avatarOverlay.session.newThread": "新对话",
+    "avatarOverlay.session.ranCommand": "已运行命令",
+    "avatarOverlay.session.runningCommand": "正在运行命令",
+    "avatarOverlay.openNotification": "打开通知",
+    "avatarOverlay.dismissNotification": "关闭 {title}",
+    "avatarOverlay.dismissNotificationTooltip": "关闭",
+    "avatarOverlay.replyNotification": "回复 {title}",
+    "avatarOverlay.replyNotificationButton": "回复",
+    "avatarOverlay.sendNotificationReply": "向 {title} 发送回复",
+    "avatarOverlay.notificationReplyPlaceholder": "回复",
+    "avatarOverlay.notificationReplyError": "无法发送回复",
+    "avatarOverlay.expandNotification": "展开 {title}",
+    "avatarOverlay.collapseNotification": "折叠 {title}",
+    "avatarOverlay.expandNotificationTooltip": "展开",
+    "avatarOverlay.collapseNotificationTooltip": "折叠",
+    "avatarOverlay.collapseNotificationTray": "折叠活动",
+    "avatarOverlay.notificationList": "活动通知",
+    "avatarOverlay.latestNotifications": "最新",
+    "avatarOverlay.showLatestNotifications": "查看最新活动",
+    "avatarOverlay.showOlderNotifications": "查看 {count} 条较早的活动",
+    "avatarOverlay.olderNotificationCount": "还有 {count} 条",
+    "avatarOverlay.compactOlderNotificationCount": "+{count}",
+    "avatarOverlay.toggleNotificationTray": "打开活动栏，{count} 项",
+    "petOverlay.mascotLabel": "{petName} 宠物",
+    "petOverlay.closePet": "关闭宠物",
     "history.noMessageYet": "(暂无消息)",
     ...PULL_REQUESTS_PAGE_MESSAGES["zh-CN"],
   },

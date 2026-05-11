@@ -75,10 +75,25 @@ export function LoginRouteView({
           >
             <img alt="" aria-hidden="true" className="size-[52px] shrink-0" draggable={false} src={codexAppGaLogo} />
           </button>
-          <div className="flex w-full flex-col items-center text-center">
+          <div className="flex w-full flex-col items-center gap-3 text-center">
             <h1 className="w-[316px] text-[28px] leading-9 font-normal text-token-foreground">
               {t("electron.onboarding.login.welcomeV2.title")}
             </h1>
+            <span className="flex items-center justify-center gap-1.5 rounded-full bg-[#4452ff]/[0.08] py-1 pr-3 pl-2.5 text-[13px] leading-5 font-normal tracking-[-0.078px] text-[#4452ff] dark:bg-[#4452ff]/25 dark:text-[#7882ff]">
+              <svg
+                aria-hidden="true"
+                className="size-3.5 shrink-0"
+                fill="none"
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+              >
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
+              {t("electron.onboarding.login.includedPlans.welcomeV2")}
+            </span>
           </div>
         </div>
         {isApiKeyEntryVisible ? (

@@ -15,6 +15,7 @@ mod external_agent_import;
 mod fast_mode_rollout_metrics;
 mod git_origins;
 mod global_dictation;
+mod global_dictation_transcription;
 mod global_dictation_window;
 mod global_settings;
 mod host_files;
@@ -116,6 +117,7 @@ use auth_bridge::save_plugin_share_command;
 use auth_bridge::send_add_credits_nudge_email;
 use auth_bridge::set_experimental_feature_enablement;
 use auth_bridge::set_personality;
+use auth_bridge::set_thread_goal;
 use auth_bridge::set_thread_name;
 use auth_bridge::shared_state;
 use auth_bridge::start_review;
@@ -199,6 +201,7 @@ use external_agent_import::external_agent_import_status;
 use fast_mode_rollout_metrics::fast_mode_rollout_metrics;
 use git_origins::git_origins;
 use global_dictation::request_microphone_permission;
+use global_dictation_transcription::global_dictation_transcribe_audio;
 use global_dictation_window::global_dictation_completed;
 use global_dictation_window::global_dictation_dismiss;
 use global_dictation_window::global_dictation_enabled_changed;
@@ -405,6 +408,7 @@ pub fn run() {
             global_dictation_prewarm,
             global_dictation_show_and_start,
             global_dictation_stop,
+            global_dictation_transcribe_audio,
             global_dictation_window_layout,
             global_dictation_hide,
             global_dictation_recording_stopped,
@@ -522,6 +526,7 @@ pub fn run() {
             unarchive_thread,
             unarchive_conversation_command,
             set_thread_name,
+            set_thread_goal,
             start_turn,
             start_turn_with_input,
             start_review,

@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { getGlobalState, setGlobalState } from "./settings";
 
 export type WorktreesSettingsSnapshot = {
@@ -37,4 +38,18 @@ export async function setWorktreesAutoCleanupEnabled(value: boolean) {
 
 export async function setWorktreesKeepCount(value: number) {
   return setGlobalState(KEEP_COUNT_KEY, value);
+}
+
+export async function setWorktreeOwnerThread(params: {
+  hostId?: string | null;
+  worktree: string;
+  conversationId: string;
+}) {
+  return invoke<void>("worktree-set-owner-thread", {
+    params: {
+      hostId: params.hostId ?? null,
+      worktree: params.worktree,
+      conversationId: params.conversationId,
+    },
+  });
 }

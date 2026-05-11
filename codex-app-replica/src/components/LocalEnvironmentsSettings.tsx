@@ -61,10 +61,12 @@ type EditableLocalEnvironmentDocument = Omit<LocalEnvironmentDocument, "actions"
 
 export function LocalEnvironmentsSettings({
   codexHome,
+  routeSearch,
   selectedHostId,
   onShowToast,
 }: {
   codexHome: string | null;
+  routeSearch?: string;
   selectedHostId: string;
   onShowToast?: (toast: AppToast) => void;
 }) {
@@ -95,6 +97,7 @@ export function LocalEnvironmentsSettings({
   const [cleanupPlatform, setCleanupPlatform] = useState<ScriptPlatformSelection>("default");
   const [isSetupEnvVarsOpen, setIsSetupEnvVarsOpen] = useState(false);
   const [workspaceRootsReloadVersion, setWorkspaceRootsReloadVersion] = useState(0);
+  const routeSelection = useMemo(() => parseLocalEnvironmentRouteSearch(routeSearch), [routeSearch]);
 
   const selectedWorkspacePath = useMemo(() => {
     if (!selectedWorkspaceRoot) {
@@ -209,6 +212,23 @@ export function LocalEnvironmentsSettings({
       cancelled = true;
     };
   }, [isRemoteHost, selectedHostId, workspaceRootsReloadVersion]);
+
+  useEffect(() => {
+    if (routeSelection.workspaceRoot === null || workspaceRoots.length === 0) {
+      return;
+    }
+
+    const requestedWorkspaceRoot = routeSelection.workspaceRoot;
+    const matchingWorkspaceRoot =
+      workspaceRoots.find(
+        (workspaceRoot) => normalizeComparablePath(workspaceRoot) === normalizeComparablePath(requestedWorkspaceRoot),
+      ) ?? null;
+    if (matchingWorkspaceRoot === null) {
+      return;
+    }
+
+    setSelectedWorkspaceRoot((current) => (current === matchingWorkspaceRoot ? current : matchingWorkspaceRoot));
+  }, [routeSelection.workspaceRoot, workspaceRoots]);
 
   useEffect(() => {
     let disposed = false;
@@ -396,6 +416,57 @@ export function LocalEnvironmentsSettings({
       cancelled = true;
     };
   }, [reloadVersion, selectedHostId, selectedWorkspacePath]);
+
+  useEffect(() => {
+    if (!normalizedSelectedWorkspaceRoot) {
+      return;
+    }
+
+    if (
+      routeSelection.workspaceRoot !== null &&
+      normalizeComparablePath(routeSelection.workspaceRoot) !== normalizeComparablePath(normalizedSelectedWorkspaceRoot)
+    ) {
+      return;
+    }
+
+    if (
+      routeSelection.configPath !== null &&
+      isConfigPathForWorkspace(routeSelection.configPath, normalizedSelectedWorkspaceRoot)
+    ) {
+      setSelectedConfigPath((current) => (current === routeSelection.configPath ? current : routeSelection.configPath));
+    }
+
+    if (routeSelection.mode === "edit") {
+      const nextConfigPath =
+        routeSelection.configPath ??
+        selectedWorkspacePath ??
+        createDefaultLocalEnvironmentConfigPath(environmentEntries, normalizedSelectedWorkspaceRoot);
+      if (selectedWorkspacePath !== nextConfigPath) {
+        setSelectedConfigPath(nextConfigPath);
+      }
+      const sourceDocument =
+        previewEnvironment ?? createDefaultLocalEnvironmentDocument(normalizedSelectedWorkspaceRoot);
+      const editable = toEditableDocument(sourceDocument);
+      setEditableEnvironment(editable);
+      setInitialFingerprint(JSON.stringify(toPersistedDocument(editable)));
+      setSaveErrorMessage(null);
+      setSetupPlatform("default");
+      setCleanupPlatform("default");
+      setIsSetupEnvVarsOpen(false);
+      setIsEditMode(true);
+      return;
+    }
+
+    if (routeSelection.mode === "preview") {
+      setIsEditMode(false);
+    }
+  }, [
+    environmentEntries,
+    normalizedSelectedWorkspaceRoot,
+    previewEnvironment,
+    routeSelection,
+    selectedWorkspacePath,
+  ]);
 
   const openEditor = () => {
     if (!normalizedSelectedWorkspaceRoot) {
@@ -1802,6 +1873,21 @@ function normalizeComparablePath(path: string) {
   return path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }
 
+function parseLocalEnvironmentRouteSearch(routeSearch?: string) {
+  const search = typeof routeSearch === "string" ? routeSearch : "";
+  const params = new URLSearchParams(search.startsWith("?") ? search : `?${search}`);
+  const workspaceRoot = normalizeOptionalRouteValue(params.get("workspaceRoot"));
+  const configPath = normalizeOptionalRouteValue(params.get("configPath"));
+  const rawMode = normalizeOptionalRouteValue(params.get("mode"));
+  const mode = rawMode === "edit" || rawMode === "preview" ? rawMode : null;
+
+  return {
+    workspaceRoot,
+    configPath,
+    mode,
+  };
+}
+
 async function persistWorktreeLocalEnvironmentConfigPath(workspaceRoot: string, configPath: string) {
   const response = await readConfig(workspaceRoot);
   const projectScope = buildConfigScopeOptions(response).find(
@@ -1826,6 +1912,10 @@ async function persistWorktreeLocalEnvironmentConfigPath(workspaceRoot: string, 
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function normalizeOptionalRouteValue(value: string | null) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
 function formatScriptPlatformLabel(

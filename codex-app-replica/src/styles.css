@@ -40,6 +40,8 @@
   --app-shell-right-width: 332px;
   --app-shell-panel-gap: 12px;
   --padding-panel: var(--app-shell-panel-gap);
+  --thread-composer-max-width: 48rem;
+  --thread-content-max-width: 48rem;
   --height-toolbar: var(--app-shell-toolbar);
   --height-toolbar-sm: var(--app-shell-toolbar-sm);
   --codex-window-zoom: 1;
@@ -249,6 +251,14 @@ pre,
 
 .pb-panel {
   padding-bottom: var(--padding-panel);
+}
+
+.pt-panel {
+  padding-top: var(--padding-panel);
+}
+
+.pr-panel {
+  padding-right: var(--padding-panel);
 }
 
 .h-toolbar {

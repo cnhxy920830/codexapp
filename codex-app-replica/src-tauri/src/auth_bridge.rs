@@ -1581,12 +1581,20 @@ enum AppServerRequestKind {
     ThreadUnsubscribe,
     ThreadUnarchive,
     ThreadNameSet,
+    ThreadGoalSet,
     ThreadRead,
     ThreadRollback,
     ReviewStart,
     TurnStart,
     TurnSteer,
     TurnInterrupt,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SetThreadGoalParams {
+    pub thread_id: String,
+    pub objective: String,
 }
 
 struct AppServerRequest {
@@ -3357,6 +3365,23 @@ pub async fn set_thread_name(
     .map(|_| ())
 }
 
+#[tauri::command(rename = "set-thread-goal")]
+pub async fn set_thread_goal(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: SetThreadGoalParams,
+) -> Result<(), String> {
+    send_request(
+        state.inner(),
+        AppServerRequestKind::ThreadGoalSet,
+        serde_json::json!({
+            "threadId": params.thread_id,
+            "objective": params.objective,
+        }),
+    )
+    .await
+    .map(|_| ())
+}
+
 #[tauri::command]
 pub async fn start_turn(
     state: State<'_, Arc<AuthBridgeState>>,
@@ -4511,6 +4536,7 @@ fn request_method(kind: &AppServerRequestKind) -> &'static str {
         AppServerRequestKind::ThreadUnsubscribe => "thread/unsubscribe",
         AppServerRequestKind::ThreadUnarchive => "thread/unarchive",
         AppServerRequestKind::ThreadNameSet => "thread/name/set",
+        AppServerRequestKind::ThreadGoalSet => "thread/goal/set",
         AppServerRequestKind::ThreadRead => "thread/read",
         AppServerRequestKind::ThreadRollback => "thread/rollback",
         AppServerRequestKind::ReviewStart => "review/start",
