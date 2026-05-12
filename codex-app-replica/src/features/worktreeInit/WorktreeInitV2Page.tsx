@@ -16,6 +16,7 @@ import {
   setThreadName,
   startThread,
   startTurnWithInput,
+  type TurnStartPermissionOverrides,
   type ThreadConversationUserInput,
 } from "../../services/history";
 import { setWorktreeOwnerThread } from "../../services/worktrees";
@@ -395,11 +396,15 @@ async function startPendingWorktreeConversation(
 
   const threadId = await startThread(workspaceRoot);
   const input = normalizePendingConversationInput(entry.startConversationParamsInput, entry.prompt);
+  const permissionOverrides = normalizePendingConversationPermissionOverrides(
+    entry.startConversationParamsInput,
+  );
   if (input.length > 0) {
     await startTurnWithInput({
       threadId,
       input,
       cwd: workspaceRoot,
+      ...permissionOverrides,
     });
   }
   return threadId;
@@ -481,6 +486,83 @@ function normalizePendingConversationInputItem(value: unknown): ThreadConversati
       return typeof record.name === "string" && typeof record.path === "string"
         ? { type: "mention", name: record.name, path: record.path }
         : null;
+    default:
+      return null;
+  }
+}
+
+function normalizePendingConversationPermissionOverrides(
+  value: Record<string, unknown> | null,
+): TurnStartPermissionOverrides {
+  return {
+    approvalPolicy: normalizePendingConversationApprovalPolicy(value?.approvalPolicy),
+    approvalsReviewer:
+      typeof value?.approvalsReviewer === "string" && value.approvalsReviewer.trim().length > 0
+        ? value.approvalsReviewer.trim()
+        : null,
+    sandboxPolicy: normalizePendingConversationSandboxPolicy(value?.sandboxPolicy),
+  };
+}
+
+function normalizePendingConversationApprovalPolicy(value: unknown) {
+  if (
+    value === "untrusted" ||
+    value === "on-failure" ||
+    value === "on-request" ||
+    value === "never"
+  ) {
+    return value;
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const granularValue = (value as Record<string, unknown>).granular;
+  if (!granularValue || typeof granularValue !== "object" || Array.isArray(granularValue)) {
+    return null;
+  }
+  const granularRecord = granularValue as Record<string, unknown>;
+
+  return {
+    granular: {
+      sandbox_approval: granularRecord.sandbox_approval === true,
+      rules: granularRecord.rules === true,
+      skill_approval: granularRecord.skill_approval === true,
+      request_permissions: granularRecord.request_permissions === true,
+      mcp_elicitations: granularRecord.mcp_elicitations === true,
+    },
+  };
+}
+
+function normalizePendingConversationSandboxPolicy(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  switch (record.type) {
+    case "readOnly":
+      return {
+        type: "readOnly" as const,
+        networkAccess: record.networkAccess === true,
+      };
+    case "workspaceWrite":
+      return {
+        type: "workspaceWrite" as const,
+        writableRoots: Array.isArray(record.writableRoots)
+          ? record.writableRoots.filter(
+              (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
+            )
+          : [],
+        excludeSlashTmp: record.excludeSlashTmp === true,
+        excludeTmpdirEnvVar: record.excludeTmpdirEnvVar === true,
+        networkAccess: record.networkAccess === true,
+      };
+    case "dangerFullAccess":
+      return {
+        type: "dangerFullAccess" as const,
+      };
     default:
       return null;
   }

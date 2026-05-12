@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getGlobalState, setGlobalState } from "./settings";
+import { LOCAL_SETTINGS_HOST_ID } from "./settingsHosts";
 
 export type WorktreesSettingsSnapshot = {
   autoCleanupEnabled: boolean;
@@ -9,6 +10,15 @@ export type WorktreesSettingsSnapshot = {
 export const DEFAULT_WORKTREES_SETTINGS: WorktreesSettingsSnapshot = {
   autoCleanupEnabled: true,
   keepCount: 15,
+};
+
+export type CodexWorktreeEntry = {
+  dir: string;
+  gitDir: string;
+};
+
+export type CodexWorktreesResponse = {
+  worktrees: CodexWorktreeEntry[];
 };
 
 const AUTO_CLEANUP_KEY = "worktree-auto-cleanup-enabled";
@@ -40,6 +50,34 @@ export async function setWorktreesKeepCount(value: number) {
   return setGlobalState(KEEP_COUNT_KEY, value);
 }
 
+export async function readCodexWorktrees(params: {
+  hostId?: string | null;
+  operationSource: string;
+}) {
+  return invoke<CodexWorktreesResponse>("codex-worktrees", {
+    params: {
+      hostConfig: {
+        id: normalizeHostId(params.hostId) ?? LOCAL_SETTINGS_HOST_ID,
+      },
+      operationSource: params.operationSource,
+    },
+  });
+}
+
+export async function deleteWorktree(params: {
+  hostId?: string | null;
+  worktree: string;
+  reason: string;
+}) {
+  return invoke<void>("worktree-delete", {
+    params: {
+      hostId: normalizeHostId(params.hostId),
+      worktree: params.worktree,
+      reason: params.reason,
+    },
+  });
+}
+
 export async function setWorktreeOwnerThread(params: {
   hostId?: string | null;
   worktree: string;
@@ -52,4 +90,12 @@ export async function setWorktreeOwnerThread(params: {
       conversationId: params.conversationId,
     },
   });
+}
+
+function normalizeHostId(hostId?: string | null) {
+  const trimmed = hostId?.trim();
+  if (!trimmed || trimmed === LOCAL_SETTINGS_HOST_ID) {
+    return null;
+  }
+  return trimmed;
 }

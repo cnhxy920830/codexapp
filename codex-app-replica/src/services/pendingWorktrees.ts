@@ -52,11 +52,35 @@ export type PendingWorktreeMetadataUpdate =
   | { type: "labelEdited"; labelEdited: boolean }
   | { type: "needsAttention"; needsAttention: boolean };
 
+export type PendingWorktreeCreateRequest = {
+  id: string;
+  hostId: string;
+  label: string | null;
+  initialThreadTitle: string | null;
+  sourceWorkspaceRoot: string;
+  startingState: PendingWorktreeStartingState | null;
+  localEnvironmentConfigPath: string | null;
+  prompt: string;
+  launchMode: PendingWorktreeLaunchMode;
+  startConversationParamsInput: Record<string, unknown> | null;
+  threadGoalObjective: string | null;
+  sourceConversationId: string | null;
+  sourceCollaborationMode: Record<string, unknown> | null;
+  targetTurnId: string | null;
+};
+
 export async function readPendingWorktreesSnapshot() {
   const response = await invoke<SharedObjectSnapshotResponse>("get-shared-object-snapshot", {
     key: PENDING_WORKTREES_SHARED_OBJECT_KEY,
   });
   return normalizePendingWorktreesSnapshot(response.value);
+}
+
+export async function createPendingWorktree(params: {
+  hostId: string;
+  request: PendingWorktreeCreateRequest;
+}) {
+  await invoke<void>("pending-worktree-create", params);
 }
 
 export async function updatePendingWorktreeMetadata(params: {

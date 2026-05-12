@@ -1,8 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getGlobalState, setGlobalState } from "./settings";
 
 export type BrowserUseApprovalMode = "alwaysAsk" | "neverAsk";
 export type BrowserUseOriginKind = "allowed" | "denied";
 export type BrowserUseFileTransferKind = "download" | "upload";
+export type BrowserBrowsingDataType = "cookies" | "siteData" | "cache";
+export type BrowserAnnotationScreenshotsMode = "always" | "necessary";
 
 export type BrowserUseSettingsState = {
   approvalMode: BrowserUseApprovalMode;
@@ -15,6 +18,10 @@ export type BrowserUseSettingsState = {
   deniedDownloadOrigins: string[];
   allowedUploadOrigins: string[];
   deniedUploadOrigins: string[];
+};
+
+export type BrowserBrowsingDataClearResponse = {
+  ok: boolean;
 };
 
 export async function readBrowserUseSettings() {
@@ -68,4 +75,19 @@ export async function removeBrowserUseFileTransferOrigin(params: {
   origin: string;
 }) {
   return invoke<BrowserUseSettingsState>("browser-use-file-transfer-origin-remove", { params });
+}
+
+export async function clearBrowserBrowsingData(dataTypes: BrowserBrowsingDataType[]) {
+  return invoke<BrowserBrowsingDataClearResponse>("browser-browsing-data-clear", {
+    params: { dataTypes },
+  });
+}
+
+export async function readBrowserAnnotationScreenshotsMode() {
+  const response = await getGlobalState("browser-annotation-screenshots-mode");
+  return response.value === "necessary" ? response.value : "always";
+}
+
+export async function writeBrowserAnnotationScreenshotsMode(value: BrowserAnnotationScreenshotsMode) {
+  await setGlobalState("browser-annotation-screenshots-mode", value);
 }

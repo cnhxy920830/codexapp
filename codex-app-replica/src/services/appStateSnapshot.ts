@@ -66,6 +66,15 @@ export async function sendAppStateSnapshotResponse(params: {
   await invoke("electron-app-state-snapshot-response", { params });
 }
 
+export async function setReviewPaneSnapshotMetricsForHost(params: {
+  hostId: string;
+  reviewDiffFilesTotal: number;
+  reviewDiffLinesTotal: number;
+  reviewDiffBytesEstimate: number;
+}) {
+  await invoke("set-review-pane-snapshot-metrics-for-host", { params });
+}
+
 export async function notifyViewFocused() {
   await invoke("view-focused");
 }

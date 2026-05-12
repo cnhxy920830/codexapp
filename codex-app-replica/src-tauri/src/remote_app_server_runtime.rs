@@ -1,5 +1,6 @@
 use crate::remote_app_server_registry::{RemoteAppServerConnectionState, RemoteAppServerRegistry};
 use crate::remote_connections::RemoteConnection;
+use crate::remote_ssh::build_ssh_command_args;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -15,6 +16,8 @@ const CLIENT_TITLE: &str = "Codex App Replica";
 const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CODEX_APP_SERVER_INITIALIZED_EVENT: &str = "codex-app-server-initialized";
 const MCP_OAUTH_EVENT: &str = "mcp-oauth-login-completed";
+const REMOTE_APP_SERVER_CONNECTION_STATE_CHANGED_EVENT: &str =
+    "remote-app-server-connection-state-changed";
 const REMOTE_APP_SERVER_COMMAND: &str = "codex app-server --listen stdio://";
 
 #[derive(Default)]
@@ -92,6 +95,14 @@ struct McpOauthLoginCompletedNotification {
     error: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RemoteAppServerConnectionStateChangedNotification {
+    host_id: String,
+    state: RemoteAppServerConnectionState,
+    error: Option<String>,
+}
+
 pub async fn send_request(
     app: &AppHandle,
     host_id: &str,
@@ -145,9 +156,9 @@ pub async fn reconcile(
         registry.ensure_host(&connection.host_id);
         registry.set_auto_connect(&connection.host_id, connection.auto_connect);
         if connection.auto_connect {
-            ensure_connected(app, &runtime_state, &registry, connection.clone(), false).await;
+            ensure_connected(app, &runtime_state, connection.clone(), false).await;
         } else {
-            ensure_stopped(&runtime_state, &registry, &connection.host_id).await;
+            ensure_stopped(app, &runtime_state, &connection.host_id).await;
         }
     }
 
@@ -156,7 +167,6 @@ pub async fn reconcile(
 
 pub async fn restart(app: &AppHandle, host_id: &str) -> Result<(), String> {
     let runtime_state = app.state::<RemoteAppServerRuntimeState>();
-    let registry = app.state::<RemoteAppServerRegistry>();
     let _reconcile_lock = runtime_state.reconcile_lock.lock().await;
     let connection = {
         let entries = runtime_state.entries.lock().await;
@@ -165,7 +175,7 @@ pub async fn restart(app: &AppHandle, host_id: &str) -> Result<(), String> {
             .map(|entry| entry.connection.clone())
             .ok_or_else(|| format!("remote app-server is not running for {host_id}"))?
     };
-    ensure_connected(app, &runtime_state, &registry, connection, true).await;
+    ensure_connected(app, &runtime_state, connection, true).await;
     Ok(())
 }
 
@@ -208,20 +218,24 @@ async fn stop_removed_hosts(
 }
 
 async fn ensure_stopped(
+    app: &AppHandle,
     runtime_state: &RemoteAppServerRuntimeState,
-    registry: &RemoteAppServerRegistry,
     host_id: &str,
 ) {
     if let Some(process) = remove_process(runtime_state, host_id).await {
         stop_process(process).await;
     }
-    registry.set_state(host_id, RemoteAppServerConnectionState::Disconnected, None);
+    set_connection_state(
+        app,
+        host_id,
+        RemoteAppServerConnectionState::Disconnected,
+        None,
+    );
 }
 
 async fn ensure_connected(
     app: &AppHandle,
     runtime_state: &RemoteAppServerRuntimeState,
-    registry: &RemoteAppServerRegistry,
     connection: RemoteConnection,
     force_restart: bool,
 ) {
@@ -240,7 +254,8 @@ async fn ensure_connected(
 
     let restarting = existing_process.is_some() || force_restart;
     if restarting {
-        registry.set_state(
+        set_connection_state(
+            app,
             &connection.host_id,
             RemoteAppServerConnectionState::Restarting,
             None,
@@ -250,7 +265,8 @@ async fn ensure_connected(
         stop_process(process).await;
     }
 
-    registry.set_state(
+    set_connection_state(
+        app,
         &connection.host_id,
         RemoteAppServerConnectionState::Connecting,
         None,
@@ -261,7 +277,8 @@ async fn ensure_connected(
     let (process, stdin, stdout, stderr, request_rx) = match spawn_result {
         Ok(value) => value,
         Err(err) => {
-            registry.set_state(
+            set_connection_state(
+                app,
                 &connection.host_id,
                 RemoteAppServerConnectionState::Error,
                 Some(err),
@@ -308,7 +325,7 @@ fn spawn_remote_app_server_process(
     ),
     String,
 > {
-    let args = build_ssh_command_args(connection)?;
+    let args = build_ssh_command_args(connection, REMOTE_APP_SERVER_COMMAND)?;
     let mut child = Command::new("ssh")
         .args(&args)
         .stdin(Stdio::piped())
@@ -343,58 +360,6 @@ fn spawn_remote_app_server_process(
         stderr,
         request_rx,
     ))
-}
-
-fn build_ssh_command_args(connection: &RemoteConnection) -> Result<Vec<String>, String> {
-    let mut args = vec!["-o".to_string(), "BatchMode=yes".to_string()];
-
-    if let Some(alias) = connection.ssh_alias.as_deref() {
-        args.push(alias.to_string());
-    } else {
-        let host = connection.ssh_host.as_deref().ok_or_else(|| {
-            format!(
-                "remote connection {} is missing ssh host",
-                connection.host_id
-            )
-        })?;
-        if let Some(port) = connection.ssh_port {
-            args.push("-p".to_string());
-            args.push(port.to_string());
-        }
-        if let Some(identity) = connection.identity.as_deref() {
-            args.push("-i".to_string());
-            args.push(expand_tilde_path(identity));
-        }
-        args.push(host.to_string());
-    }
-
-    args.push(REMOTE_APP_SERVER_COMMAND.to_string());
-    Ok(args)
-}
-
-fn expand_tilde_path(value: &str) -> String {
-    if value == "~" {
-        return home_directory()
-            .map(|path| path.to_string_lossy().into_owned())
-            .unwrap_or_else(|| value.to_string());
-    }
-
-    let Some(suffix) = value
-        .strip_prefix("~/")
-        .or_else(|| value.strip_prefix("~\\"))
-    else {
-        return value.to_string();
-    };
-
-    home_directory()
-        .map(|path| path.join(suffix).to_string_lossy().into_owned())
-        .unwrap_or_else(|| value.to_string())
-}
-
-fn home_directory() -> Option<std::path::PathBuf> {
-    std::env::var_os("HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::var_os("USERPROFILE").map(std::path::PathBuf::from))
 }
 
 async fn stop_process(mut process: RemoteAppServerProcess) {
@@ -590,13 +555,19 @@ async fn run_remote_app_server_client(
     if let Some(message) = error_message {
         let registry = app.state::<RemoteAppServerRegistry>();
         if registry.snapshot(&host_id).auto_connect {
-            registry.set_state(
+            set_connection_state(
+                &app,
                 &host_id,
                 RemoteAppServerConnectionState::Error,
                 Some(message),
             );
         } else {
-            registry.set_state(&host_id, RemoteAppServerConnectionState::Disconnected, None);
+            set_connection_state(
+                &app,
+                &host_id,
+                RemoteAppServerConnectionState::Disconnected,
+                None,
+            );
         }
     }
 }
@@ -634,10 +605,27 @@ async fn mark_state_if_current(
             .unwrap_or(false)
     };
     if is_current {
-        let registry = app.state::<RemoteAppServerRegistry>();
-        registry.set_state(host_id, state, error);
+        set_connection_state(app, host_id, state, error);
     }
     is_current
+}
+
+fn set_connection_state(
+    app: &AppHandle,
+    host_id: &str,
+    state: RemoteAppServerConnectionState,
+    error: Option<String>,
+) {
+    let registry = app.state::<RemoteAppServerRegistry>();
+    registry.set_state(host_id, state, error.clone());
+    let _ = app.emit(
+        REMOTE_APP_SERVER_CONNECTION_STATE_CHANGED_EVENT,
+        RemoteAppServerConnectionStateChangedNotification {
+            host_id: host_id.to_string(),
+            state,
+            error,
+        },
+    );
 }
 
 async fn take_current_process(
@@ -690,22 +678,25 @@ fn handle_mcp_oauth_login_completed(app: &AppHandle, host_id: &str, params: Valu
 
 #[cfg(test)]
 mod tests {
-    use super::build_ssh_command_args;
-    use super::expand_tilde_path;
     use crate::remote_connections::RemoteConnection;
+    use crate::remote_ssh::build_ssh_command_args;
+    use crate::remote_ssh::expand_tilde_path;
 
     #[test]
     fn ssh_command_uses_alias_when_present() {
-        let args = build_ssh_command_args(&RemoteConnection {
-            host_id: "remote-ssh-discovered:demo".into(),
-            display_name: "Demo".into(),
-            source: "discovered".into(),
-            auto_connect: true,
-            ssh_alias: Some("demo-alias".into()),
-            ssh_host: Some("ignored.example.com".into()),
-            ssh_port: Some(2222),
-            identity: Some("~/.ssh/id_demo".into()),
-        })
+        let args = build_ssh_command_args(
+            &RemoteConnection {
+                host_id: "remote-ssh-discovered:demo".into(),
+                display_name: "Demo".into(),
+                source: "discovered".into(),
+                auto_connect: true,
+                ssh_alias: Some("demo-alias".into()),
+                ssh_host: Some("ignored.example.com".into()),
+                ssh_port: Some(2222),
+                identity: Some("~/.ssh/id_demo".into()),
+            },
+            "codex app-server --listen stdio://",
+        )
         .expect("ssh args");
 
         assert_eq!(
@@ -721,16 +712,19 @@ mod tests {
 
     #[test]
     fn ssh_command_uses_manual_host_settings_when_alias_missing() {
-        let args = build_ssh_command_args(&RemoteConnection {
-            host_id: "remote-ssh-codex-managed:demo".into(),
-            display_name: "Demo".into(),
-            source: "codex-managed".into(),
-            auto_connect: true,
-            ssh_alias: None,
-            ssh_host: Some("example.com".into()),
-            ssh_port: Some(2200),
-            identity: Some("C:/Users/demo/.ssh/id_demo".into()),
-        })
+        let args = build_ssh_command_args(
+            &RemoteConnection {
+                host_id: "remote-ssh-codex-managed:demo".into(),
+                display_name: "Demo".into(),
+                source: "codex-managed".into(),
+                auto_connect: true,
+                ssh_alias: None,
+                ssh_host: Some("example.com".into()),
+                ssh_port: Some(2200),
+                identity: Some("C:/Users/demo/.ssh/id_demo".into()),
+            },
+            "codex app-server --listen stdio://",
+        )
         .expect("ssh args");
 
         assert_eq!(

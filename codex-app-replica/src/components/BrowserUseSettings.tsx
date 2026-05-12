@@ -1,16 +1,23 @@
+import { emit } from "@tauri-apps/api/event";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { NewChatIcon } from "./AppShellIcons";
 import type { AppToast } from "./AppToastRegion";
+import { SettingsContentLayout } from "./SettingsContentLayout";
 import {
   addBrowserUseFileTransferOrigin,
   addBrowserUseOrigin,
+  clearBrowserBrowsingData,
+  readBrowserAnnotationScreenshotsMode,
   readBrowserUseSettings,
   removeBrowserUseFileTransferOrigin,
   removeBrowserUseOrigin,
+  writeBrowserAnnotationScreenshotsMode,
   writeBrowserUseApprovalMode,
   writeBrowserUseFileTransferApprovalMode,
   writeBrowserUseHistoryApprovalMode,
+  type BrowserAnnotationScreenshotsMode,
   type BrowserUseApprovalMode,
+  type BrowserBrowsingDataType,
   type BrowserUseFileTransferKind,
   type BrowserUseOriginKind,
   type BrowserUseSettingsState,
@@ -19,6 +26,7 @@ import { useI18n } from "../i18n/i18n";
 import type { MessageKey } from "../i18n/messages";
 import { FilteredPluginSettings, type FilteredPluginSettingsRenderContext } from "./FilteredPluginSettings";
 import { SettingsChoiceMenu } from "./SettingsChoiceMenu";
+import { LOCAL_SETTINGS_HOST_ID } from "../services/settingsHosts";
 
 type BrowserUseResourceKind = "origins" | "downloads" | "uploads";
 
@@ -30,6 +38,8 @@ type AddOriginState = {
 type RemoveOriginState = AddOriginState & {
   origin: string;
 };
+
+type BrowserBrowsingDataScope = "all" | BrowserBrowsingDataType;
 
 type BrowserUseOriginSectionCopy = {
   addDialogSubtitleKey: MessageKey;
@@ -130,27 +140,56 @@ const BROWSER_USE_ORIGIN_SECTIONS: ReadonlyArray<AddOriginState> = [
   { kind: "allowed", resource: "uploads" },
 ];
 
+const ALL_BROWSING_DATA_TYPES: BrowserBrowsingDataType[] = ["cookies", "siteData", "cache"];
+const COMPUTER_USE_SETTINGS_PATH = "/settings/computer-use";
+const NAVIGATE_TO_ROUTE_EVENT = "navigate-to-route";
+
 export function BrowserUseSettings({
+  hasComputerUseApprovalStore,
   onShowToast,
+  selectedHostId,
   workspaceRoot,
 }: {
+  hasComputerUseApprovalStore: boolean;
   onShowToast?: (toast: AppToast) => void;
+  selectedHostId: string;
   workspaceRoot: string | null;
 }) {
   const { t } = useI18n();
+  const isLocalHost = selectedHostId === LOCAL_SETTINGS_HOST_ID;
+  const effectiveWorkspaceRoot = isLocalHost ? workspaceRoot : null;
+  const subtitle =
+    isLocalHost && hasComputerUseApprovalStore
+      ? renderComputerUseSettingsSubtitle(
+          t("settings.browserUse.subtitle"),
+          () => {
+            void emit(NAVIGATE_TO_ROUTE_EVENT, { path: COMPUTER_USE_SETTINGS_PATH }).catch(() => undefined);
+          },
+        )
+      : undefined;
 
   return (
-    <FilteredPluginSettings
-      workspaceRoot={workspaceRoot}
-      pageTitle={t("settings.section.browser-use")}
-      installButtonLabel={t("settings.browserUse.install.button")}
-      sectionTitle={t("settings.browserUse.install.title")}
-      emptyState={t("settings.browserUse.install.empty")}
-      pluginNames={["browser-use", "chrome", "chrome-internal"]}
-      renderAfterSections={(context) =>
-        isBrowserUseInstalled(context) ? <BrowserUsePermissionsPanel onShowToast={onShowToast} /> : null
-      }
-    />
+    <SettingsContentLayout title={t("settings.browserUse.title")} subtitle={subtitle} subtitleClassName="text-pretty">
+      <FilteredPluginSettings
+        hostId={selectedHostId}
+        workspaceRoot={effectiveWorkspaceRoot}
+        installButtonLabel={t("settings.browserUse.install.button")}
+        emptyState={t("settings.browserUse.install.empty")}
+        pluginNames={["browser-use"]}
+        getItemPresentation={() => ({
+          controlLabel: t("settings.browserUse.control.title"),
+          title: t("settings.browserUse.control.title"),
+          description: t("settings.browserUse.control.description"),
+          icon: <BrowserUseControlIcon className="h-full w-full text-[var(--app-shell-text)]" />,
+          showIconBorder: false,
+        })}
+        renderAfterSections={(context) =>
+          isBrowserUseEnabled(context)
+            ? <BrowserUsePermissionsPanel onShowToast={onShowToast} />
+            : null
+        }
+      />
+    </SettingsContentLayout>
   );
 }
 
@@ -161,9 +200,14 @@ function BrowserUsePermissionsPanel({
 }) {
   const { t } = useI18n();
   const [settingsState, setSettingsState] = useState<BrowserUseSettingsState | null>(null);
+  const [annotationScreenshotsMode, setAnnotationScreenshotsMode] =
+    useState<BrowserAnnotationScreenshotsMode>("always");
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [pendingBrowsingDataScope, setPendingBrowsingDataScope] = useState<BrowserBrowsingDataScope | null>(null);
+  const [isBrowsingDataOptionsOpen, setIsBrowsingDataOptionsOpen] = useState(false);
+  const [isAnnotationScreenshotsPending, setIsAnnotationScreenshotsPending] = useState(false);
   const [addDialogState, setAddDialogState] = useState<AddOriginState | null>(null);
   const [originDraft, setOriginDraft] = useState("");
   const [removeOriginState, setRemoveOriginState] = useState<RemoveOriginState | null>(null);
@@ -172,7 +216,12 @@ function BrowserUsePermissionsPanel({
     setIsLoading(true);
     setLoadError(null);
     try {
-      setSettingsState(await readBrowserUseSettings());
+      const [nextSettingsState, nextAnnotationScreenshotsMode] = await Promise.all([
+        readBrowserUseSettings(),
+        readBrowserAnnotationScreenshotsMode(),
+      ]);
+      setSettingsState(nextSettingsState);
+      setAnnotationScreenshotsMode(nextAnnotationScreenshotsMode);
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : String(error));
       setSettingsState(null);
@@ -196,6 +245,7 @@ function BrowserUsePermissionsPanel({
         value: "neverAsk",
         label: t("settings.browserUse.approval.neverAsk.label"),
         description: t("settings.browserUse.approval.neverAsk.description"),
+        warning: t("settings.browserUse.approval.neverAsk.elevatedRiskDisclaimer"),
       },
     ],
     [t],
@@ -249,6 +299,20 @@ function BrowserUsePermissionsPanel({
     [t],
   );
 
+  const annotationScreenshotOptions = useMemo(
+    () => [
+      {
+        value: "always",
+        label: t("settings.browserUse.browser.annotationScreenshots.always.label"),
+      },
+      {
+        value: "necessary",
+        label: t("settings.browserUse.browser.annotationScreenshots.necessary.label"),
+      },
+    ],
+    [t],
+  );
+
   const updateSettingsState = async (
     actionKey: string,
     save: () => Promise<BrowserUseSettingsState>,
@@ -267,6 +331,51 @@ function BrowserUsePermissionsPanel({
       });
     } finally {
       setPendingAction(null);
+    }
+  };
+
+  const handleClearBrowsingData = async (
+    scope: BrowserBrowsingDataScope,
+    dataTypes: BrowserBrowsingDataType[],
+  ) => {
+    if (pendingBrowsingDataScope !== null) {
+      return;
+    }
+
+    setPendingBrowsingDataScope(scope);
+    try {
+      await clearBrowserBrowsingData(dataTypes);
+      onShowToast?.({
+        tone: "success",
+        message: t(getClearBrowsingDataSuccessMessageKey(scope)),
+      });
+    } catch {
+      onShowToast?.({
+        tone: "error",
+        message: t(getClearBrowsingDataErrorMessageKey(scope)),
+      });
+    } finally {
+      setPendingBrowsingDataScope(null);
+    }
+  };
+
+  const handleAnnotationScreenshotsModeChange = async (value: string) => {
+    const nextValue = value as BrowserAnnotationScreenshotsMode;
+    if (isAnnotationScreenshotsPending || nextValue === annotationScreenshotsMode) {
+      return;
+    }
+
+    setIsAnnotationScreenshotsPending(true);
+    try {
+      await writeBrowserAnnotationScreenshotsMode(nextValue);
+      setAnnotationScreenshotsMode(nextValue);
+    } catch {
+      onShowToast?.({
+        tone: "error",
+        message: t("settings.browserUse.browser.annotationScreenshots.saveError"),
+      });
+    } finally {
+      setIsAnnotationScreenshotsPending(false);
     }
   };
 
@@ -351,6 +460,7 @@ function BrowserUsePermissionsPanel({
   const downloadApprovalMode = settingsState?.downloadApprovalMode ?? "alwaysAsk";
   const uploadApprovalMode = settingsState?.uploadApprovalMode ?? "alwaysAsk";
   const controlsDisabled = isLoading || pendingAction !== null;
+  const dataControlsDisabled = isLoading || pendingBrowsingDataScope !== null || isAnnotationScreenshotsPending;
 
   if (loadError) {
     return (
@@ -370,6 +480,90 @@ function BrowserUsePermissionsPanel({
 
   return (
     <>
+      <div className="app-card rounded-[18px] px-5 py-4">
+        <div className="text-[14px] font-medium">{t("settings.browserUse.browser.title")}</div>
+        <div className="mt-4 space-y-4">
+          <SettingsRow
+            label={t("settings.browserUse.browser.clearBrowsingData.label")}
+            description={t("settings.browserUse.browser.clearBrowsingData.description")}
+            control={
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={dataControlsDisabled && pendingBrowsingDataScope !== "all"}
+                  onClick={() => void handleClearBrowsingData("all", ALL_BROWSING_DATA_TYPES)}
+                  className="app-control rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
+                >
+                  {pendingBrowsingDataScope === "all"
+                    ? t("general.saving")
+                    : t("settings.browserUse.browser.clearBrowsingData")}
+                </button>
+                <button
+                  type="button"
+                  aria-controls="browser-browsing-data-options"
+                  aria-expanded={isBrowsingDataOptionsOpen}
+                  disabled={pendingBrowsingDataScope !== null}
+                  onClick={() => setIsBrowsingDataOptionsOpen((value) => !value)}
+                  className="app-control rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
+                >
+                  {t(
+                    isBrowsingDataOptionsOpen
+                      ? "settings.browserUse.browser.hideClearOptions"
+                      : "settings.browserUse.browser.showClearOptions",
+                  )}
+                </button>
+              </div>
+            }
+          />
+
+          {isBrowsingDataOptionsOpen ? (
+            <div
+              id="browser-browsing-data-options"
+              className="rounded-[14px] border border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)]"
+            >
+              {ALL_BROWSING_DATA_TYPES.map((dataType, index) => (
+                <div
+                  key={dataType}
+                  className={[
+                    "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 max-sm:grid-cols-1 max-sm:items-start",
+                    index > 0 ? "border-t border-[var(--app-shell-border)]" : "",
+                  ].join(" ")}
+                >
+                  <div className="min-w-0 text-[13px] text-[var(--app-shell-subtle)]">
+                    {t(getClearBrowsingDataRowLabelKey(dataType))}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={dataControlsDisabled && pendingBrowsingDataScope !== dataType}
+                    onClick={() => void handleClearBrowsingData(dataType, [dataType])}
+                    className="app-control justify-self-end rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60 max-sm:justify-self-start"
+                  >
+                    {pendingBrowsingDataScope === dataType
+                      ? t("general.saving")
+                      : t(getClearBrowsingDataButtonLabelKey(dataType))}
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <SettingsRow
+            label={t("settings.browserUse.browser.annotationScreenshots.label")}
+            description={t("settings.browserUse.browser.annotationScreenshots.description")}
+            control={
+              <SettingsChoiceMenu
+                disabled={dataControlsDisabled}
+                onChange={(value) => {
+                  void handleAnnotationScreenshotsModeChange(value);
+                }}
+                options={annotationScreenshotOptions}
+                value={annotationScreenshotsMode}
+              />
+            }
+          />
+        </div>
+      </div>
+
       <div className="app-card rounded-[18px] px-5 py-4">
         <div className="text-[14px] font-medium">{t("settings.browserUse.permissions.title")}</div>
         <div className="mt-4 space-y-4">
@@ -689,6 +883,39 @@ function DialogShell({
   );
 }
 
+function BrowserUseControlIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      width="32"
+      height="32"
+      viewBox="0 0 32 32"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M19.2512 17.5908L19.5422 17.6553L28.3547 20.2998C30.2132 20.8577 30.3283 23.4462 28.5266 24.167L24.9368 25.6025L23.5012 29.1924C22.7805 30.9941 20.1919 30.879 19.634 29.0205L16.9895 20.208C16.5509 18.7425 17.8048 17.3704 19.2512 17.5908ZM21.6028 28.2764L22.9954 24.8018L23.0833 24.6123C23.3089 24.1823 23.681 23.8434 24.136 23.6611L27.6106 22.2686L19.0266 19.6924L21.6028 28.2764Z"
+        fill="currentColor"
+      />
+      <path
+        d="M19.8665 4.28223C21.3889 4.28223 22.594 4.28312 23.5637 4.3623C24.5457 4.44254 25.379 4.60942 26.1399 4.99707C27.3722 5.62494 28.3752 6.6262 29.0032 7.8584C29.3908 8.6192 29.5577 9.45274 29.6379 10.4346C29.7172 11.4044 29.7161 12.611 29.7161 14.1338V15.333C29.7161 15.9127 29.2468 16.3834 28.6672 16.3838C28.0873 16.3838 27.6165 15.9129 27.6165 15.333V14.1338C27.6165 12.5765 27.6148 11.4709 27.5442 10.6064C27.4746 9.75478 27.3436 9.22892 27.1321 8.81348C26.7054 7.97616 26.0241 7.2948 25.1868 6.86816C24.7713 6.65645 24.2458 6.52374 23.3938 6.4541C22.5293 6.38347 21.4239 6.38379 19.8665 6.38379H12.134C10.5768 6.38379 9.4711 6.3835 8.60669 6.4541C7.75484 6.5237 7.22921 6.65658 6.81372 6.86816C5.9764 7.2948 5.29505 7.97616 4.86841 8.81348C4.65682 9.22896 4.52394 9.7546 4.45435 10.6064C4.38375 11.4709 4.38403 12.5765 4.38403 14.1338V17.999C4.38403 19.4929 4.38335 20.5535 4.44849 21.3838C4.51272 22.2025 4.63617 22.7087 4.8313 23.1104C5.26713 24.0075 5.99085 24.7329 6.88794 25.1689C7.28964 25.3641 7.79768 25.4856 8.61646 25.5498C9.44657 25.6149 10.506 25.6162 11.9993 25.6162C12.5792 25.6162 13.05 26.0871 13.05 26.667C13.0497 27.2466 12.5789 27.7158 11.9993 27.7158C10.5393 27.7158 9.38362 27.7166 8.45239 27.6436C7.50955 27.5696 6.70813 27.4152 5.97192 27.0576C4.65095 26.4159 3.58236 25.3493 2.94067 24.0283C2.58312 23.2921 2.4287 22.4907 2.35474 21.5479C2.28168 20.6164 2.28247 19.4596 2.28247 17.999V14.1338C2.28247 12.611 2.28331 11.4044 2.36255 10.4346C2.44281 9.45277 2.60967 8.61919 2.99731 7.8584C3.62517 6.6266 4.62684 5.62493 5.85864 4.99707C6.61943 4.60943 7.45301 4.44256 8.43481 4.3623C9.40463 4.28307 10.6112 4.28223 12.134 4.28223H19.8665Z"
+        fill="currentColor"
+      />
+      <path
+        d="M10.2761 9.30713C11.0272 9.30713 11.6354 9.9154 11.6354 10.6665C11.6354 11.4176 11.0272 12.0259 10.2761 12.0259C9.52518 12.0256 8.9167 11.4174 8.91669 10.6665C8.91669 9.91555 9.52517 9.30738 10.2761 9.30713Z"
+        fill="currentColor"
+      />
+      <path
+        d="M21.3334 9.5988C21.9225 9.5988 22.4011 10.0774 22.4011 10.6665C22.4011 11.2556 21.9225 11.7342 21.3334 11.7342H16C15.4109 11.7342 14.9323 11.2556 14.9323 10.6665C14.9323 10.0774 15.4109 9.5988 16 9.5988H21.3334Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
 function TrashIcon({ className }: { className?: string }) {
   return (
     <svg className={className} width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
@@ -733,12 +960,92 @@ function getOriginSectionCopy(resource: BrowserUseResourceKind, kind: BrowserUse
   return BROWSER_USE_ORIGIN_SECTION_COPY[resource][kind];
 }
 
-function isBrowserUseInstalled(context: FilteredPluginSettingsRenderContext) {
-  const browserUsePlugin = context.selectedPlugins.find((candidate) => {
+function getClearBrowsingDataRowLabelKey(dataType: BrowserBrowsingDataType): MessageKey {
+  switch (dataType) {
+    case "cookies":
+      return "settings.browserUse.browser.cookies.label";
+    case "siteData":
+      return "settings.browserUse.browser.siteData.label";
+    case "cache":
+      return "settings.browserUse.browser.cache.label";
+  }
+}
+
+function getClearBrowsingDataButtonLabelKey(dataType: BrowserBrowsingDataType): MessageKey {
+  switch (dataType) {
+    case "cookies":
+      return "settings.browserUse.browser.clearCookies";
+    case "siteData":
+      return "settings.browserUse.browser.clearSiteData";
+    case "cache":
+      return "settings.browserUse.browser.clearCache";
+  }
+}
+
+function getClearBrowsingDataSuccessMessageKey(scope: BrowserBrowsingDataScope): MessageKey {
+  switch (scope) {
+    case "all":
+      return "settings.browserUse.browser.browsingDataCleared";
+    case "cookies":
+      return "settings.browserUse.browser.cookiesCleared";
+    case "siteData":
+      return "settings.browserUse.browser.siteDataCleared";
+    case "cache":
+      return "settings.browserUse.browser.cacheCleared";
+  }
+}
+
+function getClearBrowsingDataErrorMessageKey(scope: BrowserBrowsingDataScope): MessageKey {
+  switch (scope) {
+    case "all":
+      return "settings.browserUse.browser.clearBrowsingDataError";
+    case "cookies":
+      return "settings.browserUse.browser.clearCookiesError";
+    case "siteData":
+      return "settings.browserUse.browser.clearSiteDataError";
+    case "cache":
+      return "settings.browserUse.browser.clearCacheError";
+  }
+}
+
+function renderComputerUseSettingsSubtitle(template: string, onNavigate: () => void) {
+  const startTag = "<computerUseSettingsLink>";
+  const endTag = "</computerUseSettingsLink>";
+  const startIndex = template.indexOf(startTag);
+  const endIndex = template.indexOf(endTag);
+
+  if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
+    return template;
+  }
+
+  const prefix = template.slice(0, startIndex);
+  const label = template.slice(startIndex + startTag.length, endIndex);
+  const suffix = template.slice(endIndex + endTag.length);
+
+  return (
+    <>
+      {prefix}
+      <button
+        type="button"
+        onClick={onNavigate}
+        className="inline p-0 text-[var(--app-shell-accent)] underline underline-offset-2"
+      >
+        {label}
+      </button>
+      {suffix}
+    </>
+  );
+}
+
+function isBrowserUseEnabled(context: FilteredPluginSettingsRenderContext) {
+  const browserUsePlugin = getBrowserUsePlugin(context);
+  return browserUsePlugin?.plugin.installed === true && browserUsePlugin.plugin.enabled;
+}
+
+function getBrowserUsePlugin(context: FilteredPluginSettingsRenderContext) {
+  return context.selectedPlugins.find((candidate) => {
     const pluginName = candidate.plugin.name.toLowerCase();
     const pluginPrefix = candidate.plugin.id.split("@")[0]?.toLowerCase();
     return pluginName === "browser-use" || pluginPrefix === "browser-use";
   });
-
-  return browserUsePlugin?.plugin.installed === true;
 }

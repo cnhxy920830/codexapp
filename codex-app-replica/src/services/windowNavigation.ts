@@ -6,6 +6,7 @@ export const DEBUG_WINDOW_ROUTE_PATH = "/debug";
 export const EDITOR_DIFF_ROUTE_PATH = "/editor-diff";
 export const FIRST_RUN_ROUTE_PATH = "/first-run";
 export const GLOBAL_DICTATION_ROUTE_PATH = "/global-dictation";
+export const HOTKEY_NEW_THREAD_ROUTE_PATH = "/hotkey-window/new-thread";
 export const HOTKEY_WORKTREE_INIT_V2_ROUTE_PREFIX = "/hotkey-window/worktree-init-v2/";
 export const LOGIN_ROUTE_PATH = "/login";
 export const PLAN_SUMMARY_ROUTE_PATH = "/plan-summary";
@@ -43,6 +44,16 @@ export async function updateDiffIfOpen(params: UpdateDiffIfOpenParams) {
 
 export async function openDebugWindow() {
   await invoke("open-debug-window");
+}
+
+export async function showSettings(section: string) {
+  await invoke("show-settings", { section });
+}
+
+export async function openInHotkeyWindow(path: string) {
+  await invoke("open-in-hotkey-window", {
+    params: { path },
+  });
 }
 
 export async function notifyDebugWindowOriginConversationChanged(conversationId: string) {

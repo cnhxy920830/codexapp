@@ -95,9 +95,11 @@ fn ensure_supported_key(key: &str) -> Result<(), String> {
         | "appearanceLightCodeThemeId"
         | "appearanceDarkCodeThemeId"
         | "useFontSmoothing"
+        | "mac-menu-bar-enabled"
         | "selected-avatar-id"
         | "electron-avatar-overlay-open"
         | "electron-avatar-overlay-bounds"
+        | "ambient-suggestions-enabled"
         | "composerEnterBehavior"
         | "followUpQueueMode"
         | "reviewDelivery"
@@ -106,6 +108,11 @@ fn ensure_supported_key(key: &str) -> Result<(), String> {
         | "integratedTerminalShell"
         | "preventSleepWhileRunning"
         | "runCodexInWindowsSubsystemForLinux"
+        | "notifications-turn-mode"
+        | "notifications-permissions-enabled"
+        | "notifications-questions-enabled"
+        | "chronicle-consent-accepted"
+        | "chronicle-setup-completion-pending"
         | "electron:onboarding-override"
         | "electron:onboarding-welcome-pending"
         | "electron:onboarding-projectless-completed"
@@ -273,11 +280,18 @@ mod tests {
     fn general_settings_keys_are_supported() {
         for key in [
             "useFontSmoothing",
+            "mac-menu-bar-enabled",
             "dictationDictionary",
             "conversationDetailMode",
+            "ambient-suggestions-enabled",
             "integratedTerminalShell",
             "preventSleepWhileRunning",
             "runCodexInWindowsSubsystemForLinux",
+            "notifications-turn-mode",
+            "notifications-permissions-enabled",
+            "notifications-questions-enabled",
+            "chronicle-consent-accepted",
+            "chronicle-setup-completion-pending",
             "electron:onboarding-override",
             "electron:onboarding-welcome-pending",
             "electron:onboarding-projectless-completed",

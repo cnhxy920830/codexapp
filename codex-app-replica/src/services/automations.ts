@@ -1,6 +1,16 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export type AutomationStatus = "ACTIVE" | "PAUSED" | "DELETED";
+export type AutomationDeleteStatus =
+  | "deleted"
+  | "not_found"
+  | "invalid_id"
+  | "store_unavailable"
+  | "state_cleanup_failed"
+  | "remove_failed";
+
+export const AUTOMATION_UPDATE_MISSING_MESSAGE =
+  "Automation does not exist in the app and could not be updated. It may have been deleted manually by the user.";
 
 type AutomationTimestamps = {
   createdAt: number | null;
@@ -46,6 +56,12 @@ export type AutomationThreadRunResult = {
   turnId: string;
 };
 
+export type AutomationDeleteResult = {
+  item: AutomationRecord | null;
+  success: boolean;
+  status: AutomationDeleteStatus;
+};
+
 export type HeartbeatAutomationThreadStateChangedParams = {
   threadId: string | null;
   isEligible: boolean;
@@ -83,12 +99,30 @@ export async function saveAutomation(params: SaveAutomationParams) {
   return invoke<AutomationRecord>("save_automation", { params });
 }
 
+export async function createAutomation(automation: AutomationRecord) {
+  const response = await invoke<{ item: AutomationRecord }>("automation-create", {
+    params: automation,
+  });
+  return response.item;
+}
+
+export async function updateAutomation(automation: AutomationRecord) {
+  const response = await invoke<{ item: AutomationRecord }>("automation-update", {
+    params: automation,
+  });
+  return response.item;
+}
+
 export async function setAutomationStatus(id: string, status: AutomationStatus) {
   return invoke<AutomationRecord>("set_automation_status", { params: { id, status } });
 }
 
 export async function deleteAutomation(id: string) {
   return invoke<void>("delete_automation", { params: { id } });
+}
+
+export async function deleteAutomationCompat(id: string) {
+  return invoke<AutomationDeleteResult>("automation-delete", { params: { id } });
 }
 
 export async function runAutomationNow(id: string) {

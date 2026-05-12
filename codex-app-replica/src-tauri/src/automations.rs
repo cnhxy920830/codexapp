@@ -537,6 +537,7 @@ async fn run_automation_record_now_inner(
                 prompt.clone(),
                 None,
                 personality,
+                None,
             )
             .await?;
             Ok::<AutomationThreadRunResult, String>(AutomationThreadRunResult {
@@ -554,6 +555,7 @@ async fn run_automation_record_now_inner(
                 prompt.clone(),
                 cwd,
                 personality,
+                None,
             )
             .await?;
             Ok::<AutomationThreadRunResult, String>(AutomationThreadRunResult {

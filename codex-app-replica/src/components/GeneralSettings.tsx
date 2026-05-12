@@ -1,18 +1,61 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  type ComposerPermissionMode,
+  type ComposerPermissionModeVisibility,
+  type ConversationDetailMode,
   type ComposerEnterBehavior,
+  type ConfigRequirementsReadResponse,
+  type ConfigServiceTier,
+  copyGlobalDictationHistoryItem,
   DEFAULT_GENERAL_SETTINGS,
+  DEFAULT_GPU_TEARING_DEBUG_SETTINGS,
   type FollowUpQueueMode,
+  getConfigRequirementsForHost,
+  type GlobalDictationHistoryItem,
+  type GlobalDictationHotkeyStateResponse,
+  getGlobalState,
+  type GpuTearingDebugSettingKey,
+  type GpuTearingDebugSettings,
+  type HotkeyWindowHotkeyStateResponse,
+  listModelsForHost,
+  type ModelListResponse,
+  readComposerPermissionModeVisibility,
+  readConfigForHost,
+  readDictationDictionary,
+  readGlobalDictationHistory,
+  readGlobalDictationHotkeyState,
   readGeneralSettingsSnapshot,
+  readGpuTearingDebugSettings,
+  readHotkeyWindowHotkeyState,
+  readMacMenuBarEnabledPreference,
   readTerminalShellOptions,
   readWslBashAvailability,
   type IntegratedTerminalShell,
   resolveLocalePreference,
   type ReviewDelivery,
   setGlobalState,
+  setGlobalDictationHotkey,
+  setGlobalDictationToggleHotkey,
+  setHotkeyWindowHotkey,
   type GeneralSettingsSnapshot,
   type GlobalStateKey,
+  updateGpuTearingDebugSettings,
+  updateComposerPermissionModeVisibility,
+  writeConfigValueForHost,
 } from "../services/settings";
+import {
+  readAccountInfo,
+  type AccountInfoResponse,
+  type AuthSnapshot,
+} from "../services/auth";
+import {
+  buildAcceleratorFromKeyboardEvent,
+  formatAcceleratorLabel,
+} from "../services/keyboardShortcuts";
+import {
+  getComposerModifierLabel,
+  getInvertFollowUpShortcutAccelerator,
+} from "../lib/followUpShortcuts";
 import {
   detectExternalAgentImports,
   importExternalAgentItems,
@@ -28,29 +71,119 @@ import {
 import { readSkillsSnapshot } from "../services/skills";
 import { useI18n } from "../i18n/i18n";
 import {
+  REPLICA_STATSIG_GATES,
+  useReplicaStatsigDefaultFeatures,
+  useReplicaStatsigGateValue,
+} from "../features/statsig/replicaStatsig";
+import {
   SUPPORTED_LOCALES,
   getLocaleLabel,
+  resolveSupportedLocale,
   type LocaleCode,
   type MessageKey,
 } from "../i18n/messages";
-import { CheckIcon, ChevronDownIcon } from "./AppShellIcons";
+import {
+  CheckIcon,
+  ChevronDownIcon,
+  PlusIcon,
+  TrashIcon,
+} from "./AppShellIcons";
 import { ToggleSwitch } from "./ToggleSwitch";
 import { SettingsChoiceMenu } from "./SettingsChoiceMenu";
 import type { AppToast } from "./AppToastRegion";
 
-const INVERT_FOLLOW_UP_SHORTCUT_LABEL = "Ctrl+Enter";
-const COMPOSER_MODIFIER_SYMBOL = "Ctrl";
 const LOCAL_EXTERNAL_AGENT_IMPORT_HOST_ID = "local";
 const EXTERNAL_AGENT_IMPORT_PROVIDERS = ["claude-code"] as const;
 const MIGRATE_TO_CODEX_SKILL_NAME = "migrate-to-codex";
+const PERMISSIONS_MODE_LEARN_MORE_URL =
+  "https://developers.openai.com/codex/config-basic";
+const AMBIENT_SUGGESTIONS_SUPPORTED_PLANS = new Set([
+  "plus",
+  "pro",
+  "business",
+  "team",
+  "self_serve_business_usage_based",
+]);
 const TERMINAL_SHELL_LABELS: Record<IntegratedTerminalShell, string> = {
   powershell: "PowerShell",
   commandPrompt: "Command Prompt",
   gitBash: "Git Bash",
   wsl: "WSL",
 };
+const EMPTY_DICTATION_DICTIONARY_ENTRY = "";
+const DEFAULT_DICTATION_DICTIONARY_ENTRIES = [EMPTY_DICTATION_DICTIONARY_ENTRY];
+const DICTATION_DICTIONARY_PLACEHOLDERS = [
+  "Jane Doe",
+  "Acme Widget",
+  "checkout-form.tsx",
+  "useCartState",
+] as const;
+type WorkModeOptionId = "coding" | "everyday";
+type SpeedMenuValue = "fast" | "flex" | "standard";
+
+const WORK_MODE_OPTIONS: ReadonlyArray<{
+  id: WorkModeOptionId;
+  value: ConversationDetailMode;
+  titleKey: MessageKey;
+  descriptionKey: MessageKey;
+  icon: ReactNode;
+}> = [
+  {
+    id: "coding",
+    value: "STEPS_COMMANDS",
+    titleKey: "settings.workMode.coding.title",
+    descriptionKey: "settings.workMode.coding.description",
+    icon: (
+      <svg
+        width="20"
+        height="20"
+        viewBox="0 0 20 20"
+        fill="none"
+        aria-hidden="true"
+        className="h-5 w-5 shrink-0 text-[var(--app-shell-text)]"
+      >
+        <path
+          d="M6.19629 7.86231C6.42357 7.63534 6.7752 7.60692 7.0332 7.77734L7.1377 7.86231L8.80371 9.5293C9.06329 9.78889 9.06307 10.21 8.80371 10.4697L7.1377 12.1367C6.878 12.3964 6.45599 12.3964 6.19629 12.1367C5.93686 11.8771 5.93697 11.456 6.19629 11.1963L7.39258 9.99902L6.19629 8.80371L6.11133 8.69922C5.94087 8.4411 5.96904 8.08955 6.19629 7.86231Z"
+          fill="currentColor"
+        />
+        <path
+          d="M13.4668 11.0156C13.7699 11.0776 13.998 11.3456 13.998 11.667C13.9979 11.9883 13.7698 12.2564 13.4668 12.3184L13.333 12.332H10.833C10.466 12.3319 10.1682 12.034 10.168 11.667C10.168 11.2998 10.4659 11.0021 10.833 11.002H13.333L13.4668 11.0156Z"
+          fill="currentColor"
+        />
+        <path
+          fillRule="evenodd"
+          clipRule="evenodd"
+          d="M12.6602 2.66504C13.3492 2.66504 13.9062 2.66439 14.3564 2.70117C14.8142 2.73859 15.2201 2.81796 15.5967 3.00977C16.1922 3.31321 16.677 3.79805 16.9805 4.39356C17.1722 4.77014 17.2517 5.17604 17.2891 5.63379C17.3258 6.08402 17.3252 6.64102 17.3252 7.33008V12.6602C17.3252 13.3492 17.3258 13.9062 17.2891 14.3564C17.2516 14.8142 17.1723 15.2201 16.9805 15.5967C16.677 16.1922 16.1922 16.677 15.5967 16.9805C15.2201 17.1723 14.8142 17.2516 14.3564 17.2891C13.9062 17.3258 13.3492 17.3252 12.6602 17.3252H7.33008C6.64102 17.3252 6.08402 17.3258 5.63379 17.2891C5.17604 17.2517 4.77014 17.1722 4.39356 16.9805C3.79805 16.677 3.31321 16.1922 3.00977 15.5967C2.81796 15.2201 2.73859 14.8142 2.70117 14.3564C2.66439 13.9062 2.66504 13.3492 2.66504 12.6602V7.33008C2.66504 6.64101 2.66439 6.08402 2.70117 5.63379C2.73858 5.17601 2.81797 4.77016 3.00977 4.39356C3.31321 3.79802 3.79802 3.31321 4.39356 3.00977C4.77016 2.81797 5.17601 2.73858 5.63379 2.70117C6.08402 2.66439 6.64101 2.66504 7.33008 2.66504H12.6602ZM7.33008 3.99512C6.61907 3.99512 6.1257 3.99601 5.74219 4.02734C5.3665 4.05804 5.15508 4.11481 4.99707 4.19531C4.65183 4.37124 4.37124 4.65183 4.19531 4.99707C4.11481 5.15508 4.05805 5.3665 4.02734 5.74219C3.99601 6.1257 3.99512 6.61908 3.99512 7.33008V12.6602C3.99512 13.3711 3.99601 13.8646 4.02734 14.248C4.05805 14.6237 4.11481 14.8352 4.19531 14.9932C4.37124 15.3384 4.65186 15.619 4.99707 15.7949C5.15507 15.8754 5.36654 15.9322 5.74219 15.9629C6.1257 15.9942 6.61908 15.9951 7.33008 15.9951H12.6602C13.3711 15.9951 13.8646 15.9942 14.248 15.9629C14.6237 15.9322 14.8352 15.8754 14.9932 15.7949C15.3384 15.619 15.619 15.3384 15.7949 14.9932C15.8754 14.8352 15.9322 14.6237 15.9629 14.248C15.9942 13.8646 15.9951 13.3711 15.9951 12.6602V7.33008C15.9951 6.61908 15.9942 6.1257 15.9629 5.74219C15.9322 5.36654 15.8754 5.15507 15.7949 4.99707C15.619 4.65186 15.3384 4.37124 14.9932 4.19531C14.8352 4.11481 14.6237 4.05805 14.248 4.02734C13.8646 3.99601 13.3711 3.99512 12.6602 3.99512H7.33008Z"
+          fill="currentColor"
+        />
+      </svg>
+    ),
+  },
+  {
+    id: "everyday",
+    value: "STEPS_PROSE",
+    titleKey: "settings.workMode.everyday.title",
+    descriptionKey: "settings.workMode.everyday.description",
+    icon: (
+      <svg
+        width="20"
+        height="20"
+        viewBox="0 0 20 20"
+        fill="none"
+        aria-hidden="true"
+        className="h-5 w-5 shrink-0 text-[var(--app-shell-text)]"
+      >
+        <path
+          d="M11.335 12.083C11.3347 9.97242 9.44966 8.16504 7 8.16504C4.55034 8.16504 2.66527 9.97242 2.66504 12.083C2.66504 12.8512 2.90887 13.5704 3.33691 14.1797C3.4302 14.3125 3.47218 14.4745 3.4541 14.6357C3.40535 15.0678 3.31415 15.4843 3.19922 15.8877C3.66136 15.8098 4.10651 15.6986 4.54297 15.5508L4.66699 15.5215C4.79159 15.5045 4.91938 15.5238 5.03516 15.5771C5.62294 15.8481 6.2901 16.002 7 16.002C9.44981 16.002 11.335 14.1938 11.335 12.083ZM17.335 7.91309C17.3348 5.80247 15.4497 3.99512 13 3.99512C11.5595 3.99512 10.298 4.62925 9.51465 5.58496C9.28182 5.86891 8.86214 5.9105 8.57812 5.67773C8.29409 5.44493 8.25257 5.02526 8.48535 4.74121C9.52649 3.47094 11.1693 2.66504 13 2.66504C16.0729 2.66504 18.6648 4.96138 18.665 7.91309C18.665 8.8753 18.3824 9.77408 17.8984 10.5459C17.9866 11.1153 18.1604 11.6767 18.3848 12.2568C18.4665 12.4681 18.4355 12.7068 18.3018 12.8896C18.1681 13.0723 17.9505 13.1739 17.7246 13.1602C16.8659 13.1076 16.0585 12.9617 15.2734 12.7178C15.1054 12.7861 14.9347 12.8511 14.7588 12.9043C14.4073 13.0104 14.036 12.8113 13.9297 12.46C13.8235 12.1084 14.0226 11.7372 14.374 11.6309C14.5782 11.5692 14.7758 11.4944 14.9648 11.4072L15.084 11.3652C15.2063 11.3351 15.3361 11.3399 15.457 11.3809C15.8932 11.5286 16.338 11.6399 16.7998 11.7178C16.6849 11.3144 16.5946 10.8978 16.5459 10.4658C16.5278 10.3046 16.5698 10.1426 16.6631 10.0098C17.0911 9.40048 17.335 8.68131 17.335 7.91309ZM12.665 12.083C12.665 15.0349 10.073 17.332 7 17.332C6.19184 17.332 5.42143 17.1731 4.72266 16.8887C4.04698 17.0983 3.35521 17.2365 2.62793 17.3037L2.27539 17.3301C2.04946 17.3438 1.83192 17.2422 1.69824 17.0596C1.56452 16.8767 1.53354 16.638 1.61523 16.4268L1.79297 15.9375C1.93133 15.5279 2.03737 15.1238 2.10059 14.7158C1.61678 13.9441 1.33496 13.045 1.33496 12.083C1.33519 9.13134 3.92709 6.83496 7 6.83496C10.0729 6.83496 12.6648 9.13134 12.665 12.083Z"
+          fill="currentColor"
+        />
+      </svg>
+    ),
+  },
+];
 
 type AgentEnvironmentValue = "windows" | "wsl";
+type NotificationTurnMode = "off" | "unfocused" | "always";
 type RemainingArtifactKind = "commands" | "hooks" | "mcp" | "plugins" | "subagents";
 type RemainingArtifactScope = "user" | "project";
 
@@ -69,6 +202,7 @@ type ExternalImportProgress = {
 };
 
 export function GeneralSettings({
+  authSnapshot,
   codexHome,
   workspaceRoot,
   onComposerEnterBehaviorChange,
@@ -77,6 +211,7 @@ export function GeneralSettings({
   onOpenChatWithPrompt,
   onShowToast,
 }: {
+  authSnapshot?: AuthSnapshot | null;
   codexHome?: string | null;
   workspaceRoot?: string | null;
   onComposerEnterBehaviorChange?: (value: ComposerEnterBehavior) => void;
@@ -93,9 +228,61 @@ export function GeneralSettings({
   const [isLanguageMenuOpen, setIsLanguageMenuOpen] = useState(false);
   const [isOpenTargetMenuOpen, setIsOpenTargetMenuOpen] = useState(false);
   const [isTerminalShellMenuOpen, setIsTerminalShellMenuOpen] = useState(false);
+  const [hotkeyWindowHotkeyState, setHotkeyWindowHotkeyState] =
+    useState<HotkeyWindowHotkeyStateResponse | null>(null);
+  const [isCapturingHotkeyWindowHotkey, setIsCapturingHotkeyWindowHotkey] =
+    useState(false);
+  const [isUpdatingHotkeyWindowHotkey, setIsUpdatingHotkeyWindowHotkey] =
+    useState(false);
+  const [hotkeyWindowHotkeyError, setHotkeyWindowHotkeyError] = useState<
+    string | null
+  >(null);
+  const [globalDictationHotkeyState, setGlobalDictationHotkeyState] =
+    useState<GlobalDictationHotkeyStateResponse | null>(null);
+  const [globalDictationHistoryItems, setGlobalDictationHistoryItems] =
+    useState<GlobalDictationHistoryItem[]>([]);
+  const [isCapturingGlobalDictationHotkey, setIsCapturingGlobalDictationHotkey] =
+    useState(false);
+  const [
+    isCapturingGlobalDictationToggleHotkey,
+    setIsCapturingGlobalDictationToggleHotkey,
+  ] = useState(false);
+  const [isUpdatingGlobalDictationHotkey, setIsUpdatingGlobalDictationHotkey] =
+    useState(false);
+  const [
+    isUpdatingGlobalDictationToggleHotkey,
+    setIsUpdatingGlobalDictationToggleHotkey,
+  ] = useState(false);
+  const [globalDictationHotkeyError, setGlobalDictationHotkeyError] = useState<
+    string | null
+  >(null);
+  const [
+    globalDictationToggleHotkeyError,
+    setGlobalDictationToggleHotkeyError,
+  ] = useState<string | null>(null);
+  const [
+    copyingGlobalDictationHistoryItemId,
+    setCopyingGlobalDictationHistoryItemId,
+  ] = useState<string | null>(null);
+  const [notificationTurnMode, setNotificationTurnMode] =
+    useState<NotificationTurnMode>("unfocused");
+  const [notificationsPermissionsEnabled, setNotificationsPermissionsEnabled] =
+    useState(true);
+  const [notificationsQuestionsEnabled, setNotificationsQuestionsEnabled] =
+    useState(true);
+  const [ambientSuggestionsEnabled, setAmbientSuggestionsEnabled] = useState(true);
+  const [composerPermissionModeVisibility, setComposerPermissionModeVisibility] =
+    useState<ComposerPermissionModeVisibility>(() =>
+      readComposerPermissionModeVisibility(),
+    );
+  const [serviceTier, setServiceTier] = useState<ConfigServiceTier | null>(null);
+  const [isSpeedLoading, setIsSpeedLoading] = useState(false);
+  const [canUseFastMode, setCanUseFastMode] = useState(false);
+  const [accountInfo, setAccountInfo] = useState<AccountInfoResponse | null>(null);
   const [languageSearch, setLanguageSearch] = useState("");
   const [openTargets, setOpenTargets] = useState<OpenInTargetsResponse | null>(null);
   const [availableTerminalShells, setAvailableTerminalShells] = useState<IntegratedTerminalShell[]>([]);
+  const [macMenuBarEnabled, setMacMenuBarEnabled] = useState(true);
   const [agentEnvironmentError, setAgentEnvironmentError] = useState<string | null>(null);
   const [isCheckingWslAvailability, setIsCheckingWslAvailability] = useState(false);
   const [detectedExternalImportItems, setDetectedExternalImportItems] = useState<ExternalAgentImportItem[]>([]);
@@ -110,12 +297,32 @@ export function GeneralSettings({
   const [selectedExternalImportItemKeys, setSelectedExternalImportItemKeys] = useState<Record<string, boolean>>({});
   const [lastCompletedImportProgress, setLastCompletedImportProgress] = useState<ExternalImportProgress | null>(null);
   const [sessionLatestImportedAtMs, setSessionLatestImportedAtMs] = useState<number | null>(null);
+  const [dictationDictionary, setDictationDictionary] = useState<string[]>([]);
+  const [dictationDictionaryDraft, setDictationDictionaryDraft] = useState<string[] | null>(null);
+  const [isDictationDictionaryExpanded, setIsDictationDictionaryExpanded] =
+    useState(false);
+  const [gpuTearingDebugSettings, setGpuTearingDebugSettings] =
+    useState<GpuTearingDebugSettings>(DEFAULT_GPU_TEARING_DEBUG_SETTINGS);
+  const composerModifierLabel = getComposerModifierLabel();
   const languageMenuRef = useRef<HTMLDivElement | null>(null);
   const openTargetMenuRef = useRef<HTMLDivElement | null>(null);
   const terminalShellMenuRef = useRef<HTMLDivElement | null>(null);
   const initialAgentEnvironmentRef = useRef<boolean | null>(null);
+  const skipNextDictationDictionaryBlurPersistRef = useRef(false);
   const isWindowsPlatform =
     typeof navigator === "undefined" ? true : navigator.userAgent.includes("Windows");
+  const isMacOsPlatform =
+    typeof navigator !== "undefined" && (navigator.platform ?? "").startsWith("Mac");
+  const defaultFeatures = useReplicaStatsigDefaultFeatures();
+  const showHotkeyWindowHotkeySetting =
+    useReplicaStatsigGateValue(REPLICA_STATSIG_GATES.hotkeyWindow) &&
+    !useReplicaStatsigGateValue(REPLICA_STATSIG_GATES.hotkeyWindowSuppress);
+  const showDictationSettings =
+    useReplicaStatsigGateValue(REPLICA_STATSIG_GATES.dictationPrimary) &&
+    useReplicaStatsigGateValue(REPLICA_STATSIG_GATES.dictationSecondary);
+  const showGpuTearingDebugSettings = useReplicaStatsigGateValue(
+    REPLICA_STATSIG_GATES.gpuTearingDebug,
+  );
   const showDefaultOpenTargetSetting = isWindowsPlatform;
   const showIntegratedTerminalShellSetting = isWindowsPlatform;
   const showAgentEnvironmentSetting =
@@ -126,11 +333,30 @@ export function GeneralSettings({
 
     const load = async () => {
       try {
-        const [snapshotResult, terminalShellOptionsResult, openTargetsResult] =
+        const nextGpuTearingDebugSettings = readGpuTearingDebugSettings();
+        const [
+          snapshotResult,
+          terminalShellOptionsResult,
+          openTargetsResult,
+          hotkeyWindowHotkeyStateResult,
+          notificationTurnModeResult,
+          notificationPermissionsEnabledResult,
+          notificationQuestionsEnabledResult,
+          ambientSuggestionsEnabledResult,
+          macMenuBarEnabledResult,
+          dictationDictionaryResult,
+        ] =
           await Promise.allSettled([
             readGeneralSettingsSnapshot(),
             readTerminalShellOptions(),
             showDefaultOpenTargetSetting ? readOpenInTargets({ cwd: null }) : Promise.resolve(null),
+            isWindowsPlatform ? readHotkeyWindowHotkeyState() : Promise.resolve(null),
+            getGlobalState("notifications-turn-mode"),
+            getGlobalState("notifications-permissions-enabled"),
+            getGlobalState("notifications-questions-enabled"),
+            getGlobalState("ambient-suggestions-enabled"),
+            isMacOsPlatform ? readMacMenuBarEnabledPreference() : Promise.resolve(true),
+            readDictationDictionary(),
           ]);
         if (cancelled) {
           return;
@@ -141,6 +367,7 @@ export function GeneralSettings({
         }
 
         setState(snapshotResult.value);
+        setGpuTearingDebugSettings(nextGpuTearingDebugSettings);
         if (initialAgentEnvironmentRef.current === null) {
           initialAgentEnvironmentRef.current =
             snapshotResult.value.runCodexInWindowsSubsystemForLinux;
@@ -153,12 +380,66 @@ export function GeneralSettings({
         setOpenTargets(
           openTargetsResult.status === "fulfilled" ? openTargetsResult.value : null,
         );
+        setHotkeyWindowHotkeyState(
+          hotkeyWindowHotkeyStateResult.status === "fulfilled"
+            ? hotkeyWindowHotkeyStateResult.value
+            : null,
+        );
+        setNotificationTurnMode(
+          notificationTurnModeResult.status === "fulfilled"
+            ? normalizeNotificationTurnMode(notificationTurnModeResult.value.value)
+            : "unfocused",
+        );
+        setNotificationsPermissionsEnabled(
+          notificationPermissionsEnabledResult.status === "fulfilled"
+            ? notificationPermissionsEnabledResult.value.value !== false
+            : true,
+        );
+        setNotificationsQuestionsEnabled(
+          notificationQuestionsEnabledResult.status === "fulfilled"
+            ? notificationQuestionsEnabledResult.value.value !== false
+            : true,
+        );
+        setAmbientSuggestionsEnabled(
+          ambientSuggestionsEnabledResult.status === "fulfilled"
+            ? normalizeAmbientSuggestionsEnabled(ambientSuggestionsEnabledResult.value.value)
+            : true,
+        );
+        setMacMenuBarEnabled(
+          macMenuBarEnabledResult.status === "fulfilled"
+            ? macMenuBarEnabledResult.value
+            : true,
+        );
+        setDictationDictionary(
+          dictationDictionaryResult.status === "fulfilled"
+            ? dictationDictionaryResult.value
+            : [],
+        );
+        setHotkeyWindowHotkeyError(
+          hotkeyWindowHotkeyStateResult.status === "rejected"
+            ? hotkeyWindowHotkeyStateResult.reason instanceof Error
+              ? hotkeyWindowHotkeyStateResult.reason.message
+              : "Failed to update Popout Window hotkey."
+            : null,
+        );
         const nonBlockingError =
           terminalShellOptionsResult.status === "rejected"
             ? terminalShellOptionsResult.reason
             : openTargetsResult.status === "rejected"
               ? openTargetsResult.reason
-              : null;
+              : notificationTurnModeResult.status === "rejected"
+                ? notificationTurnModeResult.reason
+                : notificationPermissionsEnabledResult.status === "rejected"
+                ? notificationPermissionsEnabledResult.reason
+                : notificationQuestionsEnabledResult.status === "rejected"
+                ? notificationQuestionsEnabledResult.reason
+                  : ambientSuggestionsEnabledResult.status === "rejected"
+                      ? ambientSuggestionsEnabledResult.reason
+                      : macMenuBarEnabledResult.status === "rejected"
+                        ? macMenuBarEnabledResult.reason
+                      : dictationDictionaryResult.status === "rejected"
+                        ? dictationDictionaryResult.reason
+                      : null;
         setError(
           nonBlockingError == null
             ? null
@@ -182,7 +463,131 @@ export function GeneralSettings({
     return () => {
       cancelled = true;
     };
-  }, [showDefaultOpenTargetSetting]);
+  }, [isWindowsPlatform, showDefaultOpenTargetSetting]);
+
+  useEffect(() => {
+    if (!isWindowsPlatform) {
+      setGlobalDictationHotkeyState(null);
+      setGlobalDictationHistoryItems([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadGlobalDictationSettings = async () => {
+      const [hotkeyStateResult, historyResult] = await Promise.allSettled([
+        readGlobalDictationHotkeyState(),
+        readGlobalDictationHistory(),
+      ]);
+      if (cancelled) {
+        return;
+      }
+
+      if (hotkeyStateResult.status === "fulfilled") {
+        setGlobalDictationHotkeyState(hotkeyStateResult.value);
+        setGlobalDictationHotkeyError(null);
+        setGlobalDictationToggleHotkeyError(null);
+      }
+
+      if (historyResult.status === "fulfilled") {
+        setGlobalDictationHistoryItems(historyResult.value.items);
+      }
+    };
+
+    void loadGlobalDictationSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isWindowsPlatform]);
+
+  useEffect(() => {
+    if (authSnapshot?.authState.authMethod !== "chatgpt") {
+      setAccountInfo(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadAccountInfo = async () => {
+      try {
+        const nextAccountInfo = await readAccountInfo();
+        if (!cancelled) {
+          setAccountInfo(nextAccountInfo);
+        }
+      } catch {
+        if (!cancelled) {
+          setAccountInfo(null);
+        }
+      }
+    };
+
+    void loadAccountInfo();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    authSnapshot?.authState.authMethod,
+    authSnapshot?.authState.email,
+    authSnapshot?.authState.planAtLogin,
+  ]);
+
+  useEffect(() => {
+    if (authSnapshot?.authState.authMethod !== "chatgpt") {
+      setServiceTier(null);
+      setCanUseFastMode(false);
+      setIsSpeedLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsSpeedLoading(true);
+
+    const loadSpeedSettings = async () => {
+      const [configResult, configRequirementsResult, modelsResult] =
+        await Promise.allSettled([
+          readConfigForHost({
+            hostId: null,
+            cwd: null,
+            includeLayers: false,
+          }),
+          getConfigRequirementsForHost({ hostId: null }),
+          listModelsForHost({
+            hostId: null,
+            cursor: null,
+            limit: 100,
+            includeHidden: false,
+          }),
+        ]);
+
+      if (cancelled) {
+        return;
+      }
+
+      setServiceTier(
+        configResult.status === "fulfilled"
+          ? configResult.value.config.serviceTier
+          : null,
+      );
+      setCanUseFastMode(
+        configRequirementsResult.status === "fulfilled" &&
+          modelsResult.status === "fulfilled"
+          ? canUseFastModeFromSettingsSurface(
+              configRequirementsResult.value,
+              modelsResult.value,
+            )
+          : false,
+      );
+      setIsSpeedLoading(false);
+    };
+
+    void loadSpeedSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authSnapshot?.activeLoginId, authSnapshot?.authState.authMethod]);
 
   useEffect(() => {
     let cancelled = false;
@@ -269,9 +674,19 @@ export function GeneralSettings({
   }, [isLanguageMenuOpen, isOpenTargetMenuOpen, isTerminalShellMenuOpen]);
 
   const persistChoice = async (
-    field: "composerEnterBehavior" | "followUpQueueMode" | "reviewDelivery",
+    field:
+      | "conversationDetailMode"
+      | "composerEnterBehavior"
+      | "followUpQueueMode"
+      | "preventSleepWhileRunning"
+      | "reviewDelivery",
     key: GlobalStateKey,
-    value: ComposerEnterBehavior | FollowUpQueueMode | ReviewDelivery,
+    value:
+      | boolean
+      | ComposerEnterBehavior
+      | ConversationDetailMode
+      | FollowUpQueueMode
+      | ReviewDelivery,
   ) => {
     const previousState = state;
     setState((current) => ({ ...current, [field]: value }));
@@ -290,6 +705,21 @@ export function GeneralSettings({
       }
     } catch (err) {
       setState(previousState);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const persistMacMenuBarEnabled = async (value: boolean) => {
+    const previousValue = macMenuBarEnabled;
+    setMacMenuBarEnabled(value);
+    setError(null);
+    setIsSaving(true);
+    try {
+      await setGlobalState("mac-menu-bar-enabled", value);
+    } catch (err) {
+      setMacMenuBarEnabled(previousValue);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsSaving(false);
@@ -322,6 +752,137 @@ export function GeneralSettings({
       await setGlobalState("integratedTerminalShell", value);
     } catch (err) {
       setState(previousState);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const persistHotkeyWindowHotkey = async (hotkey: string | null) => {
+    setHotkeyWindowHotkeyError(null);
+    setIsUpdatingHotkeyWindowHotkey(true);
+    try {
+      const response = await setHotkeyWindowHotkey(hotkey);
+      setHotkeyWindowHotkeyState(response.state);
+      if (!response.success) {
+        setHotkeyWindowHotkeyError(
+          response.error ??
+            t(
+              "settings.general.experimentalFeatures.hotkeyWindowHotkey.errorGeneric",
+            ),
+        );
+        return;
+      }
+      setIsCapturingHotkeyWindowHotkey(false);
+    } catch (err) {
+      setHotkeyWindowHotkeyError(
+        err instanceof Error
+          ? err.message
+          : t(
+              "settings.general.experimentalFeatures.hotkeyWindowHotkey.errorGeneric",
+            ),
+      );
+    } finally {
+      setIsUpdatingHotkeyWindowHotkey(false);
+    }
+  };
+
+  const persistGlobalDictationHotkey = async ({
+    hotkey,
+    kind,
+  }: {
+    hotkey: string | null;
+    kind: "hold" | "toggle";
+  }) => {
+    const isHoldHotkey = kind === "hold";
+    const setErrorMessage = isHoldHotkey
+      ? setGlobalDictationHotkeyError
+      : setGlobalDictationToggleHotkeyError;
+    const setIsUpdating = isHoldHotkey
+      ? setIsUpdatingGlobalDictationHotkey
+      : setIsUpdatingGlobalDictationToggleHotkey;
+    const setIsCapturing = isHoldHotkey
+      ? setIsCapturingGlobalDictationHotkey
+      : setIsCapturingGlobalDictationToggleHotkey;
+    const genericErrorMessage = t(
+      isHoldHotkey
+        ? "settings.general.globalDictationHotkey.errorGeneric"
+        : "settings.general.globalDictationToggleHotkey.errorGeneric",
+    );
+
+    setErrorMessage(null);
+    setIsUpdating(true);
+    try {
+      const response = isHoldHotkey
+        ? await setGlobalDictationHotkey(hotkey)
+        : await setGlobalDictationToggleHotkey(hotkey);
+      setGlobalDictationHotkeyState(response.state);
+      if (!response.success) {
+        setErrorMessage(response.error ?? genericErrorMessage);
+        return;
+      }
+      setIsCapturing(false);
+    } catch (err) {
+      setErrorMessage(
+        err instanceof Error ? err.message : genericErrorMessage,
+      );
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const persistNotificationSetting = async <T extends boolean | NotificationTurnMode>(
+    key:
+      | "notifications-turn-mode"
+      | "notifications-permissions-enabled"
+      | "notifications-questions-enabled",
+    value: T,
+    previousValue: T,
+    setValue: (nextValue: T) => void,
+  ) => {
+    setValue(value);
+    setError(null);
+    setIsSaving(true);
+    try {
+      await setGlobalState(key, value);
+    } catch (err) {
+      setValue(previousValue);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const persistAmbientSuggestionsEnabled = async (value: boolean) => {
+    const previousValue = ambientSuggestionsEnabled;
+    setAmbientSuggestionsEnabled(value);
+    setError(null);
+    setIsSaving(true);
+    try {
+      await setGlobalState("ambient-suggestions-enabled", value);
+    } catch (err) {
+      setAmbientSuggestionsEnabled(previousValue);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const persistServiceTier = async (value: SpeedMenuValue) => {
+    const nextServiceTier = value === "fast" ? "fast" : null;
+    const previousValue = serviceTier;
+    setServiceTier(nextServiceTier);
+    setError(null);
+    setIsSaving(true);
+    try {
+      await writeConfigValueForHost({
+        hostId: null,
+        keyPath: "service_tier",
+        value: nextServiceTier,
+        mergeStrategy: "upsert",
+      });
+    } catch (err) {
+      setServiceTier(previousValue);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsSaving(false);
@@ -411,25 +972,81 @@ export function GeneralSettings({
     }
   };
 
-  const localeEntries = SUPPORTED_LOCALES.filter(
-    (entry): entry is LocaleCode => entry !== "auto",
-  ).map((entry) => {
-    const nativeLabel = getLocaleLabel(entry, entry);
-    const localizedLabel = getLocaleLabel(entry, locale);
-    const searchText = `${nativeLabel} ${localizedLabel} ${entry}`.toLowerCase();
-    return {
-      code: entry,
-      nativeLabel,
-      localizedLabel,
-      searchText,
-    };
-  });
+  const persistDictationDictionary = async (entries: string[]) => {
+    const normalizedEntries = normalizeDictationDictionaryEntries(entries);
+    const previousEntries = dictationDictionary;
+    setDictationDictionary(normalizedEntries);
+    setDictationDictionaryDraft(null);
+    setError(null);
+    setIsSaving(true);
+    try {
+      await setGlobalState("dictationDictionary", normalizedEntries);
+    } catch (err) {
+      setDictationDictionary(previousEntries);
+      setDictationDictionaryDraft(entries);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
+  const handleCopyGlobalDictationHistoryItem = async (id: string) => {
+    setCopyingGlobalDictationHistoryItemId(id);
+    try {
+      await copyGlobalDictationHistoryItem(id);
+    } catch (err) {
+      if (onShowToast) {
+        onShowToast({
+          tone: "error",
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    } finally {
+      setCopyingGlobalDictationHistoryItemId((current) =>
+        current === id ? null : current,
+      );
+    }
+  };
+
+  const persistGpuTearingDebugSetting = (
+    key: GpuTearingDebugSettingKey,
+    value: boolean,
+  ) => {
+    setGpuTearingDebugSettings((current) =>
+      updateGpuTearingDebugSettings({
+        key,
+        settings: current,
+        value,
+      }),
+    );
+  };
+
+  const localeEntries = useMemo(
+    () =>
+      SUPPORTED_LOCALES.filter(
+        (entry): entry is LocaleCode => entry !== "auto",
+      )
+        .map((entry) => {
+          const nativeLabel = getLocaleLabel(entry, entry);
+          const localizedLabel = getLocaleLabel(entry, locale);
+          const searchText = `${nativeLabel} ${localizedLabel}`.toLowerCase();
+          return {
+            code: entry,
+            nativeLabel,
+            localizedLabel,
+            searchText,
+          };
+        })
+        .sort((left, right) => left.nativeLabel.localeCompare(right.nativeLabel)),
+    [locale],
+  );
+
+  const normalizedLocaleOverride = resolveSupportedLocale(state.localeOverride);
   const selectedLocaleLabel =
-    state.localeOverride == null
+    normalizedLocaleOverride == null
       ? t("settings.ide.language.auto")
-      : localeEntries.find((entry) => entry.code === state.localeOverride)?.nativeLabel ??
-        state.localeOverride;
+      : localeEntries.find((entry) => entry.code === normalizedLocaleOverride)
+          ?.nativeLabel ?? t("settings.ide.language.auto");
 
   const normalizedLanguageSearch = languageSearch.trim().toLowerCase();
   const filteredLocaleEntries =
@@ -457,6 +1074,47 @@ export function GeneralSettings({
   const selectedOpenTarget =
     availableOpenTargets.find((target) => target.target === selectedOpenTargetValue) ??
     null;
+  const configuredHotkeyWindowHotkey =
+    hotkeyWindowHotkeyState?.configuredHotkey ?? null;
+  const hotkeyWindowHotkeyStatusLabel =
+    configuredHotkeyWindowHotkey == null
+      ? t("settings.general.experimentalFeatures.hotkeyWindowHotkey.off")
+      : formatAcceleratorLabel(configuredHotkeyWindowHotkey);
+  const invertFollowUpShortcutLabel = useMemo(
+    () =>
+      formatAcceleratorLabel(
+        getInvertFollowUpShortcutAccelerator(state.composerEnterBehavior),
+      ),
+    [state.composerEnterBehavior],
+  );
+  const isGlobalDictationHotkeySupported =
+    globalDictationHotkeyState?.supported ?? false;
+  const configuredGlobalDictationHotkey =
+    globalDictationHotkeyState?.configuredHotkey ?? null;
+  const configuredGlobalDictationToggleHotkey =
+    globalDictationHotkeyState?.configuredToggleHotkey ?? null;
+  const globalDictationHotkeyStatusLabel =
+    configuredGlobalDictationHotkey == null
+      ? t("settings.general.globalDictationHotkey.off")
+      : formatAcceleratorLabel(configuredGlobalDictationHotkey);
+  const globalDictationToggleHotkeyStatusLabel =
+    configuredGlobalDictationToggleHotkey == null
+      ? t("settings.general.globalDictationHotkey.off")
+      : formatAcceleratorLabel(configuredGlobalDictationToggleHotkey);
+  const dictationDictionaryEditorValues =
+    dictationDictionaryDraft ?? dictationDictionary;
+  const visibleDictationDictionaryEntries =
+    dictationDictionaryEditorValues.length > 0
+      ? dictationDictionaryEditorValues
+      : DEFAULT_DICTATION_DICTIONARY_ENTRIES;
+  const notificationTurnModeOptions: Array<{
+    value: NotificationTurnMode;
+    label: string;
+  }> = [
+    { value: "off", label: t("notifications.turnMode.off") },
+    { value: "unfocused", label: t("notifications.turnMode.unfocused") },
+    { value: "always", label: t("notifications.turnMode.always") },
+  ];
 
   const agentEnvironmentOptions = useMemo(
     () => [
@@ -670,6 +1328,121 @@ export function GeneralSettings({
           relativeTime: formatCompactRelativeTime(effectiveLatestImportedAtMs, t),
         })
       : t("settings.general.importExternalAgent.rowDescription");
+  const hotkeyWindowHotkeyDescription = (
+    <>
+      <span>
+        {t("settings.general.experimentalFeatures.hotkeyWindowHotkey.description")}
+      </span>
+      {hotkeyWindowHotkeyError ? (
+        <span className="app-text-error block">{hotkeyWindowHotkeyError}</span>
+      ) : null}
+    </>
+  );
+  const globalDictationHotkeyDescription = (
+    <>
+      <span>{t("settings.general.globalDictationHotkey.description")}</span>
+      {globalDictationHotkeyError ? (
+        <span className="app-text-error block">{globalDictationHotkeyError}</span>
+      ) : null}
+    </>
+  );
+  const globalDictationToggleHotkeyDescription = (
+    <>
+      <span>{t("settings.general.globalDictationToggleHotkey.description")}</span>
+      {globalDictationToggleHotkeyError ? (
+        <span className="app-text-error block">
+          {globalDictationToggleHotkeyError}
+        </span>
+      ) : null}
+    </>
+  );
+  const selectedWorkModeId: WorkModeOptionId =
+    state.conversationDetailMode === "STEPS_PROSE" ? "everyday" : "coding";
+  const speedOptions = useMemo(
+    () => [
+      {
+        value: "standard",
+        label: t("settings.agent.speed.option.standard"),
+        description: t("settings.agent.speed.option.standard.description"),
+      },
+      {
+        value: "fast",
+        label: t("settings.agent.speed.option.fast"),
+        description: t("settings.agent.speed.option.fast.description"),
+      },
+    ],
+    [t],
+  );
+  const selectedSpeedMenuValue: SpeedMenuValue = serviceTier ?? "standard";
+  const speedTriggerLabel =
+    serviceTier === "fast"
+      ? t("settings.agent.speed.option.fast")
+      : t("settings.agent.speed.option.standard");
+  const showSpeedSetting =
+    authSnapshot?.authState.authMethod === "chatgpt" &&
+    !isSpeedLoading &&
+    canUseFastMode;
+  const showAmbientSuggestionsSetting = useReplicaStatsigGateValue(
+    REPLICA_STATSIG_GATES.ambientSuggestions,
+  );
+  const showGuardianPermissionsModeOption =
+    defaultFeatures.guardian_approval === true;
+  const gpuTearingDebugSettingRows = useMemo(
+    () => [
+      {
+        key: "disableScrollFadeMask" as const,
+        label: t("settings.general.gpuTearingDebug.disableScrollFadeMask.label"),
+        description: t(
+          "settings.general.gpuTearingDebug.disableScrollFadeMask.description",
+        ),
+      },
+      {
+        key: "disableScrollFadeMaskAnimation" as const,
+        label: t(
+          "settings.general.gpuTearingDebug.disableScrollFadeMaskAnimation.label",
+        ),
+        description: t(
+          "settings.general.gpuTearingDebug.disableScrollFadeMaskAnimation.description",
+        ),
+      },
+      {
+        key: "disableBackdropBlur" as const,
+        label: t("settings.general.gpuTearingDebug.disableBackdropBlur.label"),
+        description: t(
+          "settings.general.gpuTearingDebug.disableBackdropBlur.description",
+        ),
+      },
+      {
+        key: "disableCssMotion" as const,
+        label: t("settings.general.gpuTearingDebug.disableCssMotion.label"),
+        description: t(
+          "settings.general.gpuTearingDebug.disableCssMotion.description",
+        ),
+      },
+      {
+        key: "forceOpaqueRendererBackground" as const,
+        label: t(
+          "settings.general.gpuTearingDebug.forceOpaqueRendererBackground.label",
+        ),
+        description: t(
+          "settings.general.gpuTearingDebug.forceOpaqueRendererBackground.description",
+        ),
+      },
+    ],
+    [t],
+  );
+  const persistComposerPermissionModeVisibility = (
+    mode: ComposerPermissionMode,
+    visible: boolean,
+  ) => {
+    setComposerPermissionModeVisibility((current) =>
+      updateComposerPermissionModeVisibility({
+        mode,
+        visible,
+        settings: current,
+      }),
+    );
+  };
 
   return (
     <>
@@ -680,86 +1453,140 @@ export function GeneralSettings({
           </div>
         </div>
         <div className="app-card rounded-[18px] px-5 py-4">
+          <div className="space-y-1">
+            <div className="app-title text-[14px] font-medium">
+              {t("settings.workMode.groupTitle")}
+            </div>
+            <p className="text-[13px] leading-5 text-[var(--app-shell-subtle)]">
+              {t("settings.workMode.groupDescription")}
+            </p>
+          </div>
+        </div>
+        <div className="app-card rounded-[18px] px-5 py-4">
+          <div
+            className="grid grid-cols-2 gap-3 max-sm:grid-cols-1"
+            role="radiogroup"
+            aria-label={t("settings.workMode.radioGroup")}
+          >
+            {WORK_MODE_OPTIONS.map((option) => {
+              const isSelected = selectedWorkModeId === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={isSelected}
+                  disabled={isLoading || isSaving}
+                  onClick={() =>
+                    void persistChoice(
+                      "conversationDetailMode",
+                      "conversationDetailMode",
+                      option.value,
+                    )
+                  }
+                  className={[
+                    "flex min-h-[62px] min-w-0 items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left outline-none transition",
+                    "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-shell-control-ring)]",
+                    "disabled:cursor-not-allowed disabled:opacity-70",
+                    isSelected
+                      ? "border-transparent bg-[var(--app-shell-card-bg-muted)]"
+                      : "border-[var(--app-shell-border)] bg-[var(--app-shell-card-bg)] hover:bg-[var(--app-shell-card-bg-muted)]",
+                  ].join(" ")}
+                >
+                  {option.icon}
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <span className="min-w-0 truncate text-sm text-[var(--app-shell-text)]">
+                      {t(option.titleKey)}
+                    </span>
+                    <span className="min-w-0 truncate text-sm text-[var(--app-shell-subtle)]">
+                      {t(option.descriptionKey)}
+                    </span>
+                  </div>
+                  <span
+                    aria-hidden="true"
+                    className={[
+                      "flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-full",
+                      isSelected
+                        ? "border-2 border-[var(--app-shell-accent)] bg-[var(--app-shell-accent)]"
+                        : "border border-[var(--app-shell-border)]",
+                    ].join(" ")}
+                  >
+                    <span
+                      className={[
+                        "h-[7px] w-[7px] rounded-full bg-white transition-opacity",
+                        isSelected ? "opacity-100" : "opacity-0",
+                      ].join(" ")}
+                    />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="app-card rounded-[18px] px-5 py-4">
+          <div className="app-title text-[14px] font-medium">
+            {t("settings.agent.permissionsMode.groupTitle")}
+          </div>
+        </div>
+        <div className="app-card rounded-[18px] px-5 py-4">
           <div className="space-y-4 text-[14px]">
             <SettingRow
-              label={t("settings.ide.language.label")}
-              description={t("settings.ide.language.description")}
+              label={t("settings.agent.permissionsMode.default.title")}
+              description={t("settings.agent.permissionsMode.default.description")}
             >
-              <div className="relative w-[320px] max-w-full" ref={languageMenuRef}>
-                <button
-                  type="button"
-                  disabled={isLoading || isSaving}
-                  onClick={() => setIsLanguageMenuOpen((open) => !open)}
-                  className="app-control flex w-full items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-[13px]"
-                >
-                  <span className="truncate text-left">{selectedLocaleLabel}</span>
-                  <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
-                </button>
-                {isLanguageMenuOpen ? (
-                  <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-full rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
-                    <div className="pb-1">
-                      <input
-                        type="text"
-                        value={languageSearch}
-                        autoFocus
-                        onChange={(event) => setLanguageSearch(event.target.value)}
-                        placeholder={t("settings.ide.language.search")}
-                        className="app-control w-full rounded-[10px] px-3 py-2 text-[13px]"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      disabled={isSaving}
-                      onClick={() => {
-                        setIsLanguageMenuOpen(false);
-                        void persistLocale("auto");
-                      }}
-                      className={[
-                        "flex w-full items-center justify-between rounded-[10px] px-3 py-2 text-left text-[13px]",
-                        state.localeOverride == null
-                          ? "app-nav-item-active"
-                          : "app-nav-item-idle",
-                      ].join(" ")}
-                    >
-                      <span>{t("settings.ide.language.autoOption")}</span>
-                      {state.localeOverride == null ? (
-                        <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
-                      ) : null}
-                    </button>
-                    <div className="mt-1 max-h-80 overflow-y-auto">
-                      {filteredLocaleEntries.map((entry) => {
-                        const isSelected = entry.code === state.localeOverride;
-                        return (
-                          <button
-                            key={entry.code}
-                            type="button"
-                            disabled={isSaving}
-                            onClick={() => {
-                              setIsLanguageMenuOpen(false);
-                              void persistLocale(entry.code);
-                            }}
-                            className={[
-                              "flex w-full items-center justify-between rounded-[10px] px-3 py-2 text-left text-[13px]",
-                              isSelected ? "app-nav-item-active" : "app-nav-item-idle",
-                            ].join(" ")}
-                          >
-                            <span className="truncate">
-                              {entry.nativeLabel}
-                              {entry.localizedLabel === entry.nativeLabel
-                                ? ""
-                                : ` • ${entry.localizedLabel}`}
-                            </span>
-                            {isSelected ? (
-                              <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
+              <ToggleSwitch
+                checked
+                disabled
+                ariaLabel={t("settings.agent.permissionsMode.default.toggle")}
+                onChange={() => undefined}
+              />
             </SettingRow>
+            {showGuardianPermissionsModeOption ? (
+              <SettingRow
+                label={t("settings.agent.permissionsMode.autoReview.title")}
+                description={renderLinkedDescription(
+                  t("settings.agent.permissionsMode.autoReview.description"),
+                  PERMISSIONS_MODE_LEARN_MORE_URL,
+                )}
+              >
+                <ToggleSwitch
+                  checked={composerPermissionModeVisibility["guardian-approvals"]}
+                  disabled={isLoading || isSaving}
+                  ariaLabel={t("settings.agent.permissionsMode.autoReview.toggle")}
+                  onChange={(checked) =>
+                    persistComposerPermissionModeVisibility(
+                      "guardian-approvals",
+                      checked,
+                    )
+                  }
+                />
+              </SettingRow>
+            ) : null}
+            <SettingRow
+              label={t("settings.agent.permissionsMode.fullAccess.title")}
+              description={renderLinkedDescription(
+                t("settings.agent.permissionsMode.fullAccess.description"),
+                PERMISSIONS_MODE_LEARN_MORE_URL,
+              )}
+            >
+              <ToggleSwitch
+                checked={composerPermissionModeVisibility["full-access"]}
+                disabled={isLoading || isSaving}
+                ariaLabel={t("settings.agent.permissionsMode.fullAccess.toggle")}
+                onChange={(checked) =>
+                  persistComposerPermissionModeVisibility("full-access", checked)
+                }
+              />
+            </SettingRow>
+          </div>
+        </div>
+        <div className="app-card rounded-[18px] px-5 py-4">
+          <div className="app-title text-[14px] font-medium">
+            {t("settings.general.groupTitle")}
+          </div>
+        </div>
+        <div className="app-card rounded-[18px] px-5 py-4">
+          <div className="space-y-4 text-[14px]">
             {showDefaultOpenTargetSetting ? (
               <SettingRow
                 label={t("settings.ide.defaultOpenTarget.label")}
@@ -882,6 +1709,211 @@ export function GeneralSettings({
                 </div>
               </SettingRow>
             ) : null}
+            <SettingRow
+              label={t("settings.ide.language.label")}
+              description={t("settings.ide.language.description")}
+            >
+              <div className="relative w-[320px] max-w-full" ref={languageMenuRef}>
+                <button
+                  type="button"
+                  disabled={isLoading || isSaving}
+                  onClick={() => setIsLanguageMenuOpen((open) => !open)}
+                  className="app-control flex w-full items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-[13px]"
+                >
+                  <span className="truncate text-left">{selectedLocaleLabel}</span>
+                  <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
+                </button>
+                {isLanguageMenuOpen ? (
+                  <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-full rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+                    <div className="pb-1">
+                      <input
+                        type="text"
+                        value={languageSearch}
+                        autoFocus
+                        onChange={(event) => setLanguageSearch(event.target.value)}
+                        placeholder={t("settings.ide.language.search")}
+                        className="app-control w-full rounded-[10px] px-3 py-2 text-[13px]"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isSaving}
+                      onClick={() => {
+                        setIsLanguageMenuOpen(false);
+                        void persistLocale("auto");
+                      }}
+                      className={[
+                        "flex w-full items-center justify-between rounded-[10px] px-3 py-2 text-left text-[13px]",
+                        normalizedLocaleOverride == null
+                          ? "app-nav-item-active"
+                          : "app-nav-item-idle",
+                      ].join(" ")}
+                    >
+                      <span>{t("settings.ide.language.autoOption")}</span>
+                      {normalizedLocaleOverride == null ? (
+                        <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
+                      ) : null}
+                    </button>
+                    <div className="mt-1 max-h-80 overflow-y-auto">
+                      {filteredLocaleEntries.map((entry) => {
+                        const isSelected = entry.code === normalizedLocaleOverride;
+                        return (
+                          <button
+                            key={entry.code}
+                            type="button"
+                            disabled={isSaving}
+                            onClick={() => {
+                              setIsLanguageMenuOpen(false);
+                              void persistLocale(entry.code);
+                            }}
+                            className={[
+                              "flex w-full items-center justify-between rounded-[10px] px-3 py-2 text-left text-[13px]",
+                              isSelected ? "app-nav-item-active" : "app-nav-item-idle",
+                            ].join(" ")}
+                          >
+                            <span className="truncate">
+                              {entry.nativeLabel}
+                              {entry.localizedLabel === entry.nativeLabel
+                                ? ""
+                                : ` • ${entry.localizedLabel}`}
+                            </span>
+                            {isSelected ? (
+                              <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </SettingRow>
+            {isMacOsPlatform ? (
+              <SettingRow
+                label={t("settings.general.macMenuBar.label")}
+                description={t("settings.general.macMenuBar.description")}
+              >
+                <ToggleSwitch
+                  checked={macMenuBarEnabled}
+                  disabled={isLoading || isSaving}
+                  ariaLabel={t("settings.general.macMenuBar.ariaLabel")}
+                  onChange={(checked) => void persistMacMenuBarEnabled(checked)}
+                />
+              </SettingRow>
+            ) : null}
+            {showHotkeyWindowHotkeySetting ? (
+              <SettingRow
+                label={t(
+                  "settings.general.experimentalFeatures.hotkeyWindowHotkey.label",
+                )}
+                description={hotkeyWindowHotkeyDescription}
+              >
+                {isCapturingHotkeyWindowHotkey ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      autoFocus
+                      value={t(
+                        "settings.general.experimentalFeatures.hotkeyWindowHotkey.capturePrompt",
+                      )}
+                      aria-label={t(
+                        "settings.general.experimentalFeatures.hotkeyWindowHotkey.captureAriaLabel",
+                      )}
+                      onBlur={() => setIsCapturingHotkeyWindowHotkey(false)}
+                      onKeyDown={(event) => {
+                        if (event.repeat) {
+                          return;
+                        }
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (event.key === "Escape") {
+                          setIsCapturingHotkeyWindowHotkey(false);
+                          return;
+                        }
+                        const accelerator = buildAcceleratorFromKeyboardEvent(
+                          event.nativeEvent,
+                        );
+                        if (accelerator == null) {
+                          return;
+                        }
+                        setIsCapturingHotkeyWindowHotkey(false);
+                        void persistHotkeyWindowHotkey(accelerator);
+                      }}
+                      className="app-control h-9 w-36 rounded-[10px] px-3 py-2 text-[13px]"
+                    />
+                    <button
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => setIsCapturingHotkeyWindowHotkey(false)}
+                      className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
+                    >
+                      {t(
+                        "settings.general.experimentalFeatures.hotkeyWindowHotkey.cancel",
+                      )}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="min-w-20 text-right text-[13px] text-token-text-secondary">
+                      {hotkeyWindowHotkeyStatusLabel}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={isUpdatingHotkeyWindowHotkey}
+                      onClick={() => {
+                        setHotkeyWindowHotkeyError(null);
+                        setIsCapturingHotkeyWindowHotkey(true);
+                      }}
+                      className="app-control rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
+                    >
+                      {configuredHotkeyWindowHotkey == null
+                        ? t(
+                            "settings.general.experimentalFeatures.hotkeyWindowHotkey.set",
+                          )
+                        : t(
+                            "settings.general.experimentalFeatures.hotkeyWindowHotkey.change",
+                          )}
+                    </button>
+                    {configuredHotkeyWindowHotkey != null ? (
+                      <button
+                        type="button"
+                        disabled={isUpdatingHotkeyWindowHotkey}
+                        onClick={() => void persistHotkeyWindowHotkey(null)}
+                        className="app-control rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
+                      >
+                        {t(
+                          "settings.general.experimentalFeatures.hotkeyWindowHotkey.clear",
+                        )}
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+              </SettingRow>
+            ) : null}
+            {isWindowsPlatform ? null : (
+              <SettingRow
+                label={t("settings.general.power.preventSleepWhileRunning.label")}
+                description={t(
+                  "settings.general.power.preventSleepWhileRunning.description",
+                )}
+              >
+                <ToggleSwitch
+                  checked={state.preventSleepWhileRunning}
+                  disabled={isLoading || isSaving}
+                  ariaLabel={t(
+                    "settings.general.power.preventSleepWhileRunning.label",
+                  )}
+                  onChange={(checked) =>
+                    void persistChoice(
+                      "preventSleepWhileRunning",
+                      "preventSleepWhileRunning",
+                      checked,
+                    )
+                  }
+                />
+              </SettingRow>
+            )}
             {shouldRenderExternalImportRow ? (
               <SettingRow
                 label={
@@ -903,17 +1935,17 @@ export function GeneralSettings({
             ) : null}
             <SettingRow
               label={t("settings.general.enterBehavior.label", {
-                modifierSymbol: COMPOSER_MODIFIER_SYMBOL,
+                modifierSymbol: composerModifierLabel,
               })}
               description={t("settings.general.enterBehavior.description", {
-                modifierSymbol: COMPOSER_MODIFIER_SYMBOL,
+                modifierSymbol: composerModifierLabel,
               })}
             >
               <ToggleSwitch
                 checked={state.composerEnterBehavior === "cmdIfMultiline"}
                 disabled={isLoading || isSaving}
                 ariaLabel={t("settings.general.enterBehavior.label", {
-                  modifierSymbol: COMPOSER_MODIFIER_SYMBOL,
+                  modifierSymbol: composerModifierLabel,
                 })}
                 onChange={(checked) =>
                   void persistChoice(
@@ -928,10 +1960,26 @@ export function GeneralSettings({
         </div>
         <div className="app-card rounded-[18px] px-5 py-4">
           <div className="space-y-4 text-[14px]">
+            {showSpeedSetting ? (
+              <SettingRow
+                label={t("settings.agent.speed.label")}
+                description={t("settings.agent.speed.description")}
+              >
+                <SettingsChoiceMenu
+                  disabled={isLoading || isSaving || isSpeedLoading}
+                  options={speedOptions}
+                  triggerLabel={speedTriggerLabel}
+                  value={selectedSpeedMenuValue}
+                  onChange={(value) =>
+                    void persistServiceTier(value as SpeedMenuValue)
+                  }
+                />
+              </SettingRow>
+            ) : null}
             <SettingRow
               label={t("settings.general.followUpQueueMode.label")}
               description={t("settings.general.followUpQueueMode.description", {
-                invertFollowUpShortcutLabel: INVERT_FOLLOW_UP_SHORTCUT_LABEL,
+                invertFollowUpShortcutLabel,
               })}
             >
               <SegmentedControl
@@ -976,8 +2024,250 @@ export function GeneralSettings({
                 }
               />
             </SettingRow>
+            {showAmbientSuggestionsSetting ? (
+              <SettingRow
+                label={t("settings.agent.ambientSuggestions.groupTitle")}
+                description={t("settings.agent.ambientSuggestions.rowLabel")}
+              >
+                <ToggleSwitch
+                  checked={ambientSuggestionsEnabled}
+                  disabled={isLoading || isSaving}
+                  ariaLabel={t("settings.agent.ambientSuggestions.toggleLabel")}
+                  onChange={(checked) =>
+                    void persistAmbientSuggestionsEnabled(checked)
+                  }
+                />
+              </SettingRow>
+            ) : null}
           </div>
         </div>
+        {showDictationSettings ? (
+          <>
+            <div className="app-card rounded-[18px] px-5 py-4">
+              <div className="app-title text-[14px] font-medium">
+                {t("settings.general.dictation")}
+              </div>
+            </div>
+            <div className="app-card overflow-hidden rounded-[18px]">
+              <div className="divide-y divide-[var(--app-shell-border)]">
+                <SettingRow
+                  label={t("settings.general.globalDictationHotkey.label")}
+                  description={globalDictationHotkeyDescription}
+                >
+                  <DictationHotkeyControl
+                    capturePrompt={t(
+                      "settings.general.globalDictationHotkey.capturePrompt",
+                    )}
+                    captureAriaLabel={t(
+                      "settings.general.globalDictationHotkey.captureAriaLabel",
+                    )}
+                    cancelLabel={t(
+                      "settings.general.globalDictationHotkey.cancel",
+                    )}
+                    changeLabel={t(
+                      "settings.general.globalDictationHotkey.change",
+                    )}
+                    clearLabel={t(
+                      "settings.general.globalDictationHotkey.clear",
+                    )}
+                    configuredHotkey={configuredGlobalDictationHotkey}
+                    disabled={!isGlobalDictationHotkeySupported}
+                    isCapturing={isCapturingGlobalDictationHotkey}
+                    isUpdating={isUpdatingGlobalDictationHotkey}
+                    setLabel={t("settings.general.globalDictationHotkey.set")}
+                    statusLabel={globalDictationHotkeyStatusLabel}
+                    onCancelCapture={() =>
+                      setIsCapturingGlobalDictationHotkey(false)
+                    }
+                    onClear={() =>
+                      void persistGlobalDictationHotkey({
+                        hotkey: null,
+                        kind: "hold",
+                      })
+                    }
+                    onStartCapture={() => {
+                      setGlobalDictationHotkeyError(null);
+                      setIsCapturingGlobalDictationHotkey(true);
+                    }}
+                    onSubmit={(hotkey) =>
+                      void persistGlobalDictationHotkey({
+                        hotkey,
+                        kind: "hold",
+                      })
+                    }
+                  />
+                </SettingRow>
+                <SettingRow
+                  label={t("settings.general.globalDictationToggleHotkey.label")}
+                  description={globalDictationToggleHotkeyDescription}
+                >
+                  <DictationHotkeyControl
+                    capturePrompt={t(
+                      "settings.general.globalDictationHotkey.capturePrompt",
+                    )}
+                    captureAriaLabel={t(
+                      "settings.general.globalDictationToggleHotkey.captureAriaLabel",
+                    )}
+                    cancelLabel={t(
+                      "settings.general.globalDictationHotkey.cancel",
+                    )}
+                    changeLabel={t(
+                      "settings.general.globalDictationToggleHotkey.change",
+                    )}
+                    clearLabel={t(
+                      "settings.general.globalDictationToggleHotkey.clear",
+                    )}
+                    configuredHotkey={configuredGlobalDictationToggleHotkey}
+                    disabled={!isGlobalDictationHotkeySupported}
+                    isCapturing={isCapturingGlobalDictationToggleHotkey}
+                    isUpdating={isUpdatingGlobalDictationToggleHotkey}
+                    setLabel={t(
+                      "settings.general.globalDictationToggleHotkey.set",
+                    )}
+                    statusLabel={globalDictationToggleHotkeyStatusLabel}
+                    onCancelCapture={() =>
+                      setIsCapturingGlobalDictationToggleHotkey(false)
+                    }
+                    onClear={() =>
+                      void persistGlobalDictationHotkey({
+                        hotkey: null,
+                        kind: "toggle",
+                      })
+                    }
+                    onStartCapture={() => {
+                      setGlobalDictationToggleHotkeyError(null);
+                      setIsCapturingGlobalDictationToggleHotkey(true);
+                    }}
+                    onSubmit={(hotkey) =>
+                      void persistGlobalDictationHotkey({
+                        hotkey,
+                        kind: "toggle",
+                      })
+                    }
+                  />
+                </SettingRow>
+                <GlobalDictationHistorySetting
+                  copyingItemId={copyingGlobalDictationHistoryItemId}
+                  items={globalDictationHistoryItems}
+                  onCopy={(id) => void handleCopyGlobalDictationHistoryItem(id)}
+                  t={t}
+                />
+                <DictationDictionarySetting
+                  entries={visibleDictationDictionaryEntries}
+                  isExpanded={isDictationDictionaryExpanded}
+                  isSaving={isSaving}
+                  onChange={setDictationDictionaryDraft}
+                  onPersist={persistDictationDictionary}
+                  onToggle={() => {
+                    setIsDictationDictionaryExpanded((current) => !current);
+                    setDictationDictionaryDraft(null);
+                  }}
+                  skipNextBlurPersistRef={skipNextDictationDictionaryBlurPersistRef}
+                  t={t}
+                />
+              </div>
+            </div>
+          </>
+        ) : null}
+        <div className="app-card rounded-[18px] px-5 py-4">
+          <div className="app-title text-[14px] font-medium">
+            {t("settings.general.notifications")}
+          </div>
+        </div>
+        <div className="app-card rounded-[18px] px-5 py-4">
+          <div className="space-y-4 text-[14px]">
+            <SettingRow
+              label={t("notifications.turnMode.label")}
+              description={t("notifications.turnMode.description")}
+            >
+              <SettingsChoiceMenu
+                disabled={isLoading || isSaving}
+                options={notificationTurnModeOptions}
+                value={notificationTurnMode}
+                onChange={(value) =>
+                  void persistNotificationSetting(
+                    "notifications-turn-mode",
+                    value as NotificationTurnMode,
+                    notificationTurnMode,
+                    (nextValue) => setNotificationTurnMode(nextValue),
+                  )
+                }
+              />
+            </SettingRow>
+            <SettingRow
+              label={t("notifications.permissions.label")}
+              description={t("notifications.permissions.description")}
+            >
+              <ToggleSwitch
+                checked={notificationsPermissionsEnabled}
+                disabled={isLoading || isSaving}
+                ariaLabel={t("notifications.permissions.label")}
+                onChange={(checked) =>
+                  void persistNotificationSetting(
+                    "notifications-permissions-enabled",
+                    checked,
+                    notificationsPermissionsEnabled,
+                    (nextValue) => setNotificationsPermissionsEnabled(nextValue),
+                  )
+                }
+              />
+            </SettingRow>
+            <SettingRow
+              label={t("notifications.questions.label")}
+              description={t("notifications.questions.description")}
+            >
+              <ToggleSwitch
+                checked={notificationsQuestionsEnabled}
+                disabled={isLoading || isSaving}
+                ariaLabel={t("notifications.questions.label")}
+                onChange={(checked) =>
+                  void persistNotificationSetting(
+                    "notifications-questions-enabled",
+                    checked,
+                    notificationsQuestionsEnabled,
+                    (nextValue) => setNotificationsQuestionsEnabled(nextValue),
+                  )
+                }
+              />
+            </SettingRow>
+          </div>
+        </div>
+        {showGpuTearingDebugSettings ? (
+          <>
+            <div className="app-card rounded-[18px] px-5 py-4">
+              <div className="space-y-1">
+                <div className="app-title text-[14px] font-medium">
+                  {t("settings.general.gpuTearingDebug")}
+                </div>
+                <p className="text-[13px] leading-5 text-[var(--app-shell-subtle)]">
+                  {t("settings.general.gpuTearingDebug.subtitle")}
+                </p>
+              </div>
+            </div>
+            <div className="app-card rounded-[18px] px-5 py-4">
+              <div className="space-y-4 text-[14px]">
+                {gpuTearingDebugSettingRows.map((setting) => (
+                  <SettingRow
+                    key={setting.key}
+                    label={setting.label}
+                    description={setting.description}
+                  >
+                    <ToggleSwitch
+                      checked={gpuTearingDebugSettings[setting.key]}
+                      disabled={false}
+                      ariaLabel={t("settings.general.gpuTearingDebug.toggle", {
+                        settingName: setting.label,
+                      })}
+                      onChange={(checked) =>
+                        persistGpuTearingDebugSetting(setting.key, checked)
+                      }
+                    />
+                  </SettingRow>
+                ))}
+              </div>
+            </div>
+          </>
+        ) : null}
         {error ? (
           <div className="app-card-error rounded-[18px] px-5 py-4 text-[13px]">
             {error}
@@ -1042,6 +2332,344 @@ export function GeneralSettings({
   );
 }
 
+function DictationHotkeyControl({
+  cancelLabel,
+  capturePrompt,
+  captureAriaLabel,
+  changeLabel,
+  clearLabel,
+  configuredHotkey,
+  disabled,
+  isCapturing,
+  isUpdating,
+  setLabel,
+  statusLabel,
+  onCancelCapture,
+  onClear,
+  onStartCapture,
+  onSubmit,
+}: {
+  cancelLabel: string;
+  capturePrompt: string;
+  captureAriaLabel: string;
+  changeLabel: string;
+  clearLabel: string;
+  configuredHotkey: string | null;
+  disabled: boolean;
+  isCapturing: boolean;
+  isUpdating: boolean;
+  setLabel: string;
+  statusLabel: string;
+  onCancelCapture: () => void;
+  onClear: () => void;
+  onStartCapture: () => void;
+  onSubmit: (hotkey: string) => void;
+}) {
+  if (isCapturing) {
+    return (
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          readOnly
+          autoFocus
+          value={capturePrompt}
+          aria-label={captureAriaLabel}
+          onBlur={onCancelCapture}
+          onKeyDown={(event) => {
+            if (event.repeat) {
+              return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            if (event.key === "Escape") {
+              onCancelCapture();
+              return;
+            }
+            const accelerator = buildAcceleratorFromKeyboardEvent(
+              event.nativeEvent,
+            );
+            if (accelerator == null) {
+              return;
+            }
+            onCancelCapture();
+            onSubmit(accelerator);
+          }}
+          className="app-control h-9 w-36 rounded-[10px] px-3 py-2 text-[13px]"
+        />
+        <button
+          type="button"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={onCancelCapture}
+          className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
+        >
+          {cancelLabel}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <span className="min-w-20 text-right text-[13px] text-token-text-secondary">
+        {statusLabel}
+      </span>
+      <button
+        type="button"
+        disabled={disabled || isUpdating}
+        onClick={onStartCapture}
+        className="app-control rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
+      >
+        {configuredHotkey == null ? setLabel : changeLabel}
+      </button>
+      {configuredHotkey != null ? (
+        <button
+          type="button"
+          disabled={disabled || isUpdating}
+          onClick={onClear}
+          className="app-control rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
+        >
+          {clearLabel}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function GlobalDictationHistorySetting({
+  copyingItemId,
+  items,
+  onCopy,
+  t,
+}: {
+  copyingItemId: string | null;
+  items: GlobalDictationHistoryItem[];
+  onCopy: (id: string) => void;
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+}) {
+  return (
+    <div className="px-3 py-3">
+      <div className="text-sm text-[var(--app-shell-text)]">
+        {t("settings.general.globalDictationHistory.emptyTitle")}
+      </div>
+      {items.length === 0 ? (
+        <div className="app-text-muted mt-1 text-sm leading-5">
+          {t("settings.general.globalDictationHistory.emptyDescription")}
+        </div>
+      ) : (
+        <div className="mt-3 flex flex-col gap-2">
+          {items.map((item) => (
+            <div
+              key={item.id}
+              className="app-control flex items-start gap-3 rounded-[12px] px-3 py-2"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="whitespace-pre-wrap break-words text-[13px]">
+                  {item.text}
+                </div>
+                <div className="app-text-muted mt-1 text-[12px]">
+                  {formatCompactRelativeTime(item.createdAtMs, t)}
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={copyingItemId === item.id}
+                onClick={() => onCopy(item.id)}
+                className="app-control rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
+              >
+                {t("settings.general.globalDictationHistory.copy")}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DictationDictionarySetting({
+  entries,
+  isExpanded,
+  isSaving,
+  onChange,
+  onPersist,
+  onToggle,
+  skipNextBlurPersistRef,
+  t,
+}: {
+  entries: string[];
+  isExpanded: boolean;
+  isSaving: boolean;
+  onChange: (entries: string[]) => void;
+  onPersist: (entries: string[]) => Promise<void>;
+  onToggle: () => void;
+  skipNextBlurPersistRef: { current: boolean };
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+}) {
+  return (
+    <div>
+      <button
+        type="button"
+        aria-expanded={isExpanded}
+        onClick={onToggle}
+        className="flex w-full items-center justify-between gap-4 px-3 py-3 text-left"
+      >
+        <span className="flex min-w-0 flex-col gap-1">
+          <span className="min-w-0 text-sm text-[var(--app-shell-text)]">
+            {t("settings.general.dictationDictionary.label")}
+          </span>
+          <span className="app-text-muted min-w-0 text-sm">
+            {t("settings.general.dictationDictionary.description")}
+          </span>
+        </span>
+        <ChevronDownIcon
+          className={[
+            "h-4 w-4 shrink-0 text-[var(--app-shell-subtle)] transition-transform",
+            isExpanded ? "rotate-180" : "",
+          ].join(" ")}
+        />
+      </button>
+      {isExpanded ? (
+        <div className="flex flex-col gap-3 px-3 pb-3">
+          <div className="flex max-h-52 flex-col gap-2 overflow-y-auto">
+            {entries.map((entry, index) => {
+              const disableRemove =
+                entries.length === 1 && entry.length === 0;
+              return (
+                <div key={`dictation-dictionary-entry-${index}`} className="relative">
+                  <input
+                    autoFocus={index === 0}
+                    data-dictation-dictionary-entry-index={index}
+                    aria-label={t("settings.general.dictationDictionary.entryLabel")}
+                    className="app-control w-full rounded-[10px] px-3 py-2 pr-9 text-[13px] outline-none"
+                    disabled={isSaving}
+                    placeholder={
+                      DICTATION_DICTIONARY_PLACEHOLDERS[index] ??
+                      DICTATION_DICTIONARY_PLACEHOLDERS[0]
+                    }
+                    value={entry}
+                    onChange={(event) => {
+                      const nextEntries = [...entries];
+                      nextEntries[index] = event.currentTarget.value;
+                      onChange(nextEntries);
+                    }}
+                    onBlur={() => {
+                      if (skipNextBlurPersistRef.current) {
+                        skipNextBlurPersistRef.current = false;
+                        return;
+                      }
+                      void onPersist(entries);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter") {
+                        return;
+                      }
+
+                      event.preventDefault();
+                      const nextEntries = [
+                        ...entries.slice(0, index + 1),
+                        EMPTY_DICTATION_DICTIONARY_ENTRY,
+                        ...entries.slice(index + 1),
+                      ];
+                      skipNextBlurPersistRef.current = true;
+                      onChange(nextEntries);
+                      requestAnimationFrame(() => {
+                        document
+                          .querySelector<HTMLInputElement>(
+                            `[data-dictation-dictionary-entry-index="${index + 1}"]`,
+                          )
+                          ?.focus();
+                      });
+                    }}
+                  />
+                  <button
+                    type="button"
+                    aria-label={t("settings.general.dictationDictionary.removeEntry")}
+                    disabled={isSaving || disableRemove}
+                    onClick={() =>
+                      void onPersist(
+                        entries.filter((_, currentIndex) => currentIndex !== index),
+                      )
+                    }
+                    className="app-control absolute top-1/2 right-1 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-[8px] disabled:opacity-60"
+                  >
+                    <TrashIcon className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            disabled={isSaving}
+            onClick={() =>
+              onChange([...entries, EMPTY_DICTATION_DICTIONARY_ENTRY])
+            }
+            className="app-control flex items-center justify-center gap-2 rounded-[11px] border-dashed px-3 py-1.5 text-[12px] text-[var(--app-shell-muted)] disabled:opacity-60"
+          >
+            <PlusIcon className="h-3.5 w-3.5" />
+            {t("settings.general.dictationDictionary.addEntry")}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function normalizeDictationDictionaryEntries(entries: string[]) {
+  return entries.map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+}
+
+function normalizeNotificationTurnMode(value: unknown): NotificationTurnMode {
+  return value === "off" || value === "unfocused" || value === "always"
+    ? value
+    : "unfocused";
+}
+
+function canUseFastModeFromSettingsSurface(
+  configRequirements: ConfigRequirementsReadResponse,
+  models: ModelListResponse,
+) {
+  if (configRequirements.requirements?.featureRequirements?.fast_mode === false) {
+    return false;
+  }
+
+  return models.data.some((model) =>
+    model.additionalSpeedTiers.includes("fast"),
+  );
+}
+
+function normalizeAmbientSuggestionsEnabled(value: unknown): boolean {
+  return value !== false;
+}
+
+function isAmbientSuggestionsEligible(
+  authSnapshot: AuthSnapshot | null,
+  accountInfo: AccountInfoResponse | null,
+): boolean {
+  const authMethod = authSnapshot?.authState.authMethod;
+  if (authMethod === "apikey") {
+    return true;
+  }
+  if (authMethod !== "chatgpt") {
+    return false;
+  }
+
+  const email = accountInfo?.email ?? authSnapshot?.authState.email;
+  const plan = accountInfo?.plan ?? authSnapshot?.authState.planAtLogin;
+  return hasOpenAiEmail(email) || hasSupportedAmbientSuggestionsPlan(plan);
+}
+
+function hasOpenAiEmail(email: string | null | undefined): boolean {
+  return email?.trim().toLowerCase().endsWith("@openai.com") === true;
+}
+
+function hasSupportedAmbientSuggestionsPlan(plan: string | null | undefined): boolean {
+  if (plan == null) {
+    return false;
+  }
+  return AMBIENT_SUGGESTIONS_SUPPORTED_PLANS.has(plan.trim().toLowerCase());
+}
+
 function SettingRow({
   label,
   description,
@@ -1061,6 +2689,29 @@ function SettingRow({
       </div>
       {children}
     </div>
+  );
+}
+
+function renderLinkedDescription(description: string, href: string): ReactNode {
+  const match = description.match(/^(.*)<a>(.*)<\/a>(.*)$/);
+  if (!match) {
+    return description;
+  }
+
+  const [, prefix, linkText, suffix] = match;
+  return (
+    <>
+      {prefix}
+      <a
+        className="inline-flex text-[var(--app-shell-accent)]"
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {linkText}
+      </a>
+      {suffix}
+    </>
   );
 }
 

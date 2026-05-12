@@ -44,10 +44,19 @@ export type KeyboardShortcutCommand = {
   commandMenuGroupKey: string | null;
 };
 
+export type KeyboardShortcutGateState = {
+  globalDictationEnabled: boolean;
+  hotkeyWindowEnabled: boolean;
+};
+
 type AcceleratorLocation = "standard" | "left" | "right";
 
 const COMMAND_MENU_GROUP_ORDER = ["thread", "navigation", "panels", "workspace", "skills", "configure", "app"];
 const GATE_CONTROLLED_COMMAND_IDS = new Set(["hotkeyWindow", "globalDictationHold", "globalDictationToggle"]);
+const DEFAULT_KEYBOARD_SHORTCUT_GATE_STATE: KeyboardShortcutGateState = {
+  globalDictationEnabled: false,
+  hotkeyWindowEnabled: false,
+};
 const MODIFIER_KEYS = new Set(["Meta", "Control", "Alt", "AltGraph", "Shift"]);
 const KEY_LABEL_BY_EVENT_KEY = new Map<string, string>([
   ["Escape", "Esc"],
@@ -60,10 +69,6 @@ const KEY_LABEL_BY_EVENT_KEY = new Map<string, string>([
 export const KEYBOARD_SHORTCUT_COMMANDS = [...(commandInventoryData as KeyboardShortcutCommand[])].sort(
   compareKeyboardShortcutCommands,
 );
-const DISPLAYABLE_KEYBOARD_SHORTCUT_COMMANDS = KEYBOARD_SHORTCUT_COMMANDS.filter(
-  (command) => !GATE_CONTROLLED_COMMAND_IDS.has(command.id),
-);
-
 const KEYBOARD_SHORTCUT_COMMAND_BY_ID = new Map(KEYBOARD_SHORTCUT_COMMANDS.map((command) => [command.id, command]));
 
 export async function getCommandKeymapState() {
@@ -89,13 +94,18 @@ export function getKeyboardShortcutCommandDescription(command: KeyboardShortcutC
     : command.descriptionEn;
 }
 
-export function getFilteredKeyboardShortcutCommands(query: string, locale: string) {
+export function getFilteredKeyboardShortcutCommands(
+  query: string,
+  locale: string,
+  gateState: KeyboardShortcutGateState = DEFAULT_KEYBOARD_SHORTCUT_GATE_STATE,
+) {
+  const visibleCommands = getVisibleKeyboardShortcutCommands(gateState);
   const trimmedQuery = query.trim();
   if (trimmedQuery.length === 0) {
-    return DISPLAYABLE_KEYBOARD_SHORTCUT_COMMANDS;
+    return visibleCommands;
   }
 
-  return DISPLAYABLE_KEYBOARD_SHORTCUT_COMMANDS.filter((command) => {
+  return visibleCommands.filter((command) => {
     const title = getKeyboardShortcutCommandTitle(command, locale);
     const description = getKeyboardShortcutCommandDescription(command, locale) ?? "";
     return [command.id, title, description].some((candidate) => scoreQueryMatch(candidate, trimmedQuery) > 0);
@@ -165,8 +175,9 @@ export function findConflictingKeyboardShortcutCommandTitle(
   commandId: string,
   keymapState: CommandKeymapState | null,
   locale: string,
+  gateState: KeyboardShortcutGateState = DEFAULT_KEYBOARD_SHORTCUT_GATE_STATE,
 ) {
-  for (const command of DISPLAYABLE_KEYBOARD_SHORTCUT_COMMANDS) {
+  for (const command of getVisibleKeyboardShortcutCommands(gateState)) {
     if (command.id === commandId) {
       continue;
     }
@@ -180,6 +191,31 @@ export function findConflictingKeyboardShortcutCommandTitle(
   }
 
   return null;
+}
+
+function getVisibleKeyboardShortcutCommands(gateState: KeyboardShortcutGateState) {
+  return KEYBOARD_SHORTCUT_COMMANDS.filter((command) =>
+    isKeyboardShortcutCommandVisible(command.id, gateState),
+  );
+}
+
+function isKeyboardShortcutCommandVisible(
+  commandId: string,
+  gateState: KeyboardShortcutGateState,
+) {
+  if (!GATE_CONTROLLED_COMMAND_IDS.has(commandId)) {
+    return true;
+  }
+
+  switch (commandId) {
+    case "hotkeyWindow":
+      return gateState.hotkeyWindowEnabled;
+    case "globalDictationHold":
+    case "globalDictationToggle":
+      return gateState.globalDictationEnabled;
+    default:
+      return true;
+  }
 }
 
 export function acceleratorsMatch(left: string, right: string) {

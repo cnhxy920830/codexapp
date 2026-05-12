@@ -15,6 +15,27 @@ export type ExperimentalFeature = {
   defaultEnabled: boolean;
 };
 
+export type ChroniclePermissionStatus =
+  | "granted"
+  | "denied"
+  | "restricted"
+  | "not-determined"
+  | "unknown";
+
+export type ChronicleSidecarProcessState =
+  | "disabled"
+  | "starting"
+  | "running"
+  | "stopping"
+  | "failed";
+
+export type ChroniclePermissionsResponse = {
+  accessibility: ChroniclePermissionStatus;
+  screenRecording: ChroniclePermissionStatus;
+  chronicleSidecarPresent: boolean;
+  chronicleSidecarProcessState: ChronicleSidecarProcessState;
+};
+
 export async function readWorkspaceAgentsMd(workspaceRoot: string | null) {
   return invoke<WorkspaceAgentsMdDocument | null>("read_workspace_agents_md", {
     params: { workspaceRoot },
@@ -40,4 +61,8 @@ export async function setExperimentalFeatureEnablement(enablement: Record<string
 
 export async function resetMemories() {
   return invoke<void>("reset_memories");
+}
+
+export async function readChroniclePermissions() {
+  return invoke<ChroniclePermissionsResponse>("chronicle-permissions");
 }

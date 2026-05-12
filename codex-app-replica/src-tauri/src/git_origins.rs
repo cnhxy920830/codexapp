@@ -1,8 +1,8 @@
-use crate::open_targets::ensure_supported_host_id;
 use serde::Deserialize;
 use serde::Serialize;
 use std::path::Path;
 use std::process::Command;
+use tauri::AppHandle;
 use tauri::async_runtime::spawn_blocking;
 
 #[cfg(target_os = "windows")]
@@ -35,16 +35,25 @@ pub struct GitOriginsResponse {
 }
 
 #[tauri::command(rename = "git-origins")]
-pub async fn git_origins(params: GitOriginsParams) -> Result<GitOriginsResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "git-origins")?;
-
+pub async fn git_origins(
+    app: AppHandle,
+    params: GitOriginsParams,
+) -> Result<GitOriginsResponse, String> {
+    let host_id = normalize_requested_host_id(params.host_id.as_deref());
     let dirs = params.dirs.unwrap_or_default();
-    let origins =
-        spawn_blocking(move || dirs.into_iter().map(resolve_git_origin).collect::<Vec<_>>())
-            .await
-            .map_err(|error| format!("failed to resolve git origins: {error}"))?;
+    let blocking_app = app.clone();
 
-    Ok(GitOriginsResponse { origins })
+    spawn_blocking(move || {
+        if host_id == LOCAL_HOST_ID {
+            return Ok(GitOriginsResponse {
+                origins: dirs.into_iter().map(resolve_git_origin).collect::<Vec<_>>(),
+            });
+        }
+
+        crate::git_origins_remote::resolve_remote_git_origins(&blocking_app, &host_id, dirs)
+    })
+    .await
+    .map_err(|error| format!("failed to resolve git origins: {error}"))?
 }
 
 fn resolve_git_origin(dir: String) -> GitOrigin {
@@ -87,6 +96,14 @@ fn run_git(cwd: &str, args: &[&str]) -> Result<String, String> {
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn normalize_requested_host_id(host_id: Option<&str>) -> String {
+    host_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(LOCAL_HOST_ID)
+        .to_string()
 }
 
 fn apply_no_window(command: &mut Command) {

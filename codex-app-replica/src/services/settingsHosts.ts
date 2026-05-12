@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 
 export const LOCAL_SETTINGS_HOST_ID = "local";
 export const REMOTE_CONNECTIONS_SHARED_OBJECT_KEY = "remote_connections";
+export const REMOTE_PROJECTS_SHARED_OBJECT_KEY = "remote-projects";
 
 const REMOTE_HOST_FORBIDDEN_HUE_RANGES = [
   { start: 330, end: 45 },
@@ -23,9 +24,22 @@ export type RemoteConnection = {
   identity: string | null;
 };
 
+export type RemoteProject = {
+  id: string;
+  hostId: string;
+  remotePath: string;
+  label: string;
+};
+
 export type AppServerConnectionState = "connecting" | "restarting" | "connected" | "disconnected" | "error";
 
 export type AppServerConnectionStateResponse = {
+  state: AppServerConnectionState;
+  error: unknown | null;
+};
+
+export type RemoteAppServerConnectionStateChangedNotification = {
+  hostId: string;
   state: AppServerConnectionState;
   error: unknown | null;
 };
@@ -39,11 +53,22 @@ export type SharedObjectUpdatedNotification = {
   value: unknown;
 };
 
+type SaveRemoteProjectResponse = {
+  project: RemoteProject;
+};
+
 export async function readSettingsRemoteConnectionsSnapshot() {
   const response = await invoke<SharedObjectSnapshotResponse>("get-shared-object-snapshot", {
     key: REMOTE_CONNECTIONS_SHARED_OBJECT_KEY,
   });
   return normalizeRemoteConnectionsSnapshot(response.value);
+}
+
+export async function readSettingsRemoteProjectsSnapshot() {
+  const response = await invoke<SharedObjectSnapshotResponse>("get-shared-object-snapshot", {
+    key: REMOTE_PROJECTS_SHARED_OBJECT_KEY,
+  });
+  return normalizeRemoteProjectsSnapshot(response.value);
 }
 
 export function onSharedObjectUpdated(handler: (notification: SharedObjectUpdatedNotification) => void) {
@@ -58,17 +83,49 @@ export async function readAppServerConnectionState(hostId: string) {
   });
 }
 
+export async function saveRemoteProject(params: { hostId: string; remotePath: string }) {
+  return invoke<SaveRemoteProjectResponse>("save-remote-project", {
+    params: {
+      hostId: normalizeRequiredString(params.hostId),
+      remotePath: normalizeRequiredString(params.remotePath),
+    },
+  });
+}
+
 export async function readConnectedSettingsRemoteConnections(remoteConnections: RemoteConnection[]) {
-  const connectedRemoteConnections = await Promise.all(
+  const statesByHostId = await readSettingsRemoteConnectionStates(remoteConnections);
+  return filterConnectedSettingsRemoteConnections(remoteConnections, statesByHostId);
+}
+
+export async function readSettingsRemoteConnectionStates(remoteConnections: RemoteConnection[]) {
+  const states = await Promise.all(
     remoteConnections.map(async (remoteConnection) => {
       const response = await readAppServerConnectionState(remoteConnection.hostId).catch(() => null);
-      return response?.state === "connected" ? remoteConnection : null;
+      return [remoteConnection.hostId, response?.state ?? "disconnected"] as const;
     }),
   );
 
-  return connectedRemoteConnections.filter((remoteConnection): remoteConnection is RemoteConnection => {
-    return remoteConnection !== null;
+  return Object.fromEntries(states);
+}
+
+export function filterConnectedSettingsRemoteConnections(
+  remoteConnections: RemoteConnection[],
+  statesByHostId: Record<string, AppServerConnectionState>,
+) {
+  return remoteConnections.filter((remoteConnection) => {
+    return statesByHostId[remoteConnection.hostId] === "connected";
   });
+}
+
+export function onRemoteAppServerConnectionStateChanged(
+  handler: (notification: RemoteAppServerConnectionStateChangedNotification) => void,
+) {
+  return listen<RemoteAppServerConnectionStateChangedNotification>(
+    "remote-app-server-connection-state-changed",
+    (event) => {
+      handler(event.payload);
+    },
+  );
 }
 
 export function readInitialSettingsHostId() {
@@ -97,6 +154,16 @@ export function normalizeRemoteConnectionsSnapshot(value: unknown): RemoteConnec
 
   return value.map(normalizeRemoteConnection).filter((remoteConnection): remoteConnection is RemoteConnection => {
     return remoteConnection !== null;
+  });
+}
+
+export function normalizeRemoteProjectsSnapshot(value: unknown): RemoteProject[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map(normalizeRemoteProject).filter((remoteProject): remoteProject is RemoteProject => {
+    return remoteProject !== null;
   });
 }
 
@@ -130,12 +197,42 @@ function normalizeRemoteConnection(value: unknown): RemoteConnection | null {
   };
 }
 
+function normalizeRemoteProject(value: unknown): RemoteProject | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const remoteProject = value as Record<string, unknown>;
+  const id = normalizeNonEmptyString(remoteProject.id);
+  const hostId = normalizeNonEmptyString(remoteProject.hostId);
+  const remotePath = normalizeNonEmptyString(remoteProject.remotePath);
+  const label = normalizeNonEmptyString(remoteProject.label);
+  if (id === null || hostId === null || remotePath === null || label === null) {
+    return null;
+  }
+
+  return {
+    id,
+    hostId,
+    remotePath,
+    label,
+  };
+}
+
 function normalizeNonEmptyString(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function normalizeOptionalString(value: unknown) {
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function normalizeRequiredString(value: string) {
+  const normalized = normalizeNonEmptyString(value);
+  if (normalized === null) {
+    throw new Error("expected non-empty string");
+  }
+  return normalized;
 }
 
 function assignRemoteHostColors(hostIds: string[]) {

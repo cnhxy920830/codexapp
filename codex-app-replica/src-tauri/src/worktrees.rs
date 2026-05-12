@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use tauri::AppHandle;
 
 use crate::codex_home::resolve_codex_home;
 
@@ -68,9 +69,15 @@ struct WorktreeThreadConfig {
 }
 
 #[tauri::command(rename = "worktree-delete")]
-pub fn worktree_delete(params: WorktreeDeleteParams) -> Result<WorktreeDeleteResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "worktree-delete")?;
+pub fn worktree_delete(
+    app: AppHandle,
+    params: WorktreeDeleteParams,
+) -> Result<WorktreeDeleteResponse, String> {
+    let host_id = normalize_requested_host_id(params.host_id.as_deref());
     ensure_supported_reason(&params.reason)?;
+    if host_id != LOCAL_HOST_ID {
+        return crate::worktrees_remote::delete_remote_worktree(&app, &host_id, &params.worktree);
+    }
 
     let codex_home = resolve_codex_home()?;
     let validated_path = validate_worktree_delete_path(&params.worktree, &codex_home)?;
@@ -80,9 +87,15 @@ pub fn worktree_delete(params: WorktreeDeleteParams) -> Result<WorktreeDeleteRes
 }
 
 #[tauri::command(rename = "codex-worktrees")]
-pub fn codex_worktrees(params: CodexWorktreesParams) -> Result<CodexWorktreesResponse, String> {
-    ensure_supported_host_id(Some(params.host_config.id.as_str()), "codex-worktrees")?;
+pub fn codex_worktrees(
+    app: AppHandle,
+    params: CodexWorktreesParams,
+) -> Result<CodexWorktreesResponse, String> {
+    let host_id = normalize_requested_host_id(Some(params.host_config.id.as_str()));
     ensure_non_empty_operation_source(&params.operation_source, "codex-worktrees")?;
+    if host_id != LOCAL_HOST_ID {
+        return crate::worktrees_remote::list_remote_codex_worktrees(&app, &host_id);
+    }
 
     let worktrees_root = resolve_codex_home()?.join(CODEX_WORKTREES_DIR);
     Ok(CodexWorktreesResponse {
@@ -94,7 +107,7 @@ pub fn codex_worktrees(params: CodexWorktreesParams) -> Result<CodexWorktreesRes
 pub fn worktree_set_owner_thread(
     params: WorktreeSetOwnerThreadParams,
 ) -> Result<WorktreeSetOwnerThreadResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "worktree-set-owner-thread")?;
+    ensure_local_host_id(params.host_id.as_deref(), "worktree-set-owner-thread")?;
     let conversation_id = validate_conversation_id(&params.conversation_id)?;
 
     let codex_home = resolve_codex_home()?;
@@ -104,13 +117,21 @@ pub fn worktree_set_owner_thread(
     Ok(WorktreeSetOwnerThreadResponse::default())
 }
 
-fn ensure_supported_host_id(host_id: Option<&str>, command_name: &str) -> Result<(), String> {
+fn ensure_local_host_id(host_id: Option<&str>, command_name: &str) -> Result<(), String> {
     match host_id.map(str::trim).filter(|value| !value.is_empty()) {
         None | Some(LOCAL_HOST_ID) => Ok(()),
         Some(host_id) => Err(format!(
             "{command_name} does not support host id: {host_id}"
         )),
     }
+}
+
+fn normalize_requested_host_id(host_id: Option<&str>) -> String {
+    host_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(LOCAL_HOST_ID)
+        .to_string()
 }
 
 fn ensure_supported_reason(reason: &str) -> Result<(), String> {
@@ -489,14 +510,22 @@ mod tests {
     }
 
     #[test]
-    fn worktree_delete_only_accepts_local_host() {
-        assert!(ensure_supported_host_id(None, "worktree-delete").is_ok());
-        assert!(ensure_supported_host_id(Some(""), "worktree-delete").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "worktree-delete").is_ok());
+    fn normalize_requested_host_id_defaults_to_local() {
+        assert_eq!(normalize_requested_host_id(None), "local");
+        assert_eq!(normalize_requested_host_id(Some("")), "local");
+        assert_eq!(normalize_requested_host_id(Some("local")), "local");
+        assert_eq!(normalize_requested_host_id(Some("remote")), "remote");
+    }
+
+    #[test]
+    fn worktree_set_owner_thread_only_accepts_local_host() {
+        assert!(ensure_local_host_id(None, "worktree-set-owner-thread").is_ok());
+        assert!(ensure_local_host_id(Some(""), "worktree-set-owner-thread").is_ok());
+        assert!(ensure_local_host_id(Some("local"), "worktree-set-owner-thread").is_ok());
         assert_eq!(
-            ensure_supported_host_id(Some("remote"), "worktree-delete")
+            ensure_local_host_id(Some("remote"), "worktree-set-owner-thread")
                 .expect_err("non-local host id should be rejected"),
-            "worktree-delete does not support host id: remote"
+            "worktree-set-owner-thread does not support host id: remote"
         );
     }
 

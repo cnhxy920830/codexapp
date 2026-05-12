@@ -42,14 +42,22 @@ async fn generate_backend_summary(
 ) -> Option<String> {
     let thread_id = start_ephemeral_thread(state).await.ok()?;
     let prompt = build_scratchpad_summary_prompt(message);
-    let turn_id =
-        match start_turn_with_personality(state, thread_id.clone(), prompt, cwd, None).await {
-            Ok(turn_id) => turn_id,
-            Err(_) => {
-                let _ = unsubscribe_thread(state, &thread_id).await;
-                return None;
-            }
-        };
+    let turn_id = match start_turn_with_personality(
+        state,
+        thread_id.clone(),
+        prompt,
+        cwd,
+        None,
+        None,
+    )
+    .await
+    {
+        Ok(turn_id) => turn_id,
+        Err(_) => {
+            let _ = unsubscribe_thread(state, &thread_id).await;
+            return None;
+        }
+    };
 
     let completion = wait_for_turn_completion(state, &thread_id, &turn_id, SUMMARY_TIMEOUT)
         .await

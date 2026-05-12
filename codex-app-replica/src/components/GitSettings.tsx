@@ -20,6 +20,10 @@ import {
 } from "../services/worktrees";
 import type { AppToast } from "./AppToastRegion";
 import { ToggleSwitch } from "./ToggleSwitch";
+import {
+  REPLICA_STATSIG_GATES,
+  useReplicaStatsigGateValue,
+} from "../features/statsig/replicaStatsig";
 
 type SaveState = {
   branchPrefix: boolean;
@@ -51,6 +55,12 @@ export function GitSettings({
   onShowToast?: (toast: AppToast) => void;
 }) {
   const { t } = useI18n();
+  const showPullRequestMergeMethod = useReplicaStatsigGateValue(
+    REPLICA_STATSIG_GATES.gitPullRequestMergeMethod,
+  );
+  const hideSidebarPrIconsSetting = useReplicaStatsigGateValue(
+    REPLICA_STATSIG_GATES.gitHideSidebarPrIcons,
+  );
   const [gitState, setGitState] = useState(DEFAULT_GIT_SETTINGS);
   const [worktreeState, setWorktreeState] = useState(DEFAULT_WORKTREES_SETTINGS);
   const [isGitLoading, setIsGitLoading] = useState(true);
@@ -434,40 +444,44 @@ export function GitSettings({
             />
           </SettingRow>
 
-          <SettingRow
-            label={t("settings.git.pullRequestMergeMethod.label")}
-            description={t("settings.git.pullRequestMergeMethod.description")}
-          >
-            <select
-              aria-label={t("settings.git.pullRequestMergeMethod.ariaLabel")}
-              value={gitState.pullRequestMergeMethod}
-              disabled={isGitLoading || saving.pullRequestMergeMethod}
-              onChange={(event) => {
-                const next = event.target.value;
-                if (next === "merge" || next === "squash") {
-                  void savePullRequestMergeMethod(next);
-                }
-              }}
-              className="app-control h-9 rounded-[10px] px-3 text-[13px]"
+          {showPullRequestMergeMethod ? (
+            <SettingRow
+              label={t("settings.git.pullRequestMergeMethod.label")}
+              description={t("settings.git.pullRequestMergeMethod.description")}
             >
-              <option value="merge">{t("settings.git.pullRequestMergeMethod.merge")}</option>
-              <option value="squash">{t("settings.git.pullRequestMergeMethod.squash")}</option>
-            </select>
-          </SettingRow>
+              <select
+                aria-label={t("settings.git.pullRequestMergeMethod.ariaLabel")}
+                value={gitState.pullRequestMergeMethod}
+                disabled={isGitLoading || saving.pullRequestMergeMethod}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  if (next === "merge" || next === "squash") {
+                    void savePullRequestMergeMethod(next);
+                  }
+                }}
+                className="app-control h-9 rounded-[10px] px-3 text-[13px]"
+              >
+                <option value="merge">{t("settings.git.pullRequestMergeMethod.merge")}</option>
+                <option value="squash">{t("settings.git.pullRequestMergeMethod.squash")}</option>
+              </select>
+            </SettingRow>
+          ) : null}
 
-          <SettingRow
-            label={t("settings.git.showSidebarPrIcons.label")}
-            description={t("settings.git.showSidebarPrIcons.description")}
-          >
-            <ToggleSwitch
-              checked={gitState.showSidebarPrIcons}
-              disabled={isGitLoading || saving.showSidebarPrIcons}
-              ariaLabel={t("settings.git.showSidebarPrIcons.ariaLabel")}
-              onChange={(checked) => {
-                void saveShowSidebarPrIcons(checked);
-              }}
-            />
-          </SettingRow>
+          {showPullRequestMergeMethod && !hideSidebarPrIconsSetting ? (
+            <SettingRow
+              label={t("settings.git.showSidebarPrIcons.label")}
+              description={t("settings.git.showSidebarPrIcons.description")}
+            >
+              <ToggleSwitch
+                checked={gitState.showSidebarPrIcons}
+                disabled={isGitLoading || saving.showSidebarPrIcons}
+                ariaLabel={t("settings.git.showSidebarPrIcons.ariaLabel")}
+                onChange={(checked) => {
+                  void saveShowSidebarPrIcons(checked);
+                }}
+              />
+            </SettingRow>
+          ) : null}
 
           <SettingRow
             label={t("settings.worktrees.autoCleanup.label")}

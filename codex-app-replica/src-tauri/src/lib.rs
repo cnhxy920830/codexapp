@@ -6,6 +6,7 @@ mod avatar_overlay;
 mod browser_session_data;
 mod browser_use_settings;
 mod chronicle;
+mod codex_app_config;
 mod codex_home;
 mod computer_use_settings;
 mod custom_avatars;
@@ -13,8 +14,12 @@ mod debug_modal;
 mod desktop_notifications;
 mod external_agent_import;
 mod fast_mode_rollout_metrics;
+mod git_branches;
+mod git_commit_messages;
 mod git_origins;
+mod git_origins_remote;
 mod global_dictation;
+mod global_dictation_settings;
 mod global_dictation_transcription;
 mod global_dictation_window;
 mod global_settings;
@@ -22,6 +27,7 @@ mod host_files;
 mod hotkey_window;
 mod keyboard_shortcuts;
 mod local_environments;
+mod local_environments_remote;
 mod open_targets;
 mod pending_worktrees;
 mod power_save_blocker;
@@ -34,7 +40,9 @@ mod remote_app_server_registry;
 mod remote_app_server_runtime;
 mod remote_connections;
 mod remote_control;
+mod remote_ssh;
 mod scratchpad;
+mod statsig;
 mod taskbar_badge;
 mod terminal_shell_options;
 mod thread_history;
@@ -45,9 +53,11 @@ mod workspace_agents;
 mod workspace_files;
 mod workspace_roots;
 mod worktrees;
+mod worktrees_remote;
 use app_shell_signals::electron_window_focus_request;
 use app_shell_signals::view_focused;
 use app_state_snapshot::electron_app_state_snapshot_response;
+use app_state_snapshot::set_review_pane_snapshot_metrics_for_host;
 use app_state_snapshot::spawn_app_state_snapshot_heartbeat;
 use app_state_snapshot::AppStateSnapshotState;
 use auth_bridge::add_marketplace;
@@ -75,11 +85,13 @@ use auth_bridge::list_experimental_features;
 use auth_bridge::list_hooks_for_host;
 use auth_bridge::list_mcp_server_status;
 use auth_bridge::list_mcp_server_status_command;
+use auth_bridge::list_models_for_host;
 use auth_bridge::list_plugin_shares;
 use auth_bridge::list_plugin_shares_command;
 use auth_bridge::list_plugins;
 use auth_bridge::list_plugins_command;
 use auth_bridge::list_recent_threads;
+use auth_bridge::list_recent_threads_command;
 use auth_bridge::list_skills;
 use auth_bridge::list_skills_for_host;
 use auth_bridge::login_api_key;
@@ -120,6 +132,7 @@ use auth_bridge::set_personality;
 use auth_bridge::set_thread_goal;
 use auth_bridge::set_thread_name;
 use auth_bridge::shared_state;
+use auth_bridge::start_conversation;
 use auth_bridge::start_review;
 use auth_bridge::start_thread;
 use auth_bridge::start_turn;
@@ -199,8 +212,21 @@ use external_agent_import::external_agent_import_detect;
 use external_agent_import::external_agent_import_import;
 use external_agent_import::external_agent_import_status;
 use fast_mode_rollout_metrics::fast_mode_rollout_metrics;
+use git_branches::git_branches_read;
+use git_branches::git_checkout_branch;
+use git_branches::git_commit_changes;
+use git_branches::git_commit_dialog_read;
+use git_branches::git_create_branch;
+use git_commit_messages::generate_git_commit_message;
 use git_origins::git_origins;
 use global_dictation::request_microphone_permission;
+use global_dictation_settings::global_dictation_copy_history_item;
+use global_dictation_settings::global_dictation_history;
+use global_dictation_settings::global_dictation_hotkey_state;
+use global_dictation_settings::global_dictation_set_hotkey;
+use global_dictation_settings::global_dictation_set_toggle_hotkey;
+use global_dictation_settings::start_global_dictation_hotkey_runtime;
+use global_dictation_settings::GlobalDictationSettingsState;
 use global_dictation_transcription::global_dictation_transcribe_audio;
 use global_dictation_window::global_dictation_completed;
 use global_dictation_window::global_dictation_dismiss;
@@ -227,9 +253,12 @@ use host_files::read_file;
 use host_files::read_file_binary;
 use host_files::read_file_metadata;
 use host_files::third_party_notices;
+use hotkey_window::hotkey_window_enabled_changed;
 use hotkey_window::hotkey_window_home_pointer_interaction_changed;
 use hotkey_window::hotkey_window_hotkey_state;
+use hotkey_window::hotkey_window_set_hotkey;
 use hotkey_window::open_in_hotkey_window;
+use hotkey_window::HotkeyWindowGateState;
 use keyboard_shortcuts::get_command_keymap_state;
 use keyboard_shortcuts::set_command_keybinding;
 use local_environments::list_local_environments;
@@ -279,12 +308,14 @@ use remote_connections::discover_remote_ssh_connections;
 use remote_connections::get_shared_object_snapshot;
 use remote_connections::refresh_remote_connections;
 use remote_connections::save_codex_managed_remote_ssh_connections;
+use remote_connections::save_remote_project;
 use remote_connections::set_remote_connection_auto_connect;
 use remote_control::mfa_info_read;
 use remote_control::remote_control_clients_list;
 use remote_control::remote_control_mfa_required_but_disabled_read;
 use remote_control::remote_control_mfa_requirement_read;
 use scratchpad::generate_scratchpad_completion_summary;
+use statsig::statsig_fetch_values;
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
@@ -383,6 +414,8 @@ pub fn run() {
         .manage(AmbientSuggestionsCache::default())
         .manage(DebugActionRequestSources::default())
         .manage(GlobalDictationWindowState::default())
+        .manage(GlobalDictationSettingsState::default())
+        .manage(HotkeyWindowGateState::default())
         .manage(DesktopNotificationsState::default())
         .manage(RemoteAppServerRegistry::default())
         .manage(RemoteAppServerRuntimeState::default())
@@ -419,6 +452,11 @@ pub fn run() {
             global_dictation_record_history_item,
             global_dictation_enabled_changed,
             global_dictation_force_lock_changed,
+            global_dictation_hotkey_state,
+            global_dictation_set_hotkey,
+            global_dictation_set_toggle_hotkey,
+            global_dictation_history,
+            global_dictation_copy_history_item,
             desktop_notification_show,
             desktop_notification_hide,
             browser_browsing_data_clear,
@@ -447,6 +485,7 @@ pub fn run() {
             read_config,
             read_config_for_host,
             get_config_requirements_for_host,
+            list_models_for_host,
             list_experimental_features,
             list_plugins,
             list_plugins_command,
@@ -505,7 +544,10 @@ pub fn run() {
             avatar_overlay_keyboard_interaction_changed,
             open_in_hotkey_window,
             hotkey_window_hotkey_state,
+            hotkey_window_set_hotkey,
+            hotkey_window_enabled_changed,
             hotkey_window_home_pointer_interaction_changed,
+            statsig_fetch_values,
             list_mcp_server_status,
             list_mcp_server_status_command,
             list_skills,
@@ -514,10 +556,12 @@ pub fn run() {
             write_skill_config_command,
             list_hooks_for_host,
             list_recent_threads,
+            list_recent_threads_command,
             list_archived_threads,
             list_archived_threads_command,
             unsubscribe_thread_for_host,
             discard_conversation_from_cache,
+            start_conversation,
             start_thread,
             fork_thread,
             fork_conversation_from_latest,
@@ -599,6 +643,12 @@ pub fn run() {
             gh_pr_comment,
             gh_pr_merge,
             gh_pr_update,
+            git_branches_read,
+            git_commit_dialog_read,
+            git_checkout_branch,
+            git_create_branch,
+            git_commit_changes,
+            generate_git_commit_message,
             git_origins,
             projectless_thread_cwd,
             open_current_main_window,
@@ -634,6 +684,7 @@ pub fn run() {
             get_shared_object_snapshot,
             discover_remote_ssh_connections,
             refresh_remote_connections,
+            save_remote_project,
             save_codex_managed_remote_ssh_connections,
             set_remote_connection_auto_connect,
             upstream_local_environments,
@@ -658,6 +709,7 @@ pub fn run() {
             pending_worktree_cancel,
             pending_worktree_dismiss,
             electron_app_state_snapshot_response,
+            set_review_pane_snapshot_metrics_for_host,
             electron_window_focus_request,
             view_focused
         ])
@@ -676,6 +728,13 @@ pub fn run() {
                 main_window.as_ref(),
                 &avatar_overlay_state,
             );
+            let dictation_settings_state = app.state::<GlobalDictationSettingsState>();
+            if let Err(err) = start_global_dictation_hotkey_runtime(
+                handle.clone(),
+                dictation_settings_state.inner(),
+            ) {
+                eprintln!("failed to start global dictation hotkey runtime: {err}");
+            }
             if cfg!(target_os = "windows") && should_register_windows_context_menu() {
                 let _ = register_windows_folder_context_menu();
             }

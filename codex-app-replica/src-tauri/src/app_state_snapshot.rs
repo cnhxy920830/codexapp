@@ -1,12 +1,13 @@
 use serde::Deserialize;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, State, Window};
 
 const APP_STATE_SNAPSHOT_REQUEST_EVENT: &str = "electron-app-state-snapshot-request";
+const DELTA_WINDOW_MS: u64 = 30_000;
 const HEARTBEAT_INTERVAL_MS: u64 = 30_000;
 const REQUEST_TTL_MS: u64 = 60_000;
 const PRIMARY_WINDOW_LABEL: &str = "main";
@@ -18,12 +19,35 @@ pub struct AppStateSnapshotState {
     next_request_id: AtomicU64,
     pending_requests: Mutex<HashMap<String, PendingSnapshotRequest>>,
     latest_snapshot_by_window: Mutex<HashMap<String, AppStateSnapshotFields>>,
+    raw_delta_telemetry: Mutex<RawDeltaTelemetry>,
+    review_pane_metrics_by_host: Mutex<HashMap<String, ReviewPaneSnapshotMetrics>>,
 }
 
 #[derive(Debug)]
 struct PendingSnapshotRequest {
     created_at: Instant,
     window_label: String,
+}
+
+#[derive(Debug, Default)]
+struct RawDeltaTelemetry {
+    total_events: u64,
+    total_bytes: u64,
+    samples: VecDeque<RawDeltaTelemetrySample>,
+}
+
+#[derive(Debug)]
+struct RawDeltaTelemetrySample {
+    recorded_at: Instant,
+    bytes: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RawDeltaTelemetrySnapshot {
+    total_events: u64,
+    total_bytes: u64,
+    last_30s_events: u64,
+    last_30s_bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -39,6 +63,22 @@ struct ElectronAppStateSnapshotRequestEvent {
 pub struct ElectronAppStateSnapshotResponseParams {
     pub request_id: String,
     pub fields: AppStateSnapshotFields,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ReviewPaneSnapshotMetrics {
+    pub review_diff_files_total: u64,
+    pub review_diff_lines_total: u64,
+    pub review_diff_bytes_estimate: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SetReviewPaneSnapshotMetricsForHostParams {
+    pub host_id: String,
+    pub review_diff_files_total: u64,
+    pub review_diff_lines_total: u64,
+    pub review_diff_bytes_estimate: u64,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -107,12 +147,34 @@ pub fn electron_app_state_snapshot_response(
         pending_requests.remove(&params.request_id);
     }
 
+    let delta_snapshot = state.raw_delta_telemetry_snapshot()?;
+    let mut fields = params.fields;
+    fields.delta_events_total = delta_snapshot.total_events;
+    fields.delta_bytes_total_estimate = delta_snapshot.total_bytes;
+    fields.delta_events_last_30s = delta_snapshot.last_30s_events;
+    fields.delta_bytes_last_30s_estimate = delta_snapshot.last_30s_bytes;
+
     let mut latest_snapshot_by_window = state
         .latest_snapshot_by_window
         .lock()
         .map_err(|err| format!("latest snapshot cache mutex poisoned: {err}"))?;
-    latest_snapshot_by_window.insert(window.label().to_string(), params.fields);
+    latest_snapshot_by_window.insert(window.label().to_string(), fields);
     Ok(())
+}
+
+#[tauri::command(rename = "set-review-pane-snapshot-metrics-for-host")]
+pub fn set_review_pane_snapshot_metrics_for_host(
+    state: State<'_, Arc<AppStateSnapshotState>>,
+    params: SetReviewPaneSnapshotMetricsForHostParams,
+) -> Result<(), String> {
+    state.set_review_pane_snapshot_metrics(
+        params.host_id,
+        ReviewPaneSnapshotMetrics {
+            review_diff_files_total: params.review_diff_files_total,
+            review_diff_lines_total: params.review_diff_lines_total,
+            review_diff_bytes_estimate: params.review_diff_bytes_estimate,
+        },
+    )
 }
 
 fn request_app_state_snapshot(
@@ -172,6 +234,15 @@ fn request_app_state_snapshot(
 }
 
 impl AppStateSnapshotState {
+    pub fn record_raw_delta_bytes(&self, delta: &str) -> Result<(), String> {
+        let mut raw_delta_telemetry = self
+            .raw_delta_telemetry
+            .lock()
+            .map_err(|err| format!("raw delta telemetry mutex poisoned: {err}"))?;
+        raw_delta_telemetry.record(delta.len() as u64, Instant::now());
+        Ok(())
+    }
+
     fn prune_expired_requests(&self) {
         let mut pending_requests = self
             .pending_requests
@@ -180,6 +251,65 @@ impl AppStateSnapshotState {
         pending_requests.retain(|_, request| {
             request.created_at.elapsed() < Duration::from_millis(REQUEST_TTL_MS)
         });
+    }
+
+    fn set_review_pane_snapshot_metrics(
+        &self,
+        host_id: String,
+        metrics: ReviewPaneSnapshotMetrics,
+    ) -> Result<(), String> {
+        let trimmed_host_id = host_id.trim();
+        if trimmed_host_id.is_empty() {
+            return Err("hostId is required".to_string());
+        }
+
+        let mut review_pane_metrics_by_host = self
+            .review_pane_metrics_by_host
+            .lock()
+            .map_err(|err| format!("review pane snapshot metrics mutex poisoned: {err}"))?;
+        review_pane_metrics_by_host.insert(trimmed_host_id.to_string(), metrics);
+        Ok(())
+    }
+
+    fn raw_delta_telemetry_snapshot(&self) -> Result<RawDeltaTelemetrySnapshot, String> {
+        let mut raw_delta_telemetry = self
+            .raw_delta_telemetry
+            .lock()
+            .map_err(|err| format!("raw delta telemetry mutex poisoned: {err}"))?;
+        Ok(raw_delta_telemetry.snapshot(Instant::now()))
+    }
+}
+
+impl RawDeltaTelemetry {
+    fn record(&mut self, bytes: u64, now: Instant) {
+        self.total_events += 1;
+        self.total_bytes += bytes;
+        self.samples.push_back(RawDeltaTelemetrySample {
+            recorded_at: now,
+            bytes,
+        });
+        self.prune(now);
+    }
+
+    fn snapshot(&mut self, now: Instant) -> RawDeltaTelemetrySnapshot {
+        self.prune(now);
+        RawDeltaTelemetrySnapshot {
+            total_events: self.total_events,
+            total_bytes: self.total_bytes,
+            last_30s_events: self.samples.len() as u64,
+            last_30s_bytes: self.samples.iter().map(|sample| sample.bytes).sum(),
+        }
+    }
+
+    fn prune(&mut self, now: Instant) {
+        let max_age = Duration::from_millis(DELTA_WINDOW_MS);
+        while let Some(sample) = self.samples.front() {
+            if now.duration_since(sample.recorded_at) > max_age {
+                self.samples.pop_front();
+                continue;
+            }
+            break;
+        }
     }
 }
 
@@ -190,6 +320,11 @@ mod tests {
     use super::ElectronAppStateSnapshotRequestEvent;
     use super::ElectronAppStateSnapshotResponseParams;
     use super::PendingSnapshotRequest;
+    use super::RawDeltaTelemetry;
+    use super::RawDeltaTelemetrySnapshot;
+    use super::ReviewPaneSnapshotMetrics;
+    use super::SetReviewPaneSnapshotMetricsForHostParams;
+    use super::DELTA_WINDOW_MS;
     use super::REQUEST_TTL_MS;
     use std::time::{Duration, Instant};
 
@@ -311,5 +446,98 @@ mod tests {
             .lock()
             .expect("pending snapshot requests mutex poisoned")
             .is_empty());
+    }
+
+    #[test]
+    fn review_pane_snapshot_metrics_params_deserialize_camel_case() {
+        let parsed: SetReviewPaneSnapshotMetricsForHostParams =
+            serde_json::from_value(serde_json::json!({
+                "hostId": "local",
+                "reviewDiffFilesTotal": 3,
+                "reviewDiffLinesTotal": 55,
+                "reviewDiffBytesEstimate": 4096
+            }))
+            .expect("params should deserialize");
+
+        assert_eq!(
+            parsed,
+            SetReviewPaneSnapshotMetricsForHostParams {
+                host_id: "local".into(),
+                review_diff_files_total: 3,
+                review_diff_lines_total: 55,
+                review_diff_bytes_estimate: 4096,
+            }
+        );
+    }
+
+    #[test]
+    fn set_review_pane_snapshot_metrics_updates_host_cache() {
+        let state = AppStateSnapshotState::default();
+        state
+            .set_review_pane_snapshot_metrics(
+                " local ".into(),
+                ReviewPaneSnapshotMetrics {
+                    review_diff_files_total: 4,
+                    review_diff_lines_total: 72,
+                    review_diff_bytes_estimate: 8192,
+                },
+            )
+            .expect("metrics write should succeed");
+
+        let review_pane_metrics_by_host = state
+            .review_pane_metrics_by_host
+            .lock()
+            .expect("review pane snapshot metrics mutex poisoned");
+        assert_eq!(
+            review_pane_metrics_by_host.get("local"),
+            Some(&ReviewPaneSnapshotMetrics {
+                review_diff_files_total: 4,
+                review_diff_lines_total: 72,
+                review_diff_bytes_estimate: 8192,
+            })
+        );
+    }
+
+    #[test]
+    fn record_raw_delta_bytes_counts_utf8_bytes() {
+        let state = AppStateSnapshotState::default();
+        state
+            .record_raw_delta_bytes("hello")
+            .expect("ascii bytes should record");
+        state
+            .record_raw_delta_bytes("你")
+            .expect("utf8 bytes should record");
+
+        let snapshot = state
+            .raw_delta_telemetry_snapshot()
+            .expect("snapshot should read");
+        assert_eq!(
+            snapshot,
+            RawDeltaTelemetrySnapshot {
+                total_events: 2,
+                total_bytes: 8,
+                last_30s_events: 2,
+                last_30s_bytes: 8,
+            }
+        );
+    }
+
+    #[test]
+    fn raw_delta_snapshot_prunes_samples_outside_window() {
+        let now = Instant::now();
+        let mut telemetry = RawDeltaTelemetry::default();
+        telemetry.record(4, now - Duration::from_millis(DELTA_WINDOW_MS + 1));
+        telemetry.record(7, now);
+
+        let snapshot = telemetry.snapshot(now);
+        assert_eq!(
+            snapshot,
+            RawDeltaTelemetrySnapshot {
+                total_events: 2,
+                total_bytes: 11,
+                last_30s_events: 1,
+                last_30s_bytes: 7,
+            }
+        );
     }
 }

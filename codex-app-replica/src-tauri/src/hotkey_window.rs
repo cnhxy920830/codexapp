@@ -1,10 +1,14 @@
 use crate::global_settings::read_global_settings;
 use crate::global_settings::write_global_settings;
 use crate::keyboard_shortcuts::read_command_keybinding_lookup;
+use crate::keyboard_shortcuts::set_command_keybinding;
 use crate::keyboard_shortcuts::CommandKeybindingLookup;
+use crate::keyboard_shortcuts::CommandKeybindingUpdate;
+use crate::keyboard_shortcuts::SetCommandKeybindingParams;
 use crate::window_navigation::PendingWindowRoutes;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow, WebviewWindowBuilder, Window};
 
 const HOTKEY_HOME_WINDOW_LABEL: &str = "hotkey-window-home";
@@ -26,6 +30,11 @@ const HOTKEY_THREAD_HEIGHT: f64 = 640.0;
 const HOTKEY_THREAD_MIN_WIDTH: f64 = 400.0;
 const HOTKEY_THREAD_MIN_HEIGHT: f64 = 400.0;
 
+#[derive(Debug, Default)]
+pub struct HotkeyWindowGateState {
+    enabled: Mutex<bool>,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct HotkeyWindowHotkeyStateResponse {
@@ -39,6 +48,20 @@ pub struct HotkeyWindowHotkeyStateResponse {
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct HotkeyWindowSetHotkeyParams {
+    pub hotkey: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HotkeyWindowSetHotkeyResponse {
+    pub success: bool,
+    pub error: Option<String>,
+    pub state: HotkeyWindowHotkeyStateResponse,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct OpenInHotkeyWindowParams {
     pub path: String,
 }
@@ -47,6 +70,12 @@ pub struct OpenInHotkeyWindowParams {
 #[serde(rename_all = "camelCase")]
 pub struct HotkeyWindowHomePointerInteractionChangedParams {
     pub is_interactive: bool,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HotkeyWindowEnabledChangedParams {
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,14 +99,58 @@ struct NavigateToRouteNotification {
 #[tauri::command(rename = "hotkey-window-hotkey-state")]
 pub fn hotkey_window_hotkey_state(
     app: AppHandle,
+    gate_state: State<'_, HotkeyWindowGateState>,
 ) -> Result<HotkeyWindowHotkeyStateResponse, String> {
     Ok(HotkeyWindowHotkeyStateResponse {
         supported: true,
         configured_hotkey: resolve_configured_hotkey_window_hotkey(&app)?,
-        is_gate_enabled: false,
+        is_gate_enabled: hotkey_window_gate_enabled(&gate_state),
         is_dev_mode: cfg!(debug_assertions),
         is_dev_override_enabled: false,
         is_active: false,
+    })
+}
+
+#[tauri::command(rename = "hotkey-window-set-hotkey")]
+pub fn hotkey_window_set_hotkey(
+    app: AppHandle,
+    gate_state: State<'_, HotkeyWindowGateState>,
+    params: HotkeyWindowSetHotkeyParams,
+) -> Result<HotkeyWindowSetHotkeyResponse, String> {
+    let HotkeyWindowSetHotkeyParams { hotkey } = params;
+    let validation_error = hotkey
+        .as_deref()
+        .and_then(|shortcut| hotkey_window_hotkey_error(shortcut, cfg!(target_os = "macos")))
+        .map(str::to_string);
+
+    let error = match validation_error {
+        Some(error) => Some(error),
+        None => {
+            let update = match hotkey.as_ref() {
+                Some(accelerator) => CommandKeybindingUpdate::Set {
+                    accelerator: accelerator.clone(),
+                },
+                None => CommandKeybindingUpdate::Reset,
+            };
+
+            match set_command_keybinding(
+                app.clone(),
+                SetCommandKeybindingParams {
+                    command_id: HOTKEY_WINDOW_COMMAND_ID.to_string(),
+                    update,
+                },
+            ) {
+                Ok(_) => sync_legacy_hotkey_window_hotkey(&app, hotkey.as_deref()).err(),
+                Err(err) => Some(err),
+            }
+        }
+    };
+
+    let state = hotkey_window_hotkey_state(app, gate_state)?;
+    Ok(HotkeyWindowSetHotkeyResponse {
+        success: error.is_none(),
+        error,
+        state,
     })
 }
 
@@ -126,6 +199,24 @@ pub fn hotkey_window_home_pointer_interaction_changed(
         .map_err(|err| {
             format!("failed to update {HOTKEY_HOME_WINDOW_LABEL} pointer interactivity: {err}")
         })
+}
+
+#[tauri::command(rename = "hotkey-window-enabled-changed")]
+pub fn hotkey_window_enabled_changed(
+    gate_state: State<'_, HotkeyWindowGateState>,
+    params: HotkeyWindowEnabledChangedParams,
+) {
+    *gate_state
+        .enabled
+        .lock()
+        .expect("hotkey window gate state mutex poisoned") = params.enabled;
+}
+
+fn hotkey_window_gate_enabled(gate_state: &HotkeyWindowGateState) -> bool {
+    *gate_state
+        .enabled
+        .lock()
+        .expect("hotkey window gate state mutex poisoned")
 }
 
 fn resolve_configured_hotkey_window_hotkey(app: &AppHandle) -> Result<Option<String>, String> {
@@ -452,13 +543,18 @@ impl HotkeyWindowSurface {
 
 #[cfg(test)]
 mod tests {
+    use super::hotkey_window_gate_enabled;
     use super::hotkey_window_hotkey_error;
     use super::resolve_hotkey_window_hotkey;
     use super::route_surface;
     use super::validated_hotkey_window_route;
+    use super::HotkeyWindowEnabledChangedParams;
+    use super::HotkeyWindowGateState;
     use super::HotkeyWindowHomePointerInteractionChangedParams;
     use super::HotkeyWindowHotkeyStateResponse;
     use super::HotkeyWindowRoute;
+    use super::HotkeyWindowSetHotkeyParams;
+    use super::HotkeyWindowSetHotkeyResponse;
     use super::HotkeyWindowSurface;
     use super::OpenInHotkeyWindowParams;
     use super::HOTKEY_HOME_ROUTE_PATH;
@@ -537,6 +633,21 @@ mod tests {
             payload,
             HotkeyWindowHomePointerInteractionChangedParams {
                 is_interactive: true,
+            }
+        );
+    }
+
+    #[test]
+    fn deserializes_set_hotkey_payload() {
+        let payload: HotkeyWindowSetHotkeyParams = serde_json::from_value(serde_json::json!({
+            "hotkey": "Ctrl+Alt+K"
+        }))
+        .expect("hotkey-window-set-hotkey payload should deserialize");
+
+        assert_eq!(
+            payload,
+            HotkeyWindowSetHotkeyParams {
+                hotkey: Some("Ctrl+Alt+K".to_string()),
             }
         );
     }
@@ -621,6 +732,55 @@ mod tests {
                 "isDevMode": false,
                 "isDevOverrideEnabled": false,
                 "isActive": false
+            })
+        );
+    }
+
+    #[test]
+    fn deserializes_enabled_changed_payload() {
+        let payload: HotkeyWindowEnabledChangedParams = serde_json::from_value(serde_json::json!({
+            "enabled": true
+        }))
+        .expect("hotkey-window-enabled-changed payload should deserialize");
+
+        assert_eq!(payload, HotkeyWindowEnabledChangedParams { enabled: true });
+    }
+
+    #[test]
+    fn gate_state_defaults_to_disabled() {
+        let gate_state = HotkeyWindowGateState::default();
+        assert!(!hotkey_window_gate_enabled(&gate_state));
+    }
+
+    #[test]
+    fn serializes_set_hotkey_response_with_camel_case_fields() {
+        let value = serde_json::to_value(HotkeyWindowSetHotkeyResponse {
+            success: true,
+            error: None,
+            state: HotkeyWindowHotkeyStateResponse {
+                supported: true,
+                configured_hotkey: Some("Ctrl+Alt+K".to_string()),
+                is_gate_enabled: false,
+                is_dev_mode: false,
+                is_dev_override_enabled: false,
+                is_active: false,
+            },
+        })
+        .expect("hotkey-window-set-hotkey response should serialize");
+
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "success": true,
+                "error": null,
+                "state": {
+                    "supported": true,
+                    "configuredHotkey": "Ctrl+Alt+K",
+                    "isGateEnabled": false,
+                    "isDevMode": false,
+                    "isDevOverrideEnabled": false,
+                    "isActive": false
+                }
             })
         );
     }

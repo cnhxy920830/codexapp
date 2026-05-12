@@ -34,10 +34,12 @@ import {
   onThreadEvent,
   readThread,
   startReview,
+  startConversation,
   startThread,
   steerTurn,
   startTurn,
   startTurnWithInput,
+  type TurnStartPermissionOverrides,
   type HistoryProjectGroup,
   type ThreadHistoryEntry,
   type FileChangeSummary,
@@ -45,10 +47,12 @@ import {
   type ThreadConversation,
 } from "./services/history";
 import {
+  applyGpuTearingDebugSettings,
   applyAppearanceSettingsSnapshot,
   buildConfigScopeOptions,
   chooseDefaultConfigScopeKey,
   getGlobalState,
+  onGpuTearingDebugSettingsChanged,
   onGlobalStateUpdated,
   readPreventSleepWhileRunningPreference,
   type ComposerEnterBehavior,
@@ -56,6 +60,7 @@ import {
   type ReviewDelivery,
   readAppearanceSettingsSnapshot,
   readConfig,
+  readGpuTearingDebugSettings,
   readSelectedAvatarId,
   setPowerSaveBlocker,
   writeConfigValue,
@@ -63,6 +68,7 @@ import {
   type ConfigSnapshot,
 } from "./services/settings";
 import { AppearanceSettings } from "./components/AppearanceSettings";
+import { AccountSettings } from "./components/AccountSettings";
 import {
   DEFAULT_AVATAR_ID,
   buildAvatarOptions,
@@ -89,6 +95,7 @@ import { ConfigScopeMenu } from "./components/ConfigScopeMenu";
 import { DataControlsSettings } from "./components/DataControlsSettings";
 import { GitSettings } from "./components/GitSettings";
 import { GeneralSettings } from "./components/GeneralSettings";
+import { HooksSettings } from "./components/HooksSettings";
 import { KeyboardShortcutsSettings } from "./components/KeyboardShortcutsSettings";
 import { BrowserUseSettings } from "./components/BrowserUseSettings";
 import { LocalEnvironmentsSettings } from "./components/LocalEnvironmentsSettings";
@@ -101,7 +108,6 @@ import { PluginsSettings } from "./components/PluginsSettings";
 import { BackToAppIcon, SettingsSectionIcon } from "./components/SettingsSectionIcons";
 import { SkillsSettings } from "./components/SkillsSettings";
 import { UsageSettings } from "./components/UsageSettings";
-import { WorktreesSettings } from "./components/WorktreesSettings";
 import { SettingsChoiceMenu } from "./components/SettingsChoiceMenu";
 import { ToggleSwitch } from "./components/ToggleSwitch";
 import { ChatConversationMainPane } from "./features/chat/ChatConversationMainPane";
@@ -119,6 +125,8 @@ import { usePluginsRouteEnabled } from "./features/skills/usePluginsRouteEnabled
 import { AutomationsRoutePage } from "./features/automations/AutomationsRoutePage";
 import { EditorDiffPage } from "./features/editorDiff/EditorDiffPage";
 import { GlobalDictationPage } from "./features/globalDictation/GlobalDictationPage";
+import { HotkeyWindowHomePage } from "./features/hotkeyWindow/HotkeyWindowHomePage";
+import { HotkeyWindowNewThreadPage } from "./features/hotkeyWindow/HotkeyWindowNewThreadPage";
 import { LoginRoutePage } from "./features/auth/LoginRoutePage";
 import {
   isLoginOnboardingRoute,
@@ -132,6 +140,8 @@ import { SelectWorkspacePage } from "./features/onboarding/SelectWorkspacePage";
 import { WelcomePage } from "./features/onboarding/WelcomePage";
 import { AvatarOverlayPage } from "./features/avatarOverlay/AvatarOverlayPage";
 import { DebugWindowPage as DebugWindowPageContent } from "./features/debug/DebugWindowPage";
+import { useReplicaStatsigOwner } from "./features/statsig/replicaStatsig";
+import { WorktreesSettingsPage } from "./features/worktrees/WorktreesSettingsPage";
 import { WorktreeInitV2Page } from "./features/worktreeInit/WorktreeInitV2Page";
 import {
   createSideChatRightPanelTab,
@@ -200,9 +210,12 @@ import {
   EDITOR_DIFF_ROUTE_PATH,
   FIRST_RUN_ROUTE_PATH,
   GLOBAL_DICTATION_ROUTE_PATH,
+  HOTKEY_NEW_THREAD_ROUTE_PATH,
   HOTKEY_WORKTREE_INIT_V2_ROUTE_PREFIX,
   LOGIN_ROUTE_PATH,
+  buildWorktreeInitV2RoutePath,
   notifyDebugWindowOriginConversationChanged,
+  openInHotkeyWindow,
   PLAN_SUMMARY_ROUTE_PATH,
   SELECT_WORKSPACE_ROUTE_PATH,
   WORKTREE_INIT_V2_ROUTE_PREFIX,
@@ -223,27 +236,32 @@ import {
   onAppStateSnapshotRequested,
   readRendererFrameIntervalSnapshot,
   sendAppStateSnapshotResponse,
+  setReviewPaneSnapshotMetricsForHost,
   startRendererFrameIntervalSampler,
   type AppStateSnapshotFields,
 } from "./services/appStateSnapshot";
 import { readComputerUseApprovalsVisibility } from "./services/computerUseSettings";
 import { getCodexHomePath, isWithinCodexWorktrees } from "./services/codexHome";
 import {
+  filterConnectedSettingsRemoteConnections,
   getSettingsRemoteHostColor,
   LOCAL_SETTINGS_HOST_ID,
   normalizeRemoteConnectionsSnapshot,
   normalizeSelectedSettingsHostId,
+  onRemoteAppServerConnectionStateChanged,
   onSharedObjectUpdated,
-  readConnectedSettingsRemoteConnections,
+  readSettingsRemoteConnectionStates,
   readInitialSettingsHostId,
   readSettingsRemoteConnectionsSnapshot,
   REMOTE_CONNECTIONS_SHARED_OBJECT_KEY,
+  type AppServerConnectionState,
   type RemoteConnection,
 } from "./services/settingsHosts";
 import {
   onActiveWorkspaceRootsUpdated,
   readActiveWorkspaceRoots,
 } from "./services/workspaceRoots";
+import { createPendingWorktree, type PendingWorktreeStartingState } from "./services/pendingWorktrees";
 import type { WorkspaceFilePreviewTarget } from "./services/workspaceFiles";
 import {
   buildAutomationDraft,
@@ -266,8 +284,8 @@ const IMPLEMENT_PLAN_PROMPT_PREFIX = "PLEASE IMPLEMENT THIS PLAN:";
 const USER_MESSAGE_REQUEST_HEADING = "## My request for Codex:";
 const NAVIGATE_TO_ROUTE_EVENT = "navigate-to-route";
 const TOGGLE_DIFF_PANEL_EVENT = "toggle-diff-panel";
-const APP_STATE_SNAPSHOT_WINDOW_MS = 30_000;
 const WELCOME_V2_ONBOARDING_QUERY_PARAM = "welcomeV2Onboarding";
+const HOTKEY_HOME_ROUTE_PATH = "/hotkey-window";
 type WorkspaceFileRightPanelTabState = Extract<RightPanelTab, { kind: "workspaceFile" }>;
 type PersistedWorkspaceFileRightPanelTabState = {
   workspaceFileTabsByThreadId: Array<[string, WorkspaceFileRightPanelTabState[]]>;
@@ -304,6 +322,8 @@ type SettingsSectionState = {
 type AgentConfigControlErrors = Partial<Record<"approval" | "sandbox" | "network", string>>;
 type AppRoute =
   | "chat"
+  | "hotkey-home"
+  | "hotkey-new-thread"
   | "settings"
   | "skills"
   | "scratchpad"
@@ -358,6 +378,8 @@ type WorktreeInitRoute = {
 
 type PendingWindowPageKind =
   | "thread"
+  | "hotkey-home"
+  | "hotkey-new-thread"
   | "plan-summary"
   | "editor-diff"
   | "global-dictation"
@@ -539,6 +561,10 @@ function isPlanSummaryRoute(path: string) {
   return path === PLAN_SUMMARY_ROUTE_PATH;
 }
 
+function isHotkeyHomeRoute(path: string) {
+  return stripRouteSearchAndHash(path) === HOTKEY_HOME_ROUTE_PATH;
+}
+
 function isEditorDiffRoute(path: string) {
   return path === EDITOR_DIFF_ROUTE_PATH;
 }
@@ -549,6 +575,10 @@ function isFirstRunRoute(path: string) {
 
 function isGlobalDictationRoute(path: string) {
   return path === GLOBAL_DICTATION_ROUTE_PATH;
+}
+
+function isHotkeyNewThreadRoute(path: string) {
+  return path === HOTKEY_NEW_THREAD_ROUTE_PATH;
 }
 
 function isLoginRoute(path: string) {
@@ -576,6 +606,14 @@ function isPullRequestsRoute(path: string) {
 }
 
 function readInitialAppRoute(): AppRoute {
+  if (typeof window !== "undefined" && isHotkeyHomeRoute(window.location.pathname)) {
+    return "hotkey-home";
+  }
+
+  if (typeof window !== "undefined" && isHotkeyNewThreadRoute(window.location.pathname)) {
+    return "hotkey-new-thread";
+  }
+
   if (typeof window !== "undefined" && parseWorktreeInitRoute(window.location.pathname)) {
     return "worktree-init";
   }
@@ -627,6 +665,8 @@ function shouldWindowManagePowerSaveBlocker() {
     isPlanSummaryRoute(pathname) ||
     isEditorDiffRoute(pathname) ||
     isGlobalDictationRoute(pathname) ||
+    isHotkeyHomeRoute(pathname) ||
+    isHotkeyNewThreadRoute(pathname) ||
     parseWorktreeInitRoute(pathname) !== null ||
     isFirstRunRoute(pathname) ||
     isLoginRoute(pathname) ||
@@ -663,6 +703,13 @@ function buildLocalThreadRoutePath(threadId: string, shell: ThreadShellVariant) 
   return shell === "hotkey"
     ? `/hotkey-window/thread/${encodedThreadId}`
     : `/local/${encodedThreadId}`;
+}
+
+function buildRemoteThreadRoutePath(threadId: string, shell: ThreadShellVariant) {
+  const encodedThreadId = encodeURIComponent(threadId);
+  return shell === "hotkey"
+    ? `/hotkey-window/remote/${encodedThreadId}`
+    : `/remote/${encodedThreadId}`;
 }
 
 function getRightPanelTabLabel(tab: RightPanelTab, t: (key: MessageKey) => string) {
@@ -909,86 +956,12 @@ function findLastEditableUserMessage(
   };
 }
 
-type SnapshotDeltaTelemetrySample = {
-  timestampMs: number;
-  bytes: number;
-};
-
-type SnapshotDeltaTelemetry = {
-  totalEvents: number;
-  totalBytes: number;
-  samples: SnapshotDeltaTelemetrySample[];
-};
-
 function isInProgressTurnStatus(status: string) {
   return status === "inProgress" || status === "in_progress";
 }
 
 function countInProgressTurns(conversation: ThreadConversation) {
   return conversation.turns.reduce((count, turn) => count + (isInProgressTurnStatus(turn.status) ? 1 : 0), 0);
-}
-
-function summarizeDeltaBearingItemContent(item: ThreadConversationItem) {
-  switch (item.type) {
-    case "agentMessage":
-      return item.text;
-    case "plan":
-      return item.text;
-    case "reasoning":
-      return [...item.summary, ...item.content].join("\n");
-    case "commandExecution":
-      return item.aggregatedOutput ?? "";
-    case "fileChange":
-      return item.changes
-        .map((change) => change.diff ?? "")
-        .filter((diff) => diff.length > 0)
-        .join("\n");
-    default:
-      return null;
-  }
-}
-
-function isDeltaBearingThreadItem(item: ThreadConversationItem) {
-  return summarizeDeltaBearingItemContent(item) !== null;
-}
-
-function estimateThreadItemDeltaBytes(
-  previousItem: ThreadConversationItem | null,
-  nextItem: ThreadConversationItem,
-) {
-  const nextSummary = summarizeDeltaBearingItemContent(nextItem);
-  if (nextSummary === null) {
-    return 0;
-  }
-
-  const nextBytes = estimateUtf8Bytes(nextSummary);
-  const previousSummary =
-    previousItem !== null && previousItem.type === nextItem.type
-      ? summarizeDeltaBearingItemContent(previousItem)
-      : null;
-  const previousBytes = previousSummary === null ? 0 : estimateUtf8Bytes(previousSummary);
-
-  return Math.max(0, nextBytes - previousBytes);
-}
-
-function pruneSnapshotDeltaTelemetrySamples(telemetry: SnapshotDeltaTelemetry, nowMs: number) {
-  while (
-    telemetry.samples.length > 0 &&
-    nowMs - telemetry.samples[0].timestampMs > APP_STATE_SNAPSHOT_WINDOW_MS
-  ) {
-    telemetry.samples.shift();
-  }
-}
-
-function recordSnapshotDeltaTelemetry(
-  telemetry: SnapshotDeltaTelemetry,
-  bytes: number,
-  nowMs: number,
-) {
-  telemetry.totalEvents += 1;
-  telemetry.totalBytes += Math.max(0, bytes);
-  telemetry.samples.push({ timestampMs: nowMs, bytes });
-  pruneSnapshotDeltaTelemetrySamples(telemetry, nowMs);
 }
 
 function App() {
@@ -1068,10 +1041,13 @@ function App() {
     useState<HeartbeatAutomationRecord | null>(null);
   const [threadHeartbeatAutomationDialogMode, setThreadHeartbeatAutomationDialogMode] =
     useState<"create" | "edit">("create");
+  useReplicaStatsigOwner(authSnapshot);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general-settings");
   const [settingsSectionState, setSettingsSectionState] = useState<SettingsSectionState>(null);
   const [settingsRemoteConnections, setSettingsRemoteConnections] = useState<RemoteConnection[]>([]);
-  const [connectedSettingsRemoteConnections, setConnectedSettingsRemoteConnections] = useState<RemoteConnection[]>([]);
+  const [settingsRemoteConnectionStates, setSettingsRemoteConnectionStates] = useState<
+    Record<string, AppServerConnectionState>
+  >({});
   const [selectedSettingsHostId, setSelectedSettingsHostId] = useState<string>(() => readInitialSettingsHostId());
   const [hasComputerUseApprovalStore, setHasComputerUseApprovalStore] = useState(false);
   const [codexHome, setCodexHome] = useState<string | null>(null);
@@ -1089,6 +1065,9 @@ function App() {
     () => resolveAvatarOption(selectedAvatarId, avatarOptions),
     [avatarOptions, selectedAvatarId],
   );
+  const connectedSettingsRemoteConnections = useMemo(() => {
+    return filterConnectedSettingsRemoteConnections(settingsRemoteConnections, settingsRemoteConnectionStates);
+  }, [settingsRemoteConnectionStates, settingsRemoteConnections]);
   const isPluginsRouteEnabled = usePluginsRouteEnabled(selectedSettingsHostId, {
     allowRemoteHost: true,
   });
@@ -1102,11 +1081,6 @@ function App() {
   const threadConversationRef = useRef<ThreadConversation | null>(null);
   const recentThreadsRef = useRef<ThreadHistoryEntry[]>([]);
   const loadedConversationsByIdRef = useRef(new Map<string, ThreadConversation>());
-  const snapshotDeltaTelemetryRef = useRef<SnapshotDeltaTelemetry>({
-    totalEvents: 0,
-    totalBytes: 0,
-    samples: [],
-  });
   const snapshotSessionStartedAtMsRef = useRef(Date.now());
   const initialWindowThreadIdRef = useRef<string | null>(null);
   const initialWindowPageKindRef = useRef<PendingWindowPageKind>(null);
@@ -1128,6 +1102,7 @@ function App() {
     authSnapshot.authState.authMethod === "chatgpt" &&
     isUsageSettingsPlanSupported(authSnapshot.authState.planAtLogin);
   const hiddenSettingsSectionIds = new Set<SettingsSection>(["account", "plugins-settings", "skills-settings"]);
+  const directSettingsRouteIds = new Set<SettingsSection>(["account"]);
   const visibleSettingsNavItems = settingsNavItems.filter(
     (item) =>
       !hiddenSettingsSectionIds.has(item.id) &&
@@ -1170,6 +1145,7 @@ function App() {
   const isCurrentSettingsSectionVisible = orderedVisibleSettingsNavItems.some(
     (item) => item.id === settingsSection,
   );
+  const isCurrentSettingsSectionDirectRoute = directSettingsRouteIds.has(settingsSection);
   const isCurrentSettingsSubpage = settingsSection === "open-source-licenses";
   const menuItems = [t("app.menu.file"), t("app.menu.edit"), t("app.menu.view"), t("app.menu.window"), t("app.menu.help")];
   const navItems: NavItem[] = [
@@ -1209,6 +1185,10 @@ function App() {
   const threadDiffSummary = buildThreadDiffSummary(threadConversation?.items ?? []);
   const totalAdditions = threadDiffSummary.linesAdded;
   const totalDeletions = threadDiffSummary.linesDeleted;
+  const reviewDiffBytesEstimate = threadDiffSummary.files.reduce(
+    (sum, file) => sum + estimateUtf8Bytes(file.diff ?? ""),
+    0,
+  );
   const shellHeaderTitle =
     currentRoute === "settings"
       ? `${t("app.shell.settings")} / ${t(settingsSectionLabelKeys[settingsSection])}`
@@ -1228,6 +1208,8 @@ function App() {
     !hasLoadedLaunchContext ||
     !hasLoadedInitialWindowRoute ||
     (!hasLoadedInitialThreadSnapshot &&
+      currentRoute !== "hotkey-home" &&
+      currentRoute !== "hotkey-new-thread" &&
       currentRoute !== "plan-summary" &&
       currentRoute !== "editor-diff" &&
       currentRoute !== "global-dictation" &&
@@ -1585,12 +1567,20 @@ function App() {
     void readAppearanceSettingsSnapshot()
       .then((settings) => {
         applyAppearanceSettingsSnapshot(settings);
+        applyGpuTearingDebugSettings(readGpuTearingDebugSettings());
         setComposerEnterBehavior(settings.composerEnterBehavior);
         setFollowUpQueueMode(settings.followUpQueueMode);
         setPreventSleepWhileRunning(settings.preventSleepWhileRunning);
         setReviewDelivery(settings.reviewDelivery);
       })
       .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    applyGpuTearingDebugSettings(readGpuTearingDebugSettings());
+    return onGpuTearingDebugSettingsChanged((settings) => {
+      applyGpuTearingDebugSettings(settings);
+    });
   }, []);
 
   useEffect(() => {
@@ -1622,13 +1612,35 @@ function App() {
   }, []);
 
   const applySettingsRemoteConnections = useEffectEvent(async (remoteConnections: RemoteConnection[]) => {
-    const connectedRemoteConnections = await readConnectedSettingsRemoteConnections(remoteConnections);
+    const statesByHostId = await readSettingsRemoteConnectionStates(remoteConnections);
     setSettingsRemoteConnections(remoteConnections);
-    setConnectedSettingsRemoteConnections(connectedRemoteConnections);
-    setSelectedSettingsHostId((currentHostId) => {
-      return normalizeSelectedSettingsHostId(currentHostId, connectedRemoteConnections);
-    });
+    setSettingsRemoteConnectionStates(statesByHostId);
   });
+
+  const applySettingsRemoteConnectionStateChanged = useEffectEvent(
+    ({ hostId, state }: { hostId: string; state: AppServerConnectionState }) => {
+      if (!settingsRemoteConnections.some((remoteConnection) => remoteConnection.hostId === hostId)) {
+        return;
+      }
+
+      setSettingsRemoteConnectionStates((currentStates) => {
+        if (currentStates[hostId] === state) {
+          return currentStates;
+        }
+
+        return {
+          ...currentStates,
+          [hostId]: state,
+        };
+      });
+    },
+  );
+
+  useEffect(() => {
+    setSelectedSettingsHostId((currentHostId) => {
+      return normalizeSelectedSettingsHostId(currentHostId, connectedSettingsRemoteConnections);
+    });
+  }, [connectedSettingsRemoteConnections]);
 
   useEffect(() => {
     if (currentRoute !== "settings" && currentRoute !== "skills") {
@@ -1636,7 +1648,8 @@ function App() {
     }
 
     let disposed = false;
-    let unlisten: (() => void) | undefined;
+    let unlistenSharedObject: (() => void) | undefined;
+    let unlistenStateChanged: (() => void) | undefined;
 
     void readSettingsRemoteConnectionsSnapshot()
       .then((remoteConnections) => {
@@ -1649,7 +1662,7 @@ function App() {
           return;
         }
         setSettingsRemoteConnections([]);
-        setConnectedSettingsRemoteConnections([]);
+        setSettingsRemoteConnectionStates({});
         setSelectedSettingsHostId(LOCAL_SETTINGS_HOST_ID);
       });
 
@@ -1664,12 +1677,23 @@ function App() {
         void dispose();
         return;
       }
-      unlisten = dispose;
+      unlistenSharedObject = dispose;
+    });
+
+    void onRemoteAppServerConnectionStateChanged((notification) => {
+      void applySettingsRemoteConnectionStateChanged(notification);
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+      unlistenStateChanged = dispose;
     });
 
     return () => {
       disposed = true;
-      unlisten?.();
+      unlistenSharedObject?.();
+      unlistenStateChanged?.();
     };
   }, [currentRoute]);
 
@@ -1956,13 +1980,24 @@ function App() {
   }, [currentRoute]);
 
   useEffect(() => {
-    if (currentRoute !== "settings" || isCurrentSettingsSectionVisible || isCurrentSettingsSubpage) {
+    if (
+      currentRoute !== "settings" ||
+      isCurrentSettingsSectionVisible ||
+      isCurrentSettingsSectionDirectRoute ||
+      isCurrentSettingsSubpage
+    ) {
       return;
     }
 
     setSettingsSection(firstVisibleSettingsSection);
     setSettingsSectionState(null);
-  }, [currentRoute, firstVisibleSettingsSection, isCurrentSettingsSectionVisible, isCurrentSettingsSubpage]);
+  }, [
+    currentRoute,
+    firstVisibleSettingsSection,
+    isCurrentSettingsSectionDirectRoute,
+    isCurrentSettingsSectionVisible,
+    isCurrentSettingsSubpage,
+  ]);
 
   useEffect(() => {
     if (currentRoute !== "settings") {
@@ -2056,13 +2091,7 @@ function App() {
         return Math.max(max, conversationMax);
       }, 0);
 
-      const telemetry = snapshotDeltaTelemetryRef.current;
-      pruneSnapshotDeltaTelemetrySamples(telemetry, nowMs);
-      const deltaEventsLast30s = telemetry.samples.length;
-      const deltaBytesLast30sEstimate = telemetry.samples.reduce((sum, sample) => sum + sample.bytes, 0);
       const rendererFrameIntervalSnapshot = readRendererFrameIntervalSnapshot();
-      const reviewDiffBytesEstimate =
-        threadDiffSummary.files.reduce((sum, file) => sum + estimateUtf8Bytes(file.diff ?? ""), 0);
 
       const fields: AppStateSnapshotFields = {
         event: "app_state_snapshot",
@@ -2084,10 +2113,10 @@ function App() {
         max_items_in_single_turn: maxItemsInSingleTurn,
         pending_request_count: totalPendingRequestCount,
         inflight_turn_count: inflightTurnCount,
-        delta_events_total: telemetry.totalEvents,
-        delta_bytes_total_estimate: telemetry.totalBytes,
-        delta_events_last_30s: deltaEventsLast30s,
-        delta_bytes_last_30s_estimate: deltaBytesLast30sEstimate,
+        delta_events_total: 0,
+        delta_bytes_total_estimate: 0,
+        delta_events_last_30s: 0,
+        delta_bytes_last_30s_estimate: 0,
         renderer_frame_interval_sample_count_last_30s:
           rendererFrameIntervalSnapshot.rendererFrameIntervalSampleCountLast30s,
         renderer_frame_interval_p95_ms_last_30s:
@@ -2100,6 +2129,26 @@ function App() {
       await sendAppStateSnapshotResponse({ requestId, fields });
     },
   );
+
+  useEffect(() => {
+    void setReviewPaneSnapshotMetricsForHost({
+      hostId: LOCAL_SETTINGS_HOST_ID,
+      reviewDiffFilesTotal: threadDiffSummary.fileCount,
+      reviewDiffLinesTotal: totalAdditions + totalDeletions,
+      reviewDiffBytesEstimate,
+    }).catch(() => undefined);
+  }, [reviewDiffBytesEstimate, threadDiffSummary.fileCount, totalAdditions, totalDeletions]);
+
+  useEffect(() => {
+    return () => {
+      void setReviewPaneSnapshotMetricsForHost({
+        hostId: LOCAL_SETTINGS_HOST_ID,
+        reviewDiffFilesTotal: 0,
+        reviewDiffLinesTotal: 0,
+        reviewDiffBytesEstimate: 0,
+      }).catch(() => undefined);
+    };
+  }, []);
 
   useEffect(() => {
     startRendererFrameIntervalSampler();
@@ -2292,6 +2341,17 @@ function App() {
           return;
         }
 
+        if (isHotkeyHomeRoute(path)) {
+          setThreadShellVariant("hotkey");
+          initialWindowPageKindRef.current = "hotkey-home";
+          setSelectedThreadId(null);
+          setThreadConversation(null);
+          setIsThreadConversationLoading(false);
+          setTurnError(null);
+          setCurrentRoute("hotkey-home");
+          return;
+        }
+
         if (isEditorDiffRoute(path)) {
           setThreadShellVariant("default");
           initialWindowPageKindRef.current = "editor-diff";
@@ -2304,6 +2364,17 @@ function App() {
           setThreadShellVariant("default");
           initialWindowPageKindRef.current = "global-dictation";
           setCurrentRoute("global-dictation");
+          return;
+        }
+
+        if (isHotkeyNewThreadRoute(path)) {
+          setThreadShellVariant("hotkey");
+          initialWindowPageKindRef.current = "hotkey-new-thread";
+          setSelectedThreadId(null);
+          setThreadConversation(null);
+          setIsThreadConversationLoading(false);
+          setTurnError(null);
+          setCurrentRoute("hotkey-new-thread");
           return;
         }
 
@@ -2659,13 +2730,6 @@ function App() {
               ? foldStartedThreadItemWithSteer(nextConversation.items, event.item)
               : foldCompletedThreadItemWithSteer(nextConversation.items, event.item);
 
-          const previousItem =
-            nextConversation.items.find((item) => item.id === event.item.id) ?? null;
-          if (isDeltaBearingThreadItem(event.item)) {
-            const deltaBytes = estimateThreadItemDeltaBytes(previousItem, event.item);
-            recordSnapshotDeltaTelemetry(snapshotDeltaTelemetryRef.current, deltaBytes, now);
-          }
-
           if (folded.items === nextConversation.items && nextConversation === current) {
             return current;
           }
@@ -2737,10 +2801,14 @@ function App() {
     }
 
     if (
+      initialWindowPageKindRef.current === "hotkey-home" ||
+      initialWindowPageKindRef.current === "hotkey-new-thread" ||
       initialWindowPageKindRef.current === "plan-summary" ||
       initialWindowPageKindRef.current === "editor-diff" ||
       initialWindowPageKindRef.current === "global-dictation" ||
       initialWindowPageKindRef.current === "worktree-init" ||
+      currentRoute === "hotkey-home" ||
+      currentRoute === "hotkey-new-thread" ||
       currentRoute === "editor-diff" ||
       currentRoute === "global-dictation" ||
       currentRoute === "first-run" ||
@@ -3158,7 +3226,7 @@ function App() {
     }
   };
 
-  const viewUnarchivedThread = async (threadId: string, hostId: string) => {
+  const viewConversationForHost = async (threadId: string, hostId: string) => {
     if (hostId !== LOCAL_SETTINGS_HOST_ID) {
       await openRemoteTask(threadId);
       return;
@@ -3282,6 +3350,17 @@ function App() {
       return;
     }
 
+    if (isHotkeyHomeRoute(path)) {
+      setThreadShellVariant("hotkey");
+      setSkillsRouteState(null);
+      setSelectedThreadId(null);
+      setThreadConversation(null);
+      setIsThreadConversationLoading(false);
+      setTurnError(null);
+      setCurrentRoute("hotkey-home");
+      return;
+    }
+
     if (isEditorDiffRoute(path)) {
       setThreadShellVariant("default");
       setSkillsRouteState(null);
@@ -3294,6 +3373,17 @@ function App() {
       setThreadShellVariant("default");
       setSkillsRouteState(null);
       setCurrentRoute("global-dictation");
+      return;
+    }
+
+    if (isHotkeyNewThreadRoute(path)) {
+      setThreadShellVariant("hotkey");
+      setSkillsRouteState(null);
+      setSelectedThreadId(null);
+      setThreadConversation(null);
+      setIsThreadConversationLoading(false);
+      setTurnError(null);
+      setCurrentRoute("hotkey-new-thread");
       return;
     }
 
@@ -3452,6 +3542,131 @@ function App() {
       // Keep the current selection untouched when thread creation fails.
     }
   };
+
+  const startHotkeyHomeLocalConversation = useEffectEvent(async (params: {
+    draft: string;
+    permissionOverrides: TurnStartPermissionOverrides;
+    workspaceRoot: string | null;
+  }) => {
+    const text = params.draft.trim();
+    if (text.length === 0) {
+      return;
+    }
+
+    const cwd = params.workspaceRoot;
+    const threadId = await startThread(cwd);
+
+    if (text === "/review") {
+      const review = await startReview({ threadId, delivery: reviewDelivery });
+      const threads = await getRecentThreads();
+      syncProjectGroups(review.reviewThreadId, threads);
+      setActiveTurn({ threadId: review.reviewThreadId, turnId: review.turnId });
+      await openInHotkeyWindow(buildLocalThreadRoutePath(review.reviewThreadId, "hotkey"));
+      return;
+    }
+
+    const turnId = await startTurn({
+      threadId,
+      text,
+      cwd,
+      ...params.permissionOverrides,
+    });
+    const threads = await getRecentThreads();
+    syncProjectGroups(threadId, threads);
+    completeImplementPlanFlowForThread(threadId);
+    setActiveTurn({ threadId, turnId });
+    await openInHotkeyWindow(buildLocalThreadRoutePath(threadId, "hotkey"));
+  });
+
+  const startHotkeyHomeCloudConversation = useEffectEvent(async (params: {
+    draft: string;
+    permissionOverrides: TurnStartPermissionOverrides;
+    workspaceRoot: string;
+  }) => {
+    const text = params.draft.trim();
+    if (text.length === 0) {
+      return;
+    }
+
+    const threadId = await startConversation({
+      hostId: LOCAL_SETTINGS_HOST_ID,
+      text,
+      cwd: params.workspaceRoot,
+      workspaceRoots: [params.workspaceRoot],
+      ...params.permissionOverrides,
+    });
+    const threads = await getRecentThreads();
+    syncProjectGroups(threadId, threads);
+    completeImplementPlanFlowForThread(threadId);
+    await openInHotkeyWindow(buildRemoteThreadRoutePath(threadId, "hotkey"));
+  });
+
+  const startHotkeyHomeWorktreeConversation = useEffectEvent(async (params: {
+    id: string;
+    localEnvironmentConfigPath: string | null;
+    permissionOverrides: TurnStartPermissionOverrides;
+    prompt: string;
+    startingState: PendingWorktreeStartingState;
+    workspaceRoot: string;
+  }) => {
+    const prompt = params.prompt.trim();
+    if (prompt.length === 0) {
+      return;
+    }
+
+    await createPendingWorktree({
+      hostId: LOCAL_SETTINGS_HOST_ID,
+      request: {
+        id: params.id,
+        hostId: LOCAL_SETTINGS_HOST_ID,
+        label: null,
+        initialThreadTitle: null,
+        sourceWorkspaceRoot: params.workspaceRoot,
+        startingState: params.startingState,
+        localEnvironmentConfigPath: params.localEnvironmentConfigPath,
+        prompt,
+        launchMode: "start-conversation",
+        startConversationParamsInput: {
+          input: [{ type: "text", text: prompt }],
+          approvalPolicy: params.permissionOverrides.approvalPolicy ?? null,
+          approvalsReviewer: params.permissionOverrides.approvalsReviewer ?? null,
+          sandboxPolicy: params.permissionOverrides.sandboxPolicy ?? null,
+        },
+        threadGoalObjective: null,
+        sourceConversationId: null,
+        sourceCollaborationMode: null,
+        targetTurnId: null,
+      },
+    });
+
+    await openInHotkeyWindow(buildWorktreeInitV2RoutePath(params.id, "hotkey"));
+  });
+
+  const startHotkeyNewThread = useEffectEvent(async (draft: string) => {
+    const text = draft.trim();
+    if (text.length === 0) {
+      return;
+    }
+
+    const cwd = openProjectPath ?? null;
+    const threadId = await startThread(cwd);
+
+    if (text === "/review") {
+      const review = await startReview({ threadId, delivery: reviewDelivery });
+      const threads = await getRecentThreads();
+      syncProjectGroups(review.reviewThreadId, threads);
+      setActiveTurn({ threadId: review.reviewThreadId, turnId: review.turnId });
+      await openInHotkeyWindow(buildLocalThreadRoutePath(review.reviewThreadId, "hotkey"));
+      return;
+    }
+
+    const turnId = await startTurn({ threadId, text, cwd });
+    const threads = await getRecentThreads();
+    syncProjectGroups(threadId, threads);
+    completeImplementPlanFlowForThread(threadId);
+    setActiveTurn({ threadId, turnId });
+    await openInHotkeyWindow(buildLocalThreadRoutePath(threadId, "hotkey"));
+  });
 
   const removeQueuedFollowUp = (queuedFollowUpId: string) => {
     mutateQueuedFollowUps((current) => removeQueuedLocalFollowUp(current, queuedFollowUpId));
@@ -4338,13 +4553,17 @@ function App() {
     }
   };
 
+  const navigateToLogin = () => {
+    if (typeof window !== "undefined" && window.location.pathname !== LOGIN_ROUTE_PATH) {
+      window.history.replaceState(window.history.state, "", LOGIN_ROUTE_PATH);
+    }
+    setCurrentRoute("login");
+  };
+
   const signOut = async () => {
     try {
       await logout();
-      if (typeof window !== "undefined" && window.location.pathname !== LOGIN_ROUTE_PATH) {
-        window.history.replaceState(window.history.state, "", LOGIN_ROUTE_PATH);
-      }
-      setCurrentRoute("login");
+      navigateToLogin();
     } catch (error) {
       setAppToast({
         message: error instanceof Error ? error.message : String(error),
@@ -4446,6 +4665,16 @@ function App() {
       );
     }
 
+    if (settingsSection === "account") {
+      return (
+        <AccountSettings
+          authSnapshot={authSnapshot}
+          onNavigateToLogin={navigateToLogin}
+          onShowToast={(toast) => setAppToast(toast)}
+        />
+      );
+    }
+
     if (settingsSection === "appearance") {
       return (
         <AppearanceSettings
@@ -4458,6 +4687,7 @@ function App() {
     if (settingsSection === "personalization") {
       return (
         <PersonalizationSettings
+          onOpenChatWithPrompt={(prompt) => openNewConversation({ prefillPrompt: prompt })}
           workspaceRoot={settingsWorkspaceRoot}
           onShowToast={(toast) => setAppToast(toast)}
         />
@@ -4465,7 +4695,14 @@ function App() {
     }
 
     if (settingsSection === "browser-use") {
-      return <BrowserUseSettings workspaceRoot={settingsWorkspaceRoot} onShowToast={(toast) => setAppToast(toast)} />;
+      return (
+        <BrowserUseSettings
+          hasComputerUseApprovalStore={hasComputerUseApprovalStore}
+          selectedHostId={selectedSettingsHostId}
+          workspaceRoot={settingsWorkspaceRoot}
+          onShowToast={(toast) => setAppToast(toast)}
+        />
+      );
     }
 
     if (settingsSection === "computer-use") {
@@ -4508,10 +4745,28 @@ function App() {
       return <McpSettings selectedHostId={selectedSettingsHostId} workspaceRoot={settingsWorkspaceRoot} />;
     }
 
+    if (settingsSection === "hooks-settings") {
+      return (
+        <HooksSettings
+          selectedHostId={selectedSettingsHostId}
+          onShowToast={(toast) => setAppToast(toast)}
+        />
+      );
+    }
+
     if (settingsSection === "local-environments") {
       return (
         <LocalEnvironmentsSettings
           codexHome={codexHome}
+          onUpdateRouteSearch={(localEnvironmentRouteSearch) => {
+            setSettingsSectionState(
+              localEnvironmentRouteSearch
+                ? {
+                    localEnvironmentRouteSearch,
+                  }
+                : null,
+            );
+          }}
           routeSearch={
             settingsSectionState != null &&
             typeof settingsSectionState === "object" &&
@@ -4521,6 +4776,7 @@ function App() {
               ? settingsSectionState.localEnvironmentRouteSearch
               : (typeof window === "undefined" ? "" : window.location.search)
           }
+          onSelectHostId={setSelectedSettingsHostId}
           selectedHostId={selectedSettingsHostId}
           onShowToast={(toast) => setAppToast(toast)}
         />
@@ -4534,7 +4790,7 @@ function App() {
           onShowToast={(toast) => setAppToast(toast)}
           selectedHostId={selectedSettingsHostId}
           onThreadUnarchived={(threadId, hostId) => void refreshRecentThreadsAfterUnarchive(hostId)}
-          onViewThread={(threadId, hostId) => void viewUnarchivedThread(threadId, hostId)}
+          onViewThread={(threadId, hostId) => void viewConversationForHost(threadId, hostId)}
         />
       );
     }
@@ -4548,7 +4804,14 @@ function App() {
     }
 
     if (settingsSection === "worktrees") {
-      return <WorktreesSettings />;
+      return (
+        <WorktreesSettingsPage
+          onDismissToast={() => setAppToast(null)}
+          onShowToast={(toast) => setAppToast(toast)}
+          onViewConversation={(threadId, hostId) => void viewConversationForHost(threadId, hostId)}
+          selectedHostId={selectedSettingsHostId}
+        />
+      );
     }
 
     if (settingsSection === "open-source-licenses") {
@@ -4581,6 +4844,10 @@ function App() {
         title: getConfigScopeTitle(scope, t),
       }));
       const approvalPolicy = scopedConfig?.approvalPolicy ?? configSnapshot?.approvalPolicy ?? "on-request";
+      const approvalPolicyValue =
+        typeof approvalPolicy === "string"
+          ? approvalPolicy
+          : "on-request";
       const sandboxMode = scopedConfig?.sandboxMode ?? configSnapshot?.sandboxMode ?? "read-only";
       const controlLockReason = getAgentConfigControlLockReason(selectedScope, t);
       const showNetworkAccess = sandboxMode === "workspace-write";
@@ -4657,7 +4924,7 @@ function App() {
                   </div>
                   <div className="shrink-0">
                     <SettingsChoiceMenu
-                      value={approvalPolicy}
+                      value={approvalPolicyValue}
                       options={approvalPolicyOptions}
                       disabled={isScopeReadOnly}
                       onChange={(value) => void updateConfigValue("approval_policy", value)}
@@ -4754,6 +5021,46 @@ function App() {
 
   if (isAppBootstrapping) {
     return <LoadingPage debugName="PersistedStateProvider" />;
+  }
+
+  if (currentRoute === "hotkey-home") {
+    return (
+      <HotkeyWindowHomePage
+        codexHome={codexHome}
+        composerEnterBehavior={composerEnterBehavior}
+        initialWorkspaceRoot={openProjectPath}
+        onOpenLocalEnvironmentsSettings={({ configPath, workspaceRoot }) => {
+          const searchParams = new URLSearchParams({
+            mode: configPath === null ? "edit" : "preview",
+            workspaceRoot,
+          });
+          if (configPath !== null) {
+            searchParams.set("configPath", configPath);
+          }
+          const nextPath = `/settings/local-environments?${searchParams.toString()}`;
+          if (typeof window !== "undefined" && window.location.pathname + window.location.search !== nextPath) {
+            window.history.replaceState(window.history.state, "", nextPath);
+          }
+          setThreadShellVariant("default");
+          setSelectedSettingsHostId(LOCAL_SETTINGS_HOST_ID);
+          setSettingsSection("local-environments");
+          setSettingsSectionState({ localEnvironmentRouteSearch: `?${searchParams.toString()}` });
+          setCurrentRoute("settings");
+        }}
+        onStartCloudConversation={startHotkeyHomeCloudConversation}
+        onStartLocalConversation={startHotkeyHomeLocalConversation}
+        onStartWorktreeConversation={startHotkeyHomeWorktreeConversation}
+      />
+    );
+  }
+
+  if (currentRoute === "hotkey-new-thread") {
+    return (
+      <HotkeyWindowNewThreadPage
+        composerEnterBehavior={composerEnterBehavior}
+        onSubmit={startHotkeyNewThread}
+      />
+    );
   }
 
   if (currentRoute === "worktree-init") {
@@ -5484,7 +5791,32 @@ function App() {
                 </div>
               ) : currentRoute === "automations" ? (
                 <div className="min-h-0 flex-1 overflow-hidden">
-                  <AutomationsRoutePage recentThreads={recentThreadEntries} onOpenThread={selectThread} />
+                  <AutomationsRoutePage
+                    hasConnectedRemoteConnections={
+                      connectedSettingsRemoteConnections.length > 0
+                    }
+                    onOpenLocalEnvironmentsSettings={({ configPath, workspaceRoot }) => {
+                      const searchParams = new URLSearchParams({ workspaceRoot });
+                      if (configPath !== null) {
+                        searchParams.set("configPath", configPath);
+                      }
+                      const nextPath = `/settings/local-environments?${searchParams.toString()}`;
+                      if (
+                        typeof window !== "undefined" &&
+                        window.location.pathname + window.location.search !== nextPath
+                      ) {
+                        window.history.replaceState(window.history.state, "", nextPath);
+                      }
+                      setSettingsSection("local-environments");
+                      setSettingsSectionState({
+                        localEnvironmentRouteSearch: `?${searchParams.toString()}`,
+                      });
+                      setCurrentRoute("settings");
+                    }}
+                    recentThreads={recentThreadEntries}
+                    onOpenThread={selectThread}
+                    selectedHostId={selectedSettingsHostId}
+                  />
                 </div>
               ) : currentRoute === "skills" ? (
                 <div className="min-h-0 flex-1 overflow-hidden">

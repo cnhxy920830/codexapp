@@ -5,6 +5,10 @@ import type { AppToast } from "./AppToastRegion";
 import { CheckIcon } from "./AppShellIcons";
 import { PersonalizationMemorySettings } from "./PersonalizationMemorySettings";
 import {
+  REPLICA_STATSIG_GATES,
+  useReplicaStatsigGateValue,
+} from "../features/statsig/replicaStatsig";
+import {
   readWorkspaceAgentsMd,
   writeWorkspaceAgentsMd,
   type WorkspaceAgentsMdDocument,
@@ -56,13 +60,18 @@ const INITIAL_PERSONALITY_STATE: PersonalityState = {
 };
 
 export function PersonalizationSettings({
+  onOpenChatWithPrompt,
   onShowToast,
   workspaceRoot,
 }: {
+  onOpenChatWithPrompt?: (prompt: string) => void;
   onShowToast?: (toast: AppToast) => void;
   workspaceRoot: string | null;
 }) {
   const { t } = useI18n();
+  const showPersonalityCard = useReplicaStatsigGateValue(
+    REPLICA_STATSIG_GATES.personality,
+  );
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [personalityState, setPersonalityState] = useState<PersonalityState>(INITIAL_PERSONALITY_STATE);
   const [document, setDocument] = useState<WorkspaceAgentsMdDocument | null>(null);
@@ -315,43 +324,49 @@ export function PersonalizationSettings({
         <div className="app-title text-[14px] font-medium">{t("settings.section.personalization")}</div>
       </div>
 
-      <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="app-title text-[14px] font-medium">{t("settings.personalization.personality.label")}</div>
-        <div className="app-text-muted mt-1 text-[12px] leading-5">
-          {t("settings.personalization.personality.description")}
-        </div>
+      {showPersonalityCard ? (
+        <div className="app-card rounded-[18px] px-5 py-4">
+          <div className="app-title text-[14px] font-medium">{t("settings.personalization.personality.label")}</div>
+          <div className="app-text-muted mt-1 text-[12px] leading-5">
+            {t("settings.personalization.personality.description")}
+          </div>
 
-        <div className="mt-4 space-y-2">
-          {PERSONALITY_OPTIONS.map((option) => {
-            const isActive = option.value === personalityState.activePersonality;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                disabled={personalityState.isLoading || personalityState.isSaving}
-                onClick={() => void savePersonality(option.value)}
-                className={[
-                  "w-full rounded-[14px] px-4 py-3 text-left transition",
-                  isActive ? "app-nav-item-active" : "app-card-muted",
-                  personalityState.isLoading || personalityState.isSaving ? "opacity-60" : "",
-                ].join(" ")}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="app-title text-[13px] font-medium">{t(option.labelKey)}</div>
-                    <div className="app-text-muted mt-1 text-[12px] leading-5">{t(option.descriptionKey)}</div>
+          <div className="mt-4 space-y-2">
+            {PERSONALITY_OPTIONS.map((option) => {
+              const isActive = option.value === personalityState.activePersonality;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  disabled={personalityState.isLoading || personalityState.isSaving}
+                  onClick={() => void savePersonality(option.value)}
+                  className={[
+                    "w-full rounded-[14px] px-4 py-3 text-left transition",
+                    isActive ? "app-nav-item-active" : "app-card-muted",
+                    personalityState.isLoading || personalityState.isSaving ? "opacity-60" : "",
+                  ].join(" ")}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="app-title text-[13px] font-medium">{t(option.labelKey)}</div>
+                      <div className="app-text-muted mt-1 text-[12px] leading-5">{t(option.descriptionKey)}</div>
+                    </div>
+                    {isActive ? (
+                      <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
+                    ) : null}
                   </div>
-                  {isActive ? (
-                    <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
-                  ) : null}
-                </div>
-              </button>
-            );
-          })}
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      ) : null}
 
-      <PersonalizationMemorySettings workspaceRoot={workspaceRoot} onShowToast={onShowToast} />
+      <PersonalizationMemorySettings
+        workspaceRoot={workspaceRoot}
+        onOpenChatWithPrompt={onOpenChatWithPrompt}
+        onShowToast={onShowToast}
+      />
 
       <div className="app-card rounded-[18px] px-5 py-4">
         <div className="app-title text-[14px] font-medium">{t("settings.personalization.agents.title")}</div>

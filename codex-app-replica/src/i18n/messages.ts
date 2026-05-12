@@ -230,6 +230,8 @@ export type MessageKey =
   | "app.shell.forward"
   | "app.shell.settings"
   | "app.shell.share"
+  | "home.hero.letsBuild"
+  | "threadPage.newThread"
   | "codex.alert.closeAriaLabel"
   | "codex.archiveInfo.electron"
   | "codex.archiveInfo.settingsLink"
@@ -276,6 +278,13 @@ export type MessageKey =
   | "app.chat.filesChanged"
   | "app.chat.composePlaceholder"
   | "composer.placeholder.newTask.doAnything"
+  | "composer.footer.v2.cloudTab"
+  | "composer.mode.worktreeSegment"
+  | "composer.hotkeyWindow.modeDropdown.localProject"
+  | "composer.hotkeyWindow.modeDropdown.tooltip"
+  | "composer.mode.local"
+  | "composer.hotkeyWindow.modeDropdown.localOnly"
+  | "composer.mode.worktree"
   | "app.chat.send"
   | "app.chat.stop"
   | "app.chat.queuedFollowUps"
@@ -316,6 +325,88 @@ export type MessageKey =
   | "app.chat.toolCallFailed"
   | "app.chat.output"
   | "app.chat.noOutput"
+  | "hotkeyWindow.home.placeholder.unknownProject"
+  | "hotkeyWindow.home.placeholder.projectless"
+  | "hotkeyWindow.home.placeholder.cloud"
+  | "hotkeyWindow.home.placeholder.worktree"
+  | "hotkeyWindow.home.placeholder.local"
+  | "hotkeyWindow.home.taskMenu.startIn.projectlessTooltip"
+  | "hotkeyWindow.home.taskMenu.startIn.disabledTooltip"
+  | "hotkeyWindow.home.taskMenu.label"
+  | "hotkeyWindow.home.taskMenu.project"
+  | "hotkeyWindow.home.taskMenu.startIn"
+  | "hotkeyWindow.home.taskMenu.environment"
+  | "hotkeyWindow.home.taskMenu.branch"
+  | "hotkeyWindow.home.taskMenu.permissions"
+  | "composer.permissionsDropdown.default.label"
+  | "composer.permissionsDropdown.default.optionLabel"
+  | "composer.permissionsDropdown.guardianApproval.shortLabel"
+  | "composer.mode.agentMode.guardianApprovals"
+  | "composer.permissionsDropdown.fullAccess.label"
+  | "composer.permissionsDropdown.fullAccess.optionLabel"
+  | "composer.permissionsDropdown.custom.label"
+  | "composer.permissionsDropdown.custom.optionLabel"
+  | "composer.mode.agentMode.fullAccessConfirm.title"
+  | "composer.mode.agentMode.fullAccessConfirm.description"
+  | "composer.mode.agentMode.fullAccessConfirm.caution"
+  | "composer.mode.agentMode.fullAccessConfirm.goBack"
+  | "composer.mode.agentMode.fullAccessConfirm.confirm"
+  | "composer.remote.currentBranch"
+  | "composer.remote.branch"
+  | "composer.remote.localWorkingTree"
+  | "composer.remote.localFileStateHeading"
+  | "composer.remote.currentEditsSuffix.useLocal"
+  | "composer.remote.branchStartingPoint"
+  | "composer.remote.branchesSectionHeading"
+  | "codex.composer.searchBranches"
+  | "composer.remote.errorLoadingBranches"
+  | "composer.remote.loadingMoreBranches"
+  | "composer.footer.branchSwitch.tooltip"
+  | "composer.footer.branchSwitch.checkoutError"
+  | "composer.footer.branchSwitch.createBranchError"
+  | "composer.footer.branchSwitch.uncommittedSummaryPrefix"
+  | "composer.footer.branchSwitch.createAndCheckout.disabledTooltip"
+  | "composer.footer.branchSwitch.createAndCheckout"
+  | "composer.footer.branchSwitch.createDialog.title"
+  | "composer.footer.branchSwitch.createDialog.placeholder"
+  | "composer.footer.branchSwitch.createDialog.ariaLabel"
+  | "composer.footer.branchSwitch.createDialog.trailingSlashError"
+  | "composer.footer.branchSwitch.createDialog.branchExistsError"
+  | "composer.footer.branchSwitch.createDialog.close"
+  | "composer.footer.branchSwitch.createDialog.createAndCheckout"
+  | "composer.footer.branchSwitch.uncommittedDialog.title"
+  | "composer.footer.branchSwitch.uncommittedDialog.conflict.bodyPrefix"
+  | "composer.footer.branchSwitch.uncommittedDialog.conflict.bodySuffix"
+  | "composer.footer.branchSwitch.uncommittedDialog.body.noDiff"
+  | "composer.footer.branchSwitch.uncommittedDialog.targetBranchFallback"
+  | "composer.footer.branchSwitch.uncommittedDialog.cancel"
+  | "composer.footer.branchSwitch.uncommittedDialog.commit"
+  | "composer.footer.branchSwitch.commitDialog.title"
+  | "composer.footer.branchSwitch.commitDialog.subtitle"
+  | "composer.footer.branchSwitch.commitDialog.messageLabel"
+  | "composer.footer.branchSwitch.commitDialog.messagePlaceholder"
+  | "composer.footer.branchSwitch.commitDialog.cancel"
+  | "composer.footer.branchSwitch.commitDialog.commit"
+  | "localConversation.sync.modal.noChanges"
+  | "review.commit.form.title"
+  | "review.commit.form.commitTo"
+  | "review.commit.form.commitTo.none"
+  | "review.commit.form.changesToBeCommitted"
+  | "review.commit.messageLabel"
+  | "review.commit.messagePlaceholder"
+  | "review.commit.customInstructionsLink"
+  | "review.commit.includeUnstaged"
+  | "review.commit.ariaLabel.includeUnstaged"
+  | "review.commit.form.continue"
+  | "review.commit.rows.fileCount"
+  | "review.commit.generate.emptyResponse"
+  | "review.commit.generate.failed"
+  | "localConversation.syncSetup.branchName"
+  | "localConversation.syncSetup.setPrefix"
+  | "localConversation.syncSetup.branchesLoading"
+  | "localConversation.syncSetup.noBranches"
+  | "composer.reviewMode.branches.error"
+  | "composer.reviewMode.branches.retry"
   | "app.chat.exitCode"
   | "app.chat.durationMs"
   | "app.chat.movedTo"
@@ -668,10 +759,12 @@ export type MessageKey =
   | "sidebarElectron.pullRequestsRouteNavLink"
   | "sidebarElectron.pluginsRouteNavLink"
   | "sidebarElectron.pluginsDisabledTooltip"
+  | "sidebarElectron.noTasks"
   | "sidebarElectron.scratchpadNavLink"
   | PullRequestsPageMessageKey
   | "inbox.mode.automations"
   | "inbox.automations.createError"
+  | "inbox.automations.updateError"
   | "inbox.automations.loading"
   | "inbox.automations.new"
   | "inbox.automations.current"
@@ -709,28 +802,50 @@ export type MessageKey =
   | "inbox.automations.relativeDate.tomorrow"
   | "inbox.automations.relativeDate.weekday"
   | "inbox.automations.relativeDate.yesterday"
+  | "inbox.automations.statusSection"
   | "inbox.automations.status.label"
   | "inbox.automations.status.active"
   | "inbox.automations.status.paused"
   | "inbox.automations.status.deleted"
   | "inbox.automations.executionEnvironment.label"
+  | "inbox.automations.host.label"
   | "inbox.automations.folder.label"
+  | "inbox.automations.localEnvironment.label"
+  | "composer.worktreeEnvironment.title"
+  | "composer.worktreeEnvironment.tooltip"
+  | "composer.worktreeEnvironment.loading"
+  | "composer.worktreeEnvironment.error"
+  | "composer.worktreeEnvironment.default"
+  | "composer.worktreeEnvironment.create"
+  | "codex.environmentSelector.noEnvironment"
+  | "codex.environments.noEnvironmentsFound"
+  | "inbox.automations.history"
+  | "inbox.automations.history.untitled"
+  | "inbox.automations.history.archivedTooltip"
   | "inbox.automations.workspaceFallback"
   | "inbox.automations.targetThread.label"
   | "inbox.automations.model.label"
   | "inbox.automations.reasoning.label"
   | "inbox.automations.interval.label"
   | "inbox.automations.repeats.label"
+  | "inbox.contextMenu.markRead"
+  | "inbox.contextMenu.markUnread"
   | "settings.automations.runNow"
   | "settings.automations.cancel"
   | "settings.automations.create"
   | "settings.automations.save"
+  | "settings.automations.saveRetry"
   | "settings.automations.deleteAria"
+  | "settings.automations.clear"
+  | "settings.automations.dialog.newTitle"
   | "settings.automations.nameLabel"
   | "settings.automations.namePlaceholder"
   | "settings.automations.pauseAria"
   | "settings.automations.promptLabel"
   | "settings.automations.promptPlaceholder"
+  | "settings.automations.projectDropdown.projectless"
+  | "settings.automations.projectDropdown.placeholder"
+  | "settings.automations.projectDropdown.localOnlyTooltip"
   | "settings.automations.resumeAria"
   | "settings.automations.rruleSummaryFallback"
   | "settings.automations.cwdPlaceholder"
@@ -803,16 +918,46 @@ export type MessageKey =
   | "settings.section.browser-use"
   | "settings.section.mcp-settings"
   | "settings.section.mcp-settings.subtitle"
+  | "settings.browserUse.title"
+  | "settings.browserUse.subtitle"
+  | "settings.browserUse.control.title"
+  | "settings.browserUse.control.description"
   | "settings.browserUse.install.title"
   | "settings.browserUse.install.button"
   | "settings.browserUse.install.empty"
   | "settings.browserUse.permissions.title"
+  | "settings.browserUse.browser.title"
+  | "settings.browserUse.browser.clearBrowsingData.label"
+  | "settings.browserUse.browser.clearBrowsingData.description"
+  | "settings.browserUse.browser.clearBrowsingData"
+  | "settings.browserUse.browser.hideClearOptions"
+  | "settings.browserUse.browser.showClearOptions"
+  | "settings.browserUse.browser.cookies.label"
+  | "settings.browserUse.browser.siteData.label"
+  | "settings.browserUse.browser.cache.label"
+  | "settings.browserUse.browser.clearCookies"
+  | "settings.browserUse.browser.clearSiteData"
+  | "settings.browserUse.browser.clearCache"
+  | "settings.browserUse.browser.browsingDataCleared"
+  | "settings.browserUse.browser.cookiesCleared"
+  | "settings.browserUse.browser.siteDataCleared"
+  | "settings.browserUse.browser.cacheCleared"
+  | "settings.browserUse.browser.clearBrowsingDataError"
+  | "settings.browserUse.browser.clearCookiesError"
+  | "settings.browserUse.browser.clearSiteDataError"
+  | "settings.browserUse.browser.clearCacheError"
+  | "settings.browserUse.browser.annotationScreenshots.label"
+  | "settings.browserUse.browser.annotationScreenshots.description"
+  | "settings.browserUse.browser.annotationScreenshots.always.label"
+  | "settings.browserUse.browser.annotationScreenshots.necessary.label"
+  | "settings.browserUse.browser.annotationScreenshots.saveError"
   | "settings.browserUse.approval.label"
   | "settings.browserUse.approval.description"
   | "settings.browserUse.approval.alwaysAsk.label"
   | "settings.browserUse.approval.alwaysAsk.description"
   | "settings.browserUse.approval.neverAsk.label"
   | "settings.browserUse.approval.neverAsk.description"
+  | "settings.browserUse.approval.neverAsk.elevatedRiskDisclaimer"
   | "settings.browserUse.approval.saveError"
   | "settings.browserUse.historyApproval.label"
   | "settings.browserUse.historyApproval.description"
@@ -1021,6 +1166,15 @@ export type MessageKey =
   | "settings.localEnvironments.loading.body"
   | "settings.localEnvironments.unavailable.title"
   | "settings.localEnvironments.unavailable.body"
+  | "settings.localEnvironments.remoteProjectDialog.title"
+  | "settings.localEnvironments.remoteProjectDialog.description"
+  | "settings.localEnvironments.remoteProjectDialog.emptyDescription"
+  | "settings.localEnvironments.remoteProjectDialog.hostLabel"
+  | "settings.localEnvironments.remoteProjectDialog.pathLabel"
+  | "settings.localEnvironments.remoteProjectDialog.note"
+  | "settings.localEnvironments.remoteProjectDialog.cancel"
+  | "settings.localEnvironments.remoteProjectDialog.confirm"
+  | "settings.localEnvironments.remoteProjectDialog.saveError"
   | "settings.keyboardShortcuts.subtitle.electron"
   | "settings.keyboardShortcuts.loading"
   | "settings.keyboardShortcuts.search.ariaLabel"
@@ -1101,6 +1255,22 @@ export type MessageKey =
   | "settings.worktrees.autoCleanup.confirm.body"
   | "settings.worktrees.autoCleanup.confirm.cancel"
   | "settings.worktrees.autoCleanup.confirm.confirm"
+  | "settings.worktrees.refresh"
+  | "settings.worktrees.loading.title"
+  | "settings.worktrees.loading.body"
+  | "settings.worktrees.error.title"
+  | "settings.worktrees.error.body"
+  | "settings.worktrees.empty.title"
+  | "settings.worktrees.empty.body"
+  | "settings.worktrees.repository.unknown"
+  | "settings.worktrees.repository.loading"
+  | "settings.worktrees.row.title"
+  | "settings.worktrees.row.delete"
+  | "settings.worktrees.row.conversations"
+  | "settings.worktrees.row.conversations.loading"
+  | "settings.worktrees.row.conversations.empty"
+  | "settings.worktrees.conversation.untitled"
+  | "settings.worktrees.delete.error"
   | "settings.dataControls.archivedChats.dateTime"
   | "settings.dataControls.archivedChats.dateTimeWithRepo"
   | "settings.dataControls.archivedChats.empty"
@@ -1176,6 +1346,94 @@ export type MessageKey =
   | "settings.general.reviewDelivery.description"
   | "settings.general.reviewDelivery.inline"
   | "settings.general.reviewDelivery.detached"
+  | "settings.agent.speed.label"
+  | "settings.agent.speed.description"
+  | "settings.agent.speed.option.fast"
+  | "settings.agent.speed.option.fast.description"
+  | "settings.agent.speed.option.standard"
+  | "settings.agent.speed.option.standard.description"
+  | "settings.agent.permissionsMode.groupTitle"
+  | "settings.agent.permissionsMode.default.title"
+  | "settings.agent.permissionsMode.default.description"
+  | "settings.agent.permissionsMode.default.toggle"
+  | "settings.agent.permissionsMode.autoReview.title"
+  | "settings.agent.permissionsMode.autoReview.description"
+  | "settings.agent.permissionsMode.autoReview.toggle"
+  | "settings.agent.permissionsMode.fullAccess.title"
+  | "settings.agent.permissionsMode.fullAccess.description"
+  | "settings.agent.permissionsMode.fullAccess.toggle"
+  | "settings.workMode.groupTitle"
+  | "settings.workMode.groupDescription"
+  | "settings.workMode.radioGroup"
+  | "settings.workMode.coding.title"
+  | "settings.workMode.coding.description"
+  | "settings.workMode.everyday.title"
+  | "settings.workMode.everyday.description"
+  | "settings.agent.ambientSuggestions.groupTitle"
+  | "settings.agent.ambientSuggestions.rowLabel"
+  | "settings.agent.ambientSuggestions.toggleLabel"
+  | "settings.general.groupTitle"
+  | "settings.general.notifications"
+  | "settings.general.dictation"
+  | "settings.general.globalDictationHotkey.label"
+  | "settings.general.globalDictationHotkey.description"
+  | "settings.general.globalDictationHotkey.errorGeneric"
+  | "settings.general.globalDictationHotkey.off"
+  | "settings.general.globalDictationHotkey.set"
+  | "settings.general.globalDictationHotkey.change"
+  | "settings.general.globalDictationHotkey.clear"
+  | "settings.general.globalDictationHotkey.cancel"
+  | "settings.general.globalDictationHotkey.capturePrompt"
+  | "settings.general.globalDictationHotkey.captureAriaLabel"
+  | "settings.general.globalDictationToggleHotkey.label"
+  | "settings.general.globalDictationToggleHotkey.description"
+  | "settings.general.globalDictationToggleHotkey.errorGeneric"
+  | "settings.general.globalDictationToggleHotkey.captureAriaLabel"
+  | "settings.general.globalDictationToggleHotkey.set"
+  | "settings.general.globalDictationToggleHotkey.change"
+  | "settings.general.globalDictationToggleHotkey.clear"
+  | "settings.general.globalDictationHistory.emptyTitle"
+  | "settings.general.globalDictationHistory.emptyDescription"
+  | "settings.general.globalDictationHistory.copy"
+  | "settings.general.dictationDictionary.label"
+  | "settings.general.dictationDictionary.description"
+  | "settings.general.dictationDictionary.entryLabel"
+  | "settings.general.dictationDictionary.addEntry"
+  | "settings.general.dictationDictionary.removeEntry"
+  | "settings.general.gpuTearingDebug"
+  | "settings.general.gpuTearingDebug.subtitle"
+  | "settings.general.gpuTearingDebug.toggle"
+  | "settings.general.gpuTearingDebug.disableScrollFadeMask.label"
+  | "settings.general.gpuTearingDebug.disableScrollFadeMask.description"
+  | "settings.general.gpuTearingDebug.disableScrollFadeMaskAnimation.label"
+  | "settings.general.gpuTearingDebug.disableScrollFadeMaskAnimation.description"
+  | "settings.general.gpuTearingDebug.disableBackdropBlur.label"
+  | "settings.general.gpuTearingDebug.disableBackdropBlur.description"
+  | "settings.general.gpuTearingDebug.disableCssMotion.label"
+  | "settings.general.gpuTearingDebug.disableCssMotion.description"
+  | "settings.general.gpuTearingDebug.forceOpaqueRendererBackground.label"
+  | "settings.general.gpuTearingDebug.forceOpaqueRendererBackground.description"
+  | "notifications.turnMode.label"
+  | "notifications.turnMode.description"
+  | "notifications.turnMode.off"
+  | "notifications.turnMode.unfocused"
+  | "notifications.turnMode.always"
+  | "notifications.permissions.label"
+  | "notifications.permissions.description"
+  | "notifications.questions.label"
+  | "notifications.questions.description"
+  | "settings.general.experimentalFeatures.hotkeyWindowHotkey.label"
+  | "settings.general.experimentalFeatures.hotkeyWindowHotkey.description"
+  | "settings.general.experimentalFeatures.hotkeyWindowHotkey.off"
+  | "settings.general.experimentalFeatures.hotkeyWindowHotkey.capturePrompt"
+  | "settings.general.experimentalFeatures.hotkeyWindowHotkey.captureAriaLabel"
+  | "settings.general.experimentalFeatures.hotkeyWindowHotkey.cancel"
+  | "settings.general.experimentalFeatures.hotkeyWindowHotkey.set"
+  | "settings.general.experimentalFeatures.hotkeyWindowHotkey.change"
+  | "settings.general.experimentalFeatures.hotkeyWindowHotkey.clear"
+  | "settings.general.experimentalFeatures.hotkeyWindowHotkey.errorGeneric"
+  | "settings.general.power.preventSleepWhileRunning.label"
+  | "settings.general.power.preventSleepWhileRunning.description"
   | "settings.agentEnvironment.label"
   | "settings.agentEnvironment.description"
   | "settings.agentEnvironment.windowsNative"
@@ -1356,6 +1614,8 @@ export type MessageKey =
   | "settings.general.appearance.codeFontSize.row.description"
   | "settings.general.appearance.codeFontSize"
   | "settings.general.appearance.codeFontSize.units"
+  | "settings.general.appearance.fontSmoothing.label"
+  | "settings.general.appearance.fontSmoothing.description"
   | "settings.general.appearance.lightChromeTheme"
   | "settings.general.appearance.darkChromeTheme"
   | "settings.general.appearance.codeTheme"
@@ -1395,6 +1655,22 @@ export type MessageKey =
   | "settings.nav.heading.host"
   | "settings.hostDropdown.local"
   | "settings.hostDropdown.title"
+  | "settings.account.subtitle"
+  | "settings.account.current.title"
+  | "settings.account.authMethod"
+  | "settings.account.authMethod.chatgptToken"
+  | "settings.account.email"
+  | "settings.account.accountId"
+  | "settings.account.userId"
+  | "settings.account.plan"
+  | "settings.account.token.title"
+  | "settings.account.token.subtitle"
+  | "settings.account.token.inputLabel"
+  | "settings.account.token.placeholder"
+  | "settings.account.token.saved"
+  | "settings.account.token.save"
+  | "settings.account.signOut"
+  | "settings.account.notAvailable"
   | "settings.agent.title"
   | "settings.agent.configuration.subtitle.summary"
   | "settings.agent.customConfig"
@@ -1430,6 +1706,47 @@ export type MessageKey =
   | "settings.section.account"
   | "settings.section.connections"
   | "settings.section.hooks-settings"
+  | "settings.hooks.subtitle"
+  | "settings.hooks.refresh"
+  | "settings.hooks.refresh.success"
+  | "settings.hooks.loadingProjects.label"
+  | "settings.hooks.emptyProject.label"
+  | "settings.hooks.emptyProject.description"
+  | "settings.hooks.loading.label"
+  | "settings.hooks.loadError.label"
+  | "settings.hooks.project.loading"
+  | "settings.hooks.project.group"
+  | "settings.hooks.issues.summary"
+  | "settings.hooks.issues.error"
+  | "settings.hooks.event.counts"
+  | "settings.hooks.event.emptyCounts"
+  | "settings.hooks.event.moreActions"
+  | "settings.hooks.event.openSourceFile"
+  | "settings.hooks.event.managedTooltip"
+  | "settings.hooks.event.preToolUse"
+  | "settings.hooks.event.preToolUse.description"
+  | "settings.hooks.event.permissionRequest"
+  | "settings.hooks.event.permissionRequest.description"
+  | "settings.hooks.event.postToolUse"
+  | "settings.hooks.event.postToolUse.description"
+  | "settings.hooks.event.preCompact"
+  | "settings.hooks.event.preCompact.description"
+  | "settings.hooks.event.postCompact"
+  | "settings.hooks.event.postCompact.description"
+  | "settings.hooks.event.sessionStart"
+  | "settings.hooks.event.sessionStart.description"
+  | "settings.hooks.event.userPromptSubmit"
+  | "settings.hooks.event.userPromptSubmit.description"
+  | "settings.hooks.event.stop"
+  | "settings.hooks.event.stop.description"
+  | "settings.hooks.event.fallbackHookTitle"
+  | "settings.hooks.source.plugin"
+  | "settings.hooks.source.pluginSummary"
+  | "settings.hooks.source.adminConfig"
+  | "settings.hooks.source.userConfig"
+  | "settings.hooks.source.projectConfig"
+  | "settings.hooks.source.sessionFlags"
+  | "settings.hooks.source.unknown"
   | "settings.mcp.loading"
   | "settings.mcp.loadError.title"
   | "settings.mcp.loadError.retry"
@@ -1485,6 +1802,9 @@ export type MessageKey =
   | "settings.ide.language.auto"
   | "settings.ide.language.autoOption"
   | "settings.ide.language.search"
+  | "settings.general.macMenuBar.label"
+  | "settings.general.macMenuBar.description"
+  | "settings.general.macMenuBar.ariaLabel"
   | "settings.personalization.agents.title"
   | "settings.personalization.agents.description"
   | "settings.personalization.agents.placeholder"
@@ -1498,6 +1818,60 @@ export type MessageKey =
   | "settings.personalization.personality.description"
   | "settings.personalization.memory.title"
   | "settings.personalization.memory.subtitle"
+  | "settings.general.experimentalFeatures.chronicle.name"
+  | "settings.general.experimentalFeatures.chronicle.memoriesRequiredTooltip"
+  | "settings.general.experimentalFeatures.chronicle.buttonAriaLabel"
+  | "settings.general.experimentalFeatures.chronicle.consentTitle"
+  | "settings.general.experimentalFeatures.chronicle.consentBodyIntro"
+  | "settings.general.experimentalFeatures.chronicle.consentBodyConsiderations"
+  | "settings.general.experimentalFeatures.chronicle.consentBodyCost"
+  | "settings.general.experimentalFeatures.chronicle.consentBodyPrivacy"
+  | "settings.general.experimentalFeatures.chronicle.consentBodyPromptInjection"
+  | "settings.general.experimentalFeatures.chronicle.consentBodyStorageHeading"
+  | "settings.general.experimentalFeatures.chronicle.consentBodyStorageProcessing"
+  | "settings.general.experimentalFeatures.chronicle.consentBodyStorageLocal"
+  | "settings.general.experimentalFeatures.chronicle.consentBodyDisableIntro"
+  | "settings.general.experimentalFeatures.chronicle.cancel"
+  | "settings.general.experimentalFeatures.chronicle.continue"
+  | "settings.general.experimentalFeatures.chronicle.description"
+  | "settings.general.experimentalFeatures.chronicle.permission.runningStatus"
+  | "settings.general.experimentalFeatures.chronicle.permission.runningStatusAccessibility"
+  | "settings.general.experimentalFeatures.chronicle.permission.screenRecording"
+  | "settings.general.experimentalFeatures.chronicle.permission.statusLabel"
+  | "settings.general.experimentalFeatures.chronicle.permission.notGranted"
+  | "settings.general.experimentalFeatures.chronicle.permission.accessibility"
+  | "settings.general.experimentalFeatures.chronicle.permission.status"
+  | "settings.general.experimentalFeatures.chronicle.permissionStatus.paused"
+  | "settings.general.experimentalFeatures.chronicle.permissionStatus.starting"
+  | "settings.general.experimentalFeatures.chronicle.permissionStatus.stopping"
+  | "settings.general.experimentalFeatures.chronicle.permissionStatus.running"
+  | "settings.general.experimentalFeatures.chronicle.permissionStatus.checking"
+  | "settings.general.experimentalFeatures.chronicle.permissionStatus.unknown"
+  | "settings.general.experimentalFeatures.chronicle.permissionStatus.granted"
+  | "settings.general.experimentalFeatures.chronicle.permissionStatus.notDetermined"
+  | "settings.general.experimentalFeatures.chronicle.permissionStatus.denied"
+  | "settings.general.experimentalFeatures.chronicle.permissionStatus.restricted"
+  | "settings.general.experimentalFeatures.chronicle.screenRecordingSettingsName"
+  | "settings.general.experimentalFeatures.chronicle.accessibilitySettingsName"
+  | "settings.general.experimentalFeatures.chronicle.setupTitle"
+  | "settings.general.experimentalFeatures.chronicle.openScreenRecordingSettings"
+  | "settings.general.experimentalFeatures.chronicle.openAccessibilitySettings"
+  | "settings.general.experimentalFeatures.chronicle.askCodex"
+  | "settings.general.experimentalFeatures.chronicle.setupClose"
+  | "settings.general.experimentalFeatures.chronicle.permissionDragAppLabel"
+  | "settings.general.experimentalFeatures.chronicle.permissionDragApp"
+  | "settings.general.experimentalFeatures.chronicle.setupReadyTitle"
+  | "settings.general.experimentalFeatures.chronicle.setupFailedTitle"
+  | "settings.general.experimentalFeatures.chronicle.setupScreenRecordingPermissionNeededTitle"
+  | "settings.general.experimentalFeatures.chronicle.setupAccessibilityPermissionNeededTitle"
+  | "settings.general.experimentalFeatures.chronicle.setupInProgressTitle"
+  | "settings.general.experimentalFeatures.chronicle.setupWaiting"
+  | "settings.general.experimentalFeatures.chronicle.setupScreenRecordingRestricted"
+  | "settings.general.experimentalFeatures.chronicle.setupScreenRecordingDenied"
+  | "settings.general.experimentalFeatures.chronicle.setupAccessibilityRestricted"
+  | "settings.general.experimentalFeatures.chronicle.setupAccessibilityDenied"
+  | "settings.general.experimentalFeatures.chronicle.setupReady"
+  | "settings.general.experimentalFeatures.chronicle.setupFailed"
   | "settings.personalization.pets.title"
   | "settings.personalization.pets.current"
   | "settings.personalization.pets.openPet"
@@ -1867,6 +2241,13 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.filesChanged": "{fileCount} files changed",
     "app.chat.composePlaceholder": "Ask Codex anything. Type @ to use plugins or mention files",
     "composer.placeholder.newTask.doAnything": "Ask Codex to do anything",
+    "composer.footer.v2.cloudTab": "Cloud",
+    "composer.mode.worktreeSegment": "Worktree",
+    "composer.hotkeyWindow.modeDropdown.localProject": "Local project",
+    "composer.hotkeyWindow.modeDropdown.tooltip": "Select where to run the task",
+    "composer.mode.local": "Work locally",
+    "composer.hotkeyWindow.modeDropdown.localOnly": "Initialize a git repo to run tasks in worktrees",
+    "composer.mode.worktree": "New worktree",
     "app.chat.send": "Send",
     "app.chat.stop": "Stop",
     "app.chat.queuedFollowUps": "Queued follow-ups ({count})",
@@ -1897,6 +2278,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.senderThread": "Sender thread",
     "app.chat.receiverThreads": "Receiver threads",
     "homePage.mainContent": "Main content",
+    "home.hero.letsBuild": "Let’s build",
+    "threadPage.newThread": "New chat",
     "app.chat.revisedPrompt": "Revised prompt",
     "app.chat.prompt": "Prompt",
     "app.chat.model": "Model",
@@ -1907,6 +2290,98 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.toolCallFailed": "Tool call failed.",
     "app.chat.output": "Output",
     "app.chat.noOutput": "No output yet",
+    "hotkeyWindow.home.placeholder.unknownProject": "this project",
+    "hotkeyWindow.home.placeholder.projectless": "Ask Codex anything locally",
+    "hotkeyWindow.home.placeholder.cloud": "Ask Codex anything in the cloud",
+    "hotkeyWindow.home.placeholder.worktree": "Ask Codex anything in a worktree in {project}",
+    "hotkeyWindow.home.placeholder.local": "Ask Codex anything locally in {project}",
+    "hotkeyWindow.home.taskMenu.startIn.projectlessTooltip": "Projectless chats run locally",
+    "hotkeyWindow.home.taskMenu.startIn.disabledTooltip":
+      "Initialize a git repo to start in cloud or worktree mode",
+    "hotkeyWindow.home.taskMenu.label": "Task settings",
+    "hotkeyWindow.home.taskMenu.project": "Project",
+    "hotkeyWindow.home.taskMenu.startIn": "Start in",
+    "hotkeyWindow.home.taskMenu.environment": "Environment",
+    "hotkeyWindow.home.taskMenu.branch": "Branch",
+    "hotkeyWindow.home.taskMenu.permissions": "Permissions",
+    "composer.permissionsDropdown.default.label": "Default permissions",
+    "composer.permissionsDropdown.default.optionLabel": "Default permissions",
+    "composer.permissionsDropdown.guardianApproval.shortLabel": "Auto-review",
+    "composer.mode.agentMode.guardianApprovals": "Auto-review",
+    "composer.permissionsDropdown.fullAccess.label": "Full access",
+    "composer.permissionsDropdown.fullAccess.optionLabel": "Full access",
+    "composer.permissionsDropdown.custom.label": "Custom",
+    "composer.permissionsDropdown.custom.optionLabel": "Custom (config.toml)",
+    "composer.mode.agentMode.fullAccessConfirm.title": "Enable full access?",
+    "composer.mode.agentMode.fullAccessConfirm.description":
+      "When Codex runs with full access, it can edit any file on your computer and run commands with network, without your approval",
+    "composer.mode.agentMode.fullAccessConfirm.caution":
+      "Exercise caution when enabling full access. This significantly increases the risk of data loss, leaks, or unexpected behavior.",
+    "composer.mode.agentMode.fullAccessConfirm.goBack": "Cancel",
+    "composer.mode.agentMode.fullAccessConfirm.confirm": "Yes, continue anyway",
+    "composer.remote.currentBranch": "{branch} (current)",
+    "composer.remote.branch": "{branch}",
+    "composer.remote.localWorkingTree": "Use local changes",
+    "composer.remote.localFileStateHeading": "Local file state",
+    "composer.remote.currentEditsSuffix.useLocal": "with local code changes",
+    "composer.remote.branchStartingPoint": "What branch should this task start from?",
+    "composer.remote.branchesSectionHeading": "Branches",
+    "codex.composer.searchBranches": "Search branches",
+    "composer.remote.errorLoadingBranches": "Error loading branches",
+    "composer.remote.loadingMoreBranches": "Loading…",
+    "composer.footer.branchSwitch.tooltip": "Switch branch",
+    "composer.footer.branchSwitch.checkoutError": "Failed to switch branch: {message}",
+    "composer.footer.branchSwitch.createBranchError": "Failed to create branch: {message}",
+    "composer.footer.branchSwitch.uncommittedSummaryPrefix":
+      "Uncommitted: {fileCount, plural, one {# file} other {# files}}",
+    "composer.footer.branchSwitch.createAndCheckout.disabledTooltip":
+      "Commit changes to create and checkout a new branch",
+    "composer.footer.branchSwitch.createAndCheckout": "Create and checkout new branch…",
+    "composer.footer.branchSwitch.createDialog.title": "Create and checkout branch",
+    "composer.footer.branchSwitch.createDialog.placeholder": "new-branch",
+    "composer.footer.branchSwitch.createDialog.ariaLabel": "Branch name",
+    "composer.footer.branchSwitch.createDialog.trailingSlashError":
+      "Branch name cannot end with “/”.",
+    "composer.footer.branchSwitch.createDialog.branchExistsError": "Branch already exists.",
+    "composer.footer.branchSwitch.createDialog.close": "Close",
+    "composer.footer.branchSwitch.createDialog.createAndCheckout": "Create and checkout",
+    "composer.footer.branchSwitch.uncommittedDialog.title": "Commit changes to switch branch",
+    "composer.footer.branchSwitch.uncommittedDialog.conflict.bodyPrefix":
+      "Your changes to the following files would be overwritten by checkout:",
+    "composer.footer.branchSwitch.uncommittedDialog.conflict.bodySuffix":
+      "Please commit your changes to continue",
+    "composer.footer.branchSwitch.uncommittedDialog.body.noDiff":
+      "Commit changes in {fileCount, plural, one {# file} other {# files}} to check out {branchName}.",
+    "composer.footer.branchSwitch.uncommittedDialog.targetBranchFallback": "the selected branch",
+    "composer.footer.branchSwitch.uncommittedDialog.cancel": "Cancel",
+    "composer.footer.branchSwitch.uncommittedDialog.commit": "Commit and switch branch…",
+    "composer.footer.branchSwitch.commitDialog.title": "Commit changes",
+    "composer.footer.branchSwitch.commitDialog.subtitle":
+      "Commit your current changes, then Codex will continue switching to {branchName}.",
+    "composer.footer.branchSwitch.commitDialog.messageLabel": "Commit message",
+    "composer.footer.branchSwitch.commitDialog.messagePlaceholder": "Describe the current changes",
+    "composer.footer.branchSwitch.commitDialog.cancel": "Cancel",
+    "composer.footer.branchSwitch.commitDialog.commit": "Commit changes",
+    "localConversation.sync.modal.noChanges": "No changes",
+    "review.commit.form.title": "Commit your changes",
+    "review.commit.form.commitTo": "Branch",
+    "review.commit.form.commitTo.none": "-",
+    "review.commit.form.changesToBeCommitted": "Changes",
+    "review.commit.messageLabel": "Commit message",
+    "review.commit.messagePlaceholder": "Leave blank to autogenerate a commit message",
+    "review.commit.customInstructionsLink": "Custom instructions",
+    "review.commit.includeUnstaged": "Include unstaged",
+    "review.commit.ariaLabel.includeUnstaged": "Include unstaged",
+    "review.commit.form.continue": "Continue",
+    "review.commit.rows.fileCount": "{count, plural, one {# file} other {# files}}",
+    "review.commit.generate.emptyResponse": "Couldn't generate a commit message.",
+    "review.commit.generate.failed": "Failed to generate commit message: {error}",
+    "localConversation.syncSetup.branchName": "Branch name",
+    "localConversation.syncSetup.setPrefix": "Set prefix",
+    "localConversation.syncSetup.branchesLoading": "Loading branches…",
+    "localConversation.syncSetup.noBranches": "No branches found",
+    "composer.reviewMode.branches.error": "Unable to load branches",
+    "composer.reviewMode.branches.retry": "Retry",
     "app.chat.exitCode": "Exit code",
     "app.chat.durationMs": "Duration (ms)",
     "app.chat.movedTo": "Moved to",
@@ -2273,9 +2748,11 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "sidebarElectron.pullRequestsRouteNavLink": "Pull requests",
     "sidebarElectron.pluginsRouteNavLink": "Plugins",
     "sidebarElectron.pluginsDisabledTooltip": "Please sign in with ChatGPT to use plugins",
+    "sidebarElectron.noTasks": "No chats",
     "sidebarElectron.scratchpadNavLink": "Scratchpad",
     "inbox.mode.automations": "Automations",
     "inbox.automations.createError": "Could not create automation",
+    "inbox.automations.updateError": "Could not update automation",
     "inbox.automations.loading": "Loading…",
     "inbox.automations.new": "New automation",
     "inbox.automations.current": "Current",
@@ -2286,7 +2763,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "inbox.automations.details": "Details",
     "inbox.automations.nextRun.label": "Next run",
     "inbox.automations.nextRun.none": "Not scheduled",
-    "inbox.automations.lastRun.label": "Last run",
+    "inbox.automations.lastRun.label": "Last ran",
     "inbox.automations.lastRun.none": "-",
     "inbox.automations.missing": "Automation not found",
     "inbox.automations.missingBack": "Back to automations",
@@ -2304,7 +2781,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "inbox.automations.deleteConfirm.description": "This will permanently delete the automation and stop all future runs.",
     "inbox.automations.deleteConfirm.title": "Delete {name}?",
     "inbox.automations.deleteError": "Could not delete automation",
-    "inbox.automations.deleteFailedDescription": "Please try again.",
+    "inbox.automations.deleteFailedDescription": "Try again.",
     "inbox.automations.runNowError": "Could not start automation",
     "inbox.automations.runNowSuccess": "Automation started",
     "inbox.automations.relativeDate.pastToday": "Today at {time}",
@@ -2313,28 +2790,50 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "inbox.automations.relativeDate.tomorrow": "Tomorrow at {time}",
     "inbox.automations.relativeDate.weekday": "{weekday} at {time}",
     "inbox.automations.relativeDate.yesterday": "Yesterday at {time}",
+    "inbox.automations.statusSection": "Status",
     "inbox.automations.status.label": "Status",
     "inbox.automations.status.active": "Active",
     "inbox.automations.status.paused": "Paused",
     "inbox.automations.status.deleted": "Deleted",
-    "inbox.automations.executionEnvironment.label": "Execution environment",
+    "inbox.automations.executionEnvironment.label": "Runs in",
+    "inbox.automations.host.label": "Host",
     "inbox.automations.folder.label": "Project",
+    "inbox.automations.localEnvironment.label": "Environment",
+    "composer.worktreeEnvironment.title": "Local environment",
+    "composer.worktreeEnvironment.tooltip": "Select a local environment",
+    "composer.worktreeEnvironment.loading": "Loading environments...",
+    "composer.worktreeEnvironment.error": "Error loading environments",
+    "composer.worktreeEnvironment.default": "Default environment",
+    "composer.worktreeEnvironment.create": "Create local environment",
+    "codex.environmentSelector.noEnvironment": "No environment",
+    "codex.environments.noEnvironmentsFound": "No environments found",
+    "inbox.automations.history": "Previous runs",
+    "inbox.automations.history.untitled": "Untitled",
+    "inbox.automations.history.archivedTooltip": "Run was archived",
     "inbox.automations.workspaceFallback": "-",
     "inbox.automations.targetThread.label": "Chat",
     "inbox.automations.model.label": "Model",
     "inbox.automations.reasoning.label": "Reasoning",
     "inbox.automations.interval.label": "Interval",
     "inbox.automations.repeats.label": "Repeats",
+    "inbox.contextMenu.markRead": "Mark as read",
+    "inbox.contextMenu.markUnread": "Mark as unread",
     "settings.automations.runNow": "Run now",
     "settings.automations.cancel": "Cancel",
     "settings.automations.create": "Create",
     "settings.automations.save": "Save",
+    "settings.automations.saveRetry": "Save",
     "settings.automations.deleteAria": "Delete automation",
+    "settings.automations.clear": "Clear",
+    "settings.automations.dialog.newTitle": "New automation",
     "settings.automations.nameLabel": "Name",
     "settings.automations.namePlaceholder": "Automation name",
     "settings.automations.pauseAria": "Pause automation",
     "settings.automations.promptLabel": "Prompt",
     "settings.automations.promptPlaceholder": "What should Codex do?",
+    "settings.automations.projectDropdown.projectless": "Chats",
+    "settings.automations.projectDropdown.placeholder": "Select project",
+    "settings.automations.projectDropdown.localOnlyTooltip": "Automations can only be created for local projects",
     "settings.automations.resumeAria": "Resume automation",
     "settings.automations.rruleSummaryFallback": "Custom schedule",
     "settings.automations.cwdPlaceholder": "One project path per line",
@@ -2409,16 +2908,51 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.section.browser-use": "Browser use",
     "settings.section.mcp-settings": "MCP servers",
     "settings.section.mcp-settings.subtitle": "Connect external tools and data sources. <a>Learn more.</a>",
+    "settings.browserUse.title": "Browser",
+    "settings.browserUse.subtitle":
+      "Manage Codex's browser. Google Chrome can be set up in <computerUseSettingsLink>computer use settings</computerUseSettingsLink>",
+    "settings.browserUse.control.title": "Browser Use",
+    "settings.browserUse.control.description": "Let Codex control the built-in browser",
     "settings.browserUse.install.title": "Plugins",
     "settings.browserUse.install.button": "Install",
-    "settings.browserUse.install.empty": "Browser plugin unavailable",
+    "settings.browserUse.install.empty": "In-app browser plugin unavailable",
     "settings.browserUse.permissions.title": "Permissions",
+    "settings.browserUse.browser.title": "Data",
+    "settings.browserUse.browser.clearBrowsingData.label": "Browsing data",
+    "settings.browserUse.browser.clearBrowsingData.description":
+      "Clear site data and cache from the in-app browser",
+    "settings.browserUse.browser.clearBrowsingData": "Clear all browsing data",
+    "settings.browserUse.browser.hideClearOptions": "Hide individual browsing data options",
+    "settings.browserUse.browser.showClearOptions": "Show individual browsing data options",
+    "settings.browserUse.browser.cookies.label": "Cookies",
+    "settings.browserUse.browser.siteData.label": "Site data",
+    "settings.browserUse.browser.cache.label": "Cached images and files",
+    "settings.browserUse.browser.clearCookies": "Delete cookies",
+    "settings.browserUse.browser.clearSiteData": "Delete site data",
+    "settings.browserUse.browser.clearCache": "Delete cached images and files",
+    "settings.browserUse.browser.browsingDataCleared": "Browsing data cleared",
+    "settings.browserUse.browser.cookiesCleared": "Browser cookies cleared",
+    "settings.browserUse.browser.siteDataCleared": "Browser site data cleared",
+    "settings.browserUse.browser.cacheCleared": "Browser cache cleared",
+    "settings.browserUse.browser.clearBrowsingDataError": "Unable to clear browsing data",
+    "settings.browserUse.browser.clearCookiesError": "Unable to clear browser cookies",
+    "settings.browserUse.browser.clearSiteDataError": "Unable to clear browser site data",
+    "settings.browserUse.browser.clearCacheError": "Unable to clear browser cache",
+    "settings.browserUse.browser.annotationScreenshots.label": "Annotation screenshots",
+    "settings.browserUse.browser.annotationScreenshots.description":
+      "Screenshots help Codex better understand and address comments, but increase plan usage",
+    "settings.browserUse.browser.annotationScreenshots.always.label": "Always include",
+    "settings.browserUse.browser.annotationScreenshots.necessary.label": "Only on drag selection",
+    "settings.browserUse.browser.annotationScreenshots.saveError":
+      "Unable to save annotation screenshots setting",
     "settings.browserUse.approval.label": "Approval",
     "settings.browserUse.approval.description": "Choose if Codex asks for approval before opening websites",
     "settings.browserUse.approval.alwaysAsk.label": "Always ask",
     "settings.browserUse.approval.alwaysAsk.description": "Ask before opening websites",
     "settings.browserUse.approval.neverAsk.label": "Always allow",
     "settings.browserUse.approval.neverAsk.description": "Open websites without asking",
+    "settings.browserUse.approval.neverAsk.elevatedRiskDisclaimer":
+      "This setting has elevated risks for your data.",
     "settings.browserUse.approval.saveError": "Unable to save approval setting",
     "settings.browserUse.historyApproval.label": "History",
     "settings.browserUse.historyApproval.description": "Choose if Codex asks for approval before accessing your history",
@@ -2654,6 +3188,18 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.localEnvironments.unavailable.title": "Local environments unavailable",
     "settings.localEnvironments.unavailable.body":
       "We could not load local environment settings for this project.",
+    "settings.localEnvironments.remoteProjectDialog.title": "Add remote project",
+    "settings.localEnvironments.remoteProjectDialog.description":
+      "Choose a connected remote host and enter the folder for this project.",
+    "settings.localEnvironments.remoteProjectDialog.emptyDescription":
+      "Set up a remote host first. Then you can choose a host and folder here.",
+    "settings.localEnvironments.remoteProjectDialog.hostLabel": "Remote host",
+    "settings.localEnvironments.remoteProjectDialog.pathLabel": "Folder path",
+    "settings.localEnvironments.remoteProjectDialog.note":
+      "This remote folder will appear as its own project in the sidebar.",
+    "settings.localEnvironments.remoteProjectDialog.cancel": "Cancel",
+    "settings.localEnvironments.remoteProjectDialog.confirm": "Add project",
+    "settings.localEnvironments.remoteProjectDialog.saveError": "Failed to save project",
     "settings.keyboardShortcuts.subtitle.electron": "Customize app shortcuts",
     "settings.keyboardShortcuts.loading": "Loading shortcuts…",
     "settings.keyboardShortcuts.search.ariaLabel": "Search keyboard shortcuts",
@@ -2738,6 +3284,22 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
       "We highly recommend keeping automatic deletion on so old worktrees do not build up and use unnecessary disk space. If you prefer to manage old worktrees yourself, you can turn this off and Codex will stop deleting them automatically.",
     "settings.worktrees.autoCleanup.confirm.cancel": "Keep automatic deletion",
     "settings.worktrees.autoCleanup.confirm.confirm": "Disable automatic deletion",
+    "settings.worktrees.refresh": "Refresh",
+    "settings.worktrees.loading.title": "Loading worktrees",
+    "settings.worktrees.loading.body": "Fetching worktree details.",
+    "settings.worktrees.error.title": "Unable to load worktrees",
+    "settings.worktrees.error.body": "Something went wrong while loading worktrees.",
+    "settings.worktrees.empty.title": "No worktrees yet",
+    "settings.worktrees.empty.body": "Worktrees created by Codex will appear here.",
+    "settings.worktrees.repository.unknown": "Unknown repository",
+    "settings.worktrees.repository.loading": "Loading repository metadata…",
+    "settings.worktrees.row.title": "Worktree",
+    "settings.worktrees.row.delete": "Delete",
+    "settings.worktrees.row.conversations": "Conversations",
+    "settings.worktrees.row.conversations.loading": "Loading conversations…",
+    "settings.worktrees.row.conversations.empty": "No conversations linked to this worktree.",
+    "settings.worktrees.conversation.untitled": "Untitled conversation",
+    "settings.worktrees.delete.error": "Failed to delete worktree",
     "settings.dataControls.archivedChats.dateTime": "{date}, {time}",
     "settings.dataControls.archivedChats.dateTimeWithRepo": "{date}, {time} • {repo}",
     "settings.dataControls.archivedChats.empty": "No archived chats.",
@@ -2814,6 +3376,129 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.general.reviewDelivery.description": "Start /review in the current chat when possible or launch a separate review chat",
     "settings.general.reviewDelivery.inline": "Inline",
     "settings.general.reviewDelivery.detached": "Detached",
+    "settings.agent.speed.label": "Speed",
+    "settings.agent.speed.description":
+      "Choose how quickly inference runs across chats, subagents, and compaction. Fast uses increased plan usage",
+    "settings.agent.speed.option.fast": "Fast",
+    "settings.agent.speed.option.fast.description": "1.5x speed, increased plan usage",
+    "settings.agent.speed.option.standard": "Standard",
+    "settings.agent.speed.option.standard.description": "Default speed",
+    "settings.agent.permissionsMode.groupTitle": "Permissions",
+    "settings.agent.permissionsMode.default.title": "Default permissions",
+    "settings.agent.permissionsMode.default.description":
+      "By default, Codex can read and edit files in its workspace. It can ask for additional access when needed",
+    "settings.agent.permissionsMode.default.toggle":
+      "Default permissions are always shown",
+    "settings.agent.permissionsMode.autoReview.title": "Auto-review",
+    "settings.agent.permissionsMode.autoReview.description":
+      "Codex can read and edit files in its workspace. Codex automatically reviews requests for additional access. Auto-review can make mistakes. <a>Learn more</a> about elevated risks.",
+    "settings.agent.permissionsMode.autoReview.toggle":
+      "Show Auto-review in the composer",
+    "settings.agent.permissionsMode.fullAccess.title": "Full access",
+    "settings.agent.permissionsMode.fullAccess.description":
+      "When Codex runs with full access, it can edit any file on your computer and run commands with network, without your approval. This significantly increases the risk of data loss, leaks, or unexpected behavior. <a>Learn more</a> about elevated risks.",
+    "settings.agent.permissionsMode.fullAccess.toggle":
+      "Show Full access in the composer",
+    "settings.workMode.groupTitle": "Work mode",
+    "settings.workMode.groupDescription": "Choose how much technical detail Codex shows",
+    "settings.workMode.radioGroup": "Work mode",
+    "settings.workMode.coding.title": "For coding",
+    "settings.workMode.coding.description": "More technical responses and control",
+    "settings.workMode.everyday.title": "For everyday work",
+    "settings.workMode.everyday.description": "Same power, less technical detail",
+    "settings.agent.ambientSuggestions.groupTitle": "Suggested prompts",
+    "settings.agent.ambientSuggestions.rowLabel":
+      "Suggest what to do next by searching project files and connected apps",
+    "settings.agent.ambientSuggestions.toggleLabel":
+      "Enable ambient suggestions",
+    "settings.general.groupTitle": "General",
+    "settings.general.notifications": "Notifications",
+    "settings.general.dictation": "Dictation",
+    "settings.general.globalDictationHotkey.label": "Hold-to-dictate hotkey",
+    "settings.general.globalDictationHotkey.description":
+      "Hold anywhere on desktop to dictate at your cursor",
+    "settings.general.globalDictationHotkey.errorGeneric":
+      "Failed to update hold-to-dictate hotkey.",
+    "settings.general.globalDictationHotkey.off": "Off",
+    "settings.general.globalDictationHotkey.set": "Set",
+    "settings.general.globalDictationHotkey.change": "Change",
+    "settings.general.globalDictationHotkey.clear": "Clear",
+    "settings.general.globalDictationHotkey.cancel": "Cancel",
+    "settings.general.globalDictationHotkey.capturePrompt": "Press shortcut",
+    "settings.general.globalDictationHotkey.captureAriaLabel":
+      "Hold-to-dictate hotkey capture",
+    "settings.general.globalDictationToggleHotkey.label":
+      "Toggle dictation hotkey",
+    "settings.general.globalDictationToggleHotkey.description":
+      "Press once anywhere on desktop to start dictation, then press again to stop",
+    "settings.general.globalDictationToggleHotkey.errorGeneric":
+      "Failed to update toggle dictation hotkey.",
+    "settings.general.globalDictationToggleHotkey.captureAriaLabel":
+      "Toggle dictation hotkey capture",
+    "settings.general.globalDictationToggleHotkey.set": "Set",
+    "settings.general.globalDictationToggleHotkey.change": "Change",
+    "settings.general.globalDictationToggleHotkey.clear": "Clear",
+    "settings.general.globalDictationHistory.emptyTitle": "Recent dictations",
+    "settings.general.globalDictationHistory.emptyDescription":
+      "Your recent dictations will appear here in case the text doesn't show up where you expected",
+    "settings.general.globalDictationHistory.copy": "Copy dictated text",
+    "settings.general.dictationDictionary.label": "Dictation dictionary",
+    "settings.general.dictationDictionary.description":
+      "Words or phrases dictation should recognize",
+    "settings.general.dictationDictionary.entryLabel": "Dictionary entry",
+    "settings.general.dictationDictionary.addEntry": "Add entry",
+    "settings.general.dictationDictionary.removeEntry": "Remove entry",
+    "settings.general.gpuTearingDebug": "GPU Tearing Debug",
+    "settings.general.gpuTearingDebug.subtitle":
+      "Temporary compositor isolation toggles. Changes apply immediately and are only active while the debug gate is enabled.",
+    "settings.general.gpuTearingDebug.toggle": "Toggle {settingName}",
+    "settings.general.gpuTearingDebug.disableScrollFadeMask.label":
+      "Disable scroll fade mask",
+    "settings.general.gpuTearingDebug.disableScrollFadeMask.description":
+      "Removes scroll-edge fade masks entirely to isolate mask compositing as a tearing trigger",
+    "settings.general.gpuTearingDebug.disableScrollFadeMaskAnimation.label":
+      "Disable scroll fade animation",
+    "settings.general.gpuTearingDebug.disableScrollFadeMaskAnimation.description":
+      "Keeps static fade masks but removes the scroll-linked animation timeline",
+    "settings.general.gpuTearingDebug.disableBackdropBlur.label":
+      "Disable backdrop blur",
+    "settings.general.gpuTearingDebug.disableBackdropBlur.description":
+      "Forces backdrop filters off across the web UI to reduce layered blur composition",
+    "settings.general.gpuTearingDebug.disableCssMotion.label":
+      "Disable CSS motion",
+    "settings.general.gpuTearingDebug.disableCssMotion.description":
+      "Turns off CSS animations and transitions to isolate compositor animation work",
+    "settings.general.gpuTearingDebug.forceOpaqueRendererBackground.label":
+      "Force opaque web background",
+    "settings.general.gpuTearingDebug.forceOpaqueRendererBackground.description":
+      "Paints the renderer root and body with opaque backgrounds to isolate transparent-window composition",
+    "notifications.turnMode.label": "Turn completion notifications",
+    "notifications.turnMode.description": "Set when Codex alerts you that it's finished",
+    "notifications.turnMode.off": "Never",
+    "notifications.turnMode.unfocused": "Only when unfocused",
+    "notifications.turnMode.always": "Always",
+    "notifications.permissions.label": "Enable permission notifications",
+    "notifications.permissions.description": "Show alerts when notification permissions are required",
+    "notifications.questions.label": "Enable question notifications",
+    "notifications.questions.description": "Show alerts when input is needed to continue",
+    "settings.general.experimentalFeatures.hotkeyWindowHotkey.label": "Popout Window hotkey",
+    "settings.general.experimentalFeatures.hotkeyWindowHotkey.description":
+      "Set a global shortcut for Popout Window. Leave unset to keep it off.",
+    "settings.general.experimentalFeatures.hotkeyWindowHotkey.off": "Off",
+    "settings.general.experimentalFeatures.hotkeyWindowHotkey.capturePrompt":
+      "Press shortcut",
+    "settings.general.experimentalFeatures.hotkeyWindowHotkey.captureAriaLabel":
+      "Popout Window hotkey capture",
+    "settings.general.experimentalFeatures.hotkeyWindowHotkey.cancel": "Cancel",
+    "settings.general.experimentalFeatures.hotkeyWindowHotkey.set": "Set",
+    "settings.general.experimentalFeatures.hotkeyWindowHotkey.change": "Change",
+    "settings.general.experimentalFeatures.hotkeyWindowHotkey.clear": "Clear",
+    "settings.general.experimentalFeatures.hotkeyWindowHotkey.errorGeneric":
+      "Failed to update Popout Window hotkey.",
+    "settings.general.power.preventSleepWhileRunning.label":
+      "Prevent sleep while running",
+    "settings.general.power.preventSleepWhileRunning.description":
+      "Keep your computer awake while Codex is running a chat",
     "settings.agentEnvironment.label": "Agent environment",
     "settings.agentEnvironment.description": "Choose where the agent runs on Windows",
     "settings.agentEnvironment.windowsNative": "Windows native",
@@ -3026,6 +3711,9 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.general.appearance.codeFontSize.row.description": "Adjust the base size used for code across chats and diffs",
     "settings.general.appearance.codeFontSize": "Code font size",
     "settings.general.appearance.codeFontSize.units": "px",
+    "settings.general.appearance.fontSmoothing.label": "Font Smoothing",
+    "settings.general.appearance.fontSmoothing.description":
+      "Use native macOS font anti-aliasing",
     "settings.general.appearance.lightChromeTheme": "Light theme",
     "settings.general.appearance.darkChromeTheme": "Dark theme",
     "settings.general.appearance.codeTheme": "{variant} code theme",
@@ -3065,6 +3753,22 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.nav.heading.host": "HOST",
     "settings.hostDropdown.local": "Local",
     "settings.hostDropdown.title": "Host",
+    "settings.account.subtitle": "Manage the ChatGPT token used by the browser dev host",
+    "settings.account.current.title": "Current account",
+    "settings.account.authMethod": "Auth method",
+    "settings.account.authMethod.chatgptToken": "ChatGPT bearer token",
+    "settings.account.email": "Email",
+    "settings.account.accountId": "Account ID",
+    "settings.account.userId": "User ID",
+    "settings.account.plan": "Plan",
+    "settings.account.token.title": "Browser token",
+    "settings.account.token.subtitle": "Paste a replacement token if cloud requests start failing",
+    "settings.account.token.inputLabel": "ChatGPT bearer token",
+    "settings.account.token.placeholder": "Bearer eyJ…",
+    "settings.account.token.saved": "Token saved",
+    "settings.account.token.save": "Update token",
+    "settings.account.signOut": "Sign out",
+    "settings.account.notAvailable": "Not available",
     "settings.agent.title": "Configuration",
     "settings.agent.configuration.subtitle.summary": "Configure approval policy and sandbox settings <a>Learn more</a>",
     "settings.agent.customConfig": "Custom config.toml settings",
@@ -3100,6 +3804,48 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.section.account": "Account",
     "settings.section.connections": "Connections",
     "settings.section.hooks-settings": "Hooks",
+    "settings.hooks.subtitle": "Manage lifecycle hooks from config and enabled plugins <a>Learn more</a>",
+    "settings.hooks.refresh": "Refresh",
+    "settings.hooks.refresh.success": "Refreshed hooks",
+    "settings.hooks.loadingProjects.label": "Loading projects…",
+    "settings.hooks.emptyProject.label": "No project selected",
+    "settings.hooks.emptyProject.description": "Open a project to view its hooks",
+    "settings.hooks.loading.label": "Loading hooks…",
+    "settings.hooks.loadError.label": "Could not load hooks",
+    "settings.hooks.project.loading": "Select project",
+    "settings.hooks.project.group": "Project",
+    "settings.hooks.issues.summary":
+      "{count, plural, one {# issue loading hooks for this project} other {# issues loading hooks for this project}}",
+    "settings.hooks.issues.error": "{path}: {message}",
+    "settings.hooks.event.counts": "{active} active · {installed} installed",
+    "settings.hooks.event.emptyCounts": "0 installed",
+    "settings.hooks.event.moreActions": "More actions",
+    "settings.hooks.event.openSourceFile": "Open source file",
+    "settings.hooks.event.managedTooltip": "Managed hooks are always on",
+    "settings.hooks.event.preToolUse": "PreToolUse",
+    "settings.hooks.event.preToolUse.description": "Before a tool executes",
+    "settings.hooks.event.permissionRequest": "PermissionRequest",
+    "settings.hooks.event.permissionRequest.description": "When permission is requested",
+    "settings.hooks.event.postToolUse": "PostToolUse",
+    "settings.hooks.event.postToolUse.description": "After a tool executes",
+    "settings.hooks.event.preCompact": "PreCompact",
+    "settings.hooks.event.preCompact.description": "Before Codex compacts the conversation",
+    "settings.hooks.event.postCompact": "PostCompact",
+    "settings.hooks.event.postCompact.description": "After Codex compacts the conversation",
+    "settings.hooks.event.sessionStart": "SessionStart",
+    "settings.hooks.event.sessionStart.description": "When a new session starts",
+    "settings.hooks.event.userPromptSubmit": "UserPromptSubmit",
+    "settings.hooks.event.userPromptSubmit.description": "When the user submits a prompt",
+    "settings.hooks.event.stop": "Stop",
+    "settings.hooks.event.stop.description": "Right before Codex ends its turn",
+    "settings.hooks.event.fallbackHookTitle": "Hook {index}",
+    "settings.hooks.source.plugin": "Plugin",
+    "settings.hooks.source.pluginSummary": "Plugin · {pluginName}",
+    "settings.hooks.source.adminConfig": "Admin config",
+    "settings.hooks.source.userConfig": "User config",
+    "settings.hooks.source.projectConfig": "Project config",
+    "settings.hooks.source.sessionFlags": "Session flags",
+    "settings.hooks.source.unknown": "Unknown source",
     "settings.mcp.loading": "Loading MCP servers…",
     "settings.mcp.loadError.title": "Unable to load MCP servers",
     "settings.mcp.loadError.retry": "Retry",
@@ -3155,6 +3901,10 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.ide.language.auto": "Auto Detect",
     "settings.ide.language.autoOption": "Auto Detect",
     "settings.ide.language.search": "Search languages",
+    "settings.general.macMenuBar.label": "Show in menu bar",
+    "settings.general.macMenuBar.description":
+      "Keep Codex in the macOS menu bar when the main window is closed",
+    "settings.general.macMenuBar.ariaLabel": "Show Codex in the menu bar",
     "settings.personalization.agents.title": "Custom instructions",
     "settings.personalization.agents.description": "Give Codex extra instructions and context for your project. <a>Learn more</a>",
     "settings.personalization.agents.placeholder": "Add your custom instructions...",
@@ -3168,6 +3918,80 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.personalization.personality.description": "Choose a default tone for Codex responses",
     "settings.personalization.memory.title": "Memory (experimental)",
     "settings.personalization.memory.subtitle": "Configure how Codex collects, retains, and consolidates memories. <a>Learn more</a>",
+    "settings.general.experimentalFeatures.chronicle.name": "Chronicle research preview",
+    "settings.general.experimentalFeatures.chronicle.memoriesRequiredTooltip": "Enable memories to use Chronicle",
+    "settings.general.experimentalFeatures.chronicle.buttonAriaLabel": "Toggle {featureName}",
+    "settings.general.experimentalFeatures.chronicle.consentTitle": "Enable Chronicle research preview",
+    "settings.general.experimentalFeatures.chronicle.consentBodyIntro":
+      "Chronicle is an experimental feature that augments memories with context from your screen. With Chronicle enabled, Codex references what you’ve seen to provide more helpful, contextual responses to prompts like “finish what I was doing” or “update this dashboard.”",
+    "settings.general.experimentalFeatures.chronicle.consentBodyConsiderations":
+      "Be mindful of the following considerations before enabling Chronicle:",
+    "settings.general.experimentalFeatures.chronicle.consentBodyCost":
+      "<strong>Cost</strong>: Chronicle uses image inputs and runs in the background, which consumes rate limits quickly.",
+    "settings.general.experimentalFeatures.chronicle.consentBodyPrivacy":
+      "<strong>Privacy</strong>: Chronicle screen captures can include sensitive information visible on your screen. (It does not have access to your microphone or system audio.) Don’t use Chronicle to record meetings or communications with others without their consent. Pause Chronicle when viewing content you do not want remembered in memories.",
+    "settings.general.experimentalFeatures.chronicle.consentBodyPromptInjection":
+      "<strong>Prompt injection</strong>: Using Chronicle increases risk to prompt injection attacks from screen content. For instance, if you browse a site with malicious agent instructions, Codex may follow those instructions.",
+    "settings.general.experimentalFeatures.chronicle.consentBodyStorageHeading": "How it works:",
+    "settings.general.experimentalFeatures.chronicle.consentBodyStorageProcessing":
+      "To generate memories, the screen captures are processed on our servers and then deleted.",
+    "settings.general.experimentalFeatures.chronicle.consentBodyStorageLocal":
+      "Screen captures are temporarily stored on device, and memories are also stored on device. Both are stored unencrypted, so be aware that other applications on your computer may have access to these files. When Codex uses memories in a chat, they may be used to improve our models, if allowed in your ChatGPT settings.",
+    "settings.general.experimentalFeatures.chronicle.consentBodyDisableIntro":
+      "You can disable Chronicle at any time, which will stop screen captures going forward. <link>Learn more.</link>",
+    "settings.general.experimentalFeatures.chronicle.cancel": "Cancel",
+    "settings.general.experimentalFeatures.chronicle.continue": "Continue",
+    "settings.general.experimentalFeatures.chronicle.description":
+      "Augment memories with screen context so Codex can help with anything you’re working on. <link>Learn more</link>",
+    "settings.general.experimentalFeatures.chronicle.permission.runningStatus": "Status: {status}",
+    "settings.general.experimentalFeatures.chronicle.permission.runningStatusAccessibility":
+      "Accessibility: {status} (open setup)",
+    "settings.general.experimentalFeatures.chronicle.permission.screenRecording": "Screen Recording",
+    "settings.general.experimentalFeatures.chronicle.permission.statusLabel": "Status",
+    "settings.general.experimentalFeatures.chronicle.permission.notGranted":
+      "{statusLabel}: {permission} permission not granted (open setup)",
+    "settings.general.experimentalFeatures.chronicle.permission.accessibility": "Accessibility",
+    "settings.general.experimentalFeatures.chronicle.permission.status": "{permission}: {status}",
+    "settings.general.experimentalFeatures.chronicle.permissionStatus.paused": "Paused",
+    "settings.general.experimentalFeatures.chronicle.permissionStatus.starting": "Starting",
+    "settings.general.experimentalFeatures.chronicle.permissionStatus.stopping": "Stopping",
+    "settings.general.experimentalFeatures.chronicle.permissionStatus.running": "Running",
+    "settings.general.experimentalFeatures.chronicle.permissionStatus.checking": "Checking",
+    "settings.general.experimentalFeatures.chronicle.permissionStatus.unknown": "Unknown",
+    "settings.general.experimentalFeatures.chronicle.permissionStatus.granted": "Granted",
+    "settings.general.experimentalFeatures.chronicle.permissionStatus.notDetermined": "Not requested",
+    "settings.general.experimentalFeatures.chronicle.permissionStatus.denied": "Denied",
+    "settings.general.experimentalFeatures.chronicle.permissionStatus.restricted": "Restricted",
+    "settings.general.experimentalFeatures.chronicle.screenRecordingSettingsName": "Screen Recording",
+    "settings.general.experimentalFeatures.chronicle.accessibilitySettingsName": "Accessibility",
+    "settings.general.experimentalFeatures.chronicle.setupTitle": "Setting up Chronicle",
+    "settings.general.experimentalFeatures.chronicle.openScreenRecordingSettings": "Open System Settings",
+    "settings.general.experimentalFeatures.chronicle.openAccessibilitySettings": "Open System Settings",
+    "settings.general.experimentalFeatures.chronicle.askCodex": "Try it out",
+    "settings.general.experimentalFeatures.chronicle.setupClose": "Close",
+    "settings.general.experimentalFeatures.chronicle.permissionDragAppLabel":
+      "Drag Codex into {permissionSettingsName} settings",
+    "settings.general.experimentalFeatures.chronicle.permissionDragApp":
+      "If {bundleName} doesn't appear in the list, drag this app icon into {permissionSettingsName} settings",
+    "settings.general.experimentalFeatures.chronicle.setupReadyTitle": "Chronicle is ready to use!",
+    "settings.general.experimentalFeatures.chronicle.setupFailedTitle": "Chronicle setup failed",
+    "settings.general.experimentalFeatures.chronicle.setupScreenRecordingPermissionNeededTitle":
+      "Allow Screen Recording to use Chronicle",
+    "settings.general.experimentalFeatures.chronicle.setupAccessibilityPermissionNeededTitle":
+      "Allow Accessibility to use Chronicle",
+    "settings.general.experimentalFeatures.chronicle.setupInProgressTitle": "Setting up Chronicle",
+    "settings.general.experimentalFeatures.chronicle.setupWaiting": "Waiting…",
+    "settings.general.experimentalFeatures.chronicle.setupScreenRecordingRestricted":
+      "Screen Recording is restricted by macOS or your organization. Chronicle will continue automatically if the restriction is removed and Codex receives Screen Recording permission.",
+    "settings.general.experimentalFeatures.chronicle.setupScreenRecordingDenied":
+      "Please open System Settings → Privacy & Security → Screen Recording and enable {bundleName}. You may need to restart Codex to apply the change.",
+    "settings.general.experimentalFeatures.chronicle.setupAccessibilityRestricted":
+      "Accessibility is restricted by macOS or your organization. Chronicle will continue automatically if the restriction is removed and Codex receives Accessibility permission",
+    "settings.general.experimentalFeatures.chronicle.setupAccessibilityDenied":
+      "Please open System Settings → Privacy & Security → Accessibility and enable {bundleName}.",
+    "settings.general.experimentalFeatures.chronicle.setupReady":
+      "You can pause Chronicle at any time by clicking \"Pause Chronicle\" in the Codex menu bar.",
+    "settings.general.experimentalFeatures.chronicle.setupFailed": "Chronicle setup failed.",
     "settings.personalization.pets.title": "Pets",
     "settings.personalization.pets.current": "{petName} selected",
     "settings.personalization.pets.openPet": "Wake Pet",
@@ -3490,6 +4314,13 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.filesChanged": "{fileCount} 个文件已更改",
     "app.chat.composePlaceholder": "可向 Codex 询问任何事。输入 @ 使用插件或提及文件",
     "composer.placeholder.newTask.doAnything": "向 Codex 下达任意指令​",
+    "composer.footer.v2.cloudTab": "云端",
+    "composer.mode.worktreeSegment": "工作树",
+    "composer.hotkeyWindow.modeDropdown.localProject": "本地项目",
+    "composer.hotkeyWindow.modeDropdown.tooltip": "选择任务的运行位置",
+    "composer.mode.local": "在本地运行",
+    "composer.hotkeyWindow.modeDropdown.localOnly": "初始化 Git 仓库后才能在工作树中运行任务",
+    "composer.mode.worktree": "新工作树",
     "app.chat.send": "发送",
     "app.chat.stop": "停止",
     "app.chat.queuedFollowUps": "排队中的跟进（{count}）",
@@ -3520,6 +4351,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.senderThread": "发送线程",
     "app.chat.receiverThreads": "接收线程",
     "homePage.mainContent": "主要内容",
+    "home.hero.letsBuild": "开始构建",
+    "threadPage.newThread": "新聊天",
     "app.chat.revisedPrompt": "修订后的提示词",
     "app.chat.prompt": "提示词",
     "app.chat.model": "模型",
@@ -3530,6 +4363,97 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.toolCallFailed": "工具调用失败。",
     "app.chat.output": "输出",
     "app.chat.noOutput": "尚无输出",
+    "hotkeyWindow.home.placeholder.unknownProject": "此项目",
+    "hotkeyWindow.home.placeholder.projectless": "在本地向 Codex 询问任何事",
+    "hotkeyWindow.home.placeholder.cloud": "在云端向 Codex 询问任何事",
+    "hotkeyWindow.home.placeholder.worktree": "在 {project} 的工作树中向 Codex 询问任何事",
+    "hotkeyWindow.home.placeholder.local": "在 {project} 本地向 Codex 询问任何事",
+    "hotkeyWindow.home.taskMenu.startIn.projectlessTooltip": "无项目聊天仅能在本地运行",
+    "hotkeyWindow.home.taskMenu.startIn.disabledTooltip": "初始化 Git 仓库后才能在云端或工作树中启动",
+    "hotkeyWindow.home.taskMenu.label": "任务设置",
+    "hotkeyWindow.home.taskMenu.project": "项目",
+    "hotkeyWindow.home.taskMenu.startIn": "启动位置",
+    "hotkeyWindow.home.taskMenu.environment": "环境",
+    "hotkeyWindow.home.taskMenu.branch": "分支",
+    "hotkeyWindow.home.taskMenu.permissions": "权限",
+    "composer.permissionsDropdown.default.label": "默认权限",
+    "composer.permissionsDropdown.default.optionLabel": "默认权限",
+    "composer.permissionsDropdown.guardianApproval.shortLabel": "自动审核",
+    "composer.mode.agentMode.guardianApprovals": "自动审核",
+    "composer.permissionsDropdown.fullAccess.label": "完全访问权限",
+    "composer.permissionsDropdown.fullAccess.optionLabel": "完全访问权限",
+    "composer.permissionsDropdown.custom.label": "自定义",
+    "composer.permissionsDropdown.custom.optionLabel": "自定义（config.toml）",
+    "composer.mode.agentMode.fullAccessConfirm.title": "启用完全访问权限？",
+    "composer.mode.agentMode.fullAccessConfirm.description":
+      "当 Codex 以完全访问权限运行时，无需你批准，即可编辑你的电脑上的任何文件并运行联网命令",
+    "composer.mode.agentMode.fullAccessConfirm.caution":
+      "启用完全访问权限时请务必谨慎。这会显著增加数据丢失、泄露或意外行为的风险。",
+    "composer.mode.agentMode.fullAccessConfirm.goBack": "取消",
+    "composer.mode.agentMode.fullAccessConfirm.confirm": "是的，仍要继续",
+    "composer.remote.currentBranch": "{branch}（当前）",
+    "composer.remote.branch": "{branch}",
+    "composer.remote.localWorkingTree": "使用本地更改",
+    "composer.remote.localFileStateHeading": "本地文件状态",
+    "composer.remote.currentEditsSuffix.useLocal": "包含本地代码改动",
+    "composer.remote.branchStartingPoint": "此任务应从哪个分支开始？",
+    "composer.remote.branchesSectionHeading": "分支",
+    "codex.composer.searchBranches": "搜索分支",
+    "composer.remote.errorLoadingBranches": "加载分支时出错",
+    "composer.remote.loadingMoreBranches": "正在加载…",
+    "composer.footer.branchSwitch.tooltip": "切换分支",
+    "composer.footer.branchSwitch.checkoutError": "切换分支失败：{message}",
+    "composer.footer.branchSwitch.createBranchError": "创建分支失败：{message}",
+    "composer.footer.branchSwitch.uncommittedSummaryPrefix":
+      "未提交：{fileCount, plural, one {# 个文件} other {# 个文件}}",
+    "composer.footer.branchSwitch.createAndCheckout.disabledTooltip":
+      "请先提交更改，然后再创建并切换到新分支",
+    "composer.footer.branchSwitch.createAndCheckout": "创建并切换到新分支…",
+    "composer.footer.branchSwitch.createDialog.title": "创建并切换分支",
+    "composer.footer.branchSwitch.createDialog.placeholder": "new-branch",
+    "composer.footer.branchSwitch.createDialog.ariaLabel": "分支名称",
+    "composer.footer.branchSwitch.createDialog.trailingSlashError":
+      "分支名称不能以“/”结尾。",
+    "composer.footer.branchSwitch.createDialog.branchExistsError": "分支已存在。",
+    "composer.footer.branchSwitch.createDialog.close": "关闭",
+    "composer.footer.branchSwitch.createDialog.createAndCheckout": "创建并切换",
+    "composer.footer.branchSwitch.uncommittedDialog.title": "提交更改以切换分支",
+    "composer.footer.branchSwitch.uncommittedDialog.conflict.bodyPrefix":
+      "以下文件上的更改会在切换分支时被覆盖：",
+    "composer.footer.branchSwitch.uncommittedDialog.conflict.bodySuffix":
+      "请先提交更改以继续",
+    "composer.footer.branchSwitch.uncommittedDialog.body.noDiff":
+      "请先提交 {fileCount, plural, one {# 个文件} other {# 个文件}} 中的更改，然后再切换到 {branchName}。",
+    "composer.footer.branchSwitch.uncommittedDialog.targetBranchFallback": "所选分支",
+    "composer.footer.branchSwitch.uncommittedDialog.cancel": "取消",
+    "composer.footer.branchSwitch.uncommittedDialog.commit": "提交并切换分支…",
+    "composer.footer.branchSwitch.commitDialog.title": "提交更改",
+    "composer.footer.branchSwitch.commitDialog.subtitle":
+      "提交当前更改后，Codex 会继续切换到 {branchName}。",
+    "composer.footer.branchSwitch.commitDialog.messageLabel": "提交信息",
+    "composer.footer.branchSwitch.commitDialog.messagePlaceholder": "描述当前更改",
+    "composer.footer.branchSwitch.commitDialog.cancel": "取消",
+    "composer.footer.branchSwitch.commitDialog.commit": "提交更改",
+    "localConversation.sync.modal.noChanges": "没有更改",
+    "review.commit.form.title": "提交你的更改",
+    "review.commit.form.commitTo": "分支",
+    "review.commit.form.commitTo.none": "-",
+    "review.commit.form.changesToBeCommitted": "更改",
+    "review.commit.messageLabel": "提交信息",
+    "review.commit.messagePlaceholder": "留空以自动生成提交信息",
+    "review.commit.customInstructionsLink": "自定义说明",
+    "review.commit.includeUnstaged": "包含未暂存更改",
+    "review.commit.ariaLabel.includeUnstaged": "包含未暂存更改",
+    "review.commit.form.continue": "继续",
+    "review.commit.rows.fileCount": "{count, plural, one {# 个文件} other {# 个文件}}",
+    "review.commit.generate.emptyResponse": "无法生成提交信息。",
+    "review.commit.generate.failed": "生成提交信息失败：{error}",
+    "localConversation.syncSetup.branchName": "分支名称",
+    "localConversation.syncSetup.setPrefix": "设置前缀",
+    "localConversation.syncSetup.branchesLoading": "正在加载分支…",
+    "localConversation.syncSetup.noBranches": "未找到分支",
+    "composer.reviewMode.branches.error": "无法加载分支",
+    "composer.reviewMode.branches.retry": "重试",
     "app.chat.exitCode": "退出码",
     "app.chat.durationMs": "耗时（毫秒）",
     "app.chat.movedTo": "移动到",
@@ -3894,9 +4818,11 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "sidebarElectron.pullRequestsRouteNavLink": "拉取请求",
     "sidebarElectron.pluginsRouteNavLink": "插件",
     "sidebarElectron.pluginsDisabledTooltip": "请登录 ChatGPT 以使用插件",
+    "sidebarElectron.noTasks": "暂无对话",
     "sidebarElectron.scratchpadNavLink": "草稿区",
     "inbox.mode.automations": "自动化",
     "inbox.automations.createError": "无法创建自动化",
+    "inbox.automations.updateError": "无法更新自动化操作",
     "inbox.automations.loading": "正在加载…",
     "inbox.automations.new": "新建自动化功能",
     "inbox.automations.current": "当前",
@@ -3934,28 +4860,50 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "inbox.automations.relativeDate.tomorrow": "明天 {time}",
     "inbox.automations.relativeDate.weekday": "{weekday} {time}",
     "inbox.automations.relativeDate.yesterday": "昨天 {time}",
+    "inbox.automations.statusSection": "状态",
     "inbox.automations.status.label": "状态",
     "inbox.automations.status.active": "活跃",
     "inbox.automations.status.paused": "已暂停",
     "inbox.automations.status.deleted": "已删除",
     "inbox.automations.executionEnvironment.label": "运行环境",
+    "inbox.automations.host.label": "主机",
     "inbox.automations.folder.label": "项目",
+    "inbox.automations.localEnvironment.label": "环境",
+    "composer.worktreeEnvironment.title": "本地环境",
+    "composer.worktreeEnvironment.tooltip": "选择本地环境",
+    "composer.worktreeEnvironment.loading": "正在加载环境...",
+    "composer.worktreeEnvironment.error": "加载环境时出错",
+    "composer.worktreeEnvironment.default": "默认环境",
+    "composer.worktreeEnvironment.create": "创建本地环境",
+    "codex.environmentSelector.noEnvironment": "无环境",
+    "codex.environments.noEnvironmentsFound": "未找到环境",
+    "inbox.automations.history": "运行历史记录",
+    "inbox.automations.history.untitled": "无标题",
+    "inbox.automations.history.archivedTooltip": "运行记录已归档",
     "inbox.automations.workspaceFallback": "-",
     "inbox.automations.targetThread.label": "对话",
     "inbox.automations.model.label": "模型",
     "inbox.automations.reasoning.label": "推理",
     "inbox.automations.interval.label": "间隔",
     "inbox.automations.repeats.label": "重复次数",
+    "inbox.contextMenu.markRead": "标记为已读",
+    "inbox.contextMenu.markUnread": "标记为未读",
     "settings.automations.runNow": "立即运行",
     "settings.automations.cancel": "取消",
     "settings.automations.create": "创建",
     "settings.automations.save": "保存",
+    "settings.automations.saveRetry": "保存",
     "settings.automations.deleteAria": "删除自动化",
+    "settings.automations.clear": "清除",
+    "settings.automations.dialog.newTitle": "新自动化",
     "settings.automations.nameLabel": "名称",
     "settings.automations.namePlaceholder": "自动化名称",
     "settings.automations.pauseAria": "暂停自动化",
     "settings.automations.promptLabel": "提示词",
     "settings.automations.promptPlaceholder": "让 Codex 做什么？",
+    "settings.automations.projectDropdown.projectless": "对话",
+    "settings.automations.projectDropdown.placeholder": "选择项目",
+    "settings.automations.projectDropdown.localOnlyTooltip": "只能为本地项目创建自动化",
     "settings.automations.resumeAria": "恢复自动化",
     "settings.automations.rruleSummaryFallback": "自定义计划",
     "settings.automations.cwdPlaceholder": "每行一个项目路径",
@@ -4030,16 +4978,50 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.section.browser-use": "浏览器使用",
     "settings.section.mcp-settings": "MCP 服务器",
     "settings.section.mcp-settings.subtitle": "连接外部工具和数据源。<a>了解更多。</a>",
+    "settings.browserUse.title": "浏览器",
+    "settings.browserUse.subtitle":
+      "管理 Codex 的浏览器。可在<computerUseSettingsLink>计算机使用设置</computerUseSettingsLink>中设置 Google Chrome",
+    "settings.browserUse.control.title": "Browser Use",
+    "settings.browserUse.control.description": "让 Codex 控制内置浏览器",
     "settings.browserUse.install.title": "插件",
     "settings.browserUse.install.button": "安装",
-    "settings.browserUse.install.empty": "浏览器插件不可用",
+    "settings.browserUse.install.empty": "应用内浏览器插件不可用",
     "settings.browserUse.permissions.title": "权限",
+    "settings.browserUse.browser.title": "数据",
+    "settings.browserUse.browser.clearBrowsingData.label": "浏览数据",
+    "settings.browserUse.browser.clearBrowsingData.description":
+      "清除应用内浏览器中的站点数据和缓存",
+    "settings.browserUse.browser.clearBrowsingData": "清除所有浏览数据",
+    "settings.browserUse.browser.hideClearOptions": "隐藏单独的浏览数据选项",
+    "settings.browserUse.browser.showClearOptions": "显示单独的浏览数据选项",
+    "settings.browserUse.browser.cookies.label": "Cookie",
+    "settings.browserUse.browser.siteData.label": "站点数据",
+    "settings.browserUse.browser.cache.label": "缓存的图片和文件",
+    "settings.browserUse.browser.clearCookies": "删除 Cookie",
+    "settings.browserUse.browser.clearSiteData": "删除站点数据",
+    "settings.browserUse.browser.clearCache": "删除缓存的图片和文件",
+    "settings.browserUse.browser.browsingDataCleared": "已清除浏览数据",
+    "settings.browserUse.browser.cookiesCleared": "已清除浏览器 Cookie",
+    "settings.browserUse.browser.siteDataCleared": "已清除浏览器站点数据",
+    "settings.browserUse.browser.cacheCleared": "已清除浏览器缓存",
+    "settings.browserUse.browser.clearBrowsingDataError": "无法清除浏览数据",
+    "settings.browserUse.browser.clearCookiesError": "无法清除浏览器 Cookie",
+    "settings.browserUse.browser.clearSiteDataError": "无法清除浏览器站点数据",
+    "settings.browserUse.browser.clearCacheError": "无法清除浏览器缓存",
+    "settings.browserUse.browser.annotationScreenshots.label": "标注截图",
+    "settings.browserUse.browser.annotationScreenshots.description":
+      "截图可帮助 Codex 更好地理解和处理评论，但会增加套餐用量",
+    "settings.browserUse.browser.annotationScreenshots.always.label": "始终包含",
+    "settings.browserUse.browser.annotationScreenshots.necessary.label": "仅在拖拽选择时",
+    "settings.browserUse.browser.annotationScreenshots.saveError": "无法保存标注截图设置",
     "settings.browserUse.approval.label": "审批",
     "settings.browserUse.approval.description": "选择 Codex 在打开网站前是否请求批准",
     "settings.browserUse.approval.alwaysAsk.label": "始终询问",
     "settings.browserUse.approval.alwaysAsk.description": "打开网站前先询问",
     "settings.browserUse.approval.neverAsk.label": "始终允许",
     "settings.browserUse.approval.neverAsk.description": "无需询问即可打开网站",
+    "settings.browserUse.approval.neverAsk.elevatedRiskDisclaimer":
+      "此设置会给你的数据带来较高风险。",
     "settings.browserUse.approval.saveError": "无法保存审批设置",
     "settings.browserUse.historyApproval.label": "历史记录",
     "settings.browserUse.historyApproval.description": "选择 Codex 在访问你的历史记录前是否需要批准",
@@ -4252,6 +5234,16 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.localEnvironments.loading.body": "正在获取项目配置。",
     "settings.localEnvironments.unavailable.title": "本地环境不可用",
     "settings.localEnvironments.unavailable.body": "我们无法加载此项目的本地环境设置。",
+    "settings.localEnvironments.remoteProjectDialog.title": "添加远程项目",
+    "settings.localEnvironments.remoteProjectDialog.description": "选择一个已连接的远程主机，并输入此项目的文件夹。",
+    "settings.localEnvironments.remoteProjectDialog.emptyDescription":
+      "请先设置远程主机。然后你就可以在这里选择主机和文件夹。",
+    "settings.localEnvironments.remoteProjectDialog.hostLabel": "远程主机",
+    "settings.localEnvironments.remoteProjectDialog.pathLabel": "文件夹路径",
+    "settings.localEnvironments.remoteProjectDialog.note": "这个远程文件夹会作为独立项目显示在侧边栏中。",
+    "settings.localEnvironments.remoteProjectDialog.cancel": "取消",
+    "settings.localEnvironments.remoteProjectDialog.confirm": "添加项目",
+    "settings.localEnvironments.remoteProjectDialog.saveError": "保存项目失败",
     "settings.keyboardShortcuts.subtitle.electron": "自定义应用快捷键",
     "settings.keyboardShortcuts.loading": "正在加载快捷键…",
     "settings.keyboardShortcuts.search.ariaLabel": "搜索键盘快捷键",
@@ -4332,6 +5324,22 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.worktrees.autoCleanup.confirm.body": "我们强烈建议启用自动删除功能，以免旧工作树堆积，占用不必要的磁盘空间。若你希望自行管理旧工作树，可关闭此功能，Codex 将停止自动删除操作。",
     "settings.worktrees.autoCleanup.confirm.cancel": "启用自动删除功能",
     "settings.worktrees.autoCleanup.confirm.confirm": "禁用自动删除功能",
+    "settings.worktrees.refresh": "刷新",
+    "settings.worktrees.loading.title": "正在加载工作树",
+    "settings.worktrees.loading.body": "正在获取工作树详细信息。",
+    "settings.worktrees.error.title": "无法加载工作树",
+    "settings.worktrees.error.body": "加载工作树时出错。",
+    "settings.worktrees.empty.title": "尚无工作树",
+    "settings.worktrees.empty.body": "Codex 创建的工作树将显示在此处。",
+    "settings.worktrees.repository.unknown": "未知代码仓库",
+    "settings.worktrees.repository.loading": "正在加载代码仓库元数据…",
+    "settings.worktrees.row.title": "工作树",
+    "settings.worktrees.row.delete": "删除",
+    "settings.worktrees.row.conversations": "对话",
+    "settings.worktrees.row.conversations.loading": "正在加载对话…",
+    "settings.worktrees.row.conversations.empty": "无关联到此工作树的对话。",
+    "settings.worktrees.conversation.untitled": "无标题对话",
+    "settings.worktrees.delete.error": "无法删除工作树",
     "settings.dataControls.archivedChats.dateTime": "{date}，{time}",
     "settings.dataControls.archivedChats.dateTimeWithRepo": "{date}，{time} • {repo}",
     "settings.dataControls.archivedChats.empty": "暂无已归档的聊天。",
@@ -4408,6 +5416,125 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.general.reviewDelivery.description": "尽可能在当前对话中启动 /review，或发起单独的审查对话",
     "settings.general.reviewDelivery.inline": "行内视图",
     "settings.general.reviewDelivery.detached": "分离视图",
+    "settings.agent.speed.label": "速度",
+    "settings.agent.speed.description":
+      "选择聊天、子智能体和上下文压缩中的推理速度。快速模式会增加套餐用量",
+    "settings.agent.speed.option.fast": "快速",
+    "settings.agent.speed.option.fast.description": "1.5 倍速，套餐用量增加",
+    "settings.agent.speed.option.standard": "标准",
+    "settings.agent.speed.option.standard.description": "默认速度",
+    "settings.agent.permissionsMode.groupTitle": "权限",
+    "settings.agent.permissionsMode.default.title": "默认权限",
+    "settings.agent.permissionsMode.default.description":
+      "默认情况下，Codex 可以读取并编辑其工作区中的文件。必要时，它可以请求额外的访问权限",
+    "settings.agent.permissionsMode.default.toggle": "默认权限始终显示",
+    "settings.agent.permissionsMode.autoReview.title": "自动审核",
+    "settings.agent.permissionsMode.autoReview.description":
+      "Codex 可以读取和编辑其工作区中的文件。Codex 会自动审核额外访问权限请求。自动审核可能会出错。<a>了解更多</a>有关高风险的信息。",
+    "settings.agent.permissionsMode.autoReview.toggle": "在编排器中显示自动审核",
+    "settings.agent.permissionsMode.fullAccess.title": "完全访问权限",
+    "settings.agent.permissionsMode.fullAccess.description":
+      "当 Codex 以完全访问权限运行时，无需你批准，即可编辑你的电脑上的任何文件并运行联网命令。这会显著增加数据丢失、泄露或意外行为的风险。<a>了解更多</a>有关高风险的信息。",
+    "settings.agent.permissionsMode.fullAccess.toggle":
+      "在编排器中显示完全访问权限",
+    "settings.workMode.groupTitle": "工作模式",
+    "settings.workMode.groupDescription": "选择 Codex 显示多少技术细节",
+    "settings.workMode.radioGroup": "工作模式",
+    "settings.workMode.coding.title": "适用于编程",
+    "settings.workMode.coding.description": "更具技术性的回复和控制",
+    "settings.workMode.everyday.title": "适用于日常工作",
+    "settings.workMode.everyday.description": "同样强大，技术细节更少",
+    "settings.agent.ambientSuggestions.groupTitle": "建议提示",
+    "settings.agent.ambientSuggestions.rowLabel":
+      "搜索项目文件和已连接应用，建议下一步操作",
+    "settings.agent.ambientSuggestions.toggleLabel": "启用智能建议",
+    "settings.general.groupTitle": "常规",
+    "settings.general.notifications": "通知",
+    "settings.general.dictation": "听写",
+    "settings.general.globalDictationHotkey.label": "按住听写快捷键",
+    "settings.general.globalDictationHotkey.description":
+      "在桌面任意位置按住，即可在光标处听写",
+    "settings.general.globalDictationHotkey.errorGeneric":
+      "更新按住听写快捷键失败",
+    "settings.general.globalDictationHotkey.off": "关闭",
+    "settings.general.globalDictationHotkey.set": "设置",
+    "settings.general.globalDictationHotkey.change": "更改",
+    "settings.general.globalDictationHotkey.clear": "清除",
+    "settings.general.globalDictationHotkey.cancel": "取消",
+    "settings.general.globalDictationHotkey.capturePrompt": "按下快捷键",
+    "settings.general.globalDictationHotkey.captureAriaLabel":
+      "按住听写快捷键录入",
+    "settings.general.globalDictationToggleHotkey.label": "切换听写快捷键",
+    "settings.general.globalDictationToggleHotkey.description":
+      "在桌面任意位置按一次开始听写，再按一次停止",
+    "settings.general.globalDictationToggleHotkey.errorGeneric":
+      "更新切换听写快捷键失败",
+    "settings.general.globalDictationToggleHotkey.captureAriaLabel":
+      "切换听写快捷键录入",
+    "settings.general.globalDictationToggleHotkey.set": "设置",
+    "settings.general.globalDictationToggleHotkey.change": "更改",
+    "settings.general.globalDictationToggleHotkey.clear": "清除",
+    "settings.general.globalDictationHistory.emptyTitle": "最近的听写记录",
+    "settings.general.globalDictationHistory.emptyDescription":
+      "你最近的听写记录会显示在这里，便于在文本没有出现在预期位置时找回内容",
+    "settings.general.globalDictationHistory.copy": "复制听写文本",
+    "settings.general.dictationDictionary.label": "听写词典",
+    "settings.general.dictationDictionary.description":
+      "听写应能识别的单词或短语",
+    "settings.general.dictationDictionary.entryLabel": "词典条目",
+    "settings.general.dictationDictionary.addEntry": "添加条目",
+    "settings.general.dictationDictionary.removeEntry": "删除条目",
+    "settings.general.gpuTearingDebug": "GPU 撕裂调试",
+    "settings.general.gpuTearingDebug.subtitle":
+      "临时合成器隔离开关。更改会立即生效，并且仅在启用调试开关时有效。",
+    "settings.general.gpuTearingDebug.toggle": "切换 {settingName}",
+    "settings.general.gpuTearingDebug.disableScrollFadeMask.label":
+      "禁用滚动淡化遮罩",
+    "settings.general.gpuTearingDebug.disableScrollFadeMask.description":
+      "完全移除滚动边缘渐隐蒙版，以确认蒙版合成是否会触发撕裂",
+    "settings.general.gpuTearingDebug.disableScrollFadeMaskAnimation.label":
+      "禁用滚动渐隐动画",
+    "settings.general.gpuTearingDebug.disableScrollFadeMaskAnimation.description":
+      "保留静态渐隐蒙版，但移除与滚动关联的动画时间线",
+    "settings.general.gpuTearingDebug.disableBackdropBlur.label":
+      "禁用背景模糊",
+    "settings.general.gpuTearingDebug.disableBackdropBlur.description":
+      "在整个 Web UI 中强制关闭背景滤镜，以减少分层模糊合成",
+    "settings.general.gpuTearingDebug.disableCssMotion.label":
+      "禁用 CSS 动效",
+    "settings.general.gpuTearingDebug.disableCssMotion.description":
+      "关闭 CSS 动画和过渡，以隔离合成器动画工作",
+    "settings.general.gpuTearingDebug.forceOpaqueRendererBackground.label":
+      "强制网页背景不透明",
+    "settings.general.gpuTearingDebug.forceOpaqueRendererBackground.description":
+      "将渲染器根节点和 body 绘制为不透明背景，以隔离透明窗口合成",
+    "notifications.turnMode.label": "轮次完成通知",
+    "notifications.turnMode.description": "设置 Codex 完成任务时的提醒",
+    "notifications.turnMode.off": "从不",
+    "notifications.turnMode.unfocused": "仅当应用失焦时",
+    "notifications.turnMode.always": "始终",
+    "notifications.permissions.label": "启用权限通知",
+    "notifications.permissions.description": "在需要通知权限时显示提醒",
+    "notifications.questions.label": "启用问题通知",
+    "notifications.questions.description": "需要输入才能继续时显示提醒",
+    "settings.general.experimentalFeatures.hotkeyWindowHotkey.label": "弹出窗口快捷键",
+    "settings.general.experimentalFeatures.hotkeyWindowHotkey.description":
+      "为弹出窗口设置全局快捷键。留空则保持关闭。",
+    "settings.general.experimentalFeatures.hotkeyWindowHotkey.off": "禁用",
+    "settings.general.experimentalFeatures.hotkeyWindowHotkey.capturePrompt":
+      "按下快捷键",
+    "settings.general.experimentalFeatures.hotkeyWindowHotkey.captureAriaLabel":
+      "弹出窗口热键捕获",
+    "settings.general.experimentalFeatures.hotkeyWindowHotkey.cancel": "取消",
+    "settings.general.experimentalFeatures.hotkeyWindowHotkey.set": "设置",
+    "settings.general.experimentalFeatures.hotkeyWindowHotkey.change": "更改",
+    "settings.general.experimentalFeatures.hotkeyWindowHotkey.clear": "清除",
+    "settings.general.experimentalFeatures.hotkeyWindowHotkey.errorGeneric":
+      "更新弹出窗口快捷键失败。",
+    "settings.general.power.preventSleepWhileRunning.label":
+      "运行时防止系统休眠",
+    "settings.general.power.preventSleepWhileRunning.description":
+      "在 Codex 运行对话时，让电脑保持唤醒状态",
     "settings.agentEnvironment.label": "智能体环境",
     "settings.agentEnvironment.description": "选择智能体在 Windows 上的运行位置",
     "settings.agentEnvironment.windowsNative": "Windows 原生",
@@ -4603,6 +5730,9 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.general.appearance.codeFontSize.row.description": "调整聊天和差异视图中代码使用的基础字号",
     "settings.general.appearance.codeFontSize": "代码字体大小",
     "settings.general.appearance.codeFontSize.units": "px",
+    "settings.general.appearance.fontSmoothing.label": "字体平滑",
+    "settings.general.appearance.fontSmoothing.description":
+      "使用 macOS 原生字体抗锯齿",
     "settings.general.appearance.lightChromeTheme": "浅色主题",
     "settings.general.appearance.darkChromeTheme": "深色主题",
     "settings.general.appearance.codeTheme": "{variant} 代码主题",
@@ -4642,6 +5772,22 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.nav.heading.host": "主机",
     "settings.hostDropdown.local": "本地",
     "settings.hostDropdown.title": "主机",
+    "settings.account.subtitle": "管理浏览器开发主机使用的 ChatGPT 令牌",
+    "settings.account.current.title": "当前账户",
+    "settings.account.authMethod": "身份验证方式",
+    "settings.account.authMethod.chatgptToken": "ChatGPT Bearer 令牌",
+    "settings.account.email": "电子邮箱",
+    "settings.account.accountId": "账户 ID",
+    "settings.account.userId": "用户 ID",
+    "settings.account.plan": "套餐",
+    "settings.account.token.title": "浏览器令牌",
+    "settings.account.token.subtitle": "如果云端请求发起失败，请粘贴替换令牌",
+    "settings.account.token.inputLabel": "ChatGPT Bearer 令牌",
+    "settings.account.token.placeholder": "Bearer eyJ…",
+    "settings.account.token.saved": "令牌已保存",
+    "settings.account.token.save": "更新令牌",
+    "settings.account.signOut": "登出",
+    "settings.account.notAvailable": "不可用",
     "settings.agent.title": "配置",
     "settings.agent.configuration.subtitle.summary": "配置审批策略和沙盒设置 <a>了解更多</a>",
     "settings.agent.customConfig": "自定义 config.toml 设置",
@@ -4677,6 +5823,48 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.section.account": "账户",
     "settings.section.connections": "连接",
     "settings.section.hooks-settings": "Hooks",
+    "settings.hooks.subtitle": "管理来自配置和已启用插件的生命周期 Hooks <a>了解更多</a>",
+    "settings.hooks.refresh": "刷新",
+    "settings.hooks.refresh.success": "已刷新 Hooks",
+    "settings.hooks.loadingProjects.label": "正在加载项目…",
+    "settings.hooks.emptyProject.label": "未选择项目",
+    "settings.hooks.emptyProject.description": "打开一个项目以查看其 Hooks",
+    "settings.hooks.loading.label": "正在加载 Hooks…",
+    "settings.hooks.loadError.label": "无法加载 Hooks",
+    "settings.hooks.project.loading": "选择项目",
+    "settings.hooks.project.group": "项目",
+    "settings.hooks.issues.summary":
+      "{count, plural, one {此项目加载 Hooks 时出现 # 个问题} other {此项目加载 Hooks 时出现 # 个问题}}",
+    "settings.hooks.issues.error": "{path}: {message}",
+    "settings.hooks.event.counts": "{active} 个已启用 · {installed} 个已安装",
+    "settings.hooks.event.emptyCounts": "0 个已安装",
+    "settings.hooks.event.moreActions": "更多操作",
+    "settings.hooks.event.openSourceFile": "打开源文件",
+    "settings.hooks.event.managedTooltip": "受管 Hooks 始终开启",
+    "settings.hooks.event.preToolUse": "PreToolUse",
+    "settings.hooks.event.preToolUse.description": "在工具执行前",
+    "settings.hooks.event.permissionRequest": "PermissionRequest",
+    "settings.hooks.event.permissionRequest.description": "请求权限时",
+    "settings.hooks.event.postToolUse": "PostToolUse",
+    "settings.hooks.event.postToolUse.description": "工具执行后",
+    "settings.hooks.event.preCompact": "PreCompact",
+    "settings.hooks.event.preCompact.description": "Codex 压缩对话前",
+    "settings.hooks.event.postCompact": "PostCompact",
+    "settings.hooks.event.postCompact.description": "Codex 压缩对话后",
+    "settings.hooks.event.sessionStart": "SessionStart",
+    "settings.hooks.event.sessionStart.description": "新会话开始时",
+    "settings.hooks.event.userPromptSubmit": "UserPromptSubmit",
+    "settings.hooks.event.userPromptSubmit.description": "用户提交提示词时",
+    "settings.hooks.event.stop": "Stop",
+    "settings.hooks.event.stop.description": "Codex 结束本轮前",
+    "settings.hooks.event.fallbackHookTitle": "Hook {index}",
+    "settings.hooks.source.plugin": "插件",
+    "settings.hooks.source.pluginSummary": "插件 · {pluginName}",
+    "settings.hooks.source.adminConfig": "管理员配置",
+    "settings.hooks.source.userConfig": "用户配置",
+    "settings.hooks.source.projectConfig": "项目配置",
+    "settings.hooks.source.sessionFlags": "会话标志",
+    "settings.hooks.source.unknown": "未知来源",
     "settings.mcp.loading": "正在加载 MCP 服务器…",
     "settings.mcp.loadError.title": "无法加载 MCP 服务器",
     "settings.mcp.loadError.retry": "重试",
@@ -4732,6 +5920,10 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.ide.language.auto": "自动检测",
     "settings.ide.language.autoOption": "自动检测",
     "settings.ide.language.search": "搜索语言",
+    "settings.general.macMenuBar.label": "在菜单栏中显示",
+    "settings.general.macMenuBar.description":
+      "关闭主窗口后，仍在 macOS 菜单栏中保留 Codex",
+    "settings.general.macMenuBar.ariaLabel": "在菜单栏中显示 Codex",
     "settings.personalization.agents.title": "自定义说明",
     "settings.personalization.agents.description": "为你的项目向 Codex 提供额外指令和上下文。<a>了解更多</a>",
     "settings.personalization.agents.placeholder": "添加你的自定义说明...",
@@ -4745,6 +5937,79 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.personalization.personality.description": "为 Codex 响应选择默认语气",
     "settings.personalization.memory.title": "记忆（实验性）",
     "settings.personalization.memory.subtitle": "设置 Codex 如何收集、保留和整合记忆。<a>了解更多</a>",
+    "settings.general.experimentalFeatures.chronicle.name": "Chronicle 研究预览",
+    "settings.general.experimentalFeatures.chronicle.memoriesRequiredTooltip": "启用记忆才能使用 Chronicle",
+    "settings.general.experimentalFeatures.chronicle.buttonAriaLabel": "切换{featureName}",
+    "settings.general.experimentalFeatures.chronicle.consentTitle": "启用 Chronicle 研究预览",
+    "settings.general.experimentalFeatures.chronicle.consentBodyIntro":
+      "Chronicle 是一项实验性功能，可利用你的屏幕上的上下文增强记忆。启用 Chronicle 后，Codex 会参考你看过的内容，为“完成我刚才在做的事”或“更新此仪表板”等提示提供更有帮助、更贴合上下文的回复。",
+    "settings.general.experimentalFeatures.chronicle.consentBodyConsiderations": "启用 Chronicle 前，请注意以下事项：",
+    "settings.general.experimentalFeatures.chronicle.consentBodyCost":
+      "<strong>成本</strong>：Chronicle 使用图片输入并在后台运行，会快速消耗费用限额。",
+    "settings.general.experimentalFeatures.chronicle.consentBodyPrivacy":
+      "<strong>隐私</strong>：Chronicle 的屏幕截图可能包含你的屏幕上可见的敏感信息。（它无法访问你的麦克风或系统音频。）未经他人同意，请勿使用 Chronicle 录制会议或与他人的交流。在查看不希望被记忆记录的内容时，请暂停 Chronicle。",
+    "settings.general.experimentalFeatures.chronicle.consentBodyPromptInjection":
+      "<strong>提示词注入</strong>：使用 Chronicle 会增加来自屏幕内容的提示词注入攻击的风险。例如，如果你浏览一个含有恶意智能体指令的网站，Codex 可能会遵循这些指令。",
+    "settings.general.experimentalFeatures.chronicle.consentBodyStorageHeading": "工作原理：",
+    "settings.general.experimentalFeatures.chronicle.consentBodyStorageProcessing":
+      "为了生成回忆，屏幕截图会在我们的服务器上处理，然后被删除。",
+    "settings.general.experimentalFeatures.chronicle.consentBodyStorageLocal":
+      "屏幕截图会暂时存储在设备上，记忆也会存储在设备上。两者均以未加密形式存储，因此请注意，你计算机上的其他应用程序可能可以访问这些文件。如果你在 ChatGPT 设置中允许，Codex 在聊天中使用这些记忆时，它们可能会被用于改进我们的模型。",
+    "settings.general.experimentalFeatures.chronicle.consentBodyDisableIntro":
+      "你可随时停用 Chronicle，停用后将不再继续进行屏幕截图。<link>了解更多。</link>",
+    "settings.general.experimentalFeatures.chronicle.cancel": "取消",
+    "settings.general.experimentalFeatures.chronicle.continue": "继续",
+    "settings.general.experimentalFeatures.chronicle.description":
+      "通过屏幕上下文增强记忆，以便 Codex 帮你处理正在进行的任何工作。<link>了解更多</link>",
+    "settings.general.experimentalFeatures.chronicle.permission.runningStatus": "状态：{status}",
+    "settings.general.experimentalFeatures.chronicle.permission.runningStatusAccessibility":
+      "辅助功能：{status}（打开设置）",
+    "settings.general.experimentalFeatures.chronicle.permission.screenRecording": "屏幕录制",
+    "settings.general.experimentalFeatures.chronicle.permission.statusLabel": "状态",
+    "settings.general.experimentalFeatures.chronicle.permission.notGranted":
+      "{statusLabel}：未授予{permission}权限（打开设置）",
+    "settings.general.experimentalFeatures.chronicle.permission.accessibility": "辅助功能",
+    "settings.general.experimentalFeatures.chronicle.permission.status": "{permission}：{status}",
+    "settings.general.experimentalFeatures.chronicle.permissionStatus.paused": "已暂停",
+    "settings.general.experimentalFeatures.chronicle.permissionStatus.starting": "启动中",
+    "settings.general.experimentalFeatures.chronicle.permissionStatus.stopping": "正在停止",
+    "settings.general.experimentalFeatures.chronicle.permissionStatus.running": "正在运行",
+    "settings.general.experimentalFeatures.chronicle.permissionStatus.checking": "检查中",
+    "settings.general.experimentalFeatures.chronicle.permissionStatus.unknown": "未知",
+    "settings.general.experimentalFeatures.chronicle.permissionStatus.granted": "已授予",
+    "settings.general.experimentalFeatures.chronicle.permissionStatus.notDetermined": "未请求",
+    "settings.general.experimentalFeatures.chronicle.permissionStatus.denied": "已拒绝",
+    "settings.general.experimentalFeatures.chronicle.permissionStatus.restricted": "受限",
+    "settings.general.experimentalFeatures.chronicle.screenRecordingSettingsName": "屏幕录制",
+    "settings.general.experimentalFeatures.chronicle.accessibilitySettingsName": "辅助功能",
+    "settings.general.experimentalFeatures.chronicle.setupTitle": "正在设置 Chronicle",
+    "settings.general.experimentalFeatures.chronicle.openScreenRecordingSettings": "打开系统设置",
+    "settings.general.experimentalFeatures.chronicle.openAccessibilitySettings": "打开系统设置",
+    "settings.general.experimentalFeatures.chronicle.askCodex": "试试看",
+    "settings.general.experimentalFeatures.chronicle.setupClose": "关闭",
+    "settings.general.experimentalFeatures.chronicle.permissionDragAppLabel":
+      "将 Codex 拖到 {permissionSettingsName} 设置中",
+    "settings.general.experimentalFeatures.chronicle.permissionDragApp":
+      "如果列表中没有 {bundleName}，请将此应用图标拖到 {permissionSettingsName} 设置中",
+    "settings.general.experimentalFeatures.chronicle.setupReadyTitle": "Chronicle 已准备就绪！",
+    "settings.general.experimentalFeatures.chronicle.setupFailedTitle": "Chronicle 设置失败",
+    "settings.general.experimentalFeatures.chronicle.setupScreenRecordingPermissionNeededTitle":
+      "允许 Chronicle 使用屏幕录制",
+    "settings.general.experimentalFeatures.chronicle.setupAccessibilityPermissionNeededTitle":
+      "允许 Chronicle 使用“辅助功能”",
+    "settings.general.experimentalFeatures.chronicle.setupInProgressTitle": "正在设置 Chronicle",
+    "settings.general.experimentalFeatures.chronicle.setupWaiting": "等待中…",
+    "settings.general.experimentalFeatures.chronicle.setupScreenRecordingRestricted":
+      "“屏幕录制”受 macOS 或你的组织限制。如果解除限制且 Codex 获得“屏幕录制”权限，Chronicle 将自动继续。",
+    "settings.general.experimentalFeatures.chronicle.setupScreenRecordingDenied":
+      "请打开“系统设置”→“隐私与安全性”→“屏幕录制”，并启用 {bundleName}。你可能需要重新启动 Codex 以使更改生效。",
+    "settings.general.experimentalFeatures.chronicle.setupAccessibilityRestricted":
+      "辅助功能访问受 macOS 或你的组织限制。如果限制被解除且 Codex 获得辅助功能权限，Chronicle 将自动继续。",
+    "settings.general.experimentalFeatures.chronicle.setupAccessibilityDenied":
+      "请打开“系统设置”→“隐私与安全性”→“辅助功能”，然后启用 {bundleName}。",
+    "settings.general.experimentalFeatures.chronicle.setupReady":
+      "你可以随时点击 Codex 菜单栏中的“暂停 Chronicle” 来暂停 Chronicle。",
+    "settings.general.experimentalFeatures.chronicle.setupFailed": "Chronicle 设置失败。",
     "settings.personalization.pets.title": "宠物",
     "settings.personalization.pets.current": "已选择 {petName}",
     "settings.personalization.pets.openPet": "唤醒宠物",

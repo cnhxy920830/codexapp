@@ -23,11 +23,12 @@ import {
   type PluginSummary,
 } from "../services/plugins";
 import {
-  readConfig,
+  readConfigForHost,
   resolveUserConfigWriteTarget,
   type ConfigSnapshot,
   type ConfigWriteTarget,
 } from "../services/settings";
+import { LOCAL_SETTINGS_HOST_ID } from "../services/settingsHosts";
 import {
   onQueryCacheInvalidated,
   queryKeyMatchesPrefix,
@@ -113,13 +114,22 @@ async function readPluginsSettingsPageState(
     forceReloadSkills?: boolean;
   },
 ) {
+  const effectiveWorkspaceRoot =
+    selectedHostId === LOCAL_SETTINGS_HOST_ID ? workspaceRoot : null;
   const [pluginsResult, configResult, appsResult, skillsResult] = await Promise.allSettled([
-    readPluginsSnapshot(workspaceRoot, selectedHostId),
-    readConfig(workspaceRoot),
+    readPluginsSnapshot(effectiveWorkspaceRoot, selectedHostId),
+    readConfigForHost({
+      cwd: effectiveWorkspaceRoot,
+      hostId: selectedHostId,
+    }),
     readAppsSnapshot({
+      hostId: selectedHostId,
       forceRefetch: options?.forceRefetchApps ?? false,
     }),
-    readSkillsSnapshot(workspaceRoot, options?.forceReloadSkills ?? false),
+    readSkillsSnapshot(effectiveWorkspaceRoot, {
+      forceReload: options?.forceReloadSkills ?? false,
+      hostId: selectedHostId,
+    }),
   ]);
 
   const writeTarget =
@@ -157,7 +167,11 @@ export function PluginsSettings({
   workspaceRoot: string | null;
 }) {
   const { t } = useI18n();
-  const isPluginsRouteEnabled = usePluginsRouteEnabled(selectedHostId);
+  const isPluginsRouteEnabled = usePluginsRouteEnabled(selectedHostId, {
+    allowRemoteHost: true,
+  });
+  const effectiveWorkspaceRoot =
+    selectedHostId === LOCAL_SETTINGS_HOST_ID ? workspaceRoot : null;
   const [currentTab, setCurrentTab] = useState<ManageTab>("plugins");
   const [pageState, setPageState] = useState<PluginsSettingsPageState | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -320,8 +334,8 @@ export function PluginsSettings({
   }, [isPluginsRouteEnabled, selectedHostId, workspaceRoot]);
 
   const managedMarketplaces = useMemo(
-    () => buildManagedMarketplaces(pageState?.pluginsSnapshot ?? null, workspaceRoot),
-    [pageState?.pluginsSnapshot, workspaceRoot],
+    () => buildManagedMarketplaces(pageState?.pluginsSnapshot ?? null, effectiveWorkspaceRoot),
+    [effectiveWorkspaceRoot, pageState?.pluginsSnapshot],
   );
 
   const filteredMarketplaces = useMemo<MarketplaceGroup[]>(() => {

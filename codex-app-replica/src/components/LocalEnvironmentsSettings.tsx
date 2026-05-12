@@ -43,11 +43,24 @@ import {
 } from "../services/workspaceRoots";
 import { buildConfigScopeOptions, readConfig, writeConfigValue } from "../services/settings";
 import { isWithinCodexWorktrees } from "../services/codexHome";
+import {
+  LOCAL_SETTINGS_HOST_ID,
+  REMOTE_CONNECTIONS_SHARED_OBJECT_KEY,
+  REMOTE_PROJECTS_SHARED_OBJECT_KEY,
+  onRemoteAppServerConnectionStateChanged,
+  onSharedObjectUpdated,
+  readConnectedSettingsRemoteConnections,
+  readSettingsRemoteConnectionsSnapshot,
+  readSettingsRemoteProjectsSnapshot,
+  saveRemoteProject,
+  type RemoteConnection,
+  type RemoteProject,
+} from "../services/settingsHosts";
+import { RemoteProjectSetupDialog } from "../features/localEnvironments/RemoteProjectSetupDialog";
 
 const SCRIPT_PLATFORM_OPTIONS = ["default", ...LOCAL_ENVIRONMENT_PLATFORMS] as const;
 const LOCAL_ENVIRONMENT_CONFIG_KEY_PATH = "codex.localEnvironmentConfigPath";
 const LOCAL_ENVIRONMENT_LEARN_MORE_URL = "https://developers.openai.com/codex/app/local-environments";
-const LOCAL_ENVIRONMENT_LOCAL_HOST_ID = "local";
 
 type ScriptPlatformSelection = (typeof SCRIPT_PLATFORM_OPTIONS)[number];
 
@@ -63,11 +76,15 @@ export function LocalEnvironmentsSettings({
   codexHome,
   routeSearch,
   selectedHostId,
+  onSelectHostId,
+  onUpdateRouteSearch,
   onShowToast,
 }: {
   codexHome: string | null;
   routeSearch?: string;
   selectedHostId: string;
+  onSelectHostId?: (hostId: string) => void;
+  onUpdateRouteSearch?: (routeSearch: string | null) => void;
   onShowToast?: (toast: AppToast) => void;
 }) {
   const { t } = useI18n();
@@ -97,7 +114,28 @@ export function LocalEnvironmentsSettings({
   const [cleanupPlatform, setCleanupPlatform] = useState<ScriptPlatformSelection>("default");
   const [isSetupEnvVarsOpen, setIsSetupEnvVarsOpen] = useState(false);
   const [workspaceRootsReloadVersion, setWorkspaceRootsReloadVersion] = useState(0);
+  const [connectedRemoteConnections, setConnectedRemoteConnections] = useState<RemoteConnection[]>([]);
+  const [remoteProjects, setRemoteProjects] = useState<RemoteProject[]>([]);
+  const [isRemoteProjectDialogOpen, setIsRemoteProjectDialogOpen] = useState(false);
+  const [isRemoteProjectSaving, setIsRemoteProjectSaving] = useState(false);
   const routeSelection = useMemo(() => parseLocalEnvironmentRouteSearch(routeSearch), [routeSearch]);
+  const isRemoteHost = selectedHostId.trim() !== LOCAL_SETTINGS_HOST_ID;
+  const remoteProjectsForSelectedHost = useMemo(() => {
+    return remoteProjects.filter((remoteProject) => remoteProject.hostId === selectedHostId);
+  }, [remoteProjects, selectedHostId]);
+  const projectRoots = useMemo(() => {
+    return isRemoteHost ? remoteProjectsForSelectedHost.map((remoteProject) => remoteProject.remotePath) : workspaceRoots;
+  }, [isRemoteHost, remoteProjectsForSelectedHost, workspaceRoots]);
+  const projectRootLabels = useMemo(() => {
+    if (!isRemoteHost) {
+      return workspaceRootLabels;
+    }
+
+    return Object.fromEntries(
+      remoteProjectsForSelectedHost.map((remoteProject) => [remoteProject.remotePath, remoteProject.label]),
+    );
+  }, [isRemoteHost, remoteProjectsForSelectedHost, workspaceRootLabels]);
+  const activeProjectRoots = isRemoteHost ? [] : activeWorkspaceRoots;
 
   const selectedWorkspacePath = useMemo(() => {
     if (!selectedWorkspaceRoot) {
@@ -112,15 +150,15 @@ export function LocalEnvironmentsSettings({
       return null;
     }
 
-    return workspaceRoots.includes(selectedWorkspaceRoot) ? selectedWorkspaceRoot : null;
-  }, [selectedWorkspaceRoot, workspaceRoots]);
+    return projectRoots.includes(selectedWorkspaceRoot) ? selectedWorkspaceRoot : null;
+  }, [projectRoots, selectedWorkspaceRoot]);
 
   const selectedWorkspaceLabel = useMemo(() => {
     if (!normalizedSelectedWorkspaceRoot) {
       return null;
     }
-    return getWorkspaceRootLabel(normalizedSelectedWorkspaceRoot, workspaceRootLabels);
-  }, [normalizedSelectedWorkspaceRoot, workspaceRootLabels]);
+    return getWorkspaceRootLabel(normalizedSelectedWorkspaceRoot, projectRootLabels);
+  }, [normalizedSelectedWorkspaceRoot, projectRootLabels]);
 
   const selectedWorkspaceIsCodexWorktree = useMemo(() => {
     return normalizedSelectedWorkspaceRoot
@@ -128,9 +166,8 @@ export function LocalEnvironmentsSettings({
       : false;
   }, [codexHome, normalizedSelectedWorkspaceRoot]);
 
-  const isRemoteHost = selectedHostId.trim() !== LOCAL_ENVIRONMENT_LOCAL_HOST_ID;
   const isSelectProjectMode = normalizedSelectedWorkspaceRoot === null;
-  const canAddProjectLocally = !isRemoteHost;
+  const canAddProject = true;
 
   const previewEnvironment = parsedEnvironment?.type === "success" ? parsedEnvironment.environment : null;
   const parseErrorMessage = parsedEnvironment?.type === "error" ? parsedEnvironment.error.message : null;
@@ -156,11 +193,73 @@ export function LocalEnvironmentsSettings({
   }, [currentFingerprint, editableEnvironment, initialFingerprint, isSaving, parseErrorMessage, readErrorMessage, t]);
 
   useEffect(() => {
+    let disposed = false;
+    let cleanupSharedObjects: (() => void) | null = null;
+    let cleanupConnectionStates: (() => void) | null = null;
+
+    const loadRemoteConnectionState = async () => {
+      try {
+        const remoteConnections = await readSettingsRemoteConnectionsSnapshot();
+        const nextConnectedRemoteConnections = await readConnectedSettingsRemoteConnections(remoteConnections);
+        if (!disposed) {
+          setConnectedRemoteConnections(nextConnectedRemoteConnections);
+        }
+      } catch {
+        if (!disposed) {
+          setConnectedRemoteConnections([]);
+        }
+      }
+    };
+
+    const loadRemoteProjects = async () => {
+      try {
+        const nextRemoteProjects = await readSettingsRemoteProjectsSnapshot();
+        if (!disposed) {
+          setRemoteProjects(nextRemoteProjects);
+        }
+      } catch {
+        if (!disposed) {
+          setRemoteProjects([]);
+        }
+      }
+    };
+
+    void Promise.all([loadRemoteConnectionState(), loadRemoteProjects()]);
+
+    void onSharedObjectUpdated((notification) => {
+      if (notification.key === REMOTE_CONNECTIONS_SHARED_OBJECT_KEY) {
+        void loadRemoteConnectionState();
+      }
+      if (notification.key === REMOTE_PROJECTS_SHARED_OBJECT_KEY) {
+        void loadRemoteProjects();
+      }
+    }).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+        return;
+      }
+      cleanupSharedObjects = cleanup;
+    });
+
+    void onRemoteAppServerConnectionStateChanged(() => {
+      void loadRemoteConnectionState();
+    }).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+        return;
+      }
+      cleanupConnectionStates = cleanup;
+    });
+
+    return () => {
+      disposed = true;
+      cleanupSharedObjects?.();
+      cleanupConnectionStates?.();
+    };
+  }, []);
+
+  useEffect(() => {
     if (isRemoteHost) {
-      setWorkspaceRoots([]);
-      setWorkspaceRootLabels({});
-      setActiveWorkspaceRoots([]);
-      setSelectedWorkspaceRoot(null);
       setWorkspaceRootsErrorMessage(null);
       setIsWorkspaceRootsLoading(false);
       return;
@@ -188,7 +287,7 @@ export function LocalEnvironmentsSettings({
           if (current && workspaceRootOptionsResponse.roots.includes(current)) {
             return current;
           }
-          return activeWorkspaceRootsResponse.roots.find((root) => workspaceRootOptionsResponse.roots.includes(root)) ?? null;
+          return null;
         });
       } catch (error) {
         if (cancelled) {
@@ -214,13 +313,13 @@ export function LocalEnvironmentsSettings({
   }, [isRemoteHost, selectedHostId, workspaceRootsReloadVersion]);
 
   useEffect(() => {
-    if (routeSelection.workspaceRoot === null || workspaceRoots.length === 0) {
+    if (routeSelection.workspaceRoot === null || projectRoots.length === 0) {
       return;
     }
 
     const requestedWorkspaceRoot = routeSelection.workspaceRoot;
     const matchingWorkspaceRoot =
-      workspaceRoots.find(
+      projectRoots.find(
         (workspaceRoot) => normalizeComparablePath(workspaceRoot) === normalizeComparablePath(requestedWorkspaceRoot),
       ) ?? null;
     if (matchingWorkspaceRoot === null) {
@@ -228,9 +327,13 @@ export function LocalEnvironmentsSettings({
     }
 
     setSelectedWorkspaceRoot((current) => (current === matchingWorkspaceRoot ? current : matchingWorkspaceRoot));
-  }, [routeSelection.workspaceRoot, workspaceRoots]);
+  }, [projectRoots, routeSelection.workspaceRoot]);
 
   useEffect(() => {
+    if (isRemoteHost) {
+      return;
+    }
+
     let disposed = false;
     let cleanupOptions: (() => void) | null = null;
     let cleanupActive: (() => void) | null = null;
@@ -279,7 +382,7 @@ export function LocalEnvironmentsSettings({
       cleanupActive?.();
       cleanupAdded?.();
     };
-  }, []);
+  }, [isRemoteHost]);
 
   useEffect(() => {
     if (!normalizedSelectedWorkspaceRoot) {
@@ -488,6 +591,13 @@ export function LocalEnvironmentsSettings({
     setCleanupPlatform("default");
     setIsSetupEnvVarsOpen(false);
     setIsEditMode(true);
+    onUpdateRouteSearch?.(
+      buildLocalEnvironmentRouteSearch({
+        workspaceRoot: normalizedSelectedWorkspaceRoot,
+        configPath: nextConfigPath,
+        mode: "edit",
+      }),
+    );
   };
 
   const closeEditor = () => {
@@ -499,6 +609,15 @@ export function LocalEnvironmentsSettings({
     setCleanupPlatform("default");
     setIsSetupEnvVarsOpen(false);
     setIsSaving(false);
+    onUpdateRouteSearch?.(
+      normalizedSelectedWorkspaceRoot && selectedWorkspacePath
+        ? buildLocalEnvironmentRouteSearch({
+            workspaceRoot: normalizedSelectedWorkspaceRoot,
+            configPath: selectedWorkspacePath,
+            mode: "preview",
+          })
+        : null,
+    );
   };
 
   const saveEditor = async () => {
@@ -607,41 +726,77 @@ export function LocalEnvironmentsSettings({
     setSelectedWorkspaceRoot(null);
     setSelectedConfigPath(null);
     setIsEditMode(false);
+    onUpdateRouteSearch?.(null);
   };
 
   const selectWorkspaceEnvironment = (workspaceRoot: string, configPath: string) => {
     setSelectedWorkspaceRoot(workspaceRoot);
     setSelectedConfigPath(configPath);
     setIsEditMode(false);
+    onUpdateRouteSearch?.(
+      buildLocalEnvironmentRouteSearch({
+        workspaceRoot,
+        configPath,
+        mode: "preview",
+      }),
+    );
   };
 
-  const createWorkspaceEnvironment = (workspaceRoot: string) => {
+  const createWorkspaceEnvironment = (workspaceRoot: string, entries: LocalEnvironmentConfigEntry[]) => {
     const nextConfigPath = createDefaultLocalEnvironmentConfigPath(
-      environmentEntries.filter((entry) => isConfigPathForWorkspace(entry.configPath, workspaceRoot)),
+      entries.filter((entry) => isConfigPathForWorkspace(entry.configPath, workspaceRoot)),
       workspaceRoot,
     );
     setSelectedWorkspaceRoot(workspaceRoot);
     setSelectedConfigPath(nextConfigPath);
     setIsEditMode(true);
+    onUpdateRouteSearch?.(
+      buildLocalEnvironmentRouteSearch({
+        workspaceRoot,
+        configPath: nextConfigPath,
+        mode: "edit",
+      }),
+    );
   };
 
   const handleAddProject = async () => {
-    if (!canAddProjectLocally) {
+    if (isRemoteHost) {
+      setIsRemoteProjectDialogOpen(true);
       return;
     }
     await addNewWorkspaceRootOption();
   };
 
-  if (isRemoteHost) {
-    return (
-      <PageFrame title={t("settings.nav.local-environments")}>
-        <InfoCard
-          body={t("settings.localEnvironments.unavailable.body")}
-          title={t("settings.localEnvironments.unavailable.title")}
-        />
-      </PageFrame>
-    );
-  }
+  const handleSaveRemoteProject = async ({ hostId, remotePath }: { hostId: string; remotePath: string }) => {
+    setIsRemoteProjectSaving(true);
+    try {
+      const response = await saveRemoteProject({
+        hostId,
+        remotePath,
+      });
+      setIsRemoteProjectDialogOpen(false);
+      setIsEditMode(false);
+      setSelectedConfigPath(null);
+      setSelectedWorkspaceRoot(response.project.remotePath);
+      setReloadVersion((current) => current + 1);
+      onUpdateRouteSearch?.(
+        buildLocalEnvironmentRouteSearch({
+          workspaceRoot: response.project.remotePath,
+          mode: "preview",
+        }),
+      );
+      if (hostId !== selectedHostId) {
+        onSelectHostId?.(hostId);
+      }
+    } catch {
+      onShowToast?.({
+        tone: "error",
+        message: t("settings.localEnvironments.remoteProjectDialog.saveError"),
+      });
+    } finally {
+      setIsRemoteProjectSaving(false);
+    }
+  };
 
   if (isWorkspaceRootsLoading) {
     return (
@@ -664,18 +819,18 @@ export function LocalEnvironmentsSettings({
         title={t("settings.nav.local-environments")}
       >
         <WorkspaceSelectionCard
-          activeWorkspaceRoots={activeWorkspaceRoots}
+          activeWorkspaceRoots={activeProjectRoots}
           environmentEntries={environmentEntries}
           hostId={selectedHostId}
-          isAddProjectEnabled={canAddProjectLocally}
+          isAddProjectEnabled={canAddProject}
           isLoading={isWorkspaceRootsLoading}
           onAddProject={() => void handleAddProject()}
           onCreateEnvironment={createWorkspaceEnvironment}
           onSelectEnvironment={selectWorkspaceEnvironment}
           selectedWorkspaceRoot={selectedWorkspaceRoot}
           t={t}
-          workspaceRootLabels={workspaceRootLabels}
-          workspaceRoots={workspaceRoots}
+          workspaceRootLabels={projectRootLabels}
+          workspaceRoots={projectRoots}
         />
         {workspaceRootsErrorMessage ? <InlineError message={workspaceRootsErrorMessage} /> : null}
       </PageFrame>
@@ -906,6 +1061,19 @@ export function LocalEnvironmentsSettings({
       title={t("settings.nav.local-environments")}
     >
       {previewContent}
+      {isRemoteProjectDialogOpen ? (
+        <RemoteProjectSetupDialog
+          connectedRemoteConnections={connectedRemoteConnections}
+          initialHostId={isRemoteHost ? selectedHostId : connectedRemoteConnections[0]?.hostId ?? LOCAL_SETTINGS_HOST_ID}
+          isSaving={isRemoteProjectSaving}
+          onClose={() => {
+            if (!isRemoteProjectSaving) {
+              setIsRemoteProjectDialogOpen(false);
+            }
+          }}
+          onSave={(params) => void handleSaveRemoteProject(params)}
+        />
+      ) : null}
     </PageFrame>
   );
 }
@@ -1871,6 +2039,29 @@ function renderLearnMoreDescription(description: string) {
 
 function normalizeComparablePath(path: string) {
   return path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+
+function buildLocalEnvironmentRouteSearch({
+  workspaceRoot,
+  configPath,
+  mode,
+}: {
+  workspaceRoot?: string | null;
+  configPath?: string | null;
+  mode?: "edit" | "preview" | null;
+}) {
+  const params = new URLSearchParams();
+  if (workspaceRoot && workspaceRoot.trim().length > 0) {
+    params.set("workspaceRoot", workspaceRoot);
+  }
+  if (configPath && configPath.trim().length > 0) {
+    params.set("configPath", configPath);
+  }
+  if (mode) {
+    params.set("mode", mode);
+  }
+  const serialized = params.toString();
+  return serialized.length > 0 ? `?${serialized}` : null;
 }
 
 function parseLocalEnvironmentRouteSearch(routeSearch?: string) {

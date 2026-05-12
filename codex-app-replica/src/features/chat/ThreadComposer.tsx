@@ -2,10 +2,12 @@ import { useEffect, useRef } from "react";
 import { AvatarSprite } from "../../components/appearance/AvatarSprite";
 import type { AvatarOption } from "../../components/appearance/avatarData";
 import type { MessageKey } from "../../i18n/messages";
+import {
+  getComposerModifierLabel,
+  shouldInvertFollowUpOnEnter,
+} from "../../lib/followUpShortcuts";
 import type { ComposerEnterBehavior } from "../../services/settings";
 import type { FollowUpQueueMode, ReviewDelivery } from "../../services/settings";
-
-const COMPOSER_MODIFIER_SYMBOL = "Ctrl";
 
 type ThreadComposerProps = {
   followUpQueueMode: FollowUpQueueMode;
@@ -43,9 +45,10 @@ export function ThreadComposer({
   turnError,
 }: ThreadComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const composerModifierLabel = getComposerModifierLabel();
   const helperText =
     composerEnterBehavior === "cmdIfMultiline"
-      ? t("general.enterBehaviorDescription", { modifierSymbol: COMPOSER_MODIFIER_SYMBOL })
+      ? t("general.enterBehaviorDescription", { modifierSymbol: composerModifierLabel })
       : "";
   const isSubmitDisabled = submitButtonMode === "send" && composerDraft.trim().length === 0;
   const followUpModeLabelKey =
@@ -83,9 +86,15 @@ export function ThreadComposer({
             if (event.key !== "Enter") {
               return;
             }
-            const hasModifier = event.ctrlKey || event.metaKey;
+            const shouldInvertFollowUp = shouldInvertFollowUpOnEnter({
+              altKey: event.altKey,
+              composerEnterBehavior,
+              ctrlKey: event.ctrlKey,
+              metaKey: event.metaKey,
+              shiftKey: event.shiftKey,
+            });
             const hasMultilineContent = composerDraft.includes("\n");
-            if (hasModifier) {
+            if (shouldInvertFollowUp) {
               event.preventDefault();
               onSubmitTurn(true);
               return;

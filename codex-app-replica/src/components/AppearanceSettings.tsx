@@ -39,6 +39,8 @@ export function AppearanceSettings({
   const [isSaving, setIsSaving] = useState(false);
   const stateRef = useRef(state);
   const previewVariant = useResolvedPreviewVariant(state.appearanceTheme);
+  const isMacOsPlatform =
+    typeof navigator !== "undefined" && (navigator.platform ?? "").startsWith("Mac");
 
   useEffect(() => {
     stateRef.current = state;
@@ -124,6 +126,15 @@ export function AppearanceSettings({
       (current) => ({ ...current, usePointerCursors: value }),
       async () => {
         await setGlobalState("usePointerCursors", value);
+      },
+    );
+  };
+
+  const persistFontSmoothing = async (value: boolean) => {
+    await persistSnapshotChange(
+      (current) => ({ ...current, useFontSmoothing: value }),
+      async () => {
+        await setGlobalState("useFontSmoothing", value);
       },
     );
   };
@@ -350,6 +361,20 @@ export function AppearanceSettings({
                   onCommit={(value) => void persistNumber("codeFontSize", value)}
                 />
               </SettingsRow>
+
+              {isMacOsPlatform ? (
+                <SettingsRow
+                  label={t("settings.general.appearance.fontSmoothing.label")}
+                  description={t("settings.general.appearance.fontSmoothing.description")}
+                >
+                  <ToggleSwitch
+                    checked={state.useFontSmoothing}
+                    disabled={isLoading || isSaving}
+                    ariaLabel={t("settings.general.appearance.fontSmoothing.label")}
+                    onChange={(checked) => void persistFontSmoothing(checked)}
+                  />
+                </SettingsRow>
+              ) : null}
             </SettingsSurface>
 
             <PetsSection onOpenChatWithPrompt={onOpenChatWithPrompt} onShowToast={onShowToast} />

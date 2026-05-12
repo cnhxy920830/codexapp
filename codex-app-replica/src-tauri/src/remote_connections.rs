@@ -8,6 +8,10 @@ use std::process::Command;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
+use crate::codex_app_config::{
+    read_codex_app_config, write_codex_app_config, CodexAppConfig, CodexAppRemoteConnection,
+    CodexAppRemoteProject,
+};
 use crate::global_settings::{read_global_settings, write_global_settings};
 use crate::pending_worktrees::{
     pending_worktrees_shared_object_key, pending_worktrees_snapshot_value,
@@ -19,9 +23,8 @@ const SHARED_OBJECT_UPDATED_EVENT: &str = "shared-object-updated";
 const REMOTE_CONNECTIONS_SHARED_OBJECT_KEY: &str = "remote_connections";
 const REMOTE_CONNECTION_AUTO_CONNECT_BY_HOST_ID_KEY: &str =
     "remote-connection-auto-connect-by-host-id";
-const REMOTE_PROJECT_CONNECTION_BACKFILL_COMPLETED_KEY: &str =
-    "remote-project-connection-backfill-completed";
 const REMOTE_PROJECTS_KEY: &str = "remote-projects";
+const PROJECT_ORDER_KEY: &str = "project-order";
 const SOURCE_CODEX_MANAGED: &str = "codex-managed";
 const SOURCE_DISCOVERED: &str = "discovered";
 const REMOTE_SSH_CODEX_MANAGED_PREFIX: &str = "remote-ssh-codex-managed:";
@@ -163,6 +166,28 @@ pub struct SetRemoteConnectionAutoConnectParams {
     pub auto_connect: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteProject {
+    pub id: String,
+    pub host_id: String,
+    pub remote_path: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveRemoteProjectParams {
+    pub host_id: String,
+    pub remote_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveRemoteProjectResponse {
+    pub project: RemoteProject,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct SharedObjectUpdatedNotification {
@@ -170,16 +195,16 @@ struct SharedObjectUpdatedNotification {
     value: Value,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-struct RemoteProjectEntry {
-    host_id: String,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SaveCodexManagedRemoteSshConnectionsCommandResult {
     response: SaveCodexManagedRemoteSshConnectionsResponse,
+    state: RemoteConnectionsState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RemoteConnectionsState {
     remote_connections: Vec<RemoteConnection>,
+    remote_projects: Vec<RemoteProject>,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -215,12 +240,32 @@ pub async fn save_codex_managed_remote_ssh_connections(
     })
     .await
     .map_err(|err| format!("save-codex-managed-remote-ssh-connections task failed: {err}"))??;
-    let SaveCodexManagedRemoteSshConnectionsCommandResult {
-        response,
-        remote_connections,
-    } = result;
-    apply_remote_connections_runtime(&app, remote_connections).await?;
+    let SaveCodexManagedRemoteSshConnectionsCommandResult { response, state } = result;
+    apply_remote_connections_runtime(&app, state).await?;
     Ok(response)
+}
+
+#[tauri::command(rename = "save-remote-project")]
+pub async fn save_remote_project(
+    app: AppHandle,
+    params: SaveRemoteProjectParams,
+) -> Result<SaveRemoteProjectResponse, String> {
+    let host_id = normalize_required_value(&params.host_id, "host_id")?;
+    let remote_path = normalize_remote_project_path(&params.remote_path)?;
+    let blocking_app = app.clone();
+    let state = tauri::async_runtime::spawn_blocking(move || {
+        save_remote_project_blocking(&blocking_app, params)
+    })
+    .await
+    .map_err(|err| format!("save-remote-project task failed: {err}"))??;
+    apply_remote_connections_runtime(&app, state.clone()).await?;
+
+    let project = state
+        .remote_projects
+        .into_iter()
+        .find(|project| project.host_id == host_id && project.remote_path == remote_path)
+        .ok_or_else(|| "saved remote project was not found after refresh".to_string())?;
+    Ok(SaveRemoteProjectResponse { project })
 }
 
 #[tauri::command(rename = "set-remote-connection-auto-connect")]
@@ -246,7 +291,7 @@ pub async fn set_remote_connection_auto_connect(
             Value::Object(auto_connect_by_host_id),
         );
         write_global_settings(&blocking_app, &settings)?;
-        Ok::<_, String>(refresh_remote_connections_blocking(&blocking_app)?.remote_connections)
+        Ok::<_, String>(refresh_remote_connections_blocking(&blocking_app)?)
     })
     .await
     .map_err(|err| format!("set-remote-connection-auto-connect task failed: {err}"))??;
@@ -330,24 +375,45 @@ fn app_server_connection_state_for_registry(
 async fn refresh_remote_connections_runtime(
     app: &AppHandle,
 ) -> Result<RefreshRemoteConnectionsResponse, String> {
-    let response = tauri::async_runtime::spawn_blocking({
+    let state = tauri::async_runtime::spawn_blocking({
         let app = app.clone();
         move || refresh_remote_connections_blocking(&app)
     })
     .await
     .map_err(|err| format!("refresh-remote-connections task failed: {err}"))??;
-    remote_app_server_runtime::reconcile(app, &response.remote_connections).await?;
-    emit_remote_connections_shared_object_updated(app, &response.remote_connections)?;
-    Ok(response)
+    apply_remote_connections_runtime(app, state).await
 }
 
 async fn apply_remote_connections_runtime(
     app: &AppHandle,
-    remote_connections: Vec<RemoteConnection>,
+    state: RemoteConnectionsState,
 ) -> Result<RefreshRemoteConnectionsResponse, String> {
-    remote_app_server_runtime::reconcile(app, &remote_connections).await?;
-    emit_remote_connections_shared_object_updated(app, &remote_connections)?;
-    Ok(RefreshRemoteConnectionsResponse { remote_connections })
+    remote_app_server_runtime::reconcile(app, &state.remote_connections).await?;
+    emit_shared_object_updated(
+        app,
+        REMOTE_CONNECTIONS_SHARED_OBJECT_KEY,
+        &state.remote_connections,
+    )?;
+    emit_shared_object_updated(app, REMOTE_PROJECTS_KEY, &state.remote_projects)?;
+    Ok(RefreshRemoteConnectionsResponse {
+        remote_connections: state.remote_connections,
+    })
+}
+
+#[allow(dead_code)]
+pub(crate) fn read_remote_connection_by_host_id(
+    app: &AppHandle,
+    host_id: &str,
+) -> Result<Option<RemoteConnection>, String> {
+    let host_id = host_id.trim();
+    if host_id.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(refresh_remote_connections_blocking(app)?
+        .remote_connections
+        .into_iter()
+        .find(|connection| connection.host_id == host_id))
 }
 
 #[tauri::command(rename = "get-shared-object-snapshot")]
@@ -379,16 +445,29 @@ fn discover_remote_ssh_connections_blocking() -> Result<DiscoverRemoteSshConnect
     })
 }
 
-fn refresh_remote_connections_blocking(
-    app: &AppHandle,
-) -> Result<RefreshRemoteConnectionsResponse, String> {
+fn refresh_remote_connections_blocking(app: &AppHandle) -> Result<RemoteConnectionsState, String> {
     let mut settings = read_global_settings(app)?;
+    let config = read_codex_app_config(app)?;
     let saved = load_saved_remote_connections(&mut settings);
-    let saved = restore_saved_alias_connections_for_existing_remote_projects(&mut settings, saved)?;
-    let auto_connect = read_auto_connect_by_host_id(&settings);
+    let discovered_remote_connections =
+        discover_remote_connections_from_entrypoint(&default_ssh_config_entrypoint())?;
+    let remote_projects =
+        derive_remote_projects_from_config(&config, &saved, &discovered_remote_connections);
+    let saved = restore_saved_alias_connections_for_existing_remote_projects(
+        &mut settings,
+        saved,
+        &remote_projects,
+        &discovered_remote_connections,
+    )?;
+    let auto_connect = ensure_remote_project_hosts_auto_connect(&mut settings, &remote_projects);
     let remote_connections = load_remote_connections(&saved, &auto_connect)?;
+    sync_remote_projects_snapshot(&mut settings, &remote_projects)?;
+    sync_project_order(&mut settings, &remote_projects);
     write_global_settings(app, &settings)?;
-    Ok(RefreshRemoteConnectionsResponse { remote_connections })
+    Ok(RemoteConnectionsState {
+        remote_connections,
+        remote_projects,
+    })
 }
 
 fn save_codex_managed_remote_ssh_connections_blocking(
@@ -412,30 +491,54 @@ fn save_codex_managed_remote_ssh_connections_blocking(
         response: SaveCodexManagedRemoteSshConnectionsResponse {
             remote_connections: canonical,
         },
-        remote_connections: refreshed.remote_connections,
+        state: refreshed,
     })
 }
 
+fn save_remote_project_blocking(
+    app: &AppHandle,
+    params: SaveRemoteProjectParams,
+) -> Result<RemoteConnectionsState, String> {
+    let host_id = normalize_required_value(&params.host_id, "host_id")?;
+    let remote_path = normalize_remote_project_path(&params.remote_path)?;
+    let remote_connections_state = refresh_remote_connections_blocking(app)?;
+    let connection = remote_connections_state
+        .remote_connections
+        .iter()
+        .find(|connection| connection.host_id == host_id)
+        .cloned()
+        .ok_or_else(|| format!("remote connection for host ID {host_id} not found"))?;
+
+    let mut config = read_codex_app_config(app)?;
+    let remote_connection = find_or_create_config_remote_connection(&mut config, &connection);
+    upsert_config_remote_project(remote_connection, &remote_path);
+    write_codex_app_config(app, &config)?;
+
+    refresh_remote_connections_blocking(app)
+}
+
 fn shared_object_snapshot_value_blocking(app: &AppHandle, key: &str) -> Result<Value, String> {
+    let state = refresh_remote_connections_blocking(app)?;
     match key {
-        REMOTE_CONNECTIONS_SHARED_OBJECT_KEY => {
-            serde_json::to_value(refresh_remote_connections_blocking(app)?.remote_connections)
-                .map_err(|err| format!("failed to encode remote_connections shared object: {err}"))
-        }
+        REMOTE_CONNECTIONS_SHARED_OBJECT_KEY => serde_json::to_value(state.remote_connections)
+            .map_err(|err| format!("failed to encode remote_connections shared object: {err}")),
+        REMOTE_PROJECTS_KEY => serde_json::to_value(state.remote_projects)
+            .map_err(|err| format!("failed to encode remote-projects shared object: {err}")),
         _ => Err(format!("unsupported shared object key: {key}")),
     }
 }
 
-fn emit_remote_connections_shared_object_updated(
+fn emit_shared_object_updated<T: Serialize>(
     app: &AppHandle,
-    remote_connections: &[RemoteConnection],
+    key: &str,
+    value: &T,
 ) -> Result<(), String> {
-    let value = serde_json::to_value(remote_connections)
-        .map_err(|err| format!("failed to encode remote_connections update payload: {err}"))?;
+    let value = serde_json::to_value(value)
+        .map_err(|err| format!("failed to encode shared object update payload for {key}: {err}"))?;
     app.emit(
         SHARED_OBJECT_UPDATED_EVENT,
         SharedObjectUpdatedNotification {
-            key: REMOTE_CONNECTIONS_SHARED_OBJECT_KEY.to_string(),
+            key: key.to_string(),
             value,
         },
     )
@@ -520,45 +623,19 @@ fn load_saved_remote_connections(settings: &mut Map<String, Value>) -> Vec<Saved
 fn restore_saved_alias_connections_for_existing_remote_projects(
     settings: &mut Map<String, Value>,
     saved_connections: Vec<SavedRemoteConnection>,
+    remote_projects: &[RemoteProject],
+    discovered_remote_connections: &[RemoteConnection],
 ) -> Result<Vec<SavedRemoteConnection>, String> {
-    if settings
-        .get(REMOTE_PROJECT_CONNECTION_BACKFILL_COMPLETED_KEY)
-        .and_then(Value::as_bool)
-        == Some(true)
-    {
-        return Ok(saved_connections);
-    }
-
-    let remote_projects = settings
-        .get(REMOTE_PROJECTS_KEY)
-        .and_then(Value::as_array)
-        .map(|entries| {
-            entries
-                .iter()
-                .filter_map(|entry| {
-                    serde_json::from_value::<RemoteProjectEntry>(entry.clone()).ok()
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-
     if remote_projects.is_empty() {
-        settings.insert(
-            REMOTE_PROJECT_CONNECTION_BACKFILL_COMPLETED_KEY.to_string(),
-            Value::Bool(true),
-        );
         return Ok(saved_connections);
     }
-
-    let discovered_remote_connections =
-        discover_remote_connections_from_entrypoint(&default_ssh_config_entrypoint())?;
     let mut existing_aliases = saved_connections
         .iter()
         .filter_map(|connection| connection.alias.clone())
         .collect::<HashSet<_>>();
     let remote_project_host_ids = remote_projects
-        .into_iter()
-        .map(|project| project.host_id)
+        .iter()
+        .map(|project| project.host_id.clone())
         .collect::<HashSet<_>>();
     let mut next_saved_connections = saved_connections;
 
@@ -573,8 +650,8 @@ fn restore_saved_alias_connections_for_existing_remote_projects(
         }
         existing_aliases.insert(alias.clone());
         next_saved_connections.push(SavedRemoteConnection {
-            host_id: discovered.host_id,
-            display_name: discovered.display_name,
+            host_id: discovered.host_id.clone(),
+            display_name: discovered.display_name.clone(),
             source: SOURCE_DISCOVERED.to_string(),
             alias: Some(alias),
             hostname: None,
@@ -583,10 +660,6 @@ fn restore_saved_alias_connections_for_existing_remote_projects(
         });
     }
 
-    settings.insert(
-        REMOTE_PROJECT_CONNECTION_BACKFILL_COMPLETED_KEY.to_string(),
-        Value::Bool(true),
-    );
     if let Ok(saved_value) = serde_json::to_value(&next_saved_connections) {
         settings.insert(
             CODEX_MANAGED_REMOTE_CONNECTIONS_KEY.to_string(),
@@ -594,6 +667,266 @@ fn restore_saved_alias_connections_for_existing_remote_projects(
         );
     }
     Ok(next_saved_connections)
+}
+
+fn derive_remote_projects_from_config(
+    config: &CodexAppConfig,
+    saved_connections: &[SavedRemoteConnection],
+    discovered_remote_connections: &[RemoteConnection],
+) -> Vec<RemoteProject> {
+    let mut remote_projects = Vec::new();
+    let mut seen_ids = HashSet::new();
+
+    for connection in &config.remote_connections {
+        let Some(host_id) = resolve_config_remote_connection_host_id(
+            connection,
+            saved_connections,
+            discovered_remote_connections,
+        ) else {
+            continue;
+        };
+
+        for project in &connection.projects {
+            let Ok(remote_path) = normalize_remote_project_path(&project.remote_path) else {
+                continue;
+            };
+            let label = trim_to_owned_option(project.label.clone())
+                .unwrap_or_else(|| remote_project_label_from_path(&remote_path));
+            let id = build_remote_project_id(&host_id, &remote_path);
+            if seen_ids.insert(id.clone()) {
+                remote_projects.push(RemoteProject {
+                    id,
+                    host_id: host_id.clone(),
+                    remote_path,
+                    label,
+                });
+            }
+        }
+    }
+
+    remote_projects
+}
+
+fn resolve_config_remote_connection_host_id(
+    connection: &CodexAppRemoteConnection,
+    saved_connections: &[SavedRemoteConnection],
+    discovered_remote_connections: &[RemoteConnection],
+) -> Option<String> {
+    if let Some(alias) = trim_to_owned_option(connection.ssh_alias.clone()) {
+        if let Some(saved_connection) = saved_connections
+            .iter()
+            .find(|saved_connection| saved_connection.alias.as_deref() == Some(alias.as_str()))
+        {
+            return Some(saved_connection.host_id.clone());
+        }
+
+        if let Some(discovered_connection) =
+            discovered_remote_connections
+                .iter()
+                .find(|discovered_connection| {
+                    discovered_connection.ssh_alias.as_deref() == Some(alias.as_str())
+                })
+        {
+            return Some(discovered_connection.host_id.clone());
+        }
+    }
+
+    let hostname = trim_to_owned_option(connection.ssh_host.clone())?;
+    saved_connections
+        .iter()
+        .find(|saved_connection| {
+            saved_remote_connection_matches_config_connection(
+                saved_connection,
+                &hostname,
+                connection,
+            )
+        })
+        .map(|saved_connection| saved_connection.host_id.clone())
+}
+
+fn saved_remote_connection_matches_config_connection(
+    saved_connection: &SavedRemoteConnection,
+    hostname: &str,
+    connection: &CodexAppRemoteConnection,
+) -> bool {
+    if saved_connection.hostname.as_deref() != Some(hostname) {
+        return false;
+    }
+
+    if let Some(ssh_port) = connection.ssh_port {
+        if saved_connection.ssh_port != Some(ssh_port) {
+            return false;
+        }
+    }
+
+    if let Some(identity) = trim_to_owned_option(connection.identity.clone()) {
+        if saved_connection.identity.as_deref() != Some(identity.as_str()) {
+            return false;
+        }
+    }
+
+    true
+}
+
+fn find_or_create_config_remote_connection<'a>(
+    config: &'a mut CodexAppConfig,
+    remote_connection: &RemoteConnection,
+) -> &'a mut CodexAppRemoteConnection {
+    if let Some(index) = config.remote_connections.iter().position(|connection| {
+        config_remote_connection_matches_remote_connection(connection, remote_connection)
+    }) {
+        return config
+            .remote_connections
+            .get_mut(index)
+            .expect("remote connection index should remain valid");
+    }
+
+    config.remote_connections.push(CodexAppRemoteConnection {
+        ssh_alias: remote_connection.ssh_alias.clone(),
+        ssh_host: remote_connection.ssh_host.clone(),
+        ssh_port: remote_connection.ssh_port,
+        identity: remote_connection.identity.clone(),
+        projects: Vec::new(),
+        extra: Map::new(),
+    });
+    config
+        .remote_connections
+        .last_mut()
+        .expect("remote connection should exist after push")
+}
+
+fn config_remote_connection_matches_remote_connection(
+    connection: &CodexAppRemoteConnection,
+    remote_connection: &RemoteConnection,
+) -> bool {
+    let connection_alias = trim_to_owned_option(connection.ssh_alias.clone());
+    let remote_alias = remote_connection
+        .ssh_alias
+        .as_deref()
+        .and_then(trim_to_owned);
+    if connection_alias.is_some() || remote_alias.is_some() {
+        return connection_alias == remote_alias;
+    }
+
+    trim_to_owned_option(connection.ssh_host.clone())
+        == remote_connection
+            .ssh_host
+            .as_deref()
+            .and_then(trim_to_owned)
+        && connection.ssh_port == remote_connection.ssh_port
+        && trim_to_owned_option(connection.identity.clone())
+            == remote_connection
+                .identity
+                .as_deref()
+                .and_then(trim_to_owned)
+}
+
+fn upsert_config_remote_project(connection: &mut CodexAppRemoteConnection, remote_path: &str) {
+    let label = remote_project_label_from_path(remote_path);
+    if let Some(existing_project) = connection.projects.iter_mut().find(|project| {
+        normalize_remote_project_path(&project.remote_path)
+            .ok()
+            .as_deref()
+            == Some(remote_path)
+    }) {
+        existing_project.remote_path = remote_path.to_string();
+        if trim_to_owned_option(existing_project.label.clone()).is_none() {
+            existing_project.label = Some(label);
+        }
+        return;
+    }
+
+    connection.projects.push(CodexAppRemoteProject {
+        remote_path: remote_path.to_string(),
+        label: Some(label),
+        extra: Map::new(),
+    });
+}
+
+fn ensure_remote_project_hosts_auto_connect(
+    settings: &mut Map<String, Value>,
+    remote_projects: &[RemoteProject],
+) -> Map<String, Value> {
+    let mut auto_connect_by_host_id = read_auto_connect_by_host_id(settings);
+    let mut changed = false;
+
+    for remote_project in remote_projects {
+        if auto_connect_by_host_id
+            .get(&remote_project.host_id)
+            .and_then(Value::as_bool)
+            != Some(true)
+        {
+            auto_connect_by_host_id.insert(remote_project.host_id.clone(), Value::Bool(true));
+            changed = true;
+        }
+    }
+
+    if changed {
+        settings.insert(
+            REMOTE_CONNECTION_AUTO_CONNECT_BY_HOST_ID_KEY.to_string(),
+            Value::Object(auto_connect_by_host_id.clone()),
+        );
+    }
+
+    auto_connect_by_host_id
+}
+
+fn sync_remote_projects_snapshot(
+    settings: &mut Map<String, Value>,
+    remote_projects: &[RemoteProject],
+) -> Result<(), String> {
+    let value = serde_json::to_value(remote_projects)
+        .map_err(|err| format!("failed to encode remote-projects snapshot: {err}"))?;
+    settings.insert(REMOTE_PROJECTS_KEY.to_string(), value);
+    Ok(())
+}
+
+fn sync_project_order(settings: &mut Map<String, Value>, remote_projects: &[RemoteProject]) {
+    let remote_project_ids = remote_projects
+        .iter()
+        .map(|project| project.id.clone())
+        .collect::<Vec<_>>();
+    let remote_project_id_set = remote_project_ids.iter().cloned().collect::<HashSet<_>>();
+    let existing_order = read_string_array_raw(settings, PROJECT_ORDER_KEY);
+    let mut next_order = existing_order
+        .iter()
+        .filter(|project_id| remote_project_id_set.contains(*project_id))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut seen = next_order.iter().cloned().collect::<HashSet<_>>();
+
+    for remote_project_id in remote_project_ids {
+        if seen.insert(remote_project_id.clone()) {
+            next_order.push(remote_project_id);
+        }
+    }
+
+    next_order.extend(
+        existing_order
+            .into_iter()
+            .filter(|project_id| !remote_project_id_set.contains(project_id)),
+    );
+    write_string_array_setting(settings, PROJECT_ORDER_KEY, &next_order);
+}
+
+fn write_string_array_setting(settings: &mut Map<String, Value>, key: &str, values: &[String]) {
+    settings.insert(
+        key.to_string(),
+        Value::Array(values.iter().cloned().map(Value::String).collect()),
+    );
+}
+
+fn read_string_array_raw(settings: &Map<String, Value>, key: &str) -> Vec<String> {
+    match settings.get(key) {
+        Some(Value::Array(entries)) => entries
+            .iter()
+            .filter_map(|entry| match entry {
+                Value::String(value) => Some(value.clone()),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 fn read_auto_connect_by_host_id(settings: &Map<String, Value>) -> Map<String, Value> {
@@ -1155,6 +1488,57 @@ fn encode_uri_component(value: &str) -> String {
         }
     }
     encoded
+}
+
+fn build_remote_project_id(host_id: &str, remote_path: &str) -> String {
+    format!(
+        "remote-project:{}:{}",
+        encode_uri_component(host_id),
+        encode_uri_component(remote_path)
+    )
+}
+
+fn normalize_required_value(value: &str, parameter_name: &str) -> Result<String, String> {
+    trim_to_owned(value).ok_or_else(|| format!("{parameter_name} is empty"))
+}
+
+fn normalize_remote_project_path(value: &str) -> Result<String, String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err("remote project path is empty".to_string());
+    }
+    if !trimmed.starts_with('/') {
+        return Err("remote project path must be absolute".to_string());
+    }
+
+    let mut normalized_segments = Vec::new();
+    for segment in trimmed.split('/') {
+        if segment.is_empty() || segment == "." {
+            continue;
+        }
+        if segment == ".." {
+            if normalized_segments.pop().is_none() {
+                return Err("remote project path cannot traverse above root".to_string());
+            }
+            continue;
+        }
+        normalized_segments.push(segment);
+    }
+
+    if normalized_segments.is_empty() {
+        return Ok("/".to_string());
+    }
+
+    Ok(format!("/{}", normalized_segments.join("/")))
+}
+
+fn remote_project_label_from_path(remote_path: &str) -> String {
+    remote_path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .next_back()
+        .map(ToString::to_string)
+        .unwrap_or_else(|| "/".to_string())
 }
 
 fn trim_to_owned(value: &str) -> Option<String> {

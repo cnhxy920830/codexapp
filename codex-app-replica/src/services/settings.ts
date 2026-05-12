@@ -19,17 +19,41 @@ export type ConfigReadResponse = {
   layers: ConfigLayer[] | null;
 };
 
+export type ConfigServiceTier = "fast" | "flex";
+export type ConfigApprovalsReviewer = "user" | "auto_review" | "guardian_subagent";
+export type ConfigApprovalPolicyGranular = {
+  granular: {
+    sandbox_approval: boolean;
+    rules: boolean;
+    skill_approval: boolean;
+    request_permissions: boolean;
+    mcp_elicitations: boolean;
+  };
+};
+export type ConfigApprovalPolicy =
+  | "untrusted"
+  | "on-failure"
+  | "on-request"
+  | "never"
+  | ConfigApprovalPolicyGranular;
+
 export type ConfigSnapshot = {
-  approvalPolicy: string | null;
+  approvalPolicy: ConfigApprovalPolicy | null;
   sandboxMode: string | null;
   sandboxWorkspaceWrite: SandboxWorkspaceWrite | null;
+  approvalsReviewer: ConfigApprovalsReviewer | null;
   personality: ConfigPersonality | null;
   modelPersonality: ConfigPersonality | null;
+  serviceTier: ConfigServiceTier | null;
   memories: MemoriesConfigSnapshot | null;
   mcpServers: Record<string, unknown> | null;
+  features: Record<string, boolean> | null;
 };
 
 export type SandboxWorkspaceWrite = {
+  writableRoots: string[] | null;
+  excludeSlashTmp: boolean;
+  excludeTmpdirEnvVar: boolean;
   networkAccess: boolean;
 };
 
@@ -66,10 +90,44 @@ export type AppearanceTheme = "light" | "dark" | "system";
 export type ResolvedAppearanceTheme = Exclude<AppearanceTheme, "system">;
 export type ComposerEnterBehavior = "enter" | "cmdIfMultiline";
 export type IntegratedTerminalShell = "powershell" | "commandPrompt" | "gitBash" | "wsl";
+export type ConversationDetailMode = "STEPS_COMMANDS" | "STEPS_PROSE";
 export type ConfigPersonality = "friendly" | "pragmatic" | "none";
+export type ComposerPermissionMode = "guardian-approvals" | "full-access";
+export type ComposerPermissionModeVisibility = Record<ComposerPermissionMode, boolean>;
 
 export type TerminalShellOptionsResponse = {
   availableShells: IntegratedTerminalShell[];
+};
+
+export type ConfigRequirementsReadResponse = {
+  requirements: ConfigRequirements | null;
+};
+
+export type ConfigRequirements = {
+  allowedApprovalPolicies: unknown[] | null;
+  allowedApprovalsReviewers: string[] | null;
+  allowedSandboxModes: string[] | null;
+  allowedWebSearchModes: string[] | null;
+  featureRequirements: Record<string, boolean> | null;
+  enforceResidency: string | null;
+};
+
+export type ModelListForHostParams = {
+  hostId?: string | null;
+  cursor?: string | null;
+  limit?: number | null;
+  includeHidden?: boolean | null;
+};
+
+export type ModelListEntry = {
+  id: string;
+  hidden: boolean;
+  additionalSpeedTiers: string[];
+};
+
+export type ModelListResponse = {
+  data: ModelListEntry[];
+  nextCursor: string | null;
 };
 
 export type WslBashAvailabilityResponse = {
@@ -77,7 +135,66 @@ export type WslBashAvailabilityResponse = {
   distro: string | null;
 };
 
+export type HotkeyWindowHotkeyStateResponse = {
+  supported: boolean;
+  configuredHotkey: string | null;
+  isGateEnabled: boolean;
+  isDevMode: boolean;
+  isDevOverrideEnabled: boolean;
+  isActive: boolean;
+};
+
+export type SetHotkeyWindowHotkeyResponse = {
+  success: boolean;
+  error: string | null;
+  state: HotkeyWindowHotkeyStateResponse;
+};
+
+export type GlobalDictationHotkeyStateResponse = {
+  supported: boolean;
+  configuredHotkey: string | null;
+  configuredToggleHotkey: string | null;
+};
+
+export type SetGlobalDictationHotkeyResponse = {
+  success: boolean;
+  error: string | null;
+  state: GlobalDictationHotkeyStateResponse;
+};
+
+export type GlobalDictationHistoryItem = {
+  id: string;
+  text: string;
+  createdAtMs: number;
+};
+
+export type GlobalDictationHistoryResponse = {
+  items: GlobalDictationHistoryItem[];
+};
+
+export type GpuTearingDebugSettingKey =
+  | "disableScrollFadeMask"
+  | "disableScrollFadeMaskAnimation"
+  | "disableBackdropBlur"
+  | "disableCssMotion"
+  | "forceOpaqueRendererBackground";
+
+export type GpuTearingDebugSettings = Record<GpuTearingDebugSettingKey, boolean>;
+
 const SYSTEM_APPEARANCE_MEDIA_QUERY = "(prefers-color-scheme: dark)";
+const GPU_TEARING_DEBUG_SETTINGS_STORAGE_KEY = "gpu-tearing-debug-settings";
+const GPU_TEARING_DEBUG_SETTINGS_CHANGED_EVENT =
+  "codex-app-replica:gpu-tearing-debug-settings-changed";
+const GPU_TEARING_DEBUG_DISABLE_SCROLL_FADE_MASK_CLASS =
+  "app-gpu-tearing-debug-disable-scroll-fade-mask";
+const GPU_TEARING_DEBUG_DISABLE_SCROLL_FADE_MASK_ANIMATION_CLASS =
+  "app-gpu-tearing-debug-disable-scroll-fade-mask-animation";
+const GPU_TEARING_DEBUG_DISABLE_BACKDROP_BLUR_CLASS =
+  "app-gpu-tearing-debug-disable-backdrop-blur";
+const GPU_TEARING_DEBUG_DISABLE_CSS_MOTION_CLASS =
+  "app-gpu-tearing-debug-disable-css-motion";
+const GPU_TEARING_DEBUG_FORCE_OPAQUE_RENDERER_BACKGROUND_CLASS =
+  "app-gpu-tearing-debug-force-opaque-renderer-background";
 
 let removeSystemAppearanceThemeListener: (() => void) | null = null;
 
@@ -85,6 +202,8 @@ export type GlobalStateKey =
   | "usePointerCursors"
   | "sansFontSize"
   | "codeFontSize"
+  | "useFontSmoothing"
+  | "ambient-suggestions-enabled"
   | "conversationDetailMode"
   | "localeOverride"
   | "viewed2025-09-15-nux"
@@ -95,6 +214,7 @@ export type GlobalStateKey =
   | "appearanceDarkChromeTheme"
   | "appearanceLightCodeThemeId"
   | "appearanceDarkCodeThemeId"
+  | "mac-menu-bar-enabled"
   | "selected-avatar-id"
   | "composerEnterBehavior"
   | "integratedTerminalShell"
@@ -102,6 +222,13 @@ export type GlobalStateKey =
   | "runCodexInWindowsSubsystemForLinux"
   | "followUpQueueMode"
   | "reviewDelivery"
+  | "notifications-turn-mode"
+  | "notifications-permissions-enabled"
+  | "notifications-questions-enabled"
+  | "chronicle-consent-accepted"
+  | "chronicle-setup-completion-pending"
+  | "browser-annotation-screenshots-mode"
+  | "dictationDictionary"
   | "electron:onboarding-override"
   | "electron:onboarding-welcome-pending"
   | "electron:onboarding-projectless-completed"
@@ -126,7 +253,13 @@ export type GlobalStateKey =
   | "worktree-auto-cleanup-unpackaged-override-enabled"
   | "worktree-keep-count";
 
-export type GlobalStateValue = boolean | number | string | Record<string, unknown> | null;
+export type GlobalStateValue =
+  | boolean
+  | number
+  | string
+  | string[]
+  | Record<string, unknown>
+  | null;
 
 export type GeneralSettingsSnapshot = {
   usePointerCursors: boolean;
@@ -134,6 +267,7 @@ export type GeneralSettingsSnapshot = {
   codeFontSize: number;
   localeOverride: string | null;
   appearanceTheme: AppearanceTheme;
+  conversationDetailMode: ConversationDetailMode;
   composerEnterBehavior: ComposerEnterBehavior;
   integratedTerminalShell: IntegratedTerminalShell;
   preventSleepWhileRunning: boolean;
@@ -143,6 +277,7 @@ export type GeneralSettingsSnapshot = {
 };
 
 export type AppearanceSettingsSnapshot = GeneralSettingsSnapshot & {
+  useFontSmoothing: boolean;
   darkChromeTheme: AppearanceChromeTheme;
   darkCodeThemeId: AppearanceCodeThemeId;
   lightChromeTheme: AppearanceChromeTheme;
@@ -155,6 +290,7 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettingsSnapshot = {
   codeFontSize: 12,
   localeOverride: null,
   appearanceTheme: "system",
+  conversationDetailMode: "STEPS_COMMANDS",
   composerEnterBehavior: "enter",
   integratedTerminalShell: "powershell",
   preventSleepWhileRunning: false,
@@ -163,12 +299,29 @@ export const DEFAULT_GENERAL_SETTINGS: GeneralSettingsSnapshot = {
   reviewDelivery: "inline",
 };
 
+export const DEFAULT_COMPOSER_PERMISSION_MODE_VISIBILITY: ComposerPermissionModeVisibility = {
+  "guardian-approvals": true,
+  "full-access": true,
+};
+
+export const DEFAULT_GPU_TEARING_DEBUG_SETTINGS: GpuTearingDebugSettings = {
+  disableBackdropBlur: false,
+  disableCssMotion: false,
+  disableScrollFadeMask: false,
+  disableScrollFadeMaskAnimation: false,
+  forceOpaqueRendererBackground: false,
+};
+
+const COMPOSER_PERMISSION_MODE_VISIBILITY_STORAGE_KEY =
+  "composer-permission-mode-visibility";
+
 export type GlobalStateUpdatedNotification = {
   keys: string[];
 };
 
 export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettingsSnapshot = {
   ...DEFAULT_GENERAL_SETTINGS,
+  useFontSmoothing: true,
   darkChromeTheme: cloneAppearanceChromeTheme(DEFAULT_CHROME_THEME_BY_VARIANT.dark),
   darkCodeThemeId: DEFAULT_APPEARANCE_CODE_THEME_ID,
   lightChromeTheme: cloneAppearanceChromeTheme(DEFAULT_CHROME_THEME_BY_VARIANT.light),
@@ -237,16 +390,50 @@ let thirdPartyNoticesCache:
   | null = null;
 
 export async function readConfig(cwd: string | null = null) {
-  return invoke<ConfigReadResponse>("read_config", { cwd });
+  const response = await invoke<ConfigReadResponse>("read_config", { cwd });
+  return normalizeConfigReadResponse(response);
 }
 
 export async function readConfigForHost(params: ConfigReadForHostParams) {
   const { cwd = null, hostId, includeLayers = true } = params;
-  return invoke<ConfigReadResponse>("read-config-for-host", {
+  const response = await invoke<ConfigReadResponse>("read-config-for-host", {
     params: {
       hostId: normalizeHostId(hostId),
       cwd,
       includeLayers,
+    },
+  });
+  return normalizeConfigReadResponse(response);
+}
+
+export async function getConfigRequirementsForHost(params: {
+  hostId?: string | null;
+}) {
+  return invoke<ConfigRequirementsReadResponse>(
+    "get-config-requirements-for-host",
+    {
+      params: {
+        hostId: normalizeHostId(params.hostId),
+      },
+    },
+  );
+}
+
+export async function listModelsForHost(
+  params: ModelListForHostParams = {},
+) {
+  const {
+    cursor = null,
+    hostId,
+    includeHidden = null,
+    limit = null,
+  } = params;
+  return invoke<ModelListResponse>("list-models-for-host", {
+    params: {
+      hostId: normalizeHostId(hostId),
+      cursor,
+      limit,
+      includeHidden,
     },
   });
 }
@@ -464,6 +651,50 @@ export async function readWslBashAvailability() {
   return invoke<WslBashAvailabilityResponse>("wsl-bash-availability");
 }
 
+export async function readHotkeyWindowHotkeyState() {
+  return invoke<HotkeyWindowHotkeyStateResponse>("hotkey-window-hotkey-state");
+}
+
+export async function setHotkeyWindowHotkey(hotkey: string | null) {
+  return invoke<SetHotkeyWindowHotkeyResponse>("hotkey-window-set-hotkey", {
+    params: {
+      hotkey,
+    },
+  });
+}
+
+export async function readGlobalDictationHotkeyState() {
+  return invoke<GlobalDictationHotkeyStateResponse>("global-dictation-hotkey-state");
+}
+
+export async function setGlobalDictationHotkey(hotkey: string | null) {
+  return invoke<SetGlobalDictationHotkeyResponse>("global-dictation-set-hotkey", {
+    params: {
+      hotkey,
+    },
+  });
+}
+
+export async function setGlobalDictationToggleHotkey(hotkey: string | null) {
+  return invoke<SetGlobalDictationHotkeyResponse>("global-dictation-set-toggle-hotkey", {
+    params: {
+      hotkey,
+    },
+  });
+}
+
+export async function readGlobalDictationHistory() {
+  return invoke<GlobalDictationHistoryResponse>("global-dictation-history");
+}
+
+export async function copyGlobalDictationHistoryItem(id: string) {
+  return invoke<void>("global-dictation-copy-history-item", {
+    params: {
+      id,
+    },
+  });
+}
+
 export async function setPowerSaveBlocker(shouldBlock: boolean) {
   return invoke<void>("power-save-blocker-set", {
     params: {
@@ -477,6 +708,16 @@ export async function readPreventSleepWhileRunningPreference() {
   return response.value === true;
 }
 
+export async function readUseFontSmoothingPreference() {
+  const response = await getGlobalState("useFontSmoothing");
+  return response.value !== false;
+}
+
+export async function readMacMenuBarEnabledPreference() {
+  const response = await getGlobalState("mac-menu-bar-enabled");
+  return response.value !== false;
+}
+
 export async function readGeneralSettingsSnapshot(): Promise<GeneralSettingsSnapshot> {
   const [
     localeOverride,
@@ -484,6 +725,7 @@ export async function readGeneralSettingsSnapshot(): Promise<GeneralSettingsSnap
     uiFontSize,
     codeFontSize,
     appearanceTheme,
+    conversationDetailMode,
     composerEnterBehavior,
     integratedTerminalShell,
     preventSleepWhileRunning,
@@ -497,6 +739,7 @@ export async function readGeneralSettingsSnapshot(): Promise<GeneralSettingsSnap
       getGlobalState("sansFontSize"),
       getGlobalState("codeFontSize"),
       getGlobalState("appearanceTheme"),
+      getGlobalState("conversationDetailMode"),
       getGlobalState("composerEnterBehavior"),
       getGlobalState("integratedTerminalShell"),
       getGlobalState("preventSleepWhileRunning"),
@@ -514,6 +757,7 @@ export async function readGeneralSettingsSnapshot(): Promise<GeneralSettingsSnap
     codeFontSize:
       typeof codeFontSize.value === "number" ? codeFontSize.value : DEFAULT_GENERAL_SETTINGS.codeFontSize,
     appearanceTheme: normalizeAppearanceTheme(appearanceTheme.value),
+    conversationDetailMode: normalizeConversationDetailMode(conversationDetailMode.value),
     composerEnterBehavior: normalizeComposerEnterBehavior(composerEnterBehavior.value),
     integratedTerminalShell: normalizeIntegratedTerminalShell(integratedTerminalShell.value),
     preventSleepWhileRunning:
@@ -532,12 +776,14 @@ export async function readGeneralSettingsSnapshot(): Promise<GeneralSettingsSnap
 export async function readAppearanceSettingsSnapshot(): Promise<AppearanceSettingsSnapshot> {
   const [
     generalSettings,
+    useFontSmoothing,
     lightChromeTheme,
     darkChromeTheme,
     lightCodeThemeId,
     darkCodeThemeId,
   ] = await Promise.all([
     readGeneralSettingsSnapshot(),
+    readUseFontSmoothingPreference(),
     getGlobalState("appearanceLightChromeTheme"),
     getGlobalState("appearanceDarkChromeTheme"),
     getGlobalState("appearanceLightCodeThemeId"),
@@ -546,6 +792,7 @@ export async function readAppearanceSettingsSnapshot(): Promise<AppearanceSettin
 
   return {
     ...generalSettings,
+    useFontSmoothing,
     darkChromeTheme: normalizeAppearanceChromeTheme(darkChromeTheme.value, "dark"),
     darkCodeThemeId: normalizeAppearanceCodeThemeId(darkCodeThemeId.value, "dark"),
     lightChromeTheme: normalizeAppearanceChromeTheme(lightChromeTheme.value, "light"),
@@ -558,8 +805,151 @@ export async function readSelectedAvatarId() {
   return typeof response.value === "string" && response.value.length > 0 ? response.value : "codex";
 }
 
+export function readComposerPermissionModeVisibility() {
+  if (typeof window === "undefined") {
+    return DEFAULT_COMPOSER_PERMISSION_MODE_VISIBILITY;
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(
+      COMPOSER_PERMISSION_MODE_VISIBILITY_STORAGE_KEY,
+    );
+    if (!rawValue) {
+      return DEFAULT_COMPOSER_PERMISSION_MODE_VISIBILITY;
+    }
+    return normalizeComposerPermissionModeVisibility(JSON.parse(rawValue));
+  } catch {
+    return DEFAULT_COMPOSER_PERMISSION_MODE_VISIBILITY;
+  }
+}
+
+export function updateComposerPermissionModeVisibility({
+  mode,
+  visible,
+  settings,
+}: {
+  mode: ComposerPermissionMode;
+  visible: boolean;
+  settings?: ComposerPermissionModeVisibility | null;
+}) {
+  const nextSettings = {
+    ...normalizeComposerPermissionModeVisibility(settings),
+    [mode]: visible,
+  };
+
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(
+        COMPOSER_PERMISSION_MODE_VISIBILITY_STORAGE_KEY,
+        JSON.stringify(nextSettings),
+      );
+    } catch {
+      // Ignore persistence failures and keep the in-memory state for this session.
+    }
+  }
+
+  return nextSettings;
+}
+
 export async function setSelectedAvatarId(value: string) {
   await setGlobalState("selected-avatar-id", value);
+}
+
+export async function readDictationDictionary() {
+  const response = await getGlobalState("dictationDictionary");
+  return normalizeDictationDictionary(response.value);
+}
+
+export function readGpuTearingDebugSettings() {
+  if (typeof window === "undefined") {
+    return DEFAULT_GPU_TEARING_DEBUG_SETTINGS;
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(
+      GPU_TEARING_DEBUG_SETTINGS_STORAGE_KEY,
+    );
+    if (!rawValue) {
+      return DEFAULT_GPU_TEARING_DEBUG_SETTINGS;
+    }
+    return normalizeGpuTearingDebugSettings(JSON.parse(rawValue));
+  } catch {
+    return DEFAULT_GPU_TEARING_DEBUG_SETTINGS;
+  }
+}
+
+export function updateGpuTearingDebugSettings({
+  key,
+  settings,
+  value,
+}: {
+  key: GpuTearingDebugSettingKey;
+  settings?: GpuTearingDebugSettings | null;
+  value: boolean;
+}) {
+  const nextSettings = {
+    ...normalizeGpuTearingDebugSettings(settings),
+    [key]: value,
+  };
+
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(
+        GPU_TEARING_DEBUG_SETTINGS_STORAGE_KEY,
+        JSON.stringify(nextSettings),
+      );
+    } catch {
+      // Ignore persistence failures and keep the in-memory state for this session.
+    }
+  }
+
+  applyGpuTearingDebugSettings(nextSettings);
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent<GpuTearingDebugSettings>(
+        GPU_TEARING_DEBUG_SETTINGS_CHANGED_EVENT,
+        {
+          detail: nextSettings,
+        },
+      ),
+    );
+  }
+
+  return nextSettings;
+}
+
+export function onGpuTearingDebugSettingsChanged(
+  handler: (settings: GpuTearingDebugSettings) => void,
+) {
+  if (typeof window === "undefined") {
+    return () => undefined;
+  }
+
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key !== GPU_TEARING_DEBUG_SETTINGS_STORAGE_KEY) {
+      return;
+    }
+    handler(readGpuTearingDebugSettings());
+  };
+
+  const handleCustomEvent = (event: Event) => {
+    handler((event as CustomEvent<GpuTearingDebugSettings>).detail);
+  };
+
+  window.addEventListener("storage", handleStorage);
+  window.addEventListener(
+    GPU_TEARING_DEBUG_SETTINGS_CHANGED_EVENT,
+    handleCustomEvent,
+  );
+
+  return () => {
+    window.removeEventListener("storage", handleStorage);
+    window.removeEventListener(
+      GPU_TEARING_DEBUG_SETTINGS_CHANGED_EVENT,
+      handleCustomEvent,
+    );
+  };
 }
 
 export function applyGeneralSettingsSnapshot(settings: GeneralSettingsSnapshot) {
@@ -583,6 +973,35 @@ function applySharedShellSettings(
   document.documentElement.classList.toggle("app-no-pointer-cursors", !settings.usePointerCursors);
 }
 
+export function applyGpuTearingDebugSettings(settings: GpuTearingDebugSettings) {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  const root = document.documentElement;
+  const normalizedSettings = normalizeGpuTearingDebugSettings(settings);
+  root.classList.toggle(
+    GPU_TEARING_DEBUG_DISABLE_SCROLL_FADE_MASK_CLASS,
+    normalizedSettings.disableScrollFadeMask,
+  );
+  root.classList.toggle(
+    GPU_TEARING_DEBUG_DISABLE_SCROLL_FADE_MASK_ANIMATION_CLASS,
+    normalizedSettings.disableScrollFadeMaskAnimation,
+  );
+  root.classList.toggle(
+    GPU_TEARING_DEBUG_DISABLE_BACKDROP_BLUR_CLASS,
+    normalizedSettings.disableBackdropBlur,
+  );
+  root.classList.toggle(
+    GPU_TEARING_DEBUG_DISABLE_CSS_MOTION_CLASS,
+    normalizedSettings.disableCssMotion,
+  );
+  root.classList.toggle(
+    GPU_TEARING_DEBUG_FORCE_OPAQUE_RENDERER_BACKGROUND_CLASS,
+    normalizedSettings.forceOpaqueRendererBackground,
+  );
+}
+
 export function resolveLocalePreference(value: unknown): LocaleCode {
   return resolveSupportedLocale(value) ?? resolveSupportedLocale(navigator.language) ?? DEFAULT_LOCALE;
 }
@@ -594,8 +1013,11 @@ export function parseLayerConfig(config: unknown): ConfigSnapshot | null {
   const value = config as {
     approval_policy?: unknown;
     sandbox_mode?: unknown;
+    approvals_reviewer?: unknown;
     personality?: unknown;
     model_personality?: unknown;
+    service_tier?: unknown;
+    features?: unknown;
     mcp_servers?: unknown;
     memories?:
       | {
@@ -605,28 +1027,48 @@ export function parseLayerConfig(config: unknown): ConfigSnapshot | null {
           no_memories_if_mcp_or_web_search?: unknown;
         }
       | unknown;
-    sandbox_workspace_write?: { network_access?: unknown } | unknown;
+    sandbox_workspace_write?:
+      | {
+          writable_roots?: unknown;
+          exclude_slash_tmp?: unknown;
+          exclude_tmpdir_env_var?: unknown;
+          network_access?: unknown;
+        }
+      | unknown;
   };
   const sandboxWorkspaceWriteValue = value.sandbox_workspace_write;
-  const networkAccess =
+  const sandboxWorkspaceWrite =
     sandboxWorkspaceWriteValue &&
     typeof sandboxWorkspaceWriteValue === "object" &&
-    !Array.isArray(sandboxWorkspaceWriteValue) &&
-    "network_access" in sandboxWorkspaceWriteValue &&
-    typeof sandboxWorkspaceWriteValue.network_access === "boolean"
-      ? sandboxWorkspaceWriteValue.network_access
+    !Array.isArray(sandboxWorkspaceWriteValue)
+      ? (() => {
+        const sandboxWorkspaceWriteRecord = sandboxWorkspaceWriteValue as Record<string, unknown>;
+        return {
+          writableRoots: Array.isArray(sandboxWorkspaceWriteRecord.writable_roots)
+            ? sandboxWorkspaceWriteRecord.writable_roots.filter(
+                (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
+              )
+            : null,
+          excludeSlashTmp: sandboxWorkspaceWriteRecord.exclude_slash_tmp === true,
+          excludeTmpdirEnvVar: sandboxWorkspaceWriteRecord.exclude_tmpdir_env_var === true,
+          networkAccess: sandboxWorkspaceWriteRecord.network_access === true,
+        };
+      })()
       : null;
   return {
-    approvalPolicy: normalizeApprovalPolicy(value.approval_policy),
+    approvalPolicy: normalizeConfigApprovalPolicy(value.approval_policy),
     sandboxMode: normalizeSandboxMode(value.sandbox_mode),
-    sandboxWorkspaceWrite: networkAccess === null ? null : { networkAccess },
+    sandboxWorkspaceWrite,
+    approvalsReviewer: normalizeConfigApprovalsReviewer(value.approvals_reviewer),
     personality: normalizeConfigPersonality(value.personality),
     modelPersonality: normalizeConfigPersonality(value.model_personality),
+    serviceTier: normalizeConfigServiceTier(value.service_tier),
     memories: normalizeMemoriesConfig(value.memories),
     mcpServers:
       value.mcp_servers && typeof value.mcp_servers === "object" && !Array.isArray(value.mcp_servers)
         ? (value.mcp_servers as Record<string, unknown>)
         : null,
+    features: normalizeBooleanRecord(value.features),
   };
 }
 
@@ -696,10 +1138,98 @@ function normalizeHostId(hostId?: string | null) {
   return trimmed && trimmed.length > 0 ? trimmed : null;
 }
 
-function normalizeApprovalPolicy(value: unknown) {
-  return value === "untrusted" || value === "on-failure" || value === "on-request" || value === "never"
+function normalizeConfigReadResponse(response: ConfigReadResponse): ConfigReadResponse {
+  return {
+    ...response,
+    config: normalizeConfigSnapshot(response.config),
+  };
+}
+
+function normalizeConfigSnapshot(config: ConfigSnapshot): ConfigSnapshot {
+  return {
+    approvalPolicy: normalizeConfigApprovalPolicy(config.approvalPolicy),
+    sandboxMode: normalizeSandboxMode(config.sandboxMode),
+    sandboxWorkspaceWrite: normalizeSandboxWorkspaceWriteSnapshot(config.sandboxWorkspaceWrite),
+    approvalsReviewer: normalizeConfigApprovalsReviewer(config.approvalsReviewer),
+    personality: normalizeConfigPersonality(config.personality),
+    modelPersonality: normalizeConfigPersonality(config.modelPersonality),
+    serviceTier: normalizeConfigServiceTier(config.serviceTier),
+    memories: normalizeMemoriesSnapshot(config.memories),
+    mcpServers:
+      config.mcpServers && typeof config.mcpServers === "object" && !Array.isArray(config.mcpServers)
+        ? config.mcpServers
+        : null,
+    features: normalizeBooleanRecord(config.features),
+  };
+}
+
+function normalizeConfigApprovalPolicy(value: unknown): ConfigApprovalPolicy | null {
+  if (
+    value === "untrusted" ||
+    value === "on-failure" ||
+    value === "on-request" ||
+    value === "never"
+  ) {
+    return value;
+  }
+
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const granularValue = (value as Record<string, unknown>).granular;
+  if (!granularValue || typeof granularValue !== "object" || Array.isArray(granularValue)) {
+    return null;
+  }
+  const granularRecord = granularValue as Record<string, unknown>;
+
+  return {
+    granular: {
+      sandbox_approval: granularRecord.sandbox_approval === true,
+      rules: granularRecord.rules === true,
+      skill_approval: granularRecord.skill_approval === true,
+      request_permissions: granularRecord.request_permissions === true,
+      mcp_elicitations: granularRecord.mcp_elicitations === true,
+    },
+  };
+}
+
+function normalizeConfigApprovalsReviewer(value: unknown): ConfigApprovalsReviewer | null {
+  return value === "user" || value === "auto_review" || value === "guardian_subagent"
     ? value
     : null;
+}
+
+function normalizeSandboxWorkspaceWriteSnapshot(value: unknown): SandboxWorkspaceWrite | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  return {
+    writableRoots: Array.isArray(record.writableRoots)
+      ? record.writableRoots.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+      : null,
+    excludeSlashTmp: record.excludeSlashTmp === true,
+    excludeTmpdirEnvVar: record.excludeTmpdirEnvVar === true,
+    networkAccess: record.networkAccess === true,
+  };
+}
+
+function normalizeMemoriesSnapshot(value: MemoriesConfigSnapshot | null): MemoriesConfigSnapshot | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  return {
+    generateMemories: value.generateMemories === true,
+    useMemories: value.useMemories === true,
+    disableOnExternalContext: value.disableOnExternalContext === true,
+  };
+}
+
+function normalizeConfigServiceTier(value: unknown): ConfigServiceTier | null {
+  return value === "fast" || value === "flex" ? value : null;
 }
 
 function normalizeSandboxMode(value: unknown) {
@@ -708,6 +1238,16 @@ function normalizeSandboxMode(value: unknown) {
 
 export function normalizeConfigPersonality(value: unknown): ConfigPersonality | null {
   return value === "friendly" || value === "pragmatic" || value === "none" ? value : null;
+}
+
+function normalizeBooleanRecord(value: unknown): Record<string, boolean> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, boolean] => typeof entry[1] === "boolean"),
+  );
 }
 
 function normalizeFollowUpQueueMode(value: unknown): FollowUpQueueMode {
@@ -752,10 +1292,77 @@ function normalizeComposerEnterBehavior(value: unknown): ComposerEnterBehavior {
   return value === "enter" || value === "cmdIfMultiline" ? value : DEFAULT_GENERAL_SETTINGS.composerEnterBehavior;
 }
 
+function normalizeConversationDetailMode(value: unknown): ConversationDetailMode {
+  return value === "STEPS_PROSE" ? "STEPS_PROSE" : DEFAULT_GENERAL_SETTINGS.conversationDetailMode;
+}
+
 function normalizeIntegratedTerminalShell(value: unknown): IntegratedTerminalShell {
   return value === "powershell" || value === "commandPrompt" || value === "gitBash" || value === "wsl"
     ? value
     : DEFAULT_GENERAL_SETTINGS.integratedTerminalShell;
+}
+
+function normalizeDictationDictionary(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function normalizeComposerPermissionModeVisibility(
+  value: unknown,
+): ComposerPermissionModeVisibility {
+  if (!value || Array.isArray(value) || typeof value !== "object") {
+    return DEFAULT_COMPOSER_PERMISSION_MODE_VISIBILITY;
+  }
+
+  const settings = value as Record<string, unknown>;
+  return {
+    "guardian-approvals":
+      typeof settings["guardian-approvals"] === "boolean"
+        ? settings["guardian-approvals"]
+        : DEFAULT_COMPOSER_PERMISSION_MODE_VISIBILITY["guardian-approvals"],
+    "full-access":
+      typeof settings["full-access"] === "boolean"
+        ? settings["full-access"]
+        : DEFAULT_COMPOSER_PERMISSION_MODE_VISIBILITY["full-access"],
+  };
+}
+
+function normalizeGpuTearingDebugSettings(
+  value: unknown,
+): GpuTearingDebugSettings {
+  if (!value || Array.isArray(value) || typeof value !== "object") {
+    return DEFAULT_GPU_TEARING_DEBUG_SETTINGS;
+  }
+
+  const settings = value as Record<string, unknown>;
+  return {
+    disableBackdropBlur:
+      typeof settings.disableBackdropBlur === "boolean"
+        ? settings.disableBackdropBlur
+        : DEFAULT_GPU_TEARING_DEBUG_SETTINGS.disableBackdropBlur,
+    disableCssMotion:
+      typeof settings.disableCssMotion === "boolean"
+        ? settings.disableCssMotion
+        : DEFAULT_GPU_TEARING_DEBUG_SETTINGS.disableCssMotion,
+    disableScrollFadeMask:
+      typeof settings.disableScrollFadeMask === "boolean"
+        ? settings.disableScrollFadeMask
+        : DEFAULT_GPU_TEARING_DEBUG_SETTINGS.disableScrollFadeMask,
+    disableScrollFadeMaskAnimation:
+      typeof settings.disableScrollFadeMaskAnimation === "boolean"
+        ? settings.disableScrollFadeMaskAnimation
+        : DEFAULT_GPU_TEARING_DEBUG_SETTINGS.disableScrollFadeMaskAnimation,
+    forceOpaqueRendererBackground:
+      typeof settings.forceOpaqueRendererBackground === "boolean"
+        ? settings.forceOpaqueRendererBackground
+        : DEFAULT_GPU_TEARING_DEBUG_SETTINGS.forceOpaqueRendererBackground,
+  };
 }
 
 function applyAppearanceTheme(

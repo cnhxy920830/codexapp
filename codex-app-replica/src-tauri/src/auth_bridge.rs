@@ -8,6 +8,7 @@ use tokio::process::{ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc, oneshot, Mutex as AsyncMutex, Notify};
 use tokio::time::{sleep, Duration};
 
+use crate::app_state_snapshot::AppStateSnapshotState;
 use crate::query_cache::emit_query_cache_invalidate;
 use crate::remote_app_server_runtime;
 use crate::thread_history::append_agent_message_delta;
@@ -122,6 +123,13 @@ pub struct ThreadHistoryEntry {
     pub cwd: String,
     pub path: Option<String>,
     pub name: Option<String>,
+    pub source: Option<ThreadHistorySource>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadHistorySource {
+    pub parent_thread_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -158,6 +166,7 @@ pub struct ConfigRequirementsReadResponse {
 #[serde(rename_all = "camelCase")]
 pub struct ConfigRequirements {
     pub allowed_approval_policies: Option<Vec<serde_json::Value>>,
+    pub allowed_approvals_reviewers: Option<Vec<String>>,
     pub allowed_sandbox_modes: Option<Vec<String>>,
     pub allowed_web_search_modes: Option<Vec<String>>,
     pub feature_requirements: Option<HashMap<String, bool>>,
@@ -167,19 +176,51 @@ pub struct ConfigRequirements {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigSnapshot {
-    pub approval_policy: Option<String>,
+    pub approval_policy: Option<serde_json::Value>,
     pub sandbox_mode: Option<String>,
     pub sandbox_workspace_write: Option<SandboxWorkspaceWrite>,
+    pub approvals_reviewer: Option<String>,
     pub personality: Option<String>,
     pub model_personality: Option<String>,
+    pub service_tier: Option<String>,
     pub memories: Option<MemoriesConfigSnapshot>,
+    pub features: Option<HashMap<String, bool>>,
     pub mcp_servers: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SandboxWorkspaceWrite {
+    pub writable_roots: Option<Vec<String>>,
+    #[serde(default)]
+    pub exclude_slash_tmp: bool,
+    #[serde(default)]
+    pub exclude_tmpdir_env_var: bool,
+    #[serde(default)]
     pub network_access: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnStartPermissionOverrides {
+    pub approval_policy: Option<serde_json::Value>,
+    pub approvals_reviewer: Option<String>,
+    pub sandbox_policy: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StartConversationParams {
+    pub host_id: Option<String>,
+    pub input: Option<Vec<serde_json::Value>>,
+    pub text: Option<String>,
+    pub cwd: Option<String>,
+    pub workspace_roots: Option<Vec<String>>,
+    pub approval_policy: Option<serde_json::Value>,
+    pub approvals_reviewer: Option<String>,
+    pub sandbox_policy: Option<serde_json::Value>,
+    #[serde(default)]
+    pub skip_auto_title_generation: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -293,6 +334,8 @@ struct ThreadListItem {
     cwd: String,
     path: Option<String>,
     name: Option<String>,
+    #[serde(default)]
+    source: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -477,6 +520,31 @@ pub struct AppsListParams {
 pub struct AppsListResponse {
     pub data: Vec<AppInfo>,
     pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelListParams {
+    pub host_id: Option<String>,
+    pub cursor: Option<String>,
+    pub limit: Option<u32>,
+    pub include_hidden: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelListResponse {
+    pub data: Vec<ModelListEntry>,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelListEntry {
+    pub id: String,
+    pub hidden: bool,
+    #[serde(default)]
+    pub additional_speed_tiers: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1544,6 +1612,7 @@ enum AppServerRequestKind {
     AccountRateLimitsRead,
     AccountSendAddCreditsNudgeEmail,
     AppsList,
+    ModelsList,
     LoginApiKey,
     LoginChatGpt,
     LoginChatGptDeviceCode,
@@ -2531,6 +2600,28 @@ pub async fn list_apps(
         .map_err(|err| format!("failed to decode apps list response: {err}"))
 }
 
+#[tauri::command(rename = "list-models-for-host")]
+pub async fn list_models_for_host(
+    app: AppHandle,
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: ModelListParams,
+) -> Result<ModelListResponse, String> {
+    let value = send_request_for_host(
+        &app,
+        state.inner(),
+        params.host_id.as_deref(),
+        AppServerRequestKind::ModelsList,
+        serde_json::json!({
+            "cursor": params.cursor,
+            "limit": params.limit,
+            "includeHidden": params.include_hidden,
+        }),
+    )
+    .await?;
+    serde_json::from_value::<ModelListResponse>(value)
+        .map_err(|err| format!("failed to decode model list response: {err}"))
+}
+
 #[tauri::command]
 pub async fn read_app_tools(
     app: AppHandle,
@@ -3005,6 +3096,15 @@ pub async fn list_recent_threads(
     list_threads(state.inner(), false).await
 }
 
+#[tauri::command(rename = "list-recent-threads")]
+pub async fn list_recent_threads_command(
+    app: AppHandle,
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: HostScopedParams,
+) -> Result<Vec<ThreadHistoryEntry>, String> {
+    list_threads_for_host(&app, state.inner(), params.host_id.as_deref(), false).await
+}
+
 #[tauri::command]
 pub async fn list_archived_threads(
     state: State<'_, Arc<AuthBridgeState>>,
@@ -3093,6 +3193,7 @@ fn list_threads_from_value(value: serde_json::Value) -> Result<Vec<ThreadHistory
             cwd: thread.cwd,
             path: thread.path,
             name: thread.name,
+            source: thread_history_source_from_value(thread.source.as_ref()),
         })
         .collect::<Vec<_>>();
     threads.sort_by(|left, right| {
@@ -3104,12 +3205,104 @@ fn list_threads_from_value(value: serde_json::Value) -> Result<Vec<ThreadHistory
     Ok(threads)
 }
 
+fn thread_history_source_from_value(
+    value: Option<&serde_json::Value>,
+) -> Option<ThreadHistorySource> {
+    let parent_thread_id = value
+        .and_then(|source| source.pointer("/subAgent/thread_spawn/parent_thread_id"))
+        .and_then(serde_json::Value::as_str)
+        .map(ToOwned::to_owned);
+
+    parent_thread_id.map(|parent_thread_id| ThreadHistorySource {
+        parent_thread_id: Some(parent_thread_id),
+    })
+}
+
 #[tauri::command]
 pub async fn start_thread(
     state: State<'_, Arc<AuthBridgeState>>,
     cwd: Option<String>,
 ) -> Result<String, String> {
     start_thread_with_personality(state.inner(), cwd, state.current_personality()).await
+}
+
+#[tauri::command(rename = "start-conversation")]
+pub async fn start_conversation(
+    app: AppHandle,
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: StartConversationParams,
+) -> Result<String, String> {
+    let StartConversationParams {
+        host_id,
+        input,
+        text,
+        cwd,
+        workspace_roots,
+        approval_policy,
+        approvals_reviewer,
+        sandbox_policy,
+        skip_auto_title_generation,
+    } = params;
+    let _ = skip_auto_title_generation;
+
+    let cwd = cwd
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| {
+            workspace_roots.as_ref().and_then(|roots| {
+                roots
+                    .iter()
+                    .map(String::as_str)
+                    .map(str::trim)
+                    .find(|value| !value.is_empty())
+                    .map(ToOwned::to_owned)
+            })
+        });
+    let input = if let Some(input) = input.filter(|items| !items.is_empty()) {
+        serde_json::Value::Array(input)
+    } else {
+        let text = text.unwrap_or_default();
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return Err("start-conversation requires text or input".to_string());
+        }
+        serde_json::json!([{ "type": "text", "text": trimmed }])
+    };
+    let permission_overrides = Some(TurnStartPermissionOverrides {
+        approval_policy,
+        approvals_reviewer,
+        sandbox_policy,
+    });
+    let thread_value = send_request_for_host(
+        &app,
+        state.inner(),
+        host_id.as_deref(),
+        AppServerRequestKind::ThreadStart,
+        build_thread_start_payload(cwd.clone(), state.current_personality()),
+    )
+    .await?;
+    let thread_response = serde_json::from_value::<ThreadStartResponse>(thread_value)
+        .map_err(|err| format!("failed to decode thread start response: {err}"))?;
+    let thread_id = thread_response.thread.id;
+    let turn_value = send_request_for_host(
+        &app,
+        state.inner(),
+        host_id.as_deref(),
+        AppServerRequestKind::TurnStart,
+        build_turn_start_payload(
+            thread_id.clone(),
+            input,
+            cwd,
+            state.current_personality(),
+            permission_overrides,
+        ),
+    )
+    .await?;
+    let _ = serde_json::from_value::<TurnStartResponse>(turn_value)
+        .map_err(|err| format!("failed to decode turn start response: {err}"))?;
+    Ok(thread_id)
 }
 
 #[tauri::command]
@@ -3388,6 +3581,9 @@ pub async fn start_turn(
     thread_id: String,
     text: String,
     cwd: Option<String>,
+    approval_policy: Option<serde_json::Value>,
+    approvals_reviewer: Option<String>,
+    sandbox_policy: Option<serde_json::Value>,
 ) -> Result<String, String> {
     start_turn_with_personality(
         state.inner(),
@@ -3395,6 +3591,11 @@ pub async fn start_turn(
         text,
         cwd,
         state.current_personality(),
+        Some(TurnStartPermissionOverrides {
+            approval_policy,
+            approvals_reviewer,
+            sandbox_policy,
+        }),
     )
     .await
 }
@@ -3405,6 +3606,9 @@ pub async fn start_turn_with_input(
     thread_id: String,
     input: Vec<serde_json::Value>,
     cwd: Option<String>,
+    approval_policy: Option<serde_json::Value>,
+    approvals_reviewer: Option<String>,
+    sandbox_policy: Option<serde_json::Value>,
 ) -> Result<String, String> {
     start_turn_with_input_and_personality(
         state.inner(),
@@ -3412,6 +3616,11 @@ pub async fn start_turn_with_input(
         serde_json::Value::Array(input),
         cwd,
         state.current_personality(),
+        Some(TurnStartPermissionOverrides {
+            approval_policy,
+            approvals_reviewer,
+            sandbox_policy,
+        }),
     )
     .await
 }
@@ -3864,11 +4073,10 @@ pub(crate) async fn request_external_agent_config_import(
     .map(|_| ())
 }
 
-pub async fn start_thread_with_personality(
-    state: &Arc<AuthBridgeState>,
+fn build_thread_start_payload(
     cwd: Option<String>,
     personality: Option<String>,
-) -> Result<String, String> {
+) -> serde_json::Value {
     let mut payload = serde_json::Map::new();
     if let Some(cwd) = cwd {
         payload.insert("cwd".to_string(), serde_json::Value::String(cwd));
@@ -3879,10 +4087,54 @@ pub async fn start_thread_with_personality(
             serde_json::Value::String(personality),
         );
     }
+    serde_json::Value::Object(payload)
+}
+
+fn build_turn_start_payload(
+    thread_id: String,
+    input: serde_json::Value,
+    cwd: Option<String>,
+    personality: Option<String>,
+    permission_overrides: Option<TurnStartPermissionOverrides>,
+) -> serde_json::Value {
+    let mut payload = serde_json::Map::new();
+    payload.insert("threadId".to_string(), serde_json::Value::String(thread_id));
+    payload.insert("input".to_string(), input);
+    if let Some(cwd) = cwd {
+        payload.insert("cwd".to_string(), serde_json::Value::String(cwd));
+    }
+    if let Some(personality) = personality {
+        payload.insert(
+            "personality".to_string(),
+            serde_json::Value::String(personality),
+        );
+    }
+    if let Some(permission_overrides) = permission_overrides {
+        if let Some(approval_policy) = permission_overrides.approval_policy {
+            payload.insert("approvalPolicy".to_string(), approval_policy);
+        }
+        if let Some(approvals_reviewer) = permission_overrides.approvals_reviewer {
+            payload.insert(
+                "approvalsReviewer".to_string(),
+                serde_json::Value::String(approvals_reviewer),
+            );
+        }
+        if let Some(sandbox_policy) = permission_overrides.sandbox_policy {
+            payload.insert("sandboxPolicy".to_string(), sandbox_policy);
+        }
+    }
+    serde_json::Value::Object(payload)
+}
+
+pub async fn start_thread_with_personality(
+    state: &Arc<AuthBridgeState>,
+    cwd: Option<String>,
+    personality: Option<String>,
+) -> Result<String, String> {
     let value = send_request(
         state,
         AppServerRequestKind::ThreadStart,
-        serde_json::Value::Object(payload),
+        build_thread_start_payload(cwd, personality),
     )
     .await?;
     let response = serde_json::from_value::<ThreadStartResponse>(value)
@@ -3911,6 +4163,7 @@ pub async fn start_turn_with_personality(
     text: String,
     cwd: Option<String>,
     personality: Option<String>,
+    permission_overrides: Option<TurnStartPermissionOverrides>,
 ) -> Result<String, String> {
     start_turn_with_input_and_personality(
         state,
@@ -3918,6 +4171,7 @@ pub async fn start_turn_with_personality(
         serde_json::json!([{ "type": "text", "text": text }]),
         cwd,
         personality,
+        permission_overrides,
     )
     .await
 }
@@ -3928,23 +4182,12 @@ pub async fn start_turn_with_input_and_personality(
     input: serde_json::Value,
     cwd: Option<String>,
     personality: Option<String>,
+    permission_overrides: Option<TurnStartPermissionOverrides>,
 ) -> Result<String, String> {
-    let mut payload = serde_json::Map::new();
-    payload.insert("threadId".to_string(), serde_json::Value::String(thread_id));
-    payload.insert("input".to_string(), input);
-    if let Some(cwd) = cwd {
-        payload.insert("cwd".to_string(), serde_json::Value::String(cwd));
-    }
-    if let Some(personality) = personality {
-        payload.insert(
-            "personality".to_string(),
-            serde_json::Value::String(personality),
-        );
-    }
     let value = send_request(
         state,
         AppServerRequestKind::TurnStart,
-        serde_json::Value::Object(payload),
+        build_turn_start_payload(thread_id, input, cwd, personality, permission_overrides),
     )
     .await?;
     let response = serde_json::from_value::<TurnStartResponse>(value)
@@ -4325,6 +4568,7 @@ async fn run_client(
                             }
                             "item/agentMessage/delta" => {
                                 remember_latest_turn_from_notification(&state, &params);
+                                record_app_state_snapshot_delta_from_params(&app, &params);
                                 handle_agent_message_delta(
                                     &app,
                                     &state,
@@ -4334,6 +4578,7 @@ async fn run_client(
                             }
                             "item/plan/delta" => {
                                 remember_latest_turn_from_notification(&state, &params);
+                                record_app_state_snapshot_delta_from_params(&app, &params);
                                 handle_plan_delta(&app, params, &mut pending_thread_items);
                             }
                             "item/reasoning/summaryPartAdded" => {
@@ -4346,6 +4591,7 @@ async fn run_client(
                             }
                             "item/reasoning/summaryTextDelta" => {
                                 remember_latest_turn_from_notification(&state, &params);
+                                record_app_state_snapshot_delta_from_params(&app, &params);
                                 handle_reasoning_summary_text_delta(
                                     &app,
                                     params,
@@ -4354,11 +4600,17 @@ async fn run_client(
                             }
                             "item/reasoning/textDelta" => {
                                 remember_latest_turn_from_notification(&state, &params);
+                                record_app_state_snapshot_delta_from_params(&app, &params);
                                 handle_reasoning_text_delta(&app, params, &mut pending_thread_items);
                             }
                             "item/commandExecution/outputDelta" => {
                                 remember_latest_turn_from_notification(&state, &params);
+                                record_app_state_snapshot_delta_from_params(&app, &params);
                                 handle_command_execution_output_delta(&app, params, &mut pending_thread_items);
+                            }
+                            "item/fileChange/outputDelta" => {
+                                remember_latest_turn_from_notification(&state, &params);
+                                record_app_state_snapshot_delta_from_params(&app, &params);
                             }
                             "item/fileChange/patchUpdated" => {
                                 remember_latest_turn_from_notification(&state, &params);
@@ -4497,6 +4749,7 @@ fn request_method(kind: &AppServerRequestKind) -> &'static str {
         AppServerRequestKind::AccountRateLimitsRead => "account/rateLimits/read",
         AppServerRequestKind::AccountSendAddCreditsNudgeEmail => "account/sendAddCreditsNudgeEmail",
         AppServerRequestKind::AppsList => "app/list",
+        AppServerRequestKind::ModelsList => "model/list",
         AppServerRequestKind::LoginApiKey => "account/login/start",
         AppServerRequestKind::LoginChatGpt => "account/login/start",
         AppServerRequestKind::LoginChatGptDeviceCode => "account/login/start",
@@ -4711,6 +4964,16 @@ fn handle_agent_message_delta(
             item: updated_item,
         },
     );
+}
+
+fn record_app_state_snapshot_delta_from_params(app: &AppHandle, params: &serde_json::Value) {
+    let Some(delta) = params.get("delta").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(snapshot_state) = app.try_state::<Arc<AppStateSnapshotState>>() else {
+        return;
+    };
+    let _ = snapshot_state.record_raw_delta_bytes(delta);
 }
 
 fn handle_reasoning_summary_part_added(
@@ -5997,6 +6260,7 @@ async fn write_json(stdin: &mut ChildStdin, value: &serde_json::Value) -> Result
 #[cfg(test)]
 mod tests {
     use super::ensure_supported_host_id;
+    use super::list_threads_from_value;
     use super::map_account;
     use super::map_account_info_response;
     use super::map_app_tools;
@@ -6013,6 +6277,7 @@ mod tests {
     use super::AuthState;
     use super::ConfigBatchWriteForHostParams;
     use super::ConfigReadForHostParams;
+    use super::ConfigReadResponse;
     use super::ConfigRequirements;
     use super::ConfigRequirementsReadResponse;
     use super::ConfigValueWriteParams;
@@ -6035,6 +6300,9 @@ mod tests {
     use super::McpServerStatusEntry;
     use super::McpServerStatusListParams;
     use super::McpServerStatusListResponse;
+    use super::ModelListEntry;
+    use super::ModelListParams;
+    use super::ModelListResponse;
     use super::PluginAuthPolicy;
     use super::PluginAvailability;
     use super::PluginDetail;
@@ -6060,6 +6328,8 @@ mod tests {
     use super::SkillInterface;
     use super::SkillsConfigWriteParams;
     use super::SkillsListParams;
+    use super::ThreadHistoryEntry;
+    use super::ThreadHistorySource;
     use super::ThreadUnsubscribeResponse;
     use super::ThreadUnsubscribeStatus;
     use super::UnarchiveConversationParams;
@@ -6145,6 +6415,48 @@ mod tests {
             ThreadUnsubscribeResponse {
                 status: ThreadUnsubscribeStatus::NotSubscribed,
             }
+        );
+    }
+
+    #[test]
+    fn list_threads_from_value_preserves_thread_spawn_parent_thread_id() {
+        let threads = list_threads_from_value(json!({
+            "data": [
+                {
+                    "id": "thread-1",
+                    "preview": "hello",
+                    "createdAt": 100,
+                    "updatedAt": 200,
+                    "cwd": "D:/workspace",
+                    "path": "D:/workspace/.codex/session.jsonl",
+                    "name": "Demo",
+                    "source": {
+                        "subAgent": {
+                            "thread_spawn": {
+                                "parent_thread_id": "parent-thread-1",
+                                "depth": 1
+                            }
+                        }
+                    }
+                }
+            ]
+        }))
+        .expect("thread list should deserialize");
+
+        assert_eq!(
+            threads,
+            vec![ThreadHistoryEntry {
+                id: "thread-1".to_string(),
+                preview: "hello".to_string(),
+                created_at: 100,
+                updated_at: 200,
+                cwd: "D:/workspace".to_string(),
+                path: Some("D:/workspace/.codex/session.jsonl".to_string()),
+                name: Some("Demo".to_string()),
+                source: Some(ThreadHistorySource {
+                    parent_thread_id: Some("parent-thread-1".to_string()),
+                }),
+            }]
         );
     }
 
@@ -6305,6 +6617,27 @@ mod tests {
     }
 
     #[test]
+    fn config_read_response_deserializes_service_tier() {
+        let response: ConfigReadResponse = serde_json::from_value(json!({
+            "config": {
+                "approvalPolicy": null,
+                "sandboxMode": null,
+                "sandboxWorkspaceWrite": null,
+                "personality": null,
+                "modelPersonality": null,
+                "serviceTier": "flex",
+                "memories": null,
+                "mcpServers": null
+            },
+            "origins": {},
+            "layers": null
+        }))
+        .expect("config read response should deserialize");
+
+        assert_eq!(response.config.service_tier, Some("flex".to_string()));
+    }
+
+    #[test]
     fn write_config_value_params_accept_host_id() {
         let params: ConfigValueWriteParams = serde_json::from_value(json!({
             "hostId": "local",
@@ -6325,6 +6658,52 @@ mod tests {
                 merge_strategy: "upsert".to_string(),
                 file_path: Some("D:/repo/.codex/config.toml".to_string()),
                 expected_version: Some("version-1".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn model_list_params_accept_upstream_host_shape() {
+        let params: ModelListParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "cursor": null,
+            "limit": 100,
+            "includeHidden": false
+        }))
+        .expect("model list params should deserialize");
+
+        assert_eq!(
+            params,
+            ModelListParams {
+                host_id: Some("local".to_string()),
+                cursor: None,
+                limit: Some(100),
+                include_hidden: Some(false),
+            }
+        );
+    }
+
+    #[test]
+    fn model_list_response_deserializes_speed_fields() {
+        let response: ModelListResponse = serde_json::from_value(json!({
+            "data": [{
+                "id": "gpt-5.3-codex",
+                "hidden": false,
+                "additionalSpeedTiers": ["fast"]
+            }],
+            "nextCursor": null
+        }))
+        .expect("model list response should deserialize");
+
+        assert_eq!(
+            response,
+            ModelListResponse {
+                data: vec![ModelListEntry {
+                    id: "gpt-5.3-codex".to_string(),
+                    hidden: false,
+                    additional_speed_tiers: vec!["fast".to_string()],
+                }],
+                next_cursor: None,
             }
         );
     }

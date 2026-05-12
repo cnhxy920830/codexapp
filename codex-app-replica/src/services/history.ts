@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { LOCAL_SETTINGS_HOST_ID } from "./settingsHosts";
+import type { ConfigApprovalPolicy } from "./settings";
 
 export type ThreadHistoryEntry = {
   id: string;
@@ -10,6 +11,11 @@ export type ThreadHistoryEntry = {
   cwd: string;
   path: string | null;
   name: string | null;
+  source: ThreadHistoryEntrySource | null;
+};
+
+export type ThreadHistoryEntrySource = {
+  parentThreadId: string | null;
 };
 
 export type HistoryThreadView = {
@@ -777,8 +783,47 @@ export type ReviewStartResponse = {
   reviewThreadId: string;
 };
 
+export type TurnStartSandboxPolicy =
+  | {
+      type: "readOnly";
+      networkAccess: boolean;
+    }
+  | {
+      type: "workspaceWrite";
+      writableRoots: string[];
+      excludeSlashTmp: boolean;
+      excludeTmpdirEnvVar: boolean;
+      networkAccess: boolean;
+    }
+  | {
+      type: "dangerFullAccess";
+    };
+
+export type TurnStartPermissionOverrides = {
+  approvalPolicy?: ConfigApprovalPolicy | null;
+  approvalsReviewer?: string | null;
+  sandboxPolicy?: TurnStartSandboxPolicy | null;
+};
+
+export type StartConversationParams = {
+  hostId?: string | null;
+  input?: ThreadConversationUserInput[];
+  text?: string | null;
+  cwd?: string | null;
+  workspaceRoots?: string[];
+  skipAutoTitleGeneration?: boolean;
+} & TurnStartPermissionOverrides;
+
 export async function getRecentThreads() {
   return invoke<ThreadHistoryEntry[]>("list_recent_threads");
+}
+
+export async function getRecentThreadsForHost(hostId?: string | null) {
+  return invoke<ThreadHistoryEntry[]>("list-recent-threads", {
+    params: {
+      hostId: normalizeHostId(hostId),
+    },
+  });
 }
 
 export async function getArchivedThreads() {
@@ -795,6 +840,22 @@ export async function getArchivedThreadsForHost(hostId?: string | null) {
 
 export async function startThread(cwd: string | null) {
   return invoke<string>("start_thread", { cwd });
+}
+
+export async function startConversation(params: StartConversationParams) {
+  return invoke<string>("start-conversation", {
+    params: {
+      hostId: normalizeHostId(params.hostId),
+      input: params.input,
+      text: params.text ?? null,
+      cwd: params.cwd ?? null,
+      workspaceRoots: params.workspaceRoots ?? [],
+      approvalPolicy: params.approvalPolicy ?? null,
+      approvalsReviewer: params.approvalsReviewer ?? null,
+      sandboxPolicy: params.sandboxPolicy ?? null,
+      skipAutoTitleGeneration: params.skipAutoTitleGeneration ?? false,
+    },
+  });
 }
 
 export async function forkThread(threadId: string) {
@@ -856,6 +917,18 @@ export async function archiveThread(threadId: string) {
   return invoke<void>("archive_thread", { threadId });
 }
 
+export async function archiveConversation(params: {
+  conversationId: string;
+  cleanupWorktree?: boolean;
+}) {
+  return invoke<void>("archive-conversation", {
+    params: {
+      conversationId: params.conversationId,
+      cleanupWorktree: params.cleanupWorktree ?? false,
+    },
+  });
+}
+
 export async function unarchiveThread(threadId: string) {
   return invoke<string>("unarchive_thread", { threadId });
 }
@@ -885,7 +958,9 @@ export async function setThreadGoal(params: { threadId: string; objective: strin
   });
 }
 
-export async function startTurn(params: { threadId: string; text: string; cwd: string | null }) {
+export async function startTurn(
+  params: { threadId: string; text: string; cwd: string | null } & TurnStartPermissionOverrides,
+) {
   return invoke<string>("start_turn", params);
 }
 
@@ -893,7 +968,7 @@ export async function startTurnWithInput(params: {
   threadId: string;
   input: ThreadConversationUserInput[];
   cwd: string | null;
-}) {
+} & TurnStartPermissionOverrides) {
   return invoke<string>("start_turn_with_input", params);
 }
 

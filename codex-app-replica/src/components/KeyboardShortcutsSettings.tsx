@@ -23,7 +23,12 @@ import {
   setCommandKeybinding,
   supportsShortcutAppend,
   type CommandKeybindingUpdate,
+  type KeyboardShortcutGateState,
 } from "../services/keyboardShortcuts";
+import {
+  REPLICA_STATSIG_GATES,
+  useReplicaStatsigGateValue,
+} from "../features/statsig/replicaStatsig";
 
 type CaptureMode = "append" | "replace" | "set";
 
@@ -36,6 +41,12 @@ type CaptureState = {
 
 export function KeyboardShortcutsSettings() {
   const { locale, t } = useI18n();
+  const hotkeyWindowEnabled = useReplicaStatsigGateValue(
+    REPLICA_STATSIG_GATES.hotkeyWindow,
+  );
+  const globalDictationEnabled =
+    useReplicaStatsigGateValue(REPLICA_STATSIG_GATES.dictationPrimary) &&
+    useReplicaStatsigGateValue(REPLICA_STATSIG_GATES.dictationSecondary);
   const [captureState, setCaptureState] = useState<CaptureState | null>(null);
   const [errorByCommandId, setErrorByCommandId] = useState<Record<string, string | undefined>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -110,7 +121,15 @@ export function KeyboardShortcutsSettings() {
     });
   };
 
-  const filteredCommands = getFilteredKeyboardShortcutCommands(searchText, locale);
+  const gateState: KeyboardShortcutGateState = {
+    globalDictationEnabled,
+    hotkeyWindowEnabled,
+  };
+  const filteredCommands = getFilteredKeyboardShortcutCommands(
+    searchText,
+    locale,
+    gateState,
+  );
 
   return (
     <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-5 py-5">
@@ -241,6 +260,7 @@ export function KeyboardShortcutsSettings() {
                                     command.id,
                                     keymapState,
                                     locale,
+                                    gateState,
                                   );
                                   if (conflictingCommandTitle) {
                                     setCaptureState((current) =>

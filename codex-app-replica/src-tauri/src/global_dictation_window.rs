@@ -25,11 +25,15 @@
 //! The remaining `global-dictation-{recording-stopped,dismiss,completed,
 //! failed,in-app-started,record-history-item,enabled-changed,
 //! force-lock-changed}` desktop messages live in `QV` upstream as no-op
-//! `break;` cases on the desktop side; their actual handling is renderer-side.
-//! The replica registers them as no-op Tauri commands so the page-owned
-//! `dispatchMessage(...)` contract is honored without inventing host-side
-//! behavior that does not exist upstream.
+//! `break;` cases on the desktop side. The replica keeps the same renderer
+//! contract, but uses `dismiss` / `completed` / `failed` to maintain the
+//! Windows-native global hotkey session bookkeeping and recent-history
+//! persistence needed by `P-003-F26`.
 
+use crate::global_dictation_settings::{
+    handle_global_dictation_completed, handle_global_dictation_dismiss,
+    handle_global_dictation_failed, GlobalDictationSettingsState,
+};
 use serde::Deserialize;
 use serde::Serialize;
 use std::sync::Mutex;
@@ -244,9 +248,11 @@ pub fn global_dictation_recording_stopped(_params: GlobalDictationSessionParams)
 pub fn global_dictation_dismiss(
     app: AppHandle,
     state: State<'_, GlobalDictationWindowState>,
-    _params: GlobalDictationSessionParams,
+    dictation_settings: State<'_, GlobalDictationSettingsState>,
+    params: GlobalDictationSessionParams,
 ) -> Result<(), String> {
     state.set_active_session(None);
+    handle_global_dictation_dismiss(dictation_settings.inner(), &params.session_id);
     if let Some(window) = app.get_webview_window(GLOBAL_DICTATION_WINDOW_LABEL) {
         window
             .hide()
@@ -256,10 +262,21 @@ pub fn global_dictation_dismiss(
 }
 
 #[tauri::command(rename = "global-dictation-completed")]
-pub fn global_dictation_completed(_params: GlobalDictationCompletedParams) {}
+pub fn global_dictation_completed(
+    app: AppHandle,
+    dictation_settings: State<'_, GlobalDictationSettingsState>,
+    params: GlobalDictationCompletedParams,
+) -> Result<(), String> {
+    handle_global_dictation_completed(&app, dictation_settings.inner(), &params)
+}
 
 #[tauri::command(rename = "global-dictation-failed")]
-pub fn global_dictation_failed(_params: GlobalDictationFailedParams) {}
+pub fn global_dictation_failed(
+    dictation_settings: State<'_, GlobalDictationSettingsState>,
+    params: GlobalDictationFailedParams,
+) {
+    handle_global_dictation_failed(dictation_settings.inner(), &params);
+}
 
 #[tauri::command(rename = "global-dictation-in-app-started")]
 pub fn global_dictation_in_app_started() {}

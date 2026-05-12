@@ -1,4 +1,6 @@
 import { useEffect, useEffectEvent, useMemo, useState, type ReactNode } from "react";
+import { Button } from "./Button";
+import { ToggleSwitch } from "./ToggleSwitch";
 import { useI18n } from "../i18n/i18n";
 import { selectPluginCandidatesByName, type PluginCandidate } from "../lib/pluginSelectors";
 import {
@@ -10,6 +12,7 @@ import {
   installPlugin,
   readPlugin,
   readPluginsSnapshot,
+  setPluginEnabled,
   uninstallPlugin,
   type PluginDetail,
   type PluginListSnapshot,
@@ -24,21 +27,29 @@ export type FilteredPluginSettingsRenderContext = {
   loadError: string | null;
 };
 
+type FilteredPluginSettingsItemPresentation = {
+  controlLabel?: string;
+  description?: ReactNode;
+  icon?: ReactNode;
+  showIconBorder?: boolean;
+  title?: ReactNode;
+};
+
 export function FilteredPluginSettings({
   emptyState,
+  getItemPresentation,
+  hostId,
   installButtonLabel,
-  pageTitle,
   pluginNames,
   renderAfterSections,
-  sectionTitle,
   workspaceRoot,
 }: {
   emptyState: string;
+  getItemPresentation?: (candidate: PluginCandidate) => FilteredPluginSettingsItemPresentation;
+  hostId?: string | null;
   installButtonLabel: string;
-  pageTitle: string;
   pluginNames: readonly string[];
   renderAfterSections?: (context: FilteredPluginSettingsRenderContext) => ReactNode;
-  sectionTitle: string;
   workspaceRoot: string | null;
 }) {
   const { t } = useI18n();
@@ -55,7 +66,7 @@ export function FilteredPluginSettings({
     setIsLoading(true);
     setLoadError(null);
     try {
-      setPluginsSnapshot(await readPluginsSnapshot(workspaceRoot));
+      setPluginsSnapshot(await readPluginsSnapshot(workspaceRoot, hostId));
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : String(error));
       setPluginsSnapshot(null);
@@ -67,7 +78,7 @@ export function FilteredPluginSettings({
   useEffect(() => {
     void refreshPlugins();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceRoot]);
+  }, [hostId, workspaceRoot]);
 
   useEffect(() => {
     if (activePlugin == null) {
@@ -82,7 +93,7 @@ export function FilteredPluginSettings({
     setDetailLoadError(null);
     setDetailLoading(true);
 
-    void readPlugin(buildPluginParams(activePlugin))
+    void readPlugin(buildPluginParams(activePlugin, hostId))
       .then((response) => {
         if (!cancelled) {
           setPluginDetail(response.plugin);
@@ -102,7 +113,7 @@ export function FilteredPluginSettings({
     return () => {
       cancelled = true;
     };
-  }, [activePlugin]);
+  }, [activePlugin, hostId]);
 
   const selectedPlugins = useMemo(
     () => selectPluginCandidatesByName(pluginsSnapshot, pluginNames),
@@ -169,11 +180,37 @@ export function FilteredPluginSettings({
     }
     setPendingPluginId(candidate.plugin.id);
     try {
-      await installPlugin(buildPluginParams(candidate));
+      await installPlugin(buildPluginParams(candidate, hostId));
       await refreshPlugins();
       if (activePlugin?.plugin.id === candidate.plugin.id) {
         setActivePlugin(null);
       }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (activePlugin?.plugin.id === candidate.plugin.id) {
+        setDetailLoadError(message);
+      } else {
+        setLoadError(message);
+      }
+    } finally {
+      setPendingPluginId(null);
+    }
+  };
+
+  const handleToggleEnabled = async (candidate: PluginCandidate, enabled: boolean) => {
+    if (pendingPluginId != null || !candidate.plugin.installed || candidate.plugin.enabled === enabled) {
+      return;
+    }
+
+    setPendingPluginId(candidate.plugin.id);
+    try {
+      await setPluginEnabled({
+        hostId,
+        pluginId: candidate.plugin.id,
+        enabled,
+      });
+      await refreshPlugins();
+      setDetailLoadError(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (activePlugin?.plugin.id === candidate.plugin.id) {
@@ -192,7 +229,7 @@ export function FilteredPluginSettings({
     }
     setPendingPluginId(candidate.plugin.id);
     try {
-      await uninstallPlugin({ pluginId: candidate.plugin.id });
+      await uninstallPlugin({ hostId, pluginId: candidate.plugin.id });
       await refreshPlugins();
       if (activePlugin?.plugin.id === candidate.plugin.id) {
         setActivePlugin(null);
@@ -205,87 +242,104 @@ export function FilteredPluginSettings({
   };
 
   return (
-    <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-5 py-5">
-      <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="text-[14px] font-medium">{pageTitle}</div>
-      </div>
-
-      <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="text-[14px] font-medium">{sectionTitle}</div>
-        <div className="mt-3">
-          {isLoading ? (
-            <div className="flex min-h-[72px] items-center justify-center">
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--app-shell-subtle)] border-t-transparent" />
-            </div>
-          ) : loadError ? (
-            <div className="app-card-muted rounded-[12px] px-3 py-2 text-[13px] leading-6">
-              <div className="font-medium">{t("skills.appsPage.loadError.title")}</div>
-              <div className="app-text-muted mt-1 text-[12px]">{loadError}</div>
-              <button
-                type="button"
-                onClick={() => void retryLoad()}
-                className="app-control mt-3 rounded-[11px] px-3 py-1.5 text-[12px]"
-              >
-                {t("skills.appsPage.loadError.retry")}
-              </button>
-            </div>
-          ) : selectedPlugins.length === 0 ? (
-            <div className="app-card-muted rounded-[12px] px-3 py-2 text-[13px] leading-6">{emptyState}</div>
-          ) : (
-            <div className="space-y-3">
-              {selectedPlugins.map((candidate) => (
-                <div
-                  key={candidate.plugin.id}
-                  onClick={() => setActivePlugin(candidate)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      setActivePlugin(candidate);
-                    }
-                  }}
-                  role="button"
-                  tabIndex={0}
-                  className="w-full cursor-pointer rounded-[14px] border border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)] px-4 py-3 text-left transition hover:bg-[var(--app-shell-hover-surface)]"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-[14px] leading-6">{getPluginTitle(candidate)}</div>
-                      <div className="app-text-muted mt-1 text-[12px] leading-5">
-                        {getPluginDescription(candidate)}
-                      </div>
-                      <div className="app-text-muted mt-1 truncate text-[11px] leading-5">
-                        {candidate.marketplaceLabel}
-                        {candidate.marketplacePath ? ` · ${candidate.marketplacePath}` : ""}
-                      </div>
-                    </div>
-                    <div className="shrink-0">
-                      {candidate.plugin.installed ? (
-                        <div className="text-[12px] text-[var(--app-shell-subtle)]">
-                          {candidate.plugin.enabled ? t("skills.card.enabledStatus") : t("skills.card.disabledStatus")}
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={pendingPluginId === candidate.plugin.id}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void handleInstall(candidate);
-                          }}
-                          className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
-                        >
-                          {pendingPluginId === candidate.plugin.id
-                            ? t("plugins.installModal.installing", { pluginName: getPluginTitle(candidate) })
-                            : installButtonLabel}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+    <>
+      {isLoading ? (
+        <div className="app-card rounded-[18px] px-5 py-4">
+          <div className="flex min-h-[72px] items-center justify-center">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--app-shell-subtle)] border-t-transparent" />
+          </div>
         </div>
-      </div>
+      ) : loadError ? (
+        <div className="app-card rounded-[18px] px-5 py-4">
+          <div className="app-card-muted rounded-[12px] px-3 py-2 text-[13px] leading-6">
+            <div className="font-medium">{t("skills.appsPage.loadError.title")}</div>
+            <div className="app-text-muted mt-1 text-[12px]">{loadError}</div>
+            <button
+              type="button"
+              onClick={() => void retryLoad()}
+              className="app-control mt-3 rounded-[11px] px-3 py-1.5 text-[12px]"
+            >
+              {t("skills.appsPage.loadError.retry")}
+            </button>
+          </div>
+        </div>
+      ) : selectedPlugins.length === 0 ? (
+        <div className="app-card rounded-[18px] px-5 py-4">
+          <div className="app-card-muted rounded-[12px] px-3 py-2 text-[13px] leading-6">{emptyState}</div>
+        </div>
+      ) : (
+        <div className="app-card overflow-hidden rounded-[18px] px-2 py-2">
+          {selectedPlugins.map((candidate) => {
+            const presentation = getItemPresentation?.(candidate);
+            const title = presentation?.title ?? getPluginTitle(candidate);
+            const description = presentation?.description ?? getPluginDescription(candidate);
+            const controlLabel = presentation?.controlLabel ?? getPluginTitle(candidate);
+            const isPending = pendingPluginId === candidate.plugin.id;
+            const iconBorderClass =
+              presentation?.showIconBorder === false
+                ? "border-transparent bg-transparent"
+                : "border border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)]";
+            const toggleTooltip = candidate.plugin.enabled
+              ? t("settings.pluginControls.disableToggleTooltip", { pluginName: controlLabel })
+              : t("settings.pluginControls.enableToggleTooltip", { pluginName: controlLabel });
+
+            return (
+              <div
+                key={candidate.plugin.id}
+                onClick={() => setActivePlugin(candidate)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setActivePlugin(candidate);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                className="group flex min-h-[60px] cursor-pointer items-center gap-3 rounded-[14px] px-3 py-2.5 text-left transition hover:bg-[var(--app-shell-hover-surface)] max-sm:flex-wrap"
+              >
+                {presentation?.icon ? (
+                  <div className={["flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px]", iconBorderClass].join(" ")}>
+                    {presentation.icon}
+                  </div>
+                ) : null}
+
+                <div className="min-w-0 flex-1">
+                  <div className="text-[14px] leading-6">{title}</div>
+                  <div className="app-text-muted mt-1 text-[12px] leading-5">{description}</div>
+                </div>
+
+                <div className="shrink-0" onClick={(event) => event.stopPropagation()}>
+                  {candidate.plugin.installed ? (
+                    <div title={toggleTooltip}>
+                      <ToggleSwitch
+                        ariaLabel={t("settings.pluginControls.toggleAria", { pluginName: controlLabel })}
+                        checked={candidate.plugin.enabled}
+                        disabled={isPending}
+                        onChange={(checked) => {
+                          void handleToggleEnabled(candidate, checked);
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <Button
+                      color="secondary"
+                      size="toolbar"
+                      title={t("settings.pluginControls.installTooltip", { pluginName: controlLabel })}
+                      disabled={isPending}
+                      loading={isPending}
+                      onClick={() => {
+                        void handleInstall(candidate);
+                      }}
+                    >
+                      {installButtonLabel}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {afterSections}
 
@@ -304,7 +358,7 @@ export function FilteredPluginSettings({
           }}
         />
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -521,10 +575,10 @@ function SectionCard({ children, title }: { children: ReactNode; title: string }
   );
 }
 
-function buildPluginParams(candidate: PluginCandidate): PluginReadParams {
+function buildPluginParams(candidate: PluginCandidate, hostId?: string | null): PluginReadParams {
   return candidate.marketplacePath == null
-    ? { pluginName: candidate.plugin.name, remoteMarketplaceName: candidate.marketplaceName }
-    : { marketplacePath: candidate.marketplacePath, pluginName: candidate.plugin.name };
+    ? { hostId, pluginName: candidate.plugin.name, remoteMarketplaceName: candidate.marketplaceName }
+    : { hostId, marketplacePath: candidate.marketplacePath, pluginName: candidate.plugin.name };
 }
 
 function getPluginTitle(candidate: PluginCandidate, detail?: PluginDetail | null) {

@@ -6,6 +6,7 @@ use std::fs;
 use std::path::Component;
 use std::path::Path;
 use std::path::PathBuf;
+use tauri::AppHandle;
 
 const LOCAL_ENVIRONMENTS_DIR: &str = ".codex/environments";
 const DEFAULT_ENVIRONMENT_FILE_NAME: &str = "environment.toml";
@@ -264,9 +265,17 @@ pub fn write_local_environment_config(
 
 #[tauri::command(rename = "local-environments")]
 pub fn upstream_local_environments(
+    app: AppHandle,
     params: UpstreamLocalEnvironmentsParams,
 ) -> Result<UpstreamLocalEnvironmentsResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "local-environments")?;
+    let host_id = normalize_requested_host_id(params.host_id.as_deref());
+    if host_id != LOCAL_HOST_ID {
+        return crate::local_environments_remote::list_remote_local_environments(
+            &app,
+            &host_id,
+            &params.workspace_root,
+        );
+    }
     let workspace_root = resolve_workspace_root(Some(&params.workspace_root))?;
     Ok(UpstreamLocalEnvironmentsResponse {
         environments: collect_upstream_local_environment_entries(&workspace_root)?,
@@ -275,9 +284,17 @@ pub fn upstream_local_environments(
 
 #[tauri::command(rename = "local-environment")]
 pub fn upstream_local_environment(
+    app: AppHandle,
     params: UpstreamLocalEnvironmentParams,
 ) -> Result<UpstreamLocalEnvironmentResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "local-environment")?;
+    let host_id = normalize_requested_host_id(params.host_id.as_deref());
+    if host_id != LOCAL_HOST_ID {
+        return crate::local_environments_remote::read_remote_local_environment(
+            &app,
+            &host_id,
+            &params.config_path,
+        );
+    }
     let config_path = normalize_upstream_local_environment_config_path(&params.config_path)?;
     Ok(UpstreamLocalEnvironmentResponse {
         environment: read_upstream_local_environment_entry(&config_path)?,
@@ -286,18 +303,35 @@ pub fn upstream_local_environment(
 
 #[tauri::command(rename = "local-environment-config")]
 pub fn upstream_local_environment_config(
+    app: AppHandle,
     params: UpstreamLocalEnvironmentParams,
 ) -> Result<UpstreamLocalEnvironmentConfigResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "local-environment-config")?;
+    let host_id = normalize_requested_host_id(params.host_id.as_deref());
+    if host_id != LOCAL_HOST_ID {
+        return crate::local_environments_remote::read_remote_local_environment_config(
+            &app,
+            &host_id,
+            &params.config_path,
+        );
+    }
     let config_path = normalize_upstream_local_environment_config_path(&params.config_path)?;
     read_upstream_local_environment_config(&config_path)
 }
 
 #[tauri::command(rename = "local-environment-config-save")]
 pub fn upstream_local_environment_config_save(
+    app: AppHandle,
     params: UpstreamLocalEnvironmentConfigSaveParams,
 ) -> Result<UpstreamLocalEnvironmentConfigSaveResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "local-environment-config-save")?;
+    let host_id = normalize_requested_host_id(params.host_id.as_deref());
+    if host_id != LOCAL_HOST_ID {
+        return crate::local_environments_remote::write_remote_local_environment_config(
+            &app,
+            &host_id,
+            &params.config_path,
+            &params.raw,
+        );
+    }
     let config_path = normalize_upstream_local_environment_config_path(&params.config_path)?;
     write_upstream_local_environment_config(&config_path, &params.raw)
 }
@@ -771,13 +805,12 @@ fn write_upstream_local_environment_config(
     })
 }
 
-fn ensure_supported_host_id(host_id: Option<&str>, command_name: &str) -> Result<(), String> {
-    match host_id.map(str::trim).filter(|value| !value.is_empty()) {
-        None | Some(LOCAL_HOST_ID) => Ok(()),
-        Some(host_id) => Err(format!(
-            "{command_name} does not support host id: {host_id}"
-        )),
-    }
+fn normalize_requested_host_id(host_id: Option<&str>) -> String {
+    host_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(LOCAL_HOST_ID)
+        .to_string()
 }
 
 #[cfg(test)]
@@ -913,15 +946,11 @@ mod tests {
     }
 
     #[test]
-    fn upstream_local_environment_commands_only_accept_local_host() {
-        assert!(ensure_supported_host_id(None, "local-environments").is_ok());
-        assert!(ensure_supported_host_id(Some(""), "local-environments").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "local-environments").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "local-environments")
-                .expect_err("non-local host id should be rejected"),
-            "local-environments does not support host id: remote"
-        );
+    fn normalize_requested_host_id_defaults_to_local() {
+        assert_eq!(normalize_requested_host_id(None), "local");
+        assert_eq!(normalize_requested_host_id(Some("")), "local");
+        assert_eq!(normalize_requested_host_id(Some("local")), "local");
+        assert_eq!(normalize_requested_host_id(Some("remote")), "remote");
     }
 
     fn temp_workspace_root(case_name: &str) -> PathBuf {

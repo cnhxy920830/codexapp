@@ -1,7 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { REPLICA_STATSIG_GATES, useReplicaStatsigGateValue } from "../features/statsig/replicaStatsig";
 import { useI18n } from "../i18n/i18n";
 import { renderInlineLinkMessage } from "../i18n/renderInlineLinkMessage";
 import type { AppToast } from "./AppToastRegion";
+import { PersonalizationChronicleSettings } from "./PersonalizationChronicleSettings";
 import { ToggleSwitch } from "./ToggleSwitch";
 import {
   listExperimentalFeatures,
@@ -26,8 +28,8 @@ const DEFAULT_MEMORIES_CONFIG: MemoriesConfigSnapshot = {
 };
 
 type MemorySettingsState = {
-  featureAvailable: boolean;
   featureEnabled: boolean;
+  chronicleEnabled: boolean;
   memories: MemoriesConfigSnapshot;
   expectedVersion: string | null;
   filePath: string | null;
@@ -37,8 +39,8 @@ type MemorySettingsState = {
 };
 
 const INITIAL_MEMORY_SETTINGS_STATE: MemorySettingsState = {
-  featureAvailable: false,
   featureEnabled: false,
+  chronicleEnabled: false,
   memories: DEFAULT_MEMORIES_CONFIG,
   expectedVersion: null,
   filePath: null,
@@ -48,13 +50,16 @@ const INITIAL_MEMORY_SETTINGS_STATE: MemorySettingsState = {
 };
 
 export function PersonalizationMemorySettings({
+  onOpenChatWithPrompt,
   onShowToast,
   workspaceRoot,
 }: {
+  onOpenChatWithPrompt?: (prompt: string) => void;
   onShowToast?: (toast: AppToast) => void;
   workspaceRoot: string | null;
 }) {
   const { t } = useI18n();
+  const memoryGateEnabled = useReplicaStatsigGateValue(REPLICA_STATSIG_GATES.memories);
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [state, setState] = useState<MemorySettingsState>(INITIAL_MEMORY_SETTINGS_STATE);
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
@@ -71,7 +76,10 @@ export function PersonalizationMemorySettings({
         error: null,
       }));
       try {
-        const [configResponse, features] = await Promise.all([readConfig(workspaceRoot), listExperimentalFeatures()]);
+        const [configResponse, features] = await Promise.all([
+          readConfig(workspaceRoot),
+          listExperimentalFeatures().catch(() => []),
+        ]);
         if (cancelled) {
           return;
         }
@@ -81,8 +89,10 @@ export function PersonalizationMemorySettings({
         const scopedConfig = selectedScope?.config;
         const memoryFeature = features.find((feature) => feature.name === MEMORY_FEATURE_NAME) ?? null;
         setState({
-          featureAvailable: memoryFeature !== null,
           featureEnabled: memoryFeature?.enabled ?? false,
+          chronicleEnabled:
+            scopedConfig?.features?.chronicle === true ||
+            configResponse.config.features?.chronicle === true,
           memories: scopedConfig?.memories ?? configResponse.config.memories ?? DEFAULT_MEMORIES_CONFIG,
           expectedVersion: selectedScope?.expectedVersion ?? null,
           filePath: selectedScope?.kind === "project" ? selectedScope.filePath : null,
@@ -109,7 +119,9 @@ export function PersonalizationMemorySettings({
     };
   }, [refreshVersion, workspaceRoot]);
 
-  if (!state.isLoading && state.error === null && !state.featureAvailable) {
+  const showMemorySettings = memoryGateEnabled || state.featureEnabled;
+
+  if (!state.isLoading && state.error === null && !showMemorySettings) {
     return null;
   }
 
@@ -129,6 +141,7 @@ export function PersonalizationMemorySettings({
     setState((current) => ({
       ...current,
       featureEnabled: enabled,
+      chronicleEnabled: enabled ? current.chronicleEnabled : false,
       memories: {
         ...current.memories,
         generateMemories: enabled,
@@ -152,6 +165,15 @@ export function PersonalizationMemorySettings({
               value: enabled,
               mergeStrategy: "upsert",
             },
+            ...(!enabled && state.chronicleEnabled
+              ? [
+                  {
+                    keyPath: "features.chronicle",
+                    value: false,
+                    mergeStrategy: "upsert" as const,
+                  },
+                ]
+              : []),
           ],
           filePath: state.filePath,
           expectedVersion: state.expectedVersion,
@@ -210,6 +232,41 @@ export function PersonalizationMemorySettings({
     }
   };
 
+  const saveChronicleEnabled = async (enabled: boolean) => {
+    if (isBusy || enabled === state.chronicleEnabled) {
+      return;
+    }
+    const previousState = state;
+    setState((current) => ({
+      ...current,
+      chronicleEnabled: enabled,
+      isSaving: true,
+      error: null,
+    }));
+    try {
+      await batchWriteConfigValues({
+        edits: [
+          {
+            keyPath: "features.chronicle",
+            value: enabled,
+            mergeStrategy: "upsert",
+          },
+        ],
+        filePath: state.filePath,
+        expectedVersion: state.expectedVersion,
+        reloadUserConfig: true,
+      });
+      reload();
+    } catch (error) {
+      setState({
+        ...previousState,
+        isSaving: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  };
+
   const confirmReset = async () => {
     if (isBusy) {
       return;
@@ -256,6 +313,14 @@ export function PersonalizationMemorySettings({
               onChange={(checked) => void saveMemoriesEnabled(checked)}
             />
           </MemorySettingRow>
+
+          <PersonalizationChronicleSettings
+            checked={state.chronicleEnabled}
+            disabled={isBusy}
+            memoriesEnabled={memoriesEnabled}
+            onOpenChatWithPrompt={onOpenChatWithPrompt}
+            onSetEnabled={saveChronicleEnabled}
+          />
 
           <MemorySettingRow
             label={t("settings.memory.noToolContextLabel")}
@@ -323,7 +388,7 @@ function MemorySettingRow({
   children,
 }: {
   label: string;
-  description: string;
+  description: ReactNode;
   children: ReactNode;
 }) {
   return (
