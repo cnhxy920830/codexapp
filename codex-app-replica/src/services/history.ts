@@ -811,8 +811,20 @@ export type StartConversationParams = {
   text?: string | null;
   cwd?: string | null;
   workspaceRoots?: string[];
+  collaborationMode?: unknown | null;
+  projectlessOutputDirectory?: string | null;
+  workspaceKind?: string | null;
   skipAutoTitleGeneration?: boolean;
 } & TurnStartPermissionOverrides;
+
+export type MaybeResumeConversationParams = {
+  conversationId: string;
+  hostId?: string | null;
+  model?: string | null;
+  reasoningEffort?: string | null;
+  workspaceRoots?: string[];
+  collaborationMode?: unknown | null;
+};
 
 export async function getRecentThreads() {
   return invoke<ThreadHistoryEntry[]>("list_recent_threads");
@@ -850,12 +862,28 @@ export async function startConversation(params: StartConversationParams) {
       text: params.text ?? null,
       cwd: params.cwd ?? null,
       workspaceRoots: params.workspaceRoots ?? [],
+      collaborationMode: params.collaborationMode ?? null,
+      projectlessOutputDirectory: params.projectlessOutputDirectory ?? null,
+      workspaceKind: params.workspaceKind ?? null,
       approvalPolicy: params.approvalPolicy ?? null,
       approvalsReviewer: params.approvalsReviewer ?? null,
       sandboxPolicy: params.sandboxPolicy ?? null,
       skipAutoTitleGeneration: params.skipAutoTitleGeneration ?? false,
     },
   });
+}
+
+export async function maybeResumeConversation(params: MaybeResumeConversationParams) {
+  return invoke<ThreadConversation>("maybe-resume-conversation", {
+    params: {
+      conversationId: params.conversationId,
+      hostId: normalizeHostId(params.hostId),
+      model: params.model ?? null,
+      reasoningEffort: params.reasoningEffort ?? null,
+      workspaceRoots: params.workspaceRoots ?? [],
+      collaborationMode: params.collaborationMode ?? null,
+    },
+  }).then(normalizeThreadConversation);
 }
 
 export async function forkThread(threadId: string) {

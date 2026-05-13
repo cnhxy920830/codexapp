@@ -95,7 +95,6 @@ pub struct RemoteControlClientsListParams {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
 pub struct RemoteControlClient {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -103,13 +102,14 @@ pub struct RemoteControlClient {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enrollment_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_seen_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
 pub struct RemoteControlClientsListResponse {
     pub items: Vec<RemoteControlClient>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -380,7 +380,8 @@ mod tests {
                     "id": "c-1",
                     "name": "iPhone",
                     "status": "active",
-                    "createdAt": "2026-05-10T00:00:00Z"
+                    "enrollment_status": "approved",
+                    "created_at": "2026-05-10T00:00:00Z"
                 }
             ],
             "cursor": "next"
@@ -390,6 +391,14 @@ mod tests {
         assert_eq!(parsed.items.len(), 1);
         assert_eq!(parsed.items[0].id, "c-1");
         assert_eq!(parsed.items[0].name.as_deref(), Some("iPhone"));
+        assert_eq!(
+            parsed.items[0].enrollment_status.as_deref(),
+            Some("approved")
+        );
+        assert_eq!(
+            parsed.items[0].created_at.as_deref(),
+            Some("2026-05-10T00:00:00Z")
+        );
         assert_eq!(parsed.cursor.as_deref(), Some("next"));
     }
 

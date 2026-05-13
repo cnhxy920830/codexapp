@@ -7,8 +7,13 @@ import { Spinner } from "../../components/Spinner";
 import { useI18n } from "../../i18n/i18n";
 import { readGitOrigins } from "../../services/gitOrigins";
 import { archiveConversation, getRecentThreadsForHost, type ThreadHistoryEntry } from "../../services/history";
-import { LOCAL_SETTINGS_HOST_ID } from "../../services/settingsHosts";
-import { readActiveWorkspaceRoots } from "../../services/workspaceRoots";
+import {
+  LOCAL_SETTINGS_HOST_ID,
+  REMOTE_PROJECTS_SHARED_OBJECT_KEY,
+  onSharedObjectUpdated,
+  readSettingsRemoteProjectsSnapshot,
+} from "../../services/settingsHosts";
+import { onWorkspaceRootOptionsUpdated, readWorkspaceRootOptions } from "../../services/workspaceRoots";
 import { deleteWorktree, readCodexWorktrees, type CodexWorktreeEntry } from "../../services/worktrees";
 
 type WorktreesSettingsPageProps = {
@@ -33,7 +38,7 @@ export function WorktreesSettingsPage({
   const { t } = useI18n();
   const [reloadNonce, setReloadNonce] = useState(0);
   const [worktrees, setWorktrees] = useState<CodexWorktreeEntry[]>([]);
-  const [activeWorkspaceRoots, setActiveWorkspaceRoots] = useState<string[]>([]);
+  const [projectRoots, setProjectRoots] = useState<string[]>([]);
   const [recentThreads, setRecentThreads] = useState<ThreadHistoryEntry[]>([]);
   const [restoredRepoRoots, setRestoredRepoRoots] = useState<Record<string, string>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -41,6 +46,44 @@ export function WorktreesSettingsPage({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isThreadsLoading, setIsThreadsLoading] = useState(true);
   const hasLoadedOnceRef = useRef(false);
+
+  useEffect(() => {
+    let disposed = false;
+    let cleanupWorkspaceRootUpdates: (() => void) | null = null;
+    let cleanupSharedObjects: (() => void) | null = null;
+
+    if (selectedHostId === LOCAL_SETTINGS_HOST_ID) {
+      void onWorkspaceRootOptionsUpdated(() => {
+        if (!disposed) {
+          setReloadNonce((current) => current + 1);
+        }
+      }).then((cleanup) => {
+        if (disposed) {
+          cleanup();
+          return;
+        }
+        cleanupWorkspaceRootUpdates = cleanup;
+      });
+    } else {
+      void onSharedObjectUpdated((notification) => {
+        if (notification.key === REMOTE_PROJECTS_SHARED_OBJECT_KEY && !disposed) {
+          setReloadNonce((current) => current + 1);
+        }
+      }).then((cleanup) => {
+        if (disposed) {
+          cleanup();
+          return;
+        }
+        cleanupSharedObjects = cleanup;
+      });
+    }
+
+    return () => {
+      disposed = true;
+      cleanupWorkspaceRootUpdates?.();
+      cleanupSharedObjects?.();
+    };
+  }, [selectedHostId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,19 +97,25 @@ export function WorktreesSettingsPage({
       }
 
       try {
-        const [worktreesResponse, activeWorkspaceRootsResponse] = await Promise.all([
+        const [worktreesResponse, projectRootsResponse] = await Promise.all([
           readCodexWorktrees({
             hostId: selectedHostId,
             operationSource: "worktrees_settings_page",
           }),
-          readActiveWorkspaceRoots(selectedHostId),
+          selectedHostId === LOCAL_SETTINGS_HOST_ID
+            ? readWorkspaceRootOptions(selectedHostId).then((response) => response.roots)
+            : readSettingsRemoteProjectsSnapshot().then((remoteProjects) => {
+                return remoteProjects
+                  .filter((remoteProject) => remoteProject.hostId === selectedHostId)
+                  .map((remoteProject) => remoteProject.remotePath);
+              }),
         ]);
         if (cancelled) {
           return;
         }
 
         setWorktrees(worktreesResponse.worktrees);
-        setActiveWorkspaceRoots(activeWorkspaceRootsResponse.roots);
+        setProjectRoots(projectRootsResponse);
         hasLoadedOnceRef.current = true;
       } catch (error) {
         if (!cancelled) {
@@ -118,14 +167,14 @@ export function WorktreesSettingsPage({
   useEffect(() => {
     let cancelled = false;
 
-    const visibleWorktrees = filterOutActiveWorkspaceWorktrees(worktrees, activeWorkspaceRoots);
+    const visibleWorktrees = filterOutProjectRootWorktrees(worktrees, projectRoots);
     const groups = groupWorktreesByRepository(visibleWorktrees);
     const dirsToResolve = groups
       .filter((group) => group.repoRoot === null)
       .map((group) => group.worktrees[0]?.dir ?? null)
       .filter((dir): dir is string => dir !== null);
 
-    if (selectedHostId !== LOCAL_SETTINGS_HOST_ID || dirsToResolve.length === 0) {
+    if (dirsToResolve.length === 0) {
       setRestoredRepoRoots({});
       return () => {
         cancelled = true;
@@ -170,9 +219,9 @@ export function WorktreesSettingsPage({
     return () => {
       cancelled = true;
     };
-  }, [activeWorkspaceRoots, reloadNonce, selectedHostId, worktrees]);
+  }, [projectRoots, reloadNonce, selectedHostId, worktrees]);
 
-  const visibleWorktrees = filterOutActiveWorkspaceWorktrees(worktrees, activeWorkspaceRoots);
+  const visibleWorktrees = filterOutProjectRootWorktrees(worktrees, projectRoots);
   const groupedWorktrees = groupWorktreesByRepository(visibleWorktrees);
   const visibleRecentThreads = recentThreads.filter((thread) => !isThreadSpawnSubagentConversation(thread));
 
@@ -471,13 +520,13 @@ function SettingsSurface({
   );
 }
 
-function filterOutActiveWorkspaceWorktrees(worktrees: CodexWorktreeEntry[], activeWorkspaceRoots: string[]) {
-  if (activeWorkspaceRoots.length === 0) {
+function filterOutProjectRootWorktrees(worktrees: CodexWorktreeEntry[], projectRoots: string[]) {
+  if (projectRoots.length === 0) {
     return worktrees;
   }
 
   return worktrees.filter((worktree) => {
-    return !activeWorkspaceRoots.some((workspaceRoot) => isSameOrNestedPath(worktree.dir, workspaceRoot));
+    return !projectRoots.some((projectRoot) => isSameOrNestedPath(worktree.dir, projectRoot));
   });
 }
 

@@ -137,6 +137,7 @@ export function ChatSidePanel({
               onToolRequestUserInputSubmit={onToolRequestUserInputSubmit}
               onComposerDraftChange={onComposerDraftChange}
               onOpenRemoteTask={onSelectThread}
+              onSelectRemoteTaskAssistantTurn={() => undefined}
               onArchiveThread={() => undefined}
               onCopyAppLink={() => undefined}
               onCopyConversationMarkdown={() => undefined}
@@ -159,6 +160,8 @@ export function ChatSidePanel({
               selectedAvatar={selectedAvatar}
               submitButtonMode={submitButtonMode}
               t={t}
+              remoteAttemptTabsByTurnId={{}}
+              remoteConversationOverridesByTurnId={{}}
               threadConversation={sideChatConversation}
               turnError={sideChatTurnError}
             />

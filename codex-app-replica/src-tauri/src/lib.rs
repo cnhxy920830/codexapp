@@ -36,11 +36,14 @@ mod projectless_threads;
 mod pull_request_git;
 mod pull_requests;
 mod query_cache;
+mod recommended_skills;
 mod remote_app_server_registry;
 mod remote_app_server_runtime;
 mod remote_connections;
 mod remote_control;
+mod remote_diff_apply;
 mod remote_ssh;
+mod remote_tasks;
 mod scratchpad;
 mod statsig;
 mod taskbar_badge;
@@ -105,6 +108,7 @@ use auth_bridge::login_chatgpt_for_host_command;
 use auth_bridge::login_mcp_server;
 use auth_bridge::login_mcp_server_command;
 use auth_bridge::logout;
+use auth_bridge::maybe_resume_conversation;
 use auth_bridge::read_account_info;
 use auth_bridge::read_account_rate_limits;
 use auth_bridge::read_app_tools;
@@ -200,7 +204,10 @@ use computer_use_settings::read_computer_use_approvals;
 use computer_use_settings::read_computer_use_approvals_visibility;
 use computer_use_settings::remove_computer_use_approval;
 use custom_avatars::read_custom_avatars;
+use debug_modal::ambient_suggestion_set_status;
+use debug_modal::ambient_suggestions;
 use debug_modal::ambient_suggestions_generation_statuses;
+use debug_modal::ambient_suggestions_refresh;
 use debug_modal::debug_run_app_action_request;
 use debug_modal::debug_run_app_action_response;
 use debug_modal::AmbientSuggestionsCache;
@@ -301,6 +308,9 @@ use pull_requests::gh_pr_diff;
 use pull_requests::gh_pr_merge;
 use pull_requests::gh_pr_status;
 use pull_requests::gh_pr_update;
+use recommended_skills::install_recommended_skill;
+use recommended_skills::recommended_skills;
+use recommended_skills::remove_skill;
 use remote_app_server_registry::RemoteAppServerRegistry;
 use remote_app_server_runtime::RemoteAppServerRuntimeState;
 use remote_connections::app_server_connection_state;
@@ -314,6 +324,13 @@ use remote_control::mfa_info_read;
 use remote_control::remote_control_clients_list;
 use remote_control::remote_control_mfa_required_but_disabled_read;
 use remote_control::remote_control_mfa_requirement_read;
+use remote_diff_apply::apply_patch;
+use remote_tasks::remote_task_image_read;
+use remote_tasks::remote_task_pr_create;
+use remote_tasks::remote_task_read;
+use remote_tasks::remote_task_turn_logs_read;
+use remote_tasks::remote_task_turn_read;
+use remote_tasks::remote_task_turns_read;
 use scratchpad::generate_scratchpad_completion_summary;
 use statsig::statsig_fetch_values;
 use std::env;
@@ -435,6 +452,9 @@ pub fn run() {
             read_usage_customer_portal,
             send_add_credits_nudge_email,
             read_custom_avatars,
+            ambient_suggestions,
+            ambient_suggestions_refresh,
+            ambient_suggestion_set_status,
             ambient_suggestions_generation_statuses,
             debug_run_app_action_request,
             debug_run_app_action_response,
@@ -464,6 +484,13 @@ pub fn run() {
             mfa_info_read,
             remote_control_clients_list,
             remote_control_mfa_required_but_disabled_read,
+            remote_task_read,
+            remote_task_turns_read,
+            remote_task_turn_read,
+            remote_task_turn_logs_read,
+            remote_task_pr_create,
+            remote_task_image_read,
+            apply_patch,
             load_primary_runtime_dependencies,
             diagnose_primary_runtime_dependencies,
             install_primary_runtime,
@@ -552,6 +579,9 @@ pub fn run() {
             list_mcp_server_status_command,
             list_skills,
             list_skills_for_host,
+            recommended_skills,
+            install_recommended_skill,
+            remove_skill,
             write_skill_config,
             write_skill_config_command,
             list_hooks_for_host,
@@ -584,6 +614,7 @@ pub fn run() {
             respond_to_permissions_request_approval,
             respond_to_tool_request_user_input,
             read_thread,
+            maybe_resume_conversation,
             rollback_thread,
             read_automation,
             automation_create_command,

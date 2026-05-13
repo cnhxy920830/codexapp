@@ -1,4 +1,8 @@
-import { getGlobalState, setGlobalState } from "./settings";
+import { invoke } from "@tauri-apps/api/core";
+
+type GlobalStateResponse = {
+  value: unknown;
+};
 
 export type GitMergeMethod = "merge" | "squash";
 
@@ -102,4 +106,13 @@ export async function setGitCommitInstructions(value: string) {
 
 export async function setGitPullRequestInstructions(value: string) {
   return setGlobalState(PR_INSTRUCTIONS_KEY, value);
+}
+
+async function getGlobalState(key: string) {
+  const response = await invoke<GlobalStateResponse>("get_global_state", { key });
+  return response;
+}
+
+async function setGlobalState(key: string, value: unknown) {
+  return invoke<void>("set_global_state", { key, value });
 }

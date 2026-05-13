@@ -2,8 +2,8 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::path::Path;
 use std::process::Command;
-use tauri::AppHandle;
 use tauri::async_runtime::spawn_blocking;
+use tauri::AppHandle;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;

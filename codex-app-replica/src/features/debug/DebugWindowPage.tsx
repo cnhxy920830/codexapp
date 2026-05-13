@@ -1,17 +1,22 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { ToggleSwitch } from "../../components/ToggleSwitch";
 import { formatAuthDetail, formatAuthLabel, getAuthSnapshot, initialAuthSnapshot, type AuthSnapshot } from "../../services/auth";
 import {
   allowDebugMenu,
+  refreshAmbientSuggestions,
+  readAmbientSuggestionsGenerationStatuses,
+  readAppFlavor,
   PRIMARY_RUNTIME_INSTALL_RELEASE_LATEST,
   PRIMARY_RUNTIME_INSTALL_RELEASE_LATEST_ALPHA,
   primaryRuntimeUpdateRunNow,
   readPrimaryRuntimeUpdateStatus,
   runDebugAppAction,
   setPrimaryRuntimeInstallRelease,
+  type AmbientSuggestionsGenerationStatus,
   type PrimaryRuntimeUpdateStatusResponse,
 } from "../../services/debug";
 import { getRecentThreads, readThread, type ThreadConversation, type ThreadHistoryEntry } from "../../services/history";
+import { readProjectlessThreadCwd, type ProjectlessThreadCwdResponse } from "../../services/projectlessThreads";
 import {
   readActiveWorkspaceRoots,
   readWorkspaceRootOptions,
@@ -26,6 +31,8 @@ import {
 import {
   type WorktreesSettingsSnapshot,
 } from "../../services/worktrees";
+import { AmbientSuggestionsDebugSection } from "./AmbientSuggestionsDebugSection";
+import { DebugEmptyState, DebugField, DebugSection } from "./DebugSectionPrimitives";
 
 const DEFAULT_APP_ACTION_JSON = `{
   "type": "app.get_summary"
@@ -39,9 +46,11 @@ export type DebugWindowPageProps = {
 };
 
 export type DebugModalProps = {
+  ambientSuggestionStatuses: AmbientSuggestionsGenerationStatus[] | null;
   conversationId: string | null;
   threadConversation: ThreadConversation | null;
   authSnapshot: AuthSnapshot | null;
+  projectlessThreadCwd: ProjectlessThreadCwdResponse | null;
   recentThreads: ThreadHistoryEntry[];
   workspaceRootOptions: WorkspaceRootOptionsResponse | null;
   activeWorkspaceRoots: ActiveWorkspaceRootsResponse | null;
@@ -50,10 +59,13 @@ export type DebugModalProps = {
   worktreesSettings: WorktreesSettingsSnapshot | null;
   primaryRuntimeStatus: PrimaryRuntimeUpdateStatusResponse | null;
   primaryRuntimeInstallRelease: string;
+  isAmbientSuggestionsLoading: boolean;
+  refreshingAmbientSuggestionsProjectRoot: string | null;
   appActionDraft: string;
   appActionResult: string;
   isAppActionRunning: boolean;
   onAppActionDraftChange: (value: string) => void;
+  onRefreshAmbientSuggestions: (projectRoot: string) => void;
   onRunAppAction: () => void;
   onPrimaryRuntimeInstallReleaseChange: (release: string) => void;
   onPrimaryRuntimeRefresh: () => void;
@@ -81,6 +93,8 @@ export function DebugWindowPage({ conversationId, isLoading, threadConversation,
   const [recentThreads, setRecentThreads] = useState<ThreadHistoryEntry[]>([]);
   const [workspaceRootOptions, setWorkspaceRootOptions] = useState<WorkspaceRootOptionsResponse | null>(null);
   const [activeWorkspaceRoots, setActiveWorkspaceRoots] = useState<ActiveWorkspaceRootsResponse | null>(null);
+  const [projectlessThreadCwd, setProjectlessThreadCwd] = useState<ProjectlessThreadCwdResponse | null>(null);
+  const [ambientSuggestionStatuses, setAmbientSuggestionStatuses] = useState<AmbientSuggestionsGenerationStatus[] | null>(null);
   const [remoteConnections, setRemoteConnections] = useState<RemoteConnection[]>([]);
   const [connectedRemoteConnections, setConnectedRemoteConnections] = useState<RemoteConnection[]>([]);
   const [worktreesSettings, setWorktreesSettings] = useState<WorktreesSettingsSnapshot | null>(null);
@@ -91,8 +105,11 @@ export function DebugWindowPage({ conversationId, isLoading, threadConversation,
   const [appActionDraft, setAppActionDraft] = useState(DEFAULT_APP_ACTION_JSON);
   const [appActionResult, setAppActionResult] = useState("Not run yet");
   const [isAppActionRunning, setIsAppActionRunning] = useState(false);
+  const [refreshingAmbientSuggestionsProjectRoot, setRefreshingAmbientSuggestionsProjectRoot] = useState<string | null>(null);
   const [threadSnapshot, setThreadSnapshot] = useState<ThreadConversation | null>(threadConversation);
   const [isHydrated, setIsHydrated] = useState(false);
+  const appFlavor = readAppFlavor();
+  const showAmbientSuggestionsSection = appFlavor === "dev" || appFlavor === "nightly";
 
   useEffect(() => {
     setThreadSnapshot(threadConversation);
@@ -113,12 +130,23 @@ export function DebugWindowPage({ conversationId, isLoading, threadConversation,
             ? await readThread(conversationId).catch(() => null)
             : null;
 
-      const [authSnapshotResult, recentThreadsResult, workspaceRootOptionsResult, activeWorkspaceRootsResult] =
+      const [
+        authSnapshotResult,
+        recentThreadsResult,
+        workspaceRootOptionsResult,
+        activeWorkspaceRootsResult,
+        projectlessThreadCwdResult,
+        ambientSuggestionStatusesResult,
+      ] =
         await Promise.all([
           getAuthSnapshot().catch(() => initialAuthSnapshot),
           getRecentThreads().catch(() => [] as ThreadHistoryEntry[]),
           readWorkspaceRootOptions().catch(() => null),
           readActiveWorkspaceRoots().catch(() => null),
+          showAmbientSuggestionsSection ? readProjectlessThreadCwd().catch(() => null) : Promise.resolve(null),
+          showAmbientSuggestionsSection
+            ? readAmbientSuggestionsGenerationStatuses().then((response) => response.statuses).catch(() => null)
+            : Promise.resolve(null),
         ]);
 
       const remoteConnectionsSnapshot = await readSettingsRemoteConnectionsSnapshot().catch(() => []);
@@ -141,6 +169,8 @@ export function DebugWindowPage({ conversationId, isLoading, threadConversation,
       setRecentThreads(recentThreadsResult);
       setWorkspaceRootOptions(workspaceRootOptionsResult);
       setActiveWorkspaceRoots(activeWorkspaceRootsResult);
+      setProjectlessThreadCwd(projectlessThreadCwdResult);
+      setAmbientSuggestionStatuses(ambientSuggestionStatusesResult);
       setRemoteConnections(remoteConnectionsSnapshot);
       setConnectedRemoteConnections(connectedRemoteConnectionsResult);
       setWorktreesSettings(worktreesSettingsResult);
@@ -153,7 +183,21 @@ export function DebugWindowPage({ conversationId, isLoading, threadConversation,
     return () => {
       cancelled = true;
     };
-  }, [conversationId, isDebugMenuAllowed, threadConversation]);
+  }, [conversationId, isDebugMenuAllowed, showAmbientSuggestionsSection, threadConversation]);
+
+  const reloadAmbientSuggestionsState = async () => {
+    if (!showAmbientSuggestionsSection) {
+      return;
+    }
+
+    const [projectlessThreadCwdResult, ambientSuggestionStatusesResult] = await Promise.all([
+      readProjectlessThreadCwd().catch(() => null),
+      readAmbientSuggestionsGenerationStatuses().then((response) => response.statuses).catch(() => null),
+    ]);
+
+    setProjectlessThreadCwd(projectlessThreadCwdResult);
+    setAmbientSuggestionStatuses(ambientSuggestionStatusesResult);
+  };
 
   const handleRunAppAction = async () => {
     const actionText = appActionDraft.trim();
@@ -215,6 +259,18 @@ export function DebugWindowPage({ conversationId, isLoading, threadConversation,
     await setPrimaryRuntimeInstallRelease(release).catch(() => undefined);
   };
 
+  const handleAmbientSuggestionsRefresh = async (projectRoot: string) => {
+    setRefreshingAmbientSuggestionsProjectRoot(projectRoot);
+    try {
+      await refreshAmbientSuggestions({
+        projectRoot,
+      });
+      await reloadAmbientSuggestionsState();
+    } finally {
+      setRefreshingAmbientSuggestionsProjectRoot(null);
+    }
+  };
+
   if (!isDebugMenuAllowed) {
     return <DebugLoadingState />;
   }
@@ -225,6 +281,7 @@ export function DebugWindowPage({ conversationId, isLoading, threadConversation,
 
   return (
     <DebugModal
+      ambientSuggestionStatuses={ambientSuggestionStatuses}
       activeWorkspaceRoots={activeWorkspaceRoots}
       appActionDraft={appActionDraft}
       appActionResult={appActionResult}
@@ -232,15 +289,19 @@ export function DebugWindowPage({ conversationId, isLoading, threadConversation,
       connectedRemoteConnections={connectedRemoteConnections}
       conversationId={conversationId}
       isAppActionRunning={isAppActionRunning}
+      isAmbientSuggestionsLoading={showAmbientSuggestionsSection && ambientSuggestionStatuses === null}
+      refreshingAmbientSuggestionsProjectRoot={refreshingAmbientSuggestionsProjectRoot}
       onAppActionDraftChange={setAppActionDraft}
       onClose={onClose}
       onPopOut={undefined}
+      onRefreshAmbientSuggestions={(projectRoot) => void handleAmbientSuggestionsRefresh(projectRoot)}
       onPrimaryRuntimeInstallReleaseChange={handlePrimaryRuntimeInstallReleaseChange}
       onPrimaryRuntimeRefresh={() => void handlePrimaryRuntimeRefresh()}
       onPrimaryRuntimeRunNow={() => void handlePrimaryRuntimeRunNow()}
       onRunAppAction={() => void handleRunAppAction()}
       primaryRuntimeInstallRelease={primaryRuntimeInstallRelease}
       primaryRuntimeStatus={primaryRuntimeStatus}
+      projectlessThreadCwd={projectlessThreadCwd}
       recentThreads={recentThreads}
       remoteConnections={remoteConnections}
       showHeader={false}
@@ -253,9 +314,11 @@ export function DebugWindowPage({ conversationId, isLoading, threadConversation,
 }
 
 export function DebugModal({
+  ambientSuggestionStatuses,
   conversationId,
   threadConversation,
   authSnapshot,
+  projectlessThreadCwd,
   recentThreads,
   workspaceRootOptions,
   activeWorkspaceRoots,
@@ -264,10 +327,13 @@ export function DebugModal({
   worktreesSettings,
   primaryRuntimeStatus,
   primaryRuntimeInstallRelease,
+  isAmbientSuggestionsLoading,
+  refreshingAmbientSuggestionsProjectRoot,
   appActionDraft,
   appActionResult,
   isAppActionRunning,
   onAppActionDraftChange,
+  onRefreshAmbientSuggestions,
   onRunAppAction,
   onPrimaryRuntimeInstallReleaseChange,
   onPrimaryRuntimeRefresh,
@@ -393,6 +459,15 @@ export function DebugModal({
               </div>
             </div>
           </DebugSection>
+
+          <AmbientSuggestionsDebugSection
+            isLoading={isAmbientSuggestionsLoading}
+            onRefresh={onRefreshAmbientSuggestions}
+            projectlessThreadCwd={projectlessThreadCwd}
+            refreshingProjectRoot={refreshingAmbientSuggestionsProjectRoot}
+            statuses={ambientSuggestionStatuses}
+            workspaceRootOptions={workspaceRootOptions}
+          />
 
           <DebugSection storageKey="debug-workspace-roots-section" title="Workspace roots" defaultOpen>
             {workspaceRootOptions?.roots.length ? (
@@ -523,67 +598,6 @@ export function DebugModal({
   );
 }
 
-function DebugSection({
-  storageKey,
-  title,
-  children,
-  defaultOpen = true,
-}: {
-  storageKey: string;
-  title: string;
-  children: ReactNode;
-  defaultOpen?: boolean;
-}) {
-  const [open, setOpen] = useState(readSectionOpen(storageKey, defaultOpen));
-
-  useEffect(() => {
-    writeSectionOpen(storageKey, open);
-  }, [open, storageKey]);
-
-  return (
-    <details
-      className="group rounded-xl border border-token-border bg-token-foreground/[0.03] shadow-sm"
-      open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 marker:content-none">
-        <span className="flex min-w-0 items-center gap-2">
-          <span
-            aria-hidden="true"
-            className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center text-[10px] transition-transform duration-150"
-            style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)" }}
-          >
-            ▶
-          </span>
-          <span className="truncate font-medium text-token-foreground">{title}</span>
-        </span>
-      </summary>
-      <div className="border-t border-token-border px-3 pb-3">{children}</div>
-    </details>
-  );
-}
-
-function DebugField({ label, value }: { label: string; value: string }) {
-  return (
-    <div
-      className="group/line-item relative flex items-start justify-between border-t-[0.5px] border-token-border py-1.5 tabular-nums first:border-t-0"
-      style={{ "--debug-label-width": "110px" } as CSSProperties}
-    >
-      <span
-        className="min-w-0 shrink-0 text-left break-words text-token-description-foreground"
-        style={{ width: "var(--debug-label-width)" }}
-      >
-        {label}
-      </span>
-      <span className="min-w-0 flex-1 break-words pr-3 text-left">{value}</span>
-    </div>
-  );
-}
-
-function DebugEmptyState({ message }: { message: string }) {
-  return <div className="px-3 py-2 text-xs text-token-foreground-secondary">{message}</div>;
-}
-
 function DebugLoadingState() {
   return (
     <main className="flex h-dvh w-full items-center justify-center bg-token-main-surface-primary text-token-foreground">
@@ -592,38 +606,6 @@ function DebugLoadingState() {
       </div>
     </main>
   );
-}
-
-function readSectionOpen(storageKey: string, defaultOpen: boolean) {
-  if (typeof window === "undefined") {
-    return defaultOpen;
-  }
-
-  try {
-    const stored = window.localStorage.getItem(storageKey);
-    if (stored === "open") {
-      return true;
-    }
-    if (stored === "closed") {
-      return false;
-    }
-  } catch {
-    return defaultOpen;
-  }
-
-  return defaultOpen;
-}
-
-function writeSectionOpen(storageKey: string, open: boolean) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(storageKey, open ? "open" : "closed");
-  } catch {
-    // ignore
-  }
 }
 
 function summaryValue(value: string | null | undefined, fallback: string) {

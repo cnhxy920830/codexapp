@@ -46,12 +46,79 @@ export type PrimaryRuntimeUpdateRunNowResponse = {
   status: "already-current" | "installed" | "skipped";
 };
 
+export type AmbientSuggestionsGenerationStatus = {
+  projectRoot: string;
+  runningCount: number;
+  safetyRunningCount: number;
+  runningStartedAtMs: number | null;
+  safetyStartedAtMs: number | null;
+  lastFinishedAtMs: number | null;
+};
+
+export type AmbientSuggestionsGenerationStatusesResponse = {
+  statuses: AmbientSuggestionsGenerationStatus[];
+};
+
+export type AmbientSuggestionRecordStatus = "pending" | "accepted" | "dismissed";
+
+export type AmbientSuggestionRecord = {
+  id: string;
+  title: string;
+  description: string;
+  prompt: string;
+  appIds: string[];
+  status: AmbientSuggestionRecordStatus;
+  createdAtMs: number;
+  updatedAtMs: number;
+};
+
+export type AmbientSuggestionsFile = {
+  projectRoot: string;
+  generatedAtMs: number | null;
+  currentSuggestionIds: string[];
+  suggestions: AmbientSuggestionRecord[];
+};
+
+export type AmbientSuggestionsReadResponse = {
+  file: AmbientSuggestionsFile;
+};
+
 export async function readPrimaryRuntimeUpdateStatus() {
   return invoke<PrimaryRuntimeUpdateStatusResponse>("primary-runtime-update-status");
 }
 
 export async function primaryRuntimeUpdateRunNow() {
   return invoke<PrimaryRuntimeUpdateRunNowResponse>("primary-runtime-update-run-now");
+}
+
+export async function readAmbientSuggestionsGenerationStatuses() {
+  return invoke<AmbientSuggestionsGenerationStatusesResponse>("ambient-suggestions-generation-statuses");
+}
+
+export async function readAmbientSuggestions(params: {
+  hostId?: string | null;
+  projectRoot: string;
+}) {
+  return invoke<AmbientSuggestionsReadResponse>("ambient-suggestions", {
+    params: {
+      hostId: params.hostId ?? null,
+      projectRoot: params.projectRoot,
+    },
+  });
+}
+
+export async function refreshAmbientSuggestions(params: {
+  hostId?: string | null;
+  projectRoot: string;
+  mode?: "default" | "first-plugin-connect" | null;
+}) {
+  return invoke<AmbientSuggestionsReadResponse>("ambient-suggestions-refresh", {
+    params: {
+      hostId: params.hostId ?? null,
+      projectRoot: params.projectRoot,
+      mode: params.mode ?? "default",
+    },
+  });
 }
 
 export async function setPrimaryRuntimeInstallRelease(release: string) {
@@ -61,7 +128,7 @@ export async function setPrimaryRuntimeInstallRelease(release: string) {
 }
 
 export function readAppFlavor(): AppFlavor {
-  const rawFlavor = import.meta.env.VITE_APP_VARIANT?.trim();
+  const rawFlavor = import.meta.env?.VITE_APP_VARIANT?.trim();
   if (isAppFlavor(rawFlavor)) {
     return rawFlavor;
   }

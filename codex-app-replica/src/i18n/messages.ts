@@ -191,6 +191,21 @@ export type MessageKey =
   | "settings.section.skills-settings"
   | "skills.card.enabledStatus"
   | "skills.card.disabledStatus"
+  | "skills.card.loadingContents"
+  | "skills.card.contentsError"
+  | "skills.card.removeSuccess"
+  | "skills.card.removeFailed"
+  | "skills.card.toggleEnabledError"
+  | "skills.card.disabledBadge"
+  | "skills.card.open"
+  | "skills.card.moreActions"
+  | "skills.card.details"
+  | "skills.card.uninstall"
+  | "skills.card.try"
+  | "skills.card.enableSuccess"
+  | "skills.card.disableSuccess"
+  | "skills.card.enableSkill"
+  | "skills.card.disableSkill"
   | "plugins.card.enableToggleTooltip"
   | "plugins.card.disableToggleTooltip"
   | "plugins.card.toggleAria"
@@ -232,6 +247,10 @@ export type MessageKey =
   | "app.shell.share"
   | "home.hero.letsBuild"
   | "threadPage.newThread"
+  | "hotkeyWindow.dismiss"
+  | "hotkeyWindow.defaultTitle"
+  | "hotkeyWindow.threadPage.newButton"
+  | "hotkeyWindow.threadPage.openInMainWindow"
   | "codex.alert.closeAriaLabel"
   | "codex.archiveInfo.electron"
   | "codex.archiveInfo.settingsLink"
@@ -397,10 +416,15 @@ export type MessageKey =
   | "review.commit.customInstructionsLink"
   | "review.commit.includeUnstaged"
   | "review.commit.ariaLabel.includeUnstaged"
+  | "review.commit.loading.title.createDraftPr"
+  | "review.commit.loading.title.createPr"
   | "review.commit.form.continue"
   | "review.commit.rows.fileCount"
   | "review.commit.generate.emptyResponse"
   | "review.commit.generate.failed"
+  | "localConversationPage.createPullRequestError"
+  | "localConversationPage.createDraftPullRequestButtonLabel"
+  | "localConversationPage.createPullRequestButtonLabel"
   | "localConversation.syncSetup.branchName"
   | "localConversation.syncSetup.setPrefix"
   | "localConversation.syncSetup.branchesLoading"
@@ -514,6 +538,57 @@ export type MessageKey =
   | "avatarOverlay.session.calledToolName"
   | "thread.browser.emptyState.title"
   | "thread.browser.emptyState.description"
+  | "codex.remoteConversation.codexCloudTask"
+  | "codex.remoteConversation.viewPreviousTurns"
+  | "codex.remoteConversation.viewPreviousTurns.buttonTooltip"
+  | "codex.remoteConversation.viewPreviousTurns.buttonText"
+  | "codex.remoteConversation.openInWeb"
+  | "codex.remoteConversation.errorWithMessage"
+  | "remoteConversation.environmentSetup.failed"
+  | "remoteConversation.environmentSetup.running"
+  | "remoteConversation.environmentSetup.output.empty"
+  | "codex.remoteConversation.userImageAttachment"
+  | "codex.remoteConversation.closeImagePreview"
+  | "codex.remoteConversation.loadingImage"
+  | "codex.remoteConversation.taskFailed"
+  | "codex.remoteConversation.turnFailed"
+  | "codex.remoteConversation.turnTab.title"
+  | "codex.remoteConversation.turnTab.loading"
+  | "codex.remoteConversation.applyDiff.apply"
+  | "codex.remoteConversation.applyDiff.revert"
+  | "codex.remoteConversation.applyDiff.dropdownTitle"
+  | "codex.remoteConversation.applyDiff.applyCta"
+  | "codex.remoteConversation.applyDiff.revertCta"
+  | "codex.applyDropdown.header.title"
+  | "codex.applyDropdown.header.changes"
+  | "codex.applyDropdown.header.fileCount"
+  | "codex.applyDropdown.header.rows"
+  | "codex.applyDropdown.header.workspace"
+  | "codex.applyDropdown.results.empty"
+  | "codex.applyDropdown.results.skipped"
+  | "codex.applyDropdown.results.conflicted"
+  | "codex.applyOrRevertBanner.apply"
+  | "codex.applyOrRevertBanner.reapply"
+  | "codex.applyOrRevertBanner.revert"
+  | "codex.applyOrRevertBanner.applyMessage"
+  | "codex.applyOrRevertBanner.revertMessage"
+  | "codex.applyOrRevertBanner.applyMessageDifferentEnvironment"
+  | "codex.applyOrRevertBanner.applyMessageDifferentEnvironment.tooltip"
+  | "codex.applyResultsDialog.title"
+  | "codex.applyResultsDialog.applied"
+  | "codex.applyResultsDialog.conflicted"
+  | "codex.applyResultsDialog.skipped"
+  | "codex.applyResultsDialog.notGitRepo"
+  | "codex.applyResultsDialog.noDetails"
+  | "codex.applyResultsDialog.close"
+  | "codex.diffView.applyPatchNotGitRepo"
+  | "codex.diffView.revertPatchNotGitRepo"
+  | "codex.diffView.applyPatchSuccess"
+  | "codex.diffView.revertPatchSuccess"
+  | "codex.diffView.applyPatchPartialSuccess"
+  | "codex.diffView.revertPatchPartialSuccess"
+  | "codex.diffView.applyPatchError"
+  | "codex.diffView.revertPatchError"
   | "localConversation.remoteTaskCreated"
   | "localConversation.remoteTaskCreated.task"
   | "localConversation.dynamicToolCall"
@@ -856,10 +931,13 @@ export type MessageKey =
   | "scratchpadPage.headerTitle"
   | "scratchpadPage.headerSubtitle"
   | "scratchpadPage.clearButton"
+  | "scratchpadPage.createError"
   | "scratchpadPage.inputPlaceholder.initial"
   | "scratchpadPage.inputPlaceholder.followUp"
   | "scratchpadPage.inputPlaceholder.followUpHint"
   | "scratchpadPage.summaryLoading"
+  | "codex.localTaskRow.awaitingApproval"
+  | "codex.localTaskRow.awaitingResponse"
   | "general.title"
   | "general.theme"
   | "general.themeDescription"
@@ -1092,6 +1170,56 @@ export type MessageKey =
   | "plugins.installModal.installing"
   | "plugins.installModal.metadata.category"
   | "plugins.installModal.title"
+  | "plugins.installModal.finishSetup.title"
+  | "plugins.installModal.finishSetup.description"
+  | "plugins.installModal.requiredApps"
+  | "plugins.installModal.requiredApps.connected"
+  | "plugins.installModal.requiredApps.connecting"
+  | "plugins.installModal.requiredApps.connect"
+  | "plugins.installModal.browserExtensions"
+  | "plugins.installModal.browserExtension.description"
+  | "plugins.installModal.done"
+  | "plugins.install.ready"
+  | "plugins.install.success"
+  | "plugins.install.error"
+  | "plugins.install.refreshError"
+  | "codexMobile.homeBanner.title"
+  | "codexMobile.homeBanner.body"
+  | "codexMobile.homeBanner.primary"
+  | "codexMobile.homeBanner.dismiss"
+  | "codexMobile.setupDialog.close"
+  | "codexMobile.setupDialog.initial.title"
+  | "codexMobile.setupDialog.initial.heading"
+  | "codexMobile.setupDialog.initial.description"
+  | "codexMobile.setupDialog.initial.feature.threads"
+  | "codexMobile.setupDialog.initial.feature.notifications"
+  | "codexMobile.setupDialog.initial.feature.actions"
+  | "codexMobile.setupDialog.initial.skip"
+  | "codexMobile.setupDialog.initial.primary"
+  | "codexMobile.setupDialog.initial.startSetupError"
+  | "codexMobile.setupDialog.allowHost.title"
+  | "codexMobile.setupDialog.allowHost.heading"
+  | "codexMobile.setupDialog.allowHost.description"
+  | "codexMobile.setupDialog.allowHost.primary"
+  | "codexMobile.setupDialog.mfaRequired.title"
+  | "codexMobile.setupDialog.mfaRequired.heading"
+  | "codexMobile.setupDialog.mfaRequired.description"
+  | "codexMobile.setupDialog.mfaRequired.primary"
+  | "codexMobile.setupDialog.waiting.title"
+  | "codexMobile.setupDialog.waiting.heading"
+  | "codexMobile.setupDialog.waiting.description"
+  | "codexMobile.setupDialog.connected.title"
+  | "codexMobile.setupDialog.connected.heading"
+  | "codexMobile.setupDialog.connected.description"
+  | "codexMobile.setupDialog.connected.keepAwake.title"
+  | "codexMobile.setupDialog.connected.keepAwake.description"
+  | "codexMobile.setupDialog.connected.keepAwake.toggle"
+  | "codexMobile.setupDialog.connected.computerUse.title"
+  | "codexMobile.setupDialog.connected.computerUse.description"
+  | "codexMobile.setupDialog.connected.computerUse.toggle"
+  | "codexMobile.setupDialog.connected.chromeExtension.title"
+  | "codexMobile.setupDialog.connected.chromeExtension.description"
+  | "codexMobile.setupDialog.connected.finish"
   | "settings.localEnvironments.workspaceSelect.description"
   | "settings.localEnvironments.workspaceSelect.title"
   | "settings.localEnvironments.workspaceSelect.learnMore"
@@ -2111,6 +2239,21 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.nav.skills-settings": "Skills",
     "skills.card.enabledStatus": "Enabled",
     "skills.card.disabledStatus": "Disabled",
+    "skills.card.loadingContents": "Loading skill contents...",
+    "skills.card.contentsError": "Unable to load skill contents.",
+    "skills.card.removeSuccess": "{skillName} skill uninstalled",
+    "skills.card.removeFailed": "Failed to uninstall skill",
+    "skills.card.toggleEnabledError": "Failed to update skill",
+    "skills.card.disabledBadge": "Disabled",
+    "skills.card.open": "Open",
+    "skills.card.moreActions": "More actions",
+    "skills.card.details": "Details",
+    "skills.card.uninstall": "Uninstall",
+    "skills.card.try": "Try in chat",
+    "skills.card.enableSuccess": "{skillName} skill enabled",
+    "skills.card.disableSuccess": "{skillName} skill disabled",
+    "skills.card.enableSkill": "Enable skill",
+    "skills.card.disableSkill": "Disable skill",
     "skills.appsPage.manageTab.apps": "Apps",
     "skills.appsPage.manageTab.mcps": "MCPs",
     "skills.appsPage.manageTab.skills": "Skills",
@@ -2187,6 +2330,82 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "plugins.installModal.installing": "Installing {pluginName}",
     "plugins.installModal.metadata.category": "Category: {category}",
     "plugins.installModal.title": "Install {pluginName}",
+    "plugins.installModal.finishSetup.title": "Finish setting up {pluginName}",
+    "plugins.installModal.finishSetup.description":
+      "Complete the remaining steps so Codex can use this plugin.",
+    "plugins.installModal.requiredApps": "Required apps",
+    "plugins.installModal.requiredApps.connected": "Connected",
+    "plugins.installModal.requiredApps.connecting": "Connecting…",
+    "plugins.installModal.requiredApps.connect": "Connect",
+    "plugins.installModal.browserExtensions": "Browser extensions",
+    "plugins.installModal.browserExtension.description":
+      "Install this extension in Chrome to let Codex connect to your browser",
+    "plugins.installModal.done": "Done",
+    "plugins.install.ready": "{pluginName} is ready to use",
+    "plugins.install.success": "{pluginName} installed",
+    "plugins.install.error": "Failed to install plugin",
+    "plugins.install.refreshError":
+      "Installed {pluginName}, but failed to refresh plugin state",
+    "codexMobile.homeBanner.title": "Introducing Codex mobile",
+    "codexMobile.homeBanner.body":
+      "The power of Codex on your desktop computer from your phone",
+    "codexMobile.homeBanner.primary": "Set up",
+    "codexMobile.homeBanner.dismiss": "Dismiss Codex mobile banner",
+    "codexMobile.setupDialog.close": "Close",
+    "codexMobile.setupDialog.initial.title": "Set up Codex mobile",
+    "codexMobile.setupDialog.initial.heading": "Set up Codex mobile",
+    "codexMobile.setupDialog.initial.description":
+      "Use the ChatGPT app on your phone to keep working with Codex whenever your computer is awake",
+    "codexMobile.setupDialog.initial.feature.threads":
+      "Access all your threads and projects and create new ones",
+    "codexMobile.setupDialog.initial.feature.notifications":
+      "Get notified when Codex desktop completes a task or needs your attention",
+    "codexMobile.setupDialog.initial.feature.actions":
+      "Use the full power of Codex on the go, including taking actions on your computer",
+    "codexMobile.setupDialog.initial.skip": "Set up later in Settings",
+    "codexMobile.setupDialog.initial.primary": "Get started",
+    "codexMobile.setupDialog.initial.startSetupError":
+      "Couldn’t check security requirements. Try again",
+    "codexMobile.setupDialog.allowHost.title":
+      "Allow your phone to control this computer",
+    "codexMobile.setupDialog.allowHost.heading":
+      "Allow your phone to control this computer",
+    "codexMobile.setupDialog.allowHost.description":
+      "Let Codex mobile access this computer so you can keep working from your phone",
+    "codexMobile.setupDialog.allowHost.primary": "Allow",
+    "codexMobile.setupDialog.mfaRequired.title":
+      "Turn on Multi-Factor Authentication",
+    "codexMobile.setupDialog.mfaRequired.heading":
+      "Turn on Multi-Factor Authentication",
+    "codexMobile.setupDialog.mfaRequired.description":
+      "To ensure you remain in control of your devices, you’ll need to turn on Multi-Factor Authentication for your ChatGPT account.",
+    "codexMobile.setupDialog.mfaRequired.primary":
+      "Continue on chatgpt.com",
+    "codexMobile.setupDialog.waiting.title": "Approve on mobile device",
+    "codexMobile.setupDialog.waiting.heading": "Approve on mobile device",
+    "codexMobile.setupDialog.waiting.description":
+      "Approve the connection request sent to your mobile device signed into ChatGPT.",
+    "codexMobile.setupDialog.connected.title": "You’re connected",
+    "codexMobile.setupDialog.connected.heading": "You’re connected",
+    "codexMobile.setupDialog.connected.description":
+      "Make the most out of Codex mobile. You can change these later in Settings.",
+    "codexMobile.setupDialog.connected.keepAwake.title":
+      "Keep this computer awake",
+    "codexMobile.setupDialog.connected.keepAwake.description":
+      "Prevent your computer from sleeping when Codex is running.",
+    "codexMobile.setupDialog.connected.keepAwake.toggle":
+      "Keep this computer awake",
+    "codexMobile.setupDialog.connected.computerUse.title":
+      "Enable Computer Use",
+    "codexMobile.setupDialog.connected.computerUse.description":
+      "Let Codex control the apps on your Mac.",
+    "codexMobile.setupDialog.connected.computerUse.toggle":
+      "Enable Computer Use",
+    "codexMobile.setupDialog.connected.chromeExtension.title":
+      "Install Chrome extension",
+    "codexMobile.setupDialog.connected.chromeExtension.description":
+      "Let Codex navigate and fill out forms on websites.",
+    "codexMobile.setupDialog.connected.finish": "Finish setup",
     "app.shell.appMenu": "App menu",
     "app.shell.back": "Back",
     "app.shell.forward": "Forward",
@@ -2280,6 +2499,10 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "homePage.mainContent": "Main content",
     "home.hero.letsBuild": "Let’s build",
     "threadPage.newThread": "New chat",
+    "hotkeyWindow.dismiss": "Dismiss Popout Window",
+    "hotkeyWindow.defaultTitle": "Codex",
+    "hotkeyWindow.threadPage.newButton": "Start New Chat",
+    "hotkeyWindow.threadPage.openInMainWindow": "Open in Main Window",
     "app.chat.revisedPrompt": "Revised prompt",
     "app.chat.prompt": "Prompt",
     "app.chat.model": "Model",
@@ -2372,10 +2595,15 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "review.commit.customInstructionsLink": "Custom instructions",
     "review.commit.includeUnstaged": "Include unstaged",
     "review.commit.ariaLabel.includeUnstaged": "Include unstaged",
+    "review.commit.loading.title.createDraftPr": "Creating a draft PR",
+    "review.commit.loading.title.createPr": "Creating a PR",
     "review.commit.form.continue": "Continue",
     "review.commit.rows.fileCount": "{count, plural, one {# file} other {# files}}",
     "review.commit.generate.emptyResponse": "Couldn't generate a commit message.",
     "review.commit.generate.failed": "Failed to generate commit message: {error}",
+    "localConversationPage.createPullRequestError": "Failed to create pull request",
+    "localConversationPage.createDraftPullRequestButtonLabel": "Create draft PR",
+    "localConversationPage.createPullRequestButtonLabel": "Create PR",
     "localConversation.syncSetup.branchName": "Branch name",
     "localConversation.syncSetup.setPrefix": "Set prefix",
     "localConversation.syncSetup.branchesLoading": "Loading branches…",
@@ -2491,6 +2719,57 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "avatarOverlay.session.calledToolName": "Called {toolName}",
     "thread.browser.emptyState.title": "Start browsing",
     "thread.browser.emptyState.description": "Enter a URL to open a page",
+    "codex.remoteConversation.codexCloudTask": "You are viewing a <u>Codex cloud</u> task",
+    "codex.remoteConversation.viewPreviousTurns": "Open in web",
+    "codex.remoteConversation.viewPreviousTurns.buttonTooltip": "Open in web",
+    "codex.remoteConversation.viewPreviousTurns.buttonText": "Open",
+    "codex.remoteConversation.openInWeb": "Open in web",
+    "codex.remoteConversation.errorWithMessage": "Error: {message}",
+    "remoteConversation.environmentSetup.failed": "Environment setup failed",
+    "remoteConversation.environmentSetup.running": "Setting up environment",
+    "remoteConversation.environmentSetup.output.empty": "Waiting for output…",
+    "codex.remoteConversation.userImageAttachment": "User attachment",
+    "codex.remoteConversation.closeImagePreview": "Close image preview",
+    "codex.remoteConversation.loadingImage": "Loading image",
+    "codex.remoteConversation.taskFailed": "Task failed",
+    "codex.remoteConversation.turnFailed": "An error occurred during this task",
+    "codex.remoteConversation.turnTab.title": "Attempt {number}",
+    "codex.remoteConversation.turnTab.loading": "Attempt {number}",
+    "codex.remoteConversation.applyDiff.apply": "Apply",
+    "codex.remoteConversation.applyDiff.revert": "Revert",
+    "codex.remoteConversation.applyDiff.dropdownTitle": "Apply changes to a local branch",
+    "codex.remoteConversation.applyDiff.applyCta": "Apply changes",
+    "codex.remoteConversation.applyDiff.revertCta": "Revert changes",
+    "codex.applyDropdown.header.title": "Apply changes",
+    "codex.applyDropdown.header.changes": "Changes",
+    "codex.applyDropdown.header.fileCount": "{count, plural, one {# file} other {# files}}",
+    "codex.applyDropdown.header.rows": "rows",
+    "codex.applyDropdown.header.workspace": "Project",
+    "codex.applyDropdown.results.empty": "No files were copied",
+    "codex.applyDropdown.results.skipped": "{count, plural, one {1 file skipped:} other {{count} files skipped:}}",
+    "codex.applyDropdown.results.conflicted": "{count, plural, one {1 file conflicted:} other {{count} files conflicted:}}",
+    "codex.applyOrRevertBanner.apply": "Apply",
+    "codex.applyOrRevertBanner.reapply": "Reapply",
+    "codex.applyOrRevertBanner.revert": "Revert",
+    "codex.applyOrRevertBanner.applyMessage": "Apply changes and continue locally?",
+    "codex.applyOrRevertBanner.revertMessage": "Revert applied changes?",
+    "codex.applyOrRevertBanner.applyMessageDifferentEnvironment": "This task was made in {environment} so may not apply cleanly.",
+    "codex.applyOrRevertBanner.applyMessageDifferentEnvironment.tooltip": "Changes made in {environment} so may not apply cleanly.",
+    "codex.applyResultsDialog.title": "Apply results",
+    "codex.applyResultsDialog.applied": "Applied cleanly ({count})",
+    "codex.applyResultsDialog.conflicted": "Conflicted ({count})",
+    "codex.applyResultsDialog.skipped": "Skipped ({count})",
+    "codex.applyResultsDialog.notGitRepo": "This action only works when running in a Git repository.",
+    "codex.applyResultsDialog.noDetails": "No file details available.",
+    "codex.applyResultsDialog.close": "Close",
+    "codex.diffView.applyPatchNotGitRepo": "Couldn’t apply changes: not a git repository",
+    "codex.diffView.revertPatchNotGitRepo": "Couldn’t revert changes: not a git repository",
+    "codex.diffView.applyPatchSuccess": "Applied changes",
+    "codex.diffView.revertPatchSuccess": "Reverted changes",
+    "codex.diffView.applyPatchPartialSuccess": "Applied some changes",
+    "codex.diffView.revertPatchPartialSuccess": "Reverted some changes",
+    "codex.diffView.applyPatchError": "Couldn’t apply changes",
+    "codex.diffView.revertPatchError": "Couldn’t revert changes",
     "localConversation.remoteTaskCreated": "Created {taskLink} in Codex Cloud",
     "localConversation.remoteTaskCreated.task": "task",
     "localConversation.dynamicToolCall": "{toolName}",
@@ -2844,10 +3123,13 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "scratchpadPage.headerTitle": "Scratchpad",
     "scratchpadPage.headerSubtitle": "Experiment",
     "scratchpadPage.clearButton": "Clear",
+    "scratchpadPage.createError": "Could not create chat",
     "scratchpadPage.inputPlaceholder.initial": "Add a task",
     "scratchpadPage.inputPlaceholder.followUp": "Add a follow up",
     "scratchpadPage.inputPlaceholder.followUpHint": "Add a task, or tab for a follow up",
     "scratchpadPage.summaryLoading": "Summarizing final assistant response",
+    "codex.localTaskRow.awaitingApproval": "Awaiting approval",
+    "codex.localTaskRow.awaitingResponse": "Awaiting response",
     "general.title": "General",
     "general.theme": "Theme",
     "general.themeDescription": "Use light, dark, or match your system",
@@ -4185,6 +4467,21 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.nav.skills-settings": "技能",
     "skills.card.enabledStatus": "已启用",
     "skills.card.disabledStatus": "已禁用",
+    "skills.card.loadingContents": "正在加载技能内容…",
+    "skills.card.contentsError": "无法加载技能内容。",
+    "skills.card.removeSuccess": "{skillName} 技能已卸载",
+    "skills.card.removeFailed": "无法卸载技能",
+    "skills.card.toggleEnabledError": "无法更新技能",
+    "skills.card.disabledBadge": "已禁用",
+    "skills.card.open": "打开",
+    "skills.card.moreActions": "更多操作",
+    "skills.card.details": "详情",
+    "skills.card.uninstall": "卸载",
+    "skills.card.try": "在对话中试用",
+    "skills.card.enableSuccess": "{skillName} 技能已启用",
+    "skills.card.disableSuccess": "{skillName} 技能已禁用",
+    "skills.card.enableSkill": "启用技能",
+    "skills.card.disableSkill": "禁用技能",
     "skills.appsPage.manageTab.apps": "应用",
     "skills.appsPage.manageTab.mcps": "MCP 服务器",
     "skills.appsPage.manageTab.skills": "技能",
@@ -4261,6 +4558,75 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "plugins.installModal.installing": "正在安装 {pluginName}",
     "plugins.installModal.metadata.category": "分类：{category}",
     "plugins.installModal.title": "安装 {pluginName}",
+    "plugins.installModal.finishSetup.title": "完成 {pluginName} 设置",
+    "plugins.installModal.finishSetup.description":
+      "完成剩余步骤后，Codex 才能使用这个插件。",
+    "plugins.installModal.requiredApps": "必需应用",
+    "plugins.installModal.requiredApps.connected": "已连接",
+    "plugins.installModal.requiredApps.connecting": "连接中…",
+    "plugins.installModal.requiredApps.connect": "连接",
+    "plugins.installModal.browserExtensions": "浏览器扩展",
+    "plugins.installModal.browserExtension.description":
+      "在 Chrome 中安装此扩展，让 Codex 能连接到你的浏览器",
+    "plugins.installModal.done": "完成",
+    "plugins.install.ready": "{pluginName} 已可使用",
+    "plugins.install.success": "{pluginName} 已安装",
+    "plugins.install.error": "安装插件失败",
+    "plugins.install.refreshError":
+      "已安装 {pluginName}，但刷新插件状态失败",
+    "codexMobile.homeBanner.title": "介绍 Codex mobile",
+    "codexMobile.homeBanner.body": "在手机上使用桌面电脑上的 Codex 能力",
+    "codexMobile.homeBanner.primary": "开始设置",
+    "codexMobile.homeBanner.dismiss": "关闭 Codex mobile 横幅",
+    "codexMobile.setupDialog.close": "关闭",
+    "codexMobile.setupDialog.initial.title": "设置 Codex mobile",
+    "codexMobile.setupDialog.initial.heading": "设置 Codex mobile",
+    "codexMobile.setupDialog.initial.description":
+      "在电脑保持唤醒时，通过手机上的 ChatGPT 应用继续使用 Codex",
+    "codexMobile.setupDialog.initial.feature.threads":
+      "访问你的所有线程和项目，并创建新的线程",
+    "codexMobile.setupDialog.initial.feature.notifications":
+      "当 Codex 桌面端完成任务或需要你处理时接收通知",
+    "codexMobile.setupDialog.initial.feature.actions":
+      "随时随地使用完整的 Codex 能力，包括在你的电脑上执行操作",
+    "codexMobile.setupDialog.initial.skip": "稍后在设置中配置",
+    "codexMobile.setupDialog.initial.primary": "开始",
+    "codexMobile.setupDialog.initial.startSetupError":
+      "无法检查安全要求。请重试",
+    "codexMobile.setupDialog.allowHost.title": "允许手机控制这台电脑",
+    "codexMobile.setupDialog.allowHost.heading": "允许手机控制这台电脑",
+    "codexMobile.setupDialog.allowHost.description":
+      "允许 Codex mobile 访问这台电脑，这样你就能在手机上继续工作",
+    "codexMobile.setupDialog.allowHost.primary": "允许",
+    "codexMobile.setupDialog.mfaRequired.title": "开启多重身份验证",
+    "codexMobile.setupDialog.mfaRequired.heading": "开启多重身份验证",
+    "codexMobile.setupDialog.mfaRequired.description":
+      "为了确保始终由你控制设备，你需要先为 ChatGPT 账户开启多重身份验证。",
+    "codexMobile.setupDialog.mfaRequired.primary": "继续前往 chatgpt.com",
+    "codexMobile.setupDialog.waiting.title": "在移动设备上批准",
+    "codexMobile.setupDialog.waiting.heading": "在移动设备上批准",
+    "codexMobile.setupDialog.waiting.description":
+      "请在已登录 ChatGPT 的移动设备上批准该连接请求。",
+    "codexMobile.setupDialog.connected.title": "已连接",
+    "codexMobile.setupDialog.connected.heading": "已连接",
+    "codexMobile.setupDialog.connected.description":
+      "充分利用 Codex mobile。你之后也可以在设置中更改这些选项。",
+    "codexMobile.setupDialog.connected.keepAwake.title": "让这台电脑保持唤醒",
+    "codexMobile.setupDialog.connected.keepAwake.description":
+      "在 Codex 运行时阻止电脑进入睡眠。",
+    "codexMobile.setupDialog.connected.keepAwake.toggle":
+      "让这台电脑保持唤醒",
+    "codexMobile.setupDialog.connected.computerUse.title":
+      "启用 Computer Use",
+    "codexMobile.setupDialog.connected.computerUse.description":
+      "允许 Codex 控制你 Mac 上的应用。",
+    "codexMobile.setupDialog.connected.computerUse.toggle":
+      "启用 Computer Use",
+    "codexMobile.setupDialog.connected.chromeExtension.title":
+      "安装 Chrome 扩展",
+    "codexMobile.setupDialog.connected.chromeExtension.description":
+      "让 Codex 能在网站上导航并填写表单。",
+    "codexMobile.setupDialog.connected.finish": "完成设置",
     "app.shell.appMenu": "应用菜单",
     "app.shell.back": "返回",
     "app.shell.forward": "前进",
@@ -4353,6 +4719,10 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "homePage.mainContent": "主要内容",
     "home.hero.letsBuild": "开始构建",
     "threadPage.newThread": "新聊天",
+    "hotkeyWindow.dismiss": "关闭弹出窗口",
+    "hotkeyWindow.defaultTitle": "Codex",
+    "hotkeyWindow.threadPage.newButton": "开始新聊天",
+    "hotkeyWindow.threadPage.openInMainWindow": "在主窗口中打开",
     "app.chat.revisedPrompt": "修订后的提示词",
     "app.chat.prompt": "提示词",
     "app.chat.model": "模型",
@@ -4444,10 +4814,15 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "review.commit.customInstructionsLink": "自定义说明",
     "review.commit.includeUnstaged": "包含未暂存更改",
     "review.commit.ariaLabel.includeUnstaged": "包含未暂存更改",
+    "review.commit.loading.title.createDraftPr": "正在创建草稿 PR",
+    "review.commit.loading.title.createPr": "正在创建 PR",
     "review.commit.form.continue": "继续",
     "review.commit.rows.fileCount": "{count, plural, one {# 个文件} other {# 个文件}}",
     "review.commit.generate.emptyResponse": "无法生成提交信息。",
     "review.commit.generate.failed": "生成提交信息失败：{error}",
+    "localConversationPage.createPullRequestError": "创建拉取请求失败",
+    "localConversationPage.createDraftPullRequestButtonLabel": "创建草稿 PR",
+    "localConversationPage.createPullRequestButtonLabel": "创建 PR",
     "localConversation.syncSetup.branchName": "分支名称",
     "localConversation.syncSetup.setPrefix": "设置前缀",
     "localConversation.syncSetup.branchesLoading": "正在加载分支…",
@@ -4563,6 +4938,57 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "avatarOverlay.session.calledToolName": "已调用 {toolName}",
     "thread.browser.emptyState.title": "开始浏览",
     "thread.browser.emptyState.description": "输入 URL 以打开页面",
+    "codex.remoteConversation.codexCloudTask": "你正在查看一个 <u>Codex cloud</u> 任务",
+    "codex.remoteConversation.viewPreviousTurns": "在网页中打开",
+    "codex.remoteConversation.viewPreviousTurns.buttonTooltip": "在网页中打开",
+    "codex.remoteConversation.viewPreviousTurns.buttonText": "打开",
+    "codex.remoteConversation.openInWeb": "在网页中打开",
+    "codex.remoteConversation.errorWithMessage": "错误：{message}",
+    "remoteConversation.environmentSetup.failed": "环境设置失败",
+    "remoteConversation.environmentSetup.running": "正在设置环境",
+    "remoteConversation.environmentSetup.output.empty": "等待输出…",
+    "codex.remoteConversation.userImageAttachment": "用户附件",
+    "codex.remoteConversation.closeImagePreview": "关闭图片预览",
+    "codex.remoteConversation.loadingImage": "正在加载图片",
+    "codex.remoteConversation.taskFailed": "任务失败",
+    "codex.remoteConversation.turnFailed": "此任务执行期间发生错误",
+    "codex.remoteConversation.turnTab.title": "尝试 {number}",
+    "codex.remoteConversation.turnTab.loading": "尝试 {number}",
+    "codex.remoteConversation.applyDiff.apply": "应用",
+    "codex.remoteConversation.applyDiff.revert": "还原",
+    "codex.remoteConversation.applyDiff.dropdownTitle": "将更改应用到本地分支",
+    "codex.remoteConversation.applyDiff.applyCta": "应用更改",
+    "codex.remoteConversation.applyDiff.revertCta": "还原更改",
+    "codex.applyDropdown.header.title": "应用更改",
+    "codex.applyDropdown.header.changes": "更改",
+    "codex.applyDropdown.header.fileCount": "{count, plural, one {# 个文件} other {# 个文件}}",
+    "codex.applyDropdown.header.rows": "行",
+    "codex.applyDropdown.header.workspace": "项目",
+    "codex.applyDropdown.results.empty": "没有复制任何文件",
+    "codex.applyDropdown.results.skipped": "{count, plural, one {已跳过 1 个文件：} other {已跳过 {count} 个文件：}}",
+    "codex.applyDropdown.results.conflicted": "{count, plural, one {1 个文件冲突：} other {{count} 个文件冲突：}}",
+    "codex.applyOrRevertBanner.apply": "应用",
+    "codex.applyOrRevertBanner.reapply": "重新应用",
+    "codex.applyOrRevertBanner.revert": "还原",
+    "codex.applyOrRevertBanner.applyMessage": "要应用这些更改并在本地继续吗？",
+    "codex.applyOrRevertBanner.revertMessage": "要还原已应用的更改吗？",
+    "codex.applyOrRevertBanner.applyMessageDifferentEnvironment": "此任务是在 {environment} 中创建的，可能无法直接应用。",
+    "codex.applyOrRevertBanner.applyMessageDifferentEnvironment.tooltip": "这些更改是在 {environment} 中产生的，可能无法直接应用。",
+    "codex.applyResultsDialog.title": "应用结果",
+    "codex.applyResultsDialog.applied": "已干净应用（{count}）",
+    "codex.applyResultsDialog.conflicted": "有冲突（{count}）",
+    "codex.applyResultsDialog.skipped": "已跳过（{count}）",
+    "codex.applyResultsDialog.notGitRepo": "此操作仅在 Git 仓库中可用。",
+    "codex.applyResultsDialog.noDetails": "没有可显示的文件详情。",
+    "codex.applyResultsDialog.close": "关闭",
+    "codex.diffView.applyPatchNotGitRepo": "无法应用更改：不是 git 仓库",
+    "codex.diffView.revertPatchNotGitRepo": "无法还原更改：不是 git 仓库",
+    "codex.diffView.applyPatchSuccess": "已应用更改",
+    "codex.diffView.revertPatchSuccess": "已还原更改",
+    "codex.diffView.applyPatchPartialSuccess": "部分更改已应用",
+    "codex.diffView.revertPatchPartialSuccess": "部分更改已还原",
+    "codex.diffView.applyPatchError": "无法应用更改",
+    "codex.diffView.revertPatchError": "无法还原更改",
     "localConversation.remoteTaskCreated": "已在 Codex Cloud 中创建{taskLink}",
     "localConversation.remoteTaskCreated.task": "任务",
     "localConversation.dynamicToolCall": "{toolName}",
@@ -4914,10 +5340,13 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "scratchpadPage.headerTitle": "草稿区",
     "scratchpadPage.headerSubtitle": "实验性功能",
     "scratchpadPage.clearButton": "清除",
+    "scratchpadPage.createError": "无法创建聊天",
     "scratchpadPage.inputPlaceholder.initial": "添加任务",
     "scratchpadPage.inputPlaceholder.followUp": "添加后续跟进",
     "scratchpadPage.inputPlaceholder.followUpHint": "添加任务，或按 Tab 键添加后续跟进",
     "scratchpadPage.summaryLoading": "正在总结助手的最终回复",
+    "codex.localTaskRow.awaitingApproval": "等待批准",
+    "codex.localTaskRow.awaitingResponse": "等待回复",
     "general.title": "通用",
     "general.theme": "主题",
     "general.themeDescription": "使用浅色、深色，或匹配你的系统",

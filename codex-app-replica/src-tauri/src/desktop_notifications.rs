@@ -32,6 +32,12 @@
 //! display normally and the click path emits `actionType: "open"` as the
 //! faithful fallback. Adding reply input requires direct WinRT XML
 //! construction and is tracked as a follow-up scope decision.
+//!
+//! Upstream's Electron owner also marks `permission` and `question`
+//! notifications with `timeoutType: "never"`. This replica maps those kinds
+//! to the WinRT reminder scenario so they stay onscreen until dismissal,
+//! matching the extracted sticky-lifetime branch without widening into a new
+//! notification stack.
 
 use serde::Deserialize;
 use serde::Serialize;
@@ -42,6 +48,7 @@ use tauri::Emitter;
 use tauri::Manager;
 use tauri::State;
 use tauri::Window;
+use tauri_winrt_notification::Scenario;
 use tauri_winrt_notification::Toast;
 
 const DESKTOP_NOTIFICATION_ACTION_EVENT: &str = "desktop-notification-action";
@@ -186,6 +193,9 @@ pub fn desktop_notification_show(
     let mut toast = Toast::new(&aumid)
         .title(&notification.title)
         .text1(&notification.body);
+    if let Some(scenario) = sticky_scenario_for_kind(notification.kind.as_str()) {
+        toast = toast.scenario(scenario);
+    }
 
     for action in &actions {
         toast = toast.add_button(&action.title, &action.id);
@@ -296,6 +306,13 @@ fn resolve_aumid(app: &AppHandle) -> String {
         POWERSHELL_AUMID.to_string()
     } else {
         identifier
+    }
+}
+
+fn sticky_scenario_for_kind(kind: &str) -> Option<Scenario> {
+    match kind {
+        "permission" | "question" => Some(Scenario::Reminder),
+        _ => None,
     }
 }
 
@@ -432,5 +449,19 @@ mod tests {
         let guard = state.inner.lock().unwrap();
         assert_eq!(guard.by_id.len(), 1);
         assert!(guard.by_id.contains_key("n-3"));
+    }
+
+    #[test]
+    fn sticky_scenario_is_enabled_for_permission_and_question_only() {
+        assert!(matches!(
+            sticky_scenario_for_kind("permission"),
+            Some(Scenario::Reminder)
+        ));
+        assert!(matches!(
+            sticky_scenario_for_kind("question"),
+            Some(Scenario::Reminder)
+        ));
+        assert!(sticky_scenario_for_kind("turn-complete").is_none());
+        assert!(sticky_scenario_for_kind("info").is_none());
     }
 }

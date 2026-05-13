@@ -946,10 +946,12 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "codex-client",
+ "codex-git-utils",
  "codex-login",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sha1",
  "tauri",
  "tauri-build",
  "tauri-plugin-shell",

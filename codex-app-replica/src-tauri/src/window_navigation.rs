@@ -575,6 +575,10 @@ fn is_valid_settings_section(section: &str) -> bool {
 }
 
 fn is_valid_main_window_route(path: &str) -> bool {
+    if path == "/" {
+        return true;
+    }
+
     let Some(id) = path
         .strip_prefix("/local/")
         .or_else(|| path.strip_prefix("/remote/"))
@@ -623,6 +627,7 @@ mod tests {
 
     #[test]
     fn accepts_page_owned_main_window_routes() {
+        assert_eq!(validated_main_window_route("/"), Ok("/".to_string()));
         assert_eq!(
             validated_main_window_route("/local/550e8400-e29b-41d4-a716-446655440000"),
             Ok("/local/550e8400-e29b-41d4-a716-446655440000".to_string())

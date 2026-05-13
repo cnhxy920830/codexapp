@@ -10,6 +10,7 @@ import {
   PencilIcon,
   PersonalityChangedIcon,
 } from "../../components/AppShellIcons";
+import type { AppToast } from "../../components/AppToastRegion";
 import type { AvatarOption } from "../../components/appearance/avatarData";
 import { useI18n } from "../../i18n/i18n";
 import type { MessageKey } from "../../i18n/messages";
@@ -22,6 +23,13 @@ import type {
   ThreadConversationItem,
   ThreadConversationPlanImplementation,
 } from "../../services/history";
+import {
+  resolveRemoteTaskEnvironmentSetupState,
+  getRemoteTaskApplyDiff,
+  type RemoteConversationGroupOverride,
+  type RemoteTaskEnvironment,
+  type RemoteTaskTurn,
+} from "../../services/remoteTasks";
 import type { ToolRequestUserInputQuestion } from "../../services/history";
 import type { ComposerEnterBehavior, FollowUpQueueMode, ReviewDelivery } from "../../services/settings";
 import { updateDiffIfOpen } from "../../services/windowNavigation";
@@ -39,6 +47,9 @@ import { renderMessageContent } from "./messageContent";
 import { LatestTurnPreview } from "./LatestTurnPreview";
 import { MultiAgentGroupSummary } from "./MultiAgentGroupSummary";
 import { PlanSummaryItemCard } from "./PlanSummaryItemCard";
+import { RemoteEnvironmentSetupCard } from "./RemoteEnvironmentSetupCard";
+import { RemoteConversationFooter } from "./RemoteConversationFooter";
+import { RemoteUserImageAttachment } from "./RemoteUserImageAttachment";
 import { TurnDiffCard } from "./TurnDiffCard";
 import { UserMessageCollapsibleContent } from "./UserMessageCollapsibleContent";
 import {
@@ -59,6 +70,7 @@ import {
 import { isMultiAgentInProgressStatus, toSingleMultiAgentGroupItem } from "./multiAgentAction";
 import { ThreadPageHeader } from "./ThreadPageHeader";
 import { ThreadComposer } from "./ThreadComposer";
+import { CodexMobileOnboarding } from "./CodexMobileOnboarding";
 
 const approvalDecisionLabelKeys: Record<ApprovalDecision, MessageKey> = {
   accept: "app.chat.approval.accept",
@@ -98,6 +110,7 @@ type CurrentPendingRequest =
 
 type ChatConversationMainPaneProps = {
   threadActionsMenuRef: RefObject<HTMLDivElement | null>;
+  threadHeaderTrailingActions?: ReactNode;
   composerDraft: string;
   composerEnterBehavior: ComposerEnterBehavior;
   composerFocusNonce?: number | null;
@@ -138,6 +151,7 @@ type ChatConversationMainPaneProps = {
   ) => void;
   onComposerDraftChange: (value: string) => void;
   onOpenRemoteTask: (taskId: string) => void;
+  onSelectRemoteTaskAssistantTurn: (assistantTurnId: string) => void;
   onArchiveThread: () => void;
   onCopyAppLink: () => void;
   onCopyConversationMarkdown: () => void;
@@ -154,18 +168,36 @@ type ChatConversationMainPaneProps = {
   onStopTurn: () => void;
   onSubmitTurn: (invertFollowUpAction?: boolean) => void;
   onToggleThreadActionsMenu: () => void;
+  onShowToast?: (toast: AppToast) => void;
   approvalActionErrors: Record<string, string>;
   reviewDelivery: ReviewDelivery;
   respondingApprovalKeys: string[];
   selectedAvatar: AvatarOption;
   submitButtonMode: "send" | "stop";
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
+  remoteAttemptTabsByTurnId: Record<
+    string,
+    {
+      turns: RemoteTaskTurn[];
+      selectedTurnId: string | null;
+      expectedCount: number;
+    }
+  >;
+  remoteConversationOverridesByTurnId: Record<string, RemoteConversationGroupOverride>;
+  remoteCurrentAssistantTurn?: RemoteTaskTurn | null;
+  remoteDiffTaskTurn?: RemoteTaskTurn | null;
+  remoteSelectedAssistantTurn?: RemoteTaskTurn | null;
+  remoteTaskEnvironment?: RemoteTaskEnvironment | null;
+  remoteTaskId?: string | null;
+  showComposerFooter?: boolean;
   threadConversation: ThreadConversation | null;
   turnError: string | null;
+  workspaceRoot?: string | null;
 };
 
 export function ChatConversationMainPane({
   threadActionsMenuRef,
+  threadHeaderTrailingActions,
   composerDraft,
   composerEnterBehavior,
   composerFocusNonce,
@@ -192,6 +224,7 @@ export function ChatConversationMainPane({
   onToolRequestUserInputSubmit,
   onComposerDraftChange,
   onOpenRemoteTask,
+  onSelectRemoteTaskAssistantTurn,
   onArchiveThread,
   onCopyAppLink,
   onCopyConversationMarkdown,
@@ -208,14 +241,24 @@ export function ChatConversationMainPane({
   onStopTurn,
   onSubmitTurn,
   onToggleThreadActionsMenu,
+  onShowToast,
   approvalActionErrors,
   reviewDelivery,
   respondingApprovalKeys,
   selectedAvatar,
   submitButtonMode,
   t,
+  remoteAttemptTabsByTurnId,
+  remoteConversationOverridesByTurnId,
+  remoteCurrentAssistantTurn = null,
+  remoteDiffTaskTurn = null,
+  remoteSelectedAssistantTurn = null,
+  remoteTaskEnvironment = null,
+  remoteTaskId = null,
+  showComposerFooter = true,
   threadConversation,
   turnError,
+  workspaceRoot = null,
 }: ChatConversationMainPaneProps) {
   const userMessageSentAtMsByTurnId = useMemo(
     () =>
@@ -251,6 +294,24 @@ export function ChatConversationMainPane({
   const latestConversationGroupTurnId = conversationGroups.at(-1)?.turnId ?? null;
   const conversationId = threadConversation?.id ?? null;
   const latestUnifiedDiff = latestConversationGroup?.unifiedDiffItem?.unifiedDiff ?? "";
+  const remoteApplyTurnId = remoteSelectedAssistantTurn?.id ?? null;
+  const remoteApplyDiff = getRemoteTaskApplyDiff({
+    selectedTurn: remoteSelectedAssistantTurn,
+    diffTaskTurn: remoteDiffTaskTurn,
+    currentAssistantTurn: remoteCurrentAssistantTurn,
+  });
+  const showRemoteApplyFooter = Boolean(
+    showThreadHeader &&
+      remoteApplyTurnId &&
+      remoteApplyDiff &&
+      threadConversation !== null,
+  );
+  const showRemoteFailedFooter = Boolean(
+    showThreadHeader &&
+      remoteCurrentAssistantTurn?.turn_status === "failed" &&
+      remoteTaskId &&
+      threadConversation !== null,
+  );
   const hasTurnContent = threadConversation !== null && conversationGroups.length > 0;
   const hasUnmatchedBodyContent =
     groupedConversation.unmatchedApprovalItems.length > 0 ||
@@ -281,6 +342,9 @@ export function ChatConversationMainPane({
         onToolRequestUserInputSubmit={onToolRequestUserInputSubmit}
         conversationCwd={threadConversation?.cwd ?? null}
         planSummaryIsWriting={submitButtonMode === "stop" && latestConversationGroup.assistantMessage === null}
+        remoteAttemptTabs={remoteAttemptTabsByTurnId[latestConversationGroup.turnId] ?? null}
+        remoteConversationOverride={remoteConversationOverridesByTurnId[latestConversationGroup.turnId] ?? null}
+        onSelectRemoteTaskAssistantTurn={onSelectRemoteTaskAssistantTurn}
         respondingApprovalKeys={respondingApprovalKeys}
         t={t}
         userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId}
@@ -312,6 +376,7 @@ export function ChatConversationMainPane({
           onOpenRenameDialog={onOpenRenameDialog}
           onToggleThreadActionsMenu={onToggleThreadActionsMenu}
           t={t}
+          trailingActions={threadHeaderTrailingActions}
           threadConversation={threadConversation}
         />
       ) : null}
@@ -322,9 +387,7 @@ export function ChatConversationMainPane({
           role="main"
           aria-label={t("homePage.mainContent")}
         >
-          <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-3 px-5">
-            <div className="flex-1" />
-          </div>
+          <CodexMobileOnboarding onShowToast={onShowToast} />
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
@@ -340,9 +403,12 @@ export function ChatConversationMainPane({
                     onApprovalDecision={onApprovalDecision}
                     onMcpServerElicitationRequestSubmit={onMcpServerElicitationRequestSubmit}
                     onOpenRemoteTask={onOpenRemoteTask}
+                    onSelectRemoteTaskAssistantTurn={onSelectRemoteTaskAssistantTurn}
                     onPermissionsRequestApprovalSubmit={onPermissionsRequestApprovalSubmit}
                     onEditUserMessage={onEditUserMessage}
                     onSelectThread={onSelectThread}
+                    remoteAttemptTabs={remoteAttemptTabsByTurnId[group.turnId] ?? null}
+                    remoteConversationOverride={remoteConversationOverridesByTurnId[group.turnId] ?? null}
                     onToolRequestUserInputSubmit={onToolRequestUserInputSubmit}
                     planSummaryIsWriting={
                       submitButtonMode === "stop" &&
@@ -396,19 +462,28 @@ export function ChatConversationMainPane({
         </div>
       )}
 
-      <div className={showBlankConversationBody ? "px-5 pb-5" : "px-5 pt-2 pb-5"}>
-        <div className="mx-auto w-full max-w-3xl">
-          {latestConversationGroup ? (
-            <div className="mb-2">
-              <LatestTurnPreview
-                group={latestConversationGroup}
-                isTurnInProgress={submitButtonMode === "stop"}
-                previewContent={latestTurnPreviewContent}
-                t={t}
-              />
-            </div>
-          ) : null}
-          {footerPendingRequest ? (
+      <RemoteConversationFooter
+        composer={
+          <ThreadComposer
+            composerDraft={composerDraft}
+            composerEnterBehavior={composerEnterBehavior}
+            focusComposerNonce={composerFocusNonce}
+            followUpQueueMode={followUpQueueMode}
+            isWorktreeThread={isWorktreeThread}
+            onComposerDraftChange={onComposerDraftChange}
+            onStopTurn={onStopTurn}
+            onSubmitTurn={onSubmitTurn}
+            queuedFollowUpCount={currentThreadQueuedFollowUps.length}
+            reviewDelivery={reviewDelivery}
+            selectedAvatar={selectedAvatar}
+            submitButtonMode={submitButtonMode}
+            t={t}
+            threadCwd={threadConversation?.cwd ?? null}
+            turnError={turnError}
+          />
+        }
+        footerPendingRequest={
+          footerPendingRequest ? (
             <ComposerFooterPendingRequest
               pendingRequest={footerPendingRequest}
               approvalActionErrors={approvalActionErrors}
@@ -422,27 +497,29 @@ export function ChatConversationMainPane({
               t={t}
               turnError={turnError}
             />
-          ) : (
-            <ThreadComposer
-              composerDraft={composerDraft}
-              composerEnterBehavior={composerEnterBehavior}
-              focusComposerNonce={composerFocusNonce}
-              followUpQueueMode={followUpQueueMode}
-              isWorktreeThread={isWorktreeThread}
-              onComposerDraftChange={onComposerDraftChange}
-              onStopTurn={onStopTurn}
-              onSubmitTurn={onSubmitTurn}
-              queuedFollowUpCount={currentThreadQueuedFollowUps.length}
-              reviewDelivery={reviewDelivery}
-              selectedAvatar={selectedAvatar}
-              submitButtonMode={submitButtonMode}
+          ) : null
+        }
+        latestTurnPreview={
+          latestConversationGroup ? (
+            <LatestTurnPreview
+              group={latestConversationGroup}
+              isTurnInProgress={submitButtonMode === "stop"}
+              previewContent={latestTurnPreviewContent}
               t={t}
-              threadCwd={threadConversation?.cwd ?? null}
-              turnError={turnError}
             />
-          )}
-        </div>
-      </div>
+          ) : null
+        }
+        onShowToast={onShowToast}
+        remoteApplyDiff={remoteApplyDiff}
+        remoteApplyTurnId={remoteApplyTurnId}
+        remoteTaskEnvironment={remoteTaskEnvironment}
+        remoteTaskId={remoteTaskId}
+        showComposerFooter={showComposerFooter}
+        showRemoteApplyFooter={showRemoteApplyFooter}
+        showRemoteFailedFooter={showRemoteFailedFooter}
+        t={t}
+        workspaceRoot={workspaceRoot}
+      />
     </section>
   );
 }
@@ -925,8 +1002,11 @@ function ConversationGroupContent({
   onEditUserMessage,
   onMcpServerElicitationRequestSubmit,
   onOpenRemoteTask,
+  onSelectRemoteTaskAssistantTurn,
   onPermissionsRequestApprovalSubmit,
   onSelectThread,
+  remoteAttemptTabs = null,
+  remoteConversationOverride = null,
   onToolRequestUserInputSubmit,
   planSummaryIsWriting = false,
   respondingApprovalKeys,
@@ -945,12 +1025,19 @@ function ConversationGroupContent({
     content: unknown | null,
   ) => void;
   onOpenRemoteTask: (taskId: string) => void;
+  onSelectRemoteTaskAssistantTurn: (assistantTurnId: string) => void;
   onPermissionsRequestApprovalSubmit: (
     request: PendingPermissionsRequestApproval,
     grantMode: "deny" | "turn" | "session",
     strictAutoReview: boolean,
   ) => void;
   onSelectThread: (threadId: string) => void;
+  remoteAttemptTabs?: {
+    turns: RemoteTaskTurn[];
+    selectedTurnId: string | null;
+    expectedCount: number;
+  } | null;
+  remoteConversationOverride?: RemoteConversationGroupOverride | null;
   onToolRequestUserInputSubmit: (
     request: PendingToolRequestUserInput,
     values: Record<string, string>,
@@ -960,43 +1047,76 @@ function ConversationGroupContent({
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
   userMessageSentAtMsByTurnId: Map<string, number | null>;
 }) {
+  const remoteEnvironmentSetupState = remoteConversationOverride?.assistantTurn
+    ? resolveRemoteTaskEnvironmentSetupState(remoteConversationOverride.assistantTurn)
+    : null;
+  const showRemoteEnvironmentSetup = remoteEnvironmentSetupState !== null;
+
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
       <ConversationItemList conversationId={conversationId} items={group.preUserItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       <ConversationItemList conversationId={conversationId} items={group.modelChangedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      {remoteConversationOverride && remoteConversationOverride.userImageAttachments.length > 0 ? (
+        <div className="flex flex-wrap gap-2 self-end">
+          {remoteConversationOverride.userImageAttachments.map((attachment, index) => (
+            <RemoteUserImageAttachment
+              key={`${group.turnId}:${attachment.assetPointer ?? attachment.directUrl ?? index}`}
+              attachment={attachment}
+            />
+          ))}
+        </div>
+      ) : null}
       <ConversationItemList conversationId={conversationId} items={group.userItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       <ConversationItemList conversationId={conversationId} items={group.modelReroutedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      <ConversationItemList conversationId={conversationId} items={group.activityItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      {group.assistantMessage ? (
-        <ConversationItemCard conversationId={conversationId} item={group.assistantMessage} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      ) : null}
-      <ConversationItemList
-        conversationId={conversationId}
-        items={group.assistantAutomationUpdateItems}
-        onEditUserMessage={onEditUserMessage}
-        onOpenRemoteTask={onOpenRemoteTask}
-        onSelectThread={onSelectThread}
-        t={t}
-        userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId}
-      />
-      <ConversationItemList conversationId={conversationId} items={group.automationUpdateItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      <ConversationItemList conversationId={conversationId} items={group.toolOutputItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      <ConversationItemList conversationId={conversationId} items={group.postAssistantItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      {group.systemEventItem ? (
-        <ConversationItemCard conversationId={conversationId} item={group.systemEventItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      ) : null}
-      {group.unifiedDiffItem ? (
-        <ConversationItemCard
-          conversationId={conversationId}
-          conversationCwd={conversationCwd}
-          item={group.unifiedDiffItem}
-          onEditUserMessage={onEditUserMessage}
-          onOpenRemoteTask={onOpenRemoteTask}
-          onSelectThread={onSelectThread}
+      {remoteAttemptTabs && remoteAttemptTabs.expectedCount > 1 ? (
+        <RemoteAttemptTabs
+          expectedCount={remoteAttemptTabs.expectedCount}
+          selectedTurnId={remoteAttemptTabs.selectedTurnId}
+          turns={remoteAttemptTabs.turns}
+          onSelect={onSelectRemoteTaskAssistantTurn}
           t={t}
-          userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId}
         />
       ) : null}
+      {showRemoteEnvironmentSetup && remoteConversationOverride?.assistantTurn ? (
+        <RemoteEnvironmentSetupCard
+          assistantTurn={remoteConversationOverride.assistantTurn}
+          taskId={conversationId}
+        />
+      ) : (
+        <>
+          <ConversationItemList conversationId={conversationId} items={group.activityItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+          {group.assistantMessage ? (
+            <ConversationItemCard conversationId={conversationId} item={group.assistantMessage} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+          ) : null}
+          <ConversationItemList
+            conversationId={conversationId}
+            items={group.assistantAutomationUpdateItems}
+            onEditUserMessage={onEditUserMessage}
+            onOpenRemoteTask={onOpenRemoteTask}
+            onSelectThread={onSelectThread}
+            t={t}
+            userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId}
+          />
+          <ConversationItemList conversationId={conversationId} items={group.automationUpdateItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+          <ConversationItemList conversationId={conversationId} items={group.toolOutputItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+          <ConversationItemList conversationId={conversationId} items={group.postAssistantItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+          {group.systemEventItem ? (
+            <ConversationItemCard conversationId={conversationId} item={group.systemEventItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+          ) : null}
+          {group.unifiedDiffItem ? (
+            <ConversationItemCard
+              conversationId={conversationId}
+              conversationCwd={conversationCwd}
+              item={group.unifiedDiffItem}
+              onEditUserMessage={onEditUserMessage}
+              onOpenRemoteTask={onOpenRemoteTask}
+              onSelectThread={onSelectThread}
+              t={t}
+              userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId}
+            />
+          ) : null}
+        </>
+      )}
       <ConversationItemList conversationId={conversationId} items={group.remoteTaskCreatedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       <ConversationItemList conversationId={conversationId} items={group.personalityChangedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       <ConversationItemList conversationId={conversationId} items={group.forkedFromConversationItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
@@ -1058,6 +1178,60 @@ function ConversationItemList({
       {items.map((item) => (
         <ConversationItemCard key={item.id} conversationId={conversationId} item={item} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       ))}
+    </div>
+  );
+}
+
+function RemoteAttemptTabs({
+  expectedCount,
+  selectedTurnId,
+  turns,
+  onSelect,
+  t,
+}: {
+  expectedCount: number;
+  selectedTurnId: string | null;
+  turns: RemoteTaskTurn[];
+  onSelect: (assistantTurnId: string) => void;
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+}) {
+  const orderedTurns = [...turns].sort(
+    (left, right) =>
+      (left.attempt_placement ?? left.created_at ?? 0) - (right.attempt_placement ?? right.created_at ?? 0),
+  );
+  const items = Array.from({ length: expectedCount }, (_, index) => ({
+    attemptNumber: index + 1,
+    turn: orderedTurns[index] ?? null,
+  }));
+
+  return (
+    <div className="hide-scrollbar -mb-1 flex overflow-x-auto overflow-y-visible whitespace-nowrap">
+      <div className="flex gap-2 pb-1">
+        {items.map(({ attemptNumber, turn }) =>
+          turn ? (
+            <button
+              key={turn.id}
+              type="button"
+              onClick={() => onSelect(turn.id)}
+              className={[
+                "rounded-full border px-3 py-1.5 text-[12px]",
+                turn.id === selectedTurnId ? "app-approval-button-primary" : "app-control",
+              ].join(" ")}
+            >
+              {t("codex.remoteConversation.turnTab.title", { number: attemptNumber })}
+            </button>
+          ) : (
+            <button
+              key={`remote-attempt-placeholder:${attemptNumber}`}
+              type="button"
+              disabled
+              className="app-control rounded-full border px-3 py-1.5 text-[12px] opacity-60"
+            >
+              {t("codex.remoteConversation.turnTab.loading", { number: attemptNumber })}
+            </button>
+          ),
+        )}
+      </div>
     </div>
   );
 }

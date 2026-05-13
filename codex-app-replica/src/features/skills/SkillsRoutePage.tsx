@@ -21,7 +21,6 @@ import {
   listPluginCandidates,
   selectHeroPlugins,
   selectImportedPluginCandidates,
-  selectPluginCandidatesByName,
   type PluginCandidate,
 } from "../../lib/pluginSelectors";
 import {
@@ -56,9 +55,16 @@ import {
   LOCAL_SETTINGS_HOST_ID,
   type RemoteConnection,
 } from "../../services/settingsHosts";
+import {
+  installRecommendedSkill,
+  readRecommendedSkills,
+  type RecommendedSkill,
+} from "../../services/recommendedSkills";
 import { readSkillsSnapshot, type SkillSummary } from "../../services/skills";
+import { InstalledSkillCard } from "./components/InstalledSkillCard";
 import { PluginDetailDialog } from "./components/PluginDetailDialog";
 import { PluginsBrowseTab } from "./components/PluginsBrowseTab";
+import type { SkillsChatRequest } from "./types";
 
 const SCOPE_PRIORITY: Record<string, number> = {
   repo: 0,
@@ -96,7 +102,7 @@ type SkillsRoutePageProps = {
   initialTab?: BrowseTab;
   isPluginsRouteEnabled: boolean;
   onConsumeInitialState: () => void;
-  onOpenChatWithPrompt: (prompt: string) => void;
+  onOpenChatWithPrompt: (request: SkillsChatRequest) => void;
   onSelectHost: (hostId: string) => void;
   onShowToast: (toast: AppToast) => void;
   pluginDeepLinkAuthBlocked?: boolean;
@@ -127,6 +133,12 @@ export function SkillsRoutePage({
   const [skills, setSkills] = useState<SkillSummary[]>([]);
   const [skillsLoadError, setSkillsLoadError] = useState<string | null>(null);
   const [isSkillsLoading, setIsSkillsLoading] = useState(true);
+  const [recommendedSkills, setRecommendedSkills] = useState<RecommendedSkill[]>([]);
+  const [recommendedSkillsLoadError, setRecommendedSkillsLoadError] = useState<string | null>(null);
+  const [recommendedSkillsRepoRoot, setRecommendedSkillsRepoRoot] = useState<string | null>(null);
+  const [isRecommendedSkillsLoading, setIsRecommendedSkillsLoading] = useState(true);
+  const [installingRecommendedSkillId, setInstallingRecommendedSkillId] = useState<string | null>(null);
+  const [hasPendingSkillRefresh, setHasPendingSkillRefresh] = useState(false);
   const [pluginsSnapshot, setPluginsSnapshot] = useState<PluginListSnapshot | null>(null);
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [importedPluginNames, setImportedPluginNames] = useState<string[]>([]);
@@ -140,13 +152,14 @@ export function SkillsRoutePage({
   const [installingPluginId, setInstallingPluginId] = useState<string | null>(null);
   const [pendingTogglePluginId, setPendingTogglePluginId] = useState<string | null>(null);
   const skillsRequestIdRef = useRef(0);
+  const recommendedSkillsRequestIdRef = useRef(0);
   const browseRequestIdRef = useRef(0);
   const [hasOpenedSkillCreatorPrefill, setHasOpenedSkillCreatorPrefill] = useState(() =>
     readStoredBoolean(SKILL_CREATOR_PREFILL_STORAGE_KEY),
   );
 
   const canShowUnifiedPluginsPage = isPluginsRouteEnabled && authMethod !== "apikey";
-  const canInstallRecommendedSkills = authMethod === "chatgpt";
+  const canInstallRecommendedSkills = selectedHostId === LOCAL_SETTINGS_HOST_ID;
   const skillCreatorPath = useMemo(() => {
     if (!codexHome || selectedHostId !== LOCAL_SETTINGS_HOST_ID) {
       return null;
@@ -183,6 +196,17 @@ export function SkillsRoutePage({
       requestIdRef: skillsRequestIdRef,
       workspaceRoot,
     });
+
+    void loadRecommendedSkills({
+      hostId: selectedHostId,
+      onError: setRecommendedSkillsLoadError,
+      onLoaded: setRecommendedSkills,
+      onLoading: setIsRecommendedSkillsLoading,
+      onRepoRootLoaded: setRecommendedSkillsRepoRoot,
+      refresh: false,
+      requestIdRef: recommendedSkillsRequestIdRef,
+    });
+    setHasPendingSkillRefresh(false);
 
     if (!canShowUnifiedPluginsPage) {
       setPluginsSnapshot(null);
@@ -267,24 +291,19 @@ export function SkillsRoutePage({
     return installedSkills.filter((skill) => buildInstalledSkillSearchText(skill).includes(query));
   }, [installedSkills, searchQuery]);
 
-  const allRecommendedCandidates = useMemo(() => {
-    if (pluginsSnapshot == null) {
-      return [];
-    }
-    return selectPluginCandidatesByName(pluginsSnapshot, pluginsSnapshot.featuredPluginIds).filter(
-      ({ plugin }) => !plugin.installed,
-    );
-  }, [pluginsSnapshot]);
+  const installedSkillMatchKeys = useMemo(() => buildInstalledSkillMatchKeys(installedSkills), [installedSkills]);
 
-  const recommendedCandidates = useMemo(() => {
+  const filteredRecommendedSkills = useMemo(() => {
     const query = normalizeText(searchQuery);
-    if (query.length === 0) {
-      return allRecommendedCandidates;
-    }
-    return allRecommendedCandidates.filter((candidate) =>
-      buildRecommendedPluginSearchText(candidate).includes(query),
-    );
-  }, [allRecommendedCandidates, searchQuery]);
+    return recommendedSkills
+      .filter((skill) => !matchesInstalledSkill(installedSkillMatchKeys, skill))
+      .filter((skill) => {
+        if (query.length === 0) {
+          return true;
+        }
+        return buildRecommendedSkillSearchText(skill).includes(query);
+      });
+  }, [installedSkillMatchKeys, recommendedSkills, searchQuery]);
 
   const allPluginCandidates = useMemo(() => listPluginCandidates(pluginsSnapshot), [pluginsSnapshot]);
   const marketplaceFilterOptions = useMemo(
@@ -391,6 +410,17 @@ export function SkillsRoutePage({
       workspaceRoot,
     });
 
+  const refreshRecommendedSkills = async (refresh: boolean) =>
+    loadRecommendedSkills({
+      hostId: selectedHostId,
+      onError: setRecommendedSkillsLoadError,
+      onLoaded: setRecommendedSkills,
+      onLoading: setIsRecommendedSkillsLoading,
+      onRepoRootLoaded: setRecommendedSkillsRepoRoot,
+      refresh,
+      requestIdRef: recommendedSkillsRequestIdRef,
+    });
+
   const refreshBrowseData = async (options?: { forceRefetchApps?: boolean }) =>
     refreshBrowseState({
       onAppsLoaded: setApps,
@@ -422,6 +452,7 @@ export function SkillsRoutePage({
 
     if (shouldRefreshSkills) {
       void refreshSkills(true);
+      void refreshRecommendedSkills(true);
     }
   });
 
@@ -542,7 +573,9 @@ export function SkillsRoutePage({
       if (!nextCandidate.plugin.enabled) {
         nextCandidate = await togglePluginCandidate(nextCandidate, true);
       }
-      onOpenChatWithPrompt(buildPluginTryInChatPrompt(nextCandidate));
+      onOpenChatWithPrompt({
+        prompt: buildPluginTryInChatPrompt(nextCandidate),
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (activePlugin?.plugin.id === candidate.plugin.id) {
@@ -569,7 +602,9 @@ export function SkillsRoutePage({
       setHasOpenedSkillCreatorPrefill(true);
     }
 
-    onOpenChatWithPrompt(prompt);
+    onOpenChatWithPrompt({
+      prompt,
+    });
   };
 
   return (
@@ -673,10 +708,16 @@ export function SkillsRoutePage({
                 />
               ) : null}
               <RefreshSkillsButton
-                isDisabled={isSkillsLoading}
-                isPendingRefresh={false}
+                isDisabled={isSkillsLoading || isRecommendedSkillsLoading}
+                isPendingRefresh={hasPendingSkillRefresh}
                 onClick={() => {
-                  void refreshSkills(true);
+                  void Promise.all([refreshSkills(true), refreshRecommendedSkills(true)]).then(
+                    ([skillsRefreshed, recommendedSkillsRefreshed]) => {
+                      if (skillsRefreshed && recommendedSkillsRefreshed) {
+                        setHasPendingSkillRefresh(false);
+                      }
+                    },
+                  );
                 }}
                 t={t}
               />
@@ -717,8 +758,14 @@ export function SkillsRoutePage({
                     <PageSection title={t("skills.section.installed")}>
                       <InstalledSkillsSection
                         getScopeLabel={(skill) => getSkillScopeLabel(skill, workspaceRoots, t)}
+                        hostId={selectedHostId}
                         isLoading={isSkillsLoading}
                         loadError={skillsLoadError}
+                        onOpenChatWithPrompt={onOpenChatWithPrompt}
+                        onShowToast={onShowToast}
+                        onSkillsUpdated={async () => {
+                          await refreshSkills(true);
+                        }}
                         skills={filteredSkills}
                         totalSkills={installedSkills.length}
                         t={t}
@@ -728,12 +775,34 @@ export function SkillsRoutePage({
                     <PageSection title={t("skills.section.recommended")}>
                       <RecommendedSkillsSection
                         canInstall={canInstallRecommendedSkills}
-                        candidates={recommendedCandidates}
-                        installingPluginId={installingPluginId}
-                        isLoading={isPluginsLoading}
-                        loadError={pluginsLoadError}
-                        onInstall={(candidate) => handleInstallPlugin(candidate)}
-                        totalCandidates={allRecommendedCandidates.length}
+                        installingSkillId={installingRecommendedSkillId}
+                        isLoading={isRecommendedSkillsLoading}
+                        loadError={recommendedSkillsLoadError}
+                        onInstall={async (skill) => {
+                          setInstallingRecommendedSkillId(skill.id);
+                          setRecommendedSkillsLoadError(null);
+                          try {
+                            await installRecommendedSkill({
+                              hostId: selectedHostId,
+                              installRoot: selectedHostId === LOCAL_SETTINGS_HOST_ID ? workspaceRoot : null,
+                              repoPath: skill.repoPath,
+                              skillId: skill.id,
+                            });
+                            await refreshRecommendedSkills(true);
+                            setHasPendingSkillRefresh(true);
+                          } catch (error) {
+                            setRecommendedSkillsLoadError(
+                              error instanceof Error ? error.message : String(error),
+                            );
+                          } finally {
+                            setInstallingRecommendedSkillId(null);
+                          }
+                        }}
+                        repoRoot={recommendedSkillsRepoRoot}
+                        skills={filteredRecommendedSkills}
+                        totalSkills={recommendedSkills.filter(
+                          (skill) => !matchesInstalledSkill(installedSkillMatchKeys, skill),
+                        ).length}
                         t={t}
                       />
                     </PageSection>
@@ -956,15 +1025,23 @@ function RegenerateIcon({ className }: { className?: string }) {
 
 function InstalledSkillsSection({
   getScopeLabel,
+  hostId,
   isLoading,
   loadError,
+  onOpenChatWithPrompt,
+  onShowToast,
+  onSkillsUpdated,
   skills,
   totalSkills,
   t,
 }: {
   getScopeLabel: (skill: SkillSummary) => string;
+  hostId: string;
   isLoading: boolean;
   loadError: string | null;
+  onOpenChatWithPrompt: (request: SkillsChatRequest) => void;
+  onShowToast: (toast: AppToast) => void;
+  onSkillsUpdated: () => Promise<void>;
   skills: SkillSummary[];
   totalSkills: number;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
@@ -993,28 +1070,15 @@ function InstalledSkillsSection({
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       {skills.map((skill) => (
-        <article
+        <InstalledSkillCard
           key={`${skill.cwd}:${skill.path}`}
-          className="rounded-[16px] border border-[var(--app-shell-border)] bg-[var(--app-shell-surface)] px-4 py-3"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="text-[14px] leading-6">{getSkillDisplayName(skill)}</div>
-                <ScopeBadge label={getScopeLabel(skill)} />
-              </div>
-              <div className="app-text-muted mt-1 text-[12px] leading-5">
-                {skill.shortDescription ?? skill.description}
-              </div>
-              <div className="app-text-muted mt-1 truncate text-[11px] leading-5" title={skill.path}>
-                {skill.path}
-              </div>
-            </div>
-            <div className="shrink-0 text-[12px] text-[var(--app-shell-subtle)]">
-              {skill.enabled ? t("skills.card.enabledStatus") : t("skills.card.disabledStatus")}
-            </div>
-          </div>
-        </article>
+          hostId={hostId}
+          onOpenChatWithPrompt={onOpenChatWithPrompt}
+          onShowToast={onShowToast}
+          onSkillsUpdated={onSkillsUpdated}
+          scopeBadges={[getScopeLabel(skill)]}
+          skill={skill}
+        />
       ))}
     </div>
   );
@@ -1022,21 +1086,23 @@ function InstalledSkillsSection({
 
 function RecommendedSkillsSection({
   canInstall,
-  candidates,
-  installingPluginId,
+  installingSkillId,
   isLoading,
   loadError,
   onInstall,
-  totalCandidates,
+  repoRoot,
+  skills,
+  totalSkills,
   t,
 }: {
   canInstall: boolean;
-  candidates: PluginCandidate[];
-  installingPluginId: string | null;
+  installingSkillId: string | null;
   isLoading: boolean;
   loadError: string | null;
-  onInstall: (candidate: PluginCandidate) => Promise<void>;
-  totalCandidates: number;
+  onInstall: (skill: RecommendedSkill) => Promise<void>;
+  repoRoot: string | null;
+  skills: RecommendedSkill[];
+  totalSkills: number;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
 }) {
   if (isLoading) {
@@ -1047,11 +1113,11 @@ function RecommendedSkillsSection({
     return <CenteredState description={loadError} title={t("skills.recommended.error")} />;
   }
 
-  if (totalCandidates === 0) {
+  if (totalSkills === 0) {
     return <CenteredState title={t("skills.page.empty")} />;
   }
 
-  if (candidates.length === 0) {
+  if (skills.length === 0) {
     return (
       <CenteredState
         description={t("skills.page.filteredEmptyDescription")}
@@ -1062,37 +1128,39 @@ function RecommendedSkillsSection({
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      {candidates.map((candidate) => {
-        const pluginName = getPluginCandidateDisplayName(candidate);
-        const isInstalling = installingPluginId === candidate.plugin.id;
+      {skills.map((skill) => {
+        const skillName = skill.name;
+        const isInstalling = installingSkillId === skill.id;
+        const resolvedRepoPath =
+          repoRoot == null ? skill.repoPath : `${repoRoot.replace(/[\\/]+$/, "")}/${skill.repoPath}`;
 
         return (
           <article
-            key={candidate.plugin.id}
+            key={skill.id}
             className="rounded-[16px] border border-[var(--app-shell-border)] bg-[var(--app-shell-surface)] px-4 py-3"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-[14px] leading-6">{pluginName}</div>
+                <div className="text-[14px] leading-6">{skillName}</div>
                 <div className="app-text-muted mt-1 text-[12px] leading-5">
-                  {buildRecommendedPluginSearchDescription(candidate)}
+                  {skill.shortDescription ?? skill.description}
                 </div>
                 <div
                   className="app-text-muted mt-1 truncate text-[11px] leading-5"
-                  title={formatMarketplaceLabel(candidate)}
+                  title={resolvedRepoPath}
                 >
-                  {formatMarketplaceLabel(candidate)}
+                  {resolvedRepoPath}
                 </div>
               </div>
               <button
                 type="button"
                 disabled={!canInstall || isInstalling}
-                onClick={() => void onInstall(candidate)}
+                onClick={() => void onInstall(skill)}
                 className="app-control shrink-0 rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
               >
                 {isInstalling
-                  ? t("plugins.installModal.installing", { pluginName })
-                  : t("plugins.installModal.install", { pluginName })}
+                  ? t("plugins.installModal.installing", { pluginName: skillName })
+                  : t("plugins.installModal.install", { pluginName: skillName })}
               </button>
             </div>
           </article>
@@ -1164,6 +1232,54 @@ async function loadSkills({
       return false;
     }
     onLoaded([]);
+    onError(error instanceof Error ? error.message : String(error));
+    return false;
+  } finally {
+    if (requestId === requestIdRef.current) {
+      onLoading(false);
+    }
+  }
+}
+
+async function loadRecommendedSkills({
+  hostId,
+  onError,
+  onLoaded,
+  onLoading,
+  onRepoRootLoaded,
+  refresh,
+  requestIdRef,
+}: {
+  hostId: string;
+  onError: (value: string | null) => void;
+  onLoaded: (value: RecommendedSkill[]) => void;
+  onLoading: (value: boolean) => void;
+  onRepoRootLoaded: (value: string | null) => void;
+  refresh: boolean;
+  requestIdRef: MutableRefObject<number>;
+}) {
+  const requestId = ++requestIdRef.current;
+  onLoading(true);
+  onError(null);
+
+  try {
+    const response = await readRecommendedSkills({
+      hostId,
+      refresh,
+    });
+    if (requestId !== requestIdRef.current) {
+      return false;
+    }
+    onLoaded(response.skills);
+    onRepoRootLoaded(response.repoRoot);
+    onError(response.error);
+    return response.error == null;
+  } catch (error) {
+    if (requestId !== requestIdRef.current) {
+      return false;
+    }
+    onLoaded([]);
+    onRepoRootLoaded(null);
     onError(error instanceof Error ? error.message : String(error));
     return false;
   } finally {
@@ -1381,33 +1497,27 @@ function buildInstalledSkillSearchText(skill: SkillSummary) {
   );
 }
 
-function buildRecommendedPluginSearchText(candidate: PluginCandidate) {
-  return normalizeText(
-    [
-      candidate.marketplaceName,
-      candidate.marketplaceLabel,
-      candidate.marketplacePath ?? "",
-      candidate.plugin.id,
-      candidate.plugin.name,
-      candidate.plugin.interface?.displayName ?? "",
-      candidate.plugin.interface?.shortDescription ?? "",
-      candidate.plugin.interface?.longDescription ?? "",
-    ].join(" "),
-  );
+function buildRecommendedSkillSearchText(skill: RecommendedSkill) {
+  return normalizeText([skill.id, skill.name, skill.description, skill.shortDescription ?? ""].join(" "));
 }
 
-function buildRecommendedPluginSearchDescription(candidate: PluginCandidate) {
-  return (
-    candidate.plugin.interface?.longDescription ??
-    candidate.plugin.interface?.shortDescription ??
-    candidate.plugin.name
-  );
+function buildInstalledSkillMatchKeys(skills: SkillSummary[]) {
+  const keys = new Set<string>();
+  for (const skill of skills) {
+    keys.add(normalizeText(skill.name));
+    if (skill.displayName) {
+      keys.add(normalizeText(skill.displayName));
+    }
+    const pathBasename = getPathBasename(skill.path);
+    if (pathBasename.length > 0) {
+      keys.add(normalizeText(pathBasename));
+    }
+  }
+  return keys;
 }
 
-function formatMarketplaceLabel(candidate: PluginCandidate) {
-  return candidate.marketplacePath
-    ? `${candidate.marketplaceLabel} · ${candidate.marketplacePath}`
-    : candidate.marketplaceLabel;
+function matchesInstalledSkill(installedSkillMatchKeys: Set<string>, skill: RecommendedSkill) {
+  return installedSkillMatchKeys.has(normalizeText(skill.id)) || installedSkillMatchKeys.has(normalizeText(skill.name));
 }
 
 function buildPluginParams(candidate: PluginCandidate, hostId: string): PluginReadParams {

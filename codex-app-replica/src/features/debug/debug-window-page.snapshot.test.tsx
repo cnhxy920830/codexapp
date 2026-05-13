@@ -7,10 +7,11 @@ import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { initialAuthSnapshot, type AuthSnapshot } from "../../services/auth";
 import type { ThreadConversation, ThreadHistoryEntry } from "../../services/history";
+import type { ProjectlessThreadCwdResponse } from "../../services/projectlessThreads";
 import type { ActiveWorkspaceRootsResponse, WorkspaceRootOptionsResponse } from "../../services/workspaceRoots";
 import type { RemoteConnection } from "../../services/settingsHosts";
 import type { WorktreesSettingsSnapshot } from "../../services/worktrees";
-import type { PrimaryRuntimeUpdateStatusResponse } from "../../services/debug";
+import type { AmbientSuggestionsGenerationStatus, PrimaryRuntimeUpdateStatusResponse } from "../../services/debug";
 import { DebugModal } from "./DebugWindowPage";
 
 const SNAPSHOT_PATH = path.join(process.cwd(), "src/features/debug/__snapshots__/debug-window-page.snap.json");
@@ -21,21 +22,26 @@ test("debug window page snapshot", async (t) => {
     page: renderToStaticMarkup(
       <DebugModal
         activeWorkspaceRoots={{ roots: ["D:\\workspace"] }}
+        ambientSuggestionStatuses={ambientSuggestionStatuses}
         appActionDraft={`{\n  "type": "app.get_summary"\n}`}
         appActionResult="Not run yet"
         authSnapshot={authSnapshot}
         connectedRemoteConnections={remoteConnections}
         conversationId="thread-1"
         isAppActionRunning={false}
+        isAmbientSuggestionsLoading={false}
+        refreshingAmbientSuggestionsProjectRoot={null}
         onAppActionDraftChange={noop}
         onClose={noop}
         onPopOut={noop}
+        onRefreshAmbientSuggestions={noop}
         onPrimaryRuntimeInstallReleaseChange={noop}
         onPrimaryRuntimeRefresh={noop}
         onPrimaryRuntimeRunNow={noop}
         onRunAppAction={noop}
         primaryRuntimeInstallRelease="latest"
         primaryRuntimeStatus={primaryRuntimeStatus}
+        projectlessThreadCwd={projectlessThreadCwd}
         recentThreads={recentThreads}
         remoteConnections={remoteConnections}
         showHeader={false}
@@ -118,6 +124,21 @@ const workspaceRootOptions: WorkspaceRootOptionsResponse = {
   roots: ["D:\\workspace"],
   labels: { "D:\\workspace": "Workspace" },
 };
+const projectlessThreadCwd: ProjectlessThreadCwdResponse = {
+  cwd: "D:\\Users\\debug\\Documents\\Codex\\2026-05-13\\new-chat",
+  outputDirectory: "D:\\Users\\debug\\Documents\\Codex\\2026-05-13\\new-chat",
+  workspaceRoot: "D:\\Users\\debug\\Documents\\Codex",
+};
+const ambientSuggestionStatuses: AmbientSuggestionsGenerationStatus[] = [
+  {
+    projectRoot: "D:\\workspace",
+    runningCount: 1,
+    safetyRunningCount: 0,
+    runningStartedAtMs: null,
+    safetyStartedAtMs: null,
+    lastFinishedAtMs: null,
+  },
+];
 
 const worktreesSettings: WorktreesSettingsSnapshot = {
   autoCleanupEnabled: true,

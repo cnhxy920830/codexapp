@@ -10,10 +10,12 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [dependencies]
 base64 = "0.22.1"
 codex-client = { path = "../../codex-rs/codex-client" }
+codex-git-utils = { path = "../../codex-rs/git-utils" }
 codex-login = { path = "../../codex-rs/login" }
 reqwest = { version = "0.12", default-features = false, features = ["cookies", "json", "rustls-tls"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha1 = "0.10"
 tauri = { version = "2.11.0", features = ["tray-icon"] }
 tauri-plugin-shell = "2.3.5"
 tauri-winrt-notification = "0.7"

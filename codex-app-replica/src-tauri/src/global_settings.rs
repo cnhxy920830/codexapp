@@ -125,6 +125,8 @@ fn ensure_supported_key(key: &str) -> Result<(), String> {
         | "electron:onboarding-welcome-v2-state"
         | "electron:onboarding-welcome-v2-role-state"
         | "electron:onboarding-welcome-v2-role-selection-debug-override"
+        | "has-seen-codex-mobile-home-announcement"
+        | "has-completed-codex-mobile-setup"
         | "last_completed_onboarding"
         | "git-branch-prefix"
         | "git-always-force-push"
@@ -304,6 +306,8 @@ mod tests {
             "electron:onboarding-welcome-v2-state",
             "electron:onboarding-welcome-v2-role-state",
             "electron:onboarding-welcome-v2-role-selection-debug-override",
+            "has-seen-codex-mobile-home-announcement",
+            "has-completed-codex-mobile-setup",
             "last_completed_onboarding",
             "viewed2025-09-15-nux",
             "viewed2025-09-15-full-chatgpt-auth-nux",

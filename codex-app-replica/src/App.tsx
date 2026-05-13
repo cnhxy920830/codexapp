@@ -47,6 +47,18 @@ import {
   type ThreadConversation,
 } from "./services/history";
 import {
+  buildRemoteConversationBranch,
+  buildRemoteConversationGroupOverrides,
+  getDefaultSelectedAssistantTurnId,
+  getRemoteTaskTurnUnifiedDiff,
+  mergeRemoteTaskTurns,
+  readRemoteTask,
+  readRemoteTaskTurns,
+  type RemoteConversationBranch,
+  type RemoteTaskReadResponse,
+  type RemoteTaskTurnsReadResponse,
+} from "./services/remoteTasks";
+import {
   applyGpuTearingDebugSettings,
   applyAppearanceSettingsSnapshot,
   buildConfigScopeOptions,
@@ -113,6 +125,8 @@ import { ToggleSwitch } from "./components/ToggleSwitch";
 import { ChatConversationMainPane } from "./features/chat/ChatConversationMainPane";
 import { ChatSidePanel } from "./features/chat/ChatSidePanel";
 import { PlanSummaryPage } from "./features/chat/PlanSummaryPage";
+import { RemoteConversationHeaderActions } from "./features/chat/RemoteConversationHeaderActions";
+import { RemoteConversationPage } from "./features/chat/RemoteConversationPage";
 import { RightPanelOpenTabMenu, RightPanelTabStrip } from "./features/chat/RightPanelTabStrip";
 import {
   WorkspaceFileCommandMenu,
@@ -127,6 +141,7 @@ import { EditorDiffPage } from "./features/editorDiff/EditorDiffPage";
 import { GlobalDictationPage } from "./features/globalDictation/GlobalDictationPage";
 import { HotkeyWindowHomePage } from "./features/hotkeyWindow/HotkeyWindowHomePage";
 import { HotkeyWindowNewThreadPage } from "./features/hotkeyWindow/HotkeyWindowNewThreadPage";
+import { HotkeyWindowThreadPage } from "./features/hotkeyWindow/HotkeyWindowThreadPage";
 import { LoginRoutePage } from "./features/auth/LoginRoutePage";
 import {
   isLoginOnboardingRoute,
@@ -1002,6 +1017,12 @@ function App() {
   const [selectedAvatarId, setSelectedAvatarId] = useState<string>(DEFAULT_AVATAR_ID);
   const [activeTurn, setActiveTurn] = useState<{ threadId: string; turnId: string } | null>(null);
   const [turnError, setTurnError] = useState<string | null>(null);
+  const [remoteTaskState, setRemoteTaskState] = useState<{
+    taskId: string;
+    task: RemoteTaskReadResponse;
+    taskTurns: RemoteTaskTurnsReadResponse;
+    selectedAssistantTurnId: string | null;
+  } | null>(null);
   const [queuedFollowUps, setQueuedFollowUps] = useState<QueuedLocalFollowUp[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [pendingMcpServerElicitationRequest, setPendingMcpServerElicitationRequest] = useState<
@@ -1095,6 +1116,34 @@ function App() {
   const isApiKeyAuth = authSnapshot.authState.authMethod === "apikey";
   const isChatGptAuth = authSnapshot.authState.authMethod === "chatgpt";
   const isWorktreeThread = isWithinCodexWorktrees(threadConversation?.cwd ?? null, codexHome);
+  const currentRemoteConversationBranch: RemoteConversationBranch | null =
+    remoteTaskState === null
+      ? null
+      : buildRemoteConversationBranch({
+          taskId: remoteTaskState.taskId,
+          task: remoteTaskState.task,
+          taskTurns: remoteTaskState.taskTurns,
+          selectedAssistantTurnId: remoteTaskState.selectedAssistantTurnId,
+          workspaceRoot: openProjectPath,
+        });
+  const currentRemoteTaskTurns = useMemo(
+    () =>
+      remoteTaskState === null
+        ? []
+        : mergeRemoteTaskTurns(
+            remoteTaskState.taskTurns,
+            remoteTaskState.task.current_user_turn ?? null,
+            remoteTaskState.task.current_assistant_turn ?? null,
+          ),
+    [remoteTaskState],
+  );
+  const currentRemoteConversationOverridesByTurnId = useMemo(
+    () =>
+      currentRemoteConversationBranch
+        ? buildRemoteConversationGroupOverrides(currentRemoteConversationBranch.groupings)
+        : {},
+    [currentRemoteConversationBranch],
+  );
   const primarySkillsRouteLabelKey: MessageKey = isChatGptAuth && isPluginsRouteEnabled
       ? "sidebarElectron.skillsAppsRouteNavLink"
       : "sidebarElectron.skillsRouteNavLink";
@@ -1318,10 +1367,14 @@ function App() {
     selectedThreadAttachedHeartbeatAutomationIncludingPaused?.name.trim() ?? "";
   const managesPowerSaveBlocker = shouldWindowManagePowerSaveBlocker();
   const shouldBlockPowerSave = managesPowerSaveBlocker && preventSleepWhileRunning && activeTurn !== null;
+  const currentThreadShellRoute =
+    typeof window === "undefined" ? null : parseThreadShellRoute(window.location.pathname);
+  const isHotkeyLocalThreadShell =
+    currentThreadShellRoute?.shell === "hotkey" && currentThreadShellRoute.kind === "local";
 
   useEffect(() => {
     if (
-      threadShellVariant !== "hotkey" ||
+      !isHotkeyLocalThreadShell ||
       currentRoute !== "chat" ||
       selectedThreadId === null ||
       threadConversation?.id !== selectedThreadId
@@ -1342,7 +1395,7 @@ function App() {
     isHeartbeatAutomationEligible,
     selectedThreadId,
     threadConversation?.id,
-    threadShellVariant,
+    isHotkeyLocalThreadShell,
   ]);
 
   const refreshThreadHeaderAutomations = async () => {
@@ -2833,6 +2886,11 @@ function App() {
     if (isInitialBootstrapRun) {
       initialWindowThreadIdRef.current = null;
     }
+    const initialThreadRoute =
+      isInitialBootstrapRun && typeof window !== "undefined"
+        ? parseThreadShellRoute(window.location.pathname)
+        : null;
+    const shouldLoadRemoteTaskInitially = initialThreadRoute?.kind === "remote";
 
     void getRecentThreads()
       .then(async (threads) => {
@@ -2849,9 +2907,15 @@ function App() {
             setThreadConversation(null);
           }
           try {
-            const thread = await readThread(activeThreadId);
-            if (!cancelled && threadLoadRequestIdRef.current === requestId) {
-              setThreadConversation(mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId));
+            if (shouldLoadRemoteTaskInitially) {
+              await loadRemoteTaskConversation(activeThreadId, {
+                clearConversation: false,
+              });
+            } else {
+              const thread = await readThread(activeThreadId);
+              if (!cancelled && threadLoadRequestIdRef.current === requestId) {
+                setThreadConversation(mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId));
+              }
             }
           } catch {
             if (!cancelled && threadLoadRequestIdRef.current === requestId && isInitialBootstrapRun) {
@@ -3164,6 +3228,7 @@ function App() {
     const requestId = threadLoadRequestIdRef.current + 1;
     threadLoadRequestIdRef.current = requestId;
     setIsThreadConversationLoading(true);
+    setRemoteTaskState(null);
     setThreadConversation(null);
     try {
       const thread = await readThread(threadId);
@@ -3228,7 +3293,13 @@ function App() {
 
   const viewConversationForHost = async (threadId: string, hostId: string) => {
     if (hostId !== LOCAL_SETTINGS_HOST_ID) {
-      await openRemoteTask(threadId);
+      const opened = await openRemoteTask(threadId);
+      if (opened && typeof window !== "undefined") {
+        const nextPath = buildRemoteThreadRoutePath(threadId, "default");
+        if (window.location.pathname !== nextPath) {
+          window.history.replaceState(window.history.state, "", nextPath);
+        }
+      }
       return;
     }
 
@@ -3294,19 +3365,119 @@ function App() {
   const openRemoteTask = async (taskId: string, shell: ThreadShellVariant = "default") => {
     const normalizedTaskId = taskId.trim();
     if (!normalizedTaskId) {
-      return;
+      return false;
     }
     try {
-      const thread = await readThread(normalizedTaskId);
       setThreadShellVariant(shell);
       setSelectedThreadId(normalizedTaskId);
       setTurnError(null);
       setCurrentRoute("chat");
-      setThreadConversation(mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId));
+      await loadRemoteTaskConversation(normalizedTaskId);
+      return true;
     } catch {
       // Keep the current selection untouched when the local shell cannot open the task id directly.
+      return false;
     }
   };
+
+  const loadRemoteTaskConversation = async (
+    taskId: string,
+    options?: {
+      selectedAssistantTurnId?: string | null;
+      clearConversation?: boolean;
+    },
+  ) => {
+    const normalizedTaskId = taskId.trim();
+    if (!normalizedTaskId) {
+      return null;
+    }
+
+    const requestId = threadLoadRequestIdRef.current + 1;
+    threadLoadRequestIdRef.current = requestId;
+    setIsThreadConversationLoading(true);
+    if (options?.clearConversation !== false) {
+      setThreadConversation(null);
+    }
+
+    try {
+      const [task, taskTurns] = await Promise.all([
+        readRemoteTask({ taskId: normalizedTaskId }),
+        readRemoteTaskTurns({ taskId: normalizedTaskId }),
+      ]);
+      const remoteTurns = Object.values(taskTurns.turn_mapping)
+        .map((entry) => entry.turn)
+        .filter((turn): turn is NonNullable<typeof turn> => turn !== null && turn !== undefined);
+      const selectedAssistantTurnId =
+        options?.selectedAssistantTurnId ??
+        getDefaultSelectedAssistantTurnId(task, remoteTurns);
+      const remoteBranch = buildRemoteConversationBranch({
+        taskId: normalizedTaskId,
+        task,
+        taskTurns,
+        selectedAssistantTurnId,
+        workspaceRoot: openProjectPath,
+      });
+
+      if (threadLoadRequestIdRef.current === requestId) {
+        setRemoteTaskState({
+          taskId: normalizedTaskId,
+          task,
+          taskTurns,
+          selectedAssistantTurnId: selectedAssistantTurnId ?? remoteBranch.selectedAssistantTurnId,
+        });
+        setThreadConversation(remoteBranch.conversation);
+      }
+
+      return {
+        task,
+        taskTurns,
+        selectedAssistantTurnId: selectedAssistantTurnId ?? remoteBranch.selectedAssistantTurnId,
+      };
+    } finally {
+      if (threadLoadRequestIdRef.current === requestId) {
+        setIsThreadConversationLoading(false);
+      }
+    }
+  };
+
+  const refreshActiveRemoteTaskConversation = useEffectEvent(
+    (taskId: string, selectedAssistantTurnId: string | null) => {
+      void loadRemoteTaskConversation(taskId, {
+        clearConversation: false,
+        selectedAssistantTurnId,
+      }).catch(() => undefined);
+    },
+  );
+
+  useEffect(() => {
+    const currentRemoteTurnStatus =
+      currentRemoteConversationBranch?.selectedAssistantTurn?.turn_status ?? null;
+    if (
+      currentRoute !== "chat" ||
+      currentThreadShellRoute?.kind !== "remote" ||
+      !remoteTaskState?.taskId ||
+      (currentRemoteTurnStatus !== "pending" && currentRemoteTurnStatus !== "in_progress")
+    ) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      refreshActiveRemoteTaskConversation(
+        remoteTaskState.taskId,
+        remoteTaskState.selectedAssistantTurnId,
+      );
+    }, 5_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [
+    currentRemoteConversationBranch?.selectedAssistantTurn?.turn_status,
+    currentRoute,
+    currentThreadShellRoute?.kind,
+    remoteTaskState?.selectedAssistantTurnId,
+    remoteTaskState?.taskId,
+  ]);
 
   const selectThread = async (threadId: string, shell: ThreadShellVariant = "default") => {
     setThreadShellVariant(shell);
@@ -3325,9 +3496,15 @@ function App() {
     setSkillsRouteState(null);
     setWorktreeInitRoute(null);
     setSelectedThreadId(null);
+    setRemoteTaskState(null);
     setThreadConversation(null);
     setIsThreadConversationLoading(false);
     setTurnError(null);
+    if (state?.cwd !== undefined) {
+      setLaunchContext({
+        openProjectPath: state.cwd ?? null,
+      });
+    }
     setComposerDraft(state?.prefillPrompt ?? "");
     setComposerFocusNonce(state?.focusComposerNonce ?? Date.now());
     setCurrentRoute("chat");
@@ -3642,13 +3819,16 @@ function App() {
     await openInHotkeyWindow(buildWorktreeInitV2RoutePath(params.id, "hotkey"));
   });
 
-  const startHotkeyNewThread = useEffectEvent(async (draft: string) => {
-    const text = draft.trim();
+  const startHotkeyNewThread = useEffectEvent(async (params: {
+    draft: string;
+    workspaceRoot: string | null;
+  }) => {
+    const text = params.draft.trim();
     if (text.length === 0) {
       return;
     }
 
-    const cwd = openProjectPath ?? null;
+    const cwd = params.workspaceRoot;
     const threadId = await startThread(cwd);
 
     if (text === "/review") {
@@ -4738,7 +4918,25 @@ function App() {
     }
 
     if (settingsSection === "skills-settings") {
-      return <SkillsSettings workspaceRoot={settingsWorkspaceRoot} />;
+      return (
+        <SkillsSettings
+          authMethod={authSnapshot.authState.authMethod}
+          codexHome={codexHome}
+          connectedRemoteConnections={connectedSettingsRemoteConnections}
+          onOpenChatWithPrompt={({ cwd, prompt }) =>
+            openNewConversation({
+              cwd,
+              focusComposerNonce: Date.now(),
+              prefillPrompt: prompt,
+            })
+          }
+          onSelectHost={setSelectedSettingsHostId}
+          onShowToast={(toast) => setAppToast(toast)}
+          remoteConnectionHostIds={settingsRemoteConnectionHostIds}
+          selectedHostId={selectedSettingsHostId}
+          workspaceRoot={settingsWorkspaceRoot}
+        />
+      );
     }
 
     if (settingsSection === "mcp-settings") {
@@ -5018,9 +5216,185 @@ function App() {
 
     return null;
   };
+  const isHotkeyLocalThreadPage = currentRoute === "chat" && isHotkeyLocalThreadShell;
+  const isDefaultRemoteThreadPage =
+    currentRoute === "chat" &&
+    currentThreadShellRoute?.shell === "default" &&
+    currentThreadShellRoute.kind === "remote";
+  const openThreadFromCurrentShell = (threadId: string) => {
+    if (isHotkeyLocalThreadPage) {
+      const nextPath = buildLocalThreadRoutePath(threadId, "hotkey");
+      if (typeof window !== "undefined" && window.location.pathname !== nextPath) {
+        window.history.replaceState(window.history.state, "", nextPath);
+      }
+      void selectThread(threadId, "hotkey");
+      return;
+    }
+
+    void selectThread(threadId);
+  };
+  const openRemoteTaskFromCurrentShell = (taskId: string) => {
+    if (isHotkeyLocalThreadPage) {
+      const nextPath = buildRemoteThreadRoutePath(taskId, "hotkey");
+      if (typeof window !== "undefined" && window.location.pathname !== nextPath) {
+        window.history.replaceState(window.history.state, "", nextPath);
+      }
+      void openRemoteTask(taskId, "hotkey");
+      return;
+    }
+
+    void openRemoteTask(taskId).then((opened) => {
+      if (!opened || typeof window === "undefined") {
+        return;
+      }
+
+      const nextPath = buildRemoteThreadRoutePath(taskId, "default");
+      if (window.location.pathname !== nextPath) {
+        window.history.replaceState(window.history.state, "", nextPath);
+      }
+    });
+  };
+  const selectRemoteTaskAssistantTurn = (assistantTurnId: string) => {
+    setRemoteTaskState((current) =>
+      current
+        ? {
+            ...current,
+            selectedAssistantTurnId: assistantTurnId,
+          }
+        : current,
+    );
+  };
+  const chatConversationMainPane = (
+    <ChatConversationMainPane
+      threadActionsMenuRef={threadActionsMenuRef}
+      threadHeaderTrailingActions={
+        isDefaultRemoteThreadPage && remoteTaskState !== null ? (
+          <RemoteConversationHeaderActions
+            diffTaskTurn={remoteTaskState.task.current_diff_task_turn ?? null}
+            onShowToast={(toast) => setAppToast(toast)}
+            selectedTurn={currentRemoteConversationBranch?.selectedAssistantTurn ?? null}
+            task={remoteTaskState.task.task}
+            taskEnvironment={remoteTaskState.task.current_assistant_turn?.environment ?? null}
+            taskId={remoteTaskState.taskId}
+            turns={currentRemoteTaskTurns}
+            workspaceRoot={openProjectPath}
+          />
+        ) : null
+      }
+      composerDraft={composerDraft}
+      composerEnterBehavior={composerEnterBehavior}
+      composerFocusNonce={composerFocusNonce}
+      followUpQueueMode={followUpQueueMode}
+      hasAttachedHeartbeatAutomation={selectedThreadAttachedHeartbeatAutomation !== null}
+      isThreadActionsMenuOpen={isThreadActionsMenuOpen}
+      isThreadHeartbeatAutomationActionDisabled={isThreadHeartbeatAutomationActionDisabled}
+      isThreadHeartbeatAutomationActionVisible={shouldShowThreadHeartbeatAutomationAction}
+      isWorktreeThread={isWorktreeThread}
+      showThreadHeader={!isHotkeyLocalThreadPage}
+      heartbeatAutomationActionLabelKey={threadHeartbeatAutomationActionLabelKey}
+      heartbeatAutomationButtonTooltip={heartbeatAutomationOpenButtonTooltip}
+      currentThreadApprovals={currentThreadApprovals}
+      currentThreadImplementPlanRequests={currentThreadImplementPlanRequests}
+      currentThreadMcpServerElicitationRequest={currentThreadMcpServerElicitationRequest}
+      currentThreadPermissionsRequestApproval={currentThreadPermissionsRequestApproval}
+      currentThreadToolRequestUserInput={currentThreadToolRequestUserInput}
+      currentThreadQueuedFollowUps={currentThreadQueuedFollowUps}
+      onApprovalDecision={(approval, decision) => void handleApprovalDecision(approval, decision)}
+      onDismissImplementPlanRequest={dismissImplementPlanRequest}
+      onImplementPlanRequestSubmit={(request, submission) =>
+        void handleImplementPlanRequestSubmit(request, submission)
+      }
+      onMcpServerElicitationRequestSubmit={(request, action, content) =>
+        void handleMcpServerElicitationRequestSubmit(request, action, content)
+      }
+      onArchiveThread={() => {
+        setIsArchiveDialogOpen(true);
+        setIsThreadActionsMenuOpen(false);
+      }}
+      onCopyAppLink={() => void copyAppLink()}
+      onCopyConversationMarkdown={() => void copyConversationMarkdown()}
+      onCopySessionId={() => void copySessionId()}
+      onCopyWorkingDirectory={() => void copyWorkingDirectory()}
+      onForkSelectedThread={() => void forkSelectedThread()}
+      onOpenSideChat={() => void openSideChatForSelectedThread()}
+      onOpenAttachedHeartbeatAutomation={() => openThreadHeartbeatAutomationDialog("edit")}
+      onOpenThreadHeartbeatAutomationAction={openThreadHeartbeatAutomationAction}
+      onOpenRemoteTask={openRemoteTaskFromCurrentShell}
+      onSelectRemoteTaskAssistantTurn={selectRemoteTaskAssistantTurn}
+      onOpenRenameDialog={openRenameDialog}
+      onSelectThread={openThreadFromCurrentShell}
+      onEditUserMessage={(text) => void handleEditUserMessage(text)}
+      onPermissionsRequestApprovalSubmit={(request, grantMode, strictAutoReview) =>
+        void handlePermissionsRequestApprovalSubmit(request, grantMode, strictAutoReview)
+      }
+      onToolRequestUserInputSubmit={(request, values) =>
+        void handleToolRequestUserInputSubmit(request, values)
+      }
+      onComposerDraftChange={setComposerDraft}
+      onRemoveQueuedFollowUp={removeQueuedFollowUp}
+      onStopTurn={() => void stopTurn()}
+      onSubmitTurn={(invertFollowUpAction) => void submitTurn(invertFollowUpAction)}
+      onToggleThreadActionsMenu={() => setIsThreadActionsMenuOpen((value) => !value)}
+      onShowToast={(toast) => setAppToast(toast)}
+      approvalActionErrors={approvalActionErrors}
+      reviewDelivery={reviewDelivery}
+      respondingApprovalKeys={respondingApprovalKeys}
+      selectedAvatar={selectedAvatar}
+      submitButtonMode={submitButtonMode}
+      t={t}
+      threadConversation={currentRemoteConversationBranch?.conversation ?? threadConversation}
+      remoteAttemptTabsByTurnId={currentRemoteConversationBranch?.attemptTabsByTurnId ?? {}}
+      remoteConversationOverridesByTurnId={currentRemoteConversationOverridesByTurnId}
+      remoteCurrentAssistantTurn={remoteTaskState?.task.current_assistant_turn ?? null}
+      remoteDiffTaskTurn={remoteTaskState?.task.current_diff_task_turn ?? null}
+      remoteSelectedAssistantTurn={currentRemoteConversationBranch?.selectedAssistantTurn ?? null}
+      remoteTaskEnvironment={remoteTaskState?.task.current_assistant_turn?.environment ?? null}
+      remoteTaskId={remoteTaskState?.taskId ?? null}
+      showComposerFooter={
+        currentThreadShellRoute?.kind === "remote"
+          ? remoteTaskState?.task.current_assistant_turn?.turn_status === "completed"
+          : undefined
+      }
+      turnError={turnError}
+      workspaceRoot={openProjectPath}
+    />
+  );
 
   if (isAppBootstrapping) {
     return <LoadingPage debugName="PersistedStateProvider" />;
+  }
+
+  if (isHotkeyLocalThreadPage) {
+    return (
+      <>
+        <HotkeyWindowThreadPage
+          conversationId={selectedThreadId ?? currentThreadShellRoute?.threadId ?? null}
+          threadConversation={threadConversation}
+        >
+          {isThreadConversationLoading ? (
+            <div className="relative h-full min-h-0">
+              <LoadingPage fillParent debugName="HotkeyWindowThreadPage" />
+            </div>
+          ) : (
+            chatConversationMainPane
+          )}
+        </HotkeyWindowThreadPage>
+      <AppToastRegion toast={appToast} onDismiss={() => setAppToast(null)} />
+      </>
+    );
+  }
+
+  if (isDefaultRemoteThreadPage) {
+    return (
+      <>
+        <RemoteConversationPage
+          taskId={currentThreadShellRoute?.threadId ?? selectedThreadId ?? ""}
+        >
+          {chatConversationMainPane}
+        </RemoteConversationPage>
+        <AppToastRegion toast={appToast} onDismiss={() => setAppToast(null)} />
+      </>
+    );
   }
 
   if (currentRoute === "hotkey-home") {
@@ -5058,6 +5432,7 @@ function App() {
     return (
       <HotkeyWindowNewThreadPage
         composerEnterBehavior={composerEnterBehavior}
+        initialWorkspaceRoot={openProjectPath}
         onSubmit={startHotkeyNewThread}
       />
     );
@@ -5576,69 +5951,7 @@ function App() {
                   </div>
                 ) : (
                   <div className="grid min-h-0 flex-1" style={shellColumns}>
-                    <ChatConversationMainPane
-                      threadActionsMenuRef={threadActionsMenuRef}
-                      composerDraft={composerDraft}
-                      composerEnterBehavior={composerEnterBehavior}
-                      composerFocusNonce={composerFocusNonce}
-                      followUpQueueMode={followUpQueueMode}
-                      hasAttachedHeartbeatAutomation={selectedThreadAttachedHeartbeatAutomation !== null}
-                      isThreadActionsMenuOpen={isThreadActionsMenuOpen}
-                      isThreadHeartbeatAutomationActionDisabled={isThreadHeartbeatAutomationActionDisabled}
-                      isThreadHeartbeatAutomationActionVisible={shouldShowThreadHeartbeatAutomationAction}
-                      isWorktreeThread={isWorktreeThread}
-                      heartbeatAutomationActionLabelKey={threadHeartbeatAutomationActionLabelKey}
-                      heartbeatAutomationButtonTooltip={heartbeatAutomationOpenButtonTooltip}
-                      currentThreadApprovals={currentThreadApprovals}
-                      currentThreadImplementPlanRequests={currentThreadImplementPlanRequests}
-                      currentThreadMcpServerElicitationRequest={currentThreadMcpServerElicitationRequest}
-                      currentThreadPermissionsRequestApproval={currentThreadPermissionsRequestApproval}
-                      currentThreadToolRequestUserInput={currentThreadToolRequestUserInput}
-                      currentThreadQueuedFollowUps={currentThreadQueuedFollowUps}
-                      onApprovalDecision={(approval, decision) => void handleApprovalDecision(approval, decision)}
-                      onDismissImplementPlanRequest={dismissImplementPlanRequest}
-                      onImplementPlanRequestSubmit={(request, submission) =>
-                        void handleImplementPlanRequestSubmit(request, submission)
-                      }
-                      onMcpServerElicitationRequestSubmit={(request, action, content) =>
-                        void handleMcpServerElicitationRequestSubmit(request, action, content)
-                      }
-                      onArchiveThread={() => {
-                        setIsArchiveDialogOpen(true);
-                        setIsThreadActionsMenuOpen(false);
-                      }}
-                      onCopyAppLink={() => void copyAppLink()}
-                      onCopyConversationMarkdown={() => void copyConversationMarkdown()}
-                      onCopySessionId={() => void copySessionId()}
-                      onCopyWorkingDirectory={() => void copyWorkingDirectory()}
-                      onForkSelectedThread={() => void forkSelectedThread()}
-                      onOpenSideChat={() => void openSideChatForSelectedThread()}
-                      onOpenAttachedHeartbeatAutomation={() => openThreadHeartbeatAutomationDialog("edit")}
-                      onOpenThreadHeartbeatAutomationAction={openThreadHeartbeatAutomationAction}
-                      onOpenRemoteTask={(taskId) => void openRemoteTask(taskId)}
-                      onOpenRenameDialog={openRenameDialog}
-                      onSelectThread={(threadId) => void selectThread(threadId)}
-                      onEditUserMessage={(text) => void handleEditUserMessage(text)}
-                      onPermissionsRequestApprovalSubmit={(request, grantMode, strictAutoReview) =>
-                        void handlePermissionsRequestApprovalSubmit(request, grantMode, strictAutoReview)
-                      }
-                      onToolRequestUserInputSubmit={(request, values) =>
-                        void handleToolRequestUserInputSubmit(request, values)
-                      }
-                      onComposerDraftChange={setComposerDraft}
-                      onRemoveQueuedFollowUp={removeQueuedFollowUp}
-                      onStopTurn={() => void stopTurn()}
-                      onSubmitTurn={(invertFollowUpAction) => void submitTurn(invertFollowUpAction)}
-                      onToggleThreadActionsMenu={() => setIsThreadActionsMenuOpen((value) => !value)}
-                      approvalActionErrors={approvalActionErrors}
-                      reviewDelivery={reviewDelivery}
-                      respondingApprovalKeys={respondingApprovalKeys}
-                      selectedAvatar={selectedAvatar}
-                      submitButtonMode={submitButtonMode}
-                      t={t}
-                      threadConversation={threadConversation}
-                      turnError={turnError}
-                    />
+                    {chatConversationMainPane}
 
                     {isRightPanelOpen ? (
                       <div className="min-h-0 flex flex-col">
@@ -5783,7 +6096,16 @@ function App() {
                 )
               ) : currentRoute === "scratchpad" ? (
                 <div className="min-h-0 flex-1 overflow-y-auto">
-                  <ScratchpadPage />
+                  <ScratchpadPage
+                    onOpenConversation={(conversationId) => {
+                      const nextPath = buildLocalThreadRoutePath(conversationId, "default");
+                      if (typeof window !== "undefined" && window.location.pathname !== nextPath) {
+                        window.history.replaceState(window.history.state, "", nextPath);
+                      }
+                      void selectThread(conversationId, "default");
+                    }}
+                    onShowToast={(toast) => setAppToast(toast)}
+                  />
                 </div>
               ) : currentRoute === "pull-requests" ? (
                 <div className="min-h-0 flex-1 overflow-hidden">
@@ -5827,8 +6149,9 @@ function App() {
                     initialTab={skillsRouteState?.initialTab}
                     isPluginsRouteEnabled={isPluginsRouteEnabled}
                     onConsumeInitialState={() => setSkillsRouteState(null)}
-                    onOpenChatWithPrompt={(prompt) =>
+                    onOpenChatWithPrompt={({ cwd, prompt }) =>
                       openNewConversation({
+                        cwd,
                         focusComposerNonce: Date.now(),
                         prefillPrompt: prompt,
                       })

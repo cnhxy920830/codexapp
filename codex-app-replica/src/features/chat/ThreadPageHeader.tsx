@@ -1,4 +1,4 @@
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import { ClockIcon, MoreActionsIcon } from "../../components/AppShellIcons";
 import type { MessageKey } from "../../i18n/messages";
 import type { ThreadConversation } from "../../services/history";
@@ -25,6 +25,7 @@ type ThreadPageHeaderProps = {
   onOpenRenameDialog: () => void;
   onToggleThreadActionsMenu: () => void;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
+  trailingActions?: ReactNode;
   threadConversation: ThreadConversation | null;
 };
 
@@ -50,6 +51,7 @@ export function ThreadPageHeader({
   onOpenRenameDialog,
   onToggleThreadActionsMenu,
   t,
+  trailingActions,
   threadConversation,
 }: ThreadPageHeaderProps) {
   if (!threadConversation) {
@@ -80,6 +82,7 @@ export function ThreadPageHeader({
         </div>
 
         <div className="flex shrink-0 items-start gap-2">
+          {trailingActions}
           {hasAttachedHeartbeatAutomation ? (
             <button
               type="button"

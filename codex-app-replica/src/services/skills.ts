@@ -1,10 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export type SkillSummary = {
+  brandColor: string | null;
   cwd: string;
+  defaultPrompt: string | null;
   name: string;
   displayName: string | null;
   description: string;
+  iconLarge: string | null;
+  iconSmall: string | null;
   shortDescription: string | null;
   path: string;
   scope: string;
@@ -27,6 +31,11 @@ type SkillsListResponse = {
       shortDescription: string | null;
       interface: {
         displayName: string | null;
+        shortDescription: string | null;
+        iconSmall: string | null;
+        iconLarge: string | null;
+        brandColor: string | null;
+        defaultPrompt: string | null;
       } | null;
       path: string;
       scope: string;
@@ -63,9 +72,9 @@ export async function readSkillsSnapshot(
           hostId: forceReloadOrOptions.hostId ?? null,
         };
 
-  const response = await invoke<SkillsListResponse>("list_skills", {
+  const response = await invoke<SkillsListResponse>("list-skills-for-host", {
     params: {
-      cwd,
+      cwds: cwd ? [cwd] : [],
       forceReload,
       hostId,
     },
@@ -74,11 +83,15 @@ export async function readSkillsSnapshot(
   return response.data
     .flatMap((entry) =>
       entry.skills.map((skill) => ({
+        brandColor: skill.interface?.brandColor ?? null,
         cwd: entry.cwd,
+        defaultPrompt: skill.interface?.defaultPrompt ?? null,
         name: skill.name,
         displayName: skill.interface?.displayName ?? null,
         description: skill.description,
-        shortDescription: skill.shortDescription,
+        iconLarge: skill.interface?.iconLarge ?? null,
+        iconSmall: skill.interface?.iconSmall ?? null,
+        shortDescription: skill.shortDescription ?? skill.interface?.shortDescription ?? null,
         path: skill.path,
         scope: skill.scope,
         enabled: skill.enabled,

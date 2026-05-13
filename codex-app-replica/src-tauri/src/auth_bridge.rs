@@ -216,11 +216,26 @@ pub struct StartConversationParams {
     pub text: Option<String>,
     pub cwd: Option<String>,
     pub workspace_roots: Option<Vec<String>>,
+    pub collaboration_mode: Option<serde_json::Value>,
+    pub projectless_output_directory: Option<String>,
+    pub workspace_kind: Option<String>,
     pub approval_policy: Option<serde_json::Value>,
     pub approvals_reviewer: Option<String>,
     pub sandbox_policy: Option<serde_json::Value>,
     #[serde(default)]
     pub skip_auto_title_generation: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MaybeResumeConversationParams {
+    pub host_id: Option<String>,
+    pub conversation_id: String,
+    pub model: Option<String>,
+    pub reasoning_effort: Option<String>,
+    #[serde(default)]
+    pub workspace_roots: Vec<String>,
+    pub collaboration_mode: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -347,6 +362,12 @@ struct ThreadReadResponse {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ThreadRollbackResponse {
+    thread: ThreadReadThread,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadResumeResponse {
     thread: ThreadReadThread,
 }
 
@@ -1211,6 +1232,14 @@ impl AuthBridgeState {
     }
 }
 
+pub(crate) fn auth_snapshot(state: &Arc<AuthBridgeState>) -> AuthSnapshot {
+    state
+        .snapshot
+        .lock()
+        .expect("auth snapshot mutex poisoned")
+        .clone()
+}
+
 pub(crate) struct ExternalAgentImportCompletedWaiter {
     state: Arc<AuthBridgeState>,
     seen_generation: u64,
@@ -1607,7 +1636,7 @@ struct JsonRpcError {
     message: String,
 }
 
-enum AppServerRequestKind {
+pub(crate) enum AppServerRequestKind {
     AccountRead,
     AccountRateLimitsRead,
     AccountSendAddCreditsNudgeEmail,
@@ -1647,6 +1676,7 @@ enum AppServerRequestKind {
     ThreadStart,
     ThreadFork,
     ThreadArchive,
+    ThreadResume,
     ThreadUnsubscribe,
     ThreadUnarchive,
     ThreadNameSet,
@@ -2361,7 +2391,10 @@ async fn reset_memories_inner(state: &Arc<AuthBridgeState>) -> Result<(), String
     .map(|_| ())
 }
 
-fn ensure_supported_host_id(host_id: Option<&str>, command_name: &str) -> Result<(), String> {
+pub(crate) fn ensure_supported_host_id(
+    host_id: Option<&str>,
+    command_name: &str,
+) -> Result<(), String> {
     match host_id.map(str::trim).filter(|value| !value.is_empty()) {
         None | Some(LOCAL_HOST_ID) => Ok(()),
         Some(host_id) => Err(format!(
@@ -2383,7 +2416,7 @@ fn remote_host_id(host_id: Option<&str>) -> Option<&str> {
         .filter(|value| !value.is_empty() && *value != LOCAL_HOST_ID)
 }
 
-async fn send_request_for_host(
+pub(crate) async fn send_request_for_host(
     app: &AppHandle,
     state: &Arc<AuthBridgeState>,
     host_id: Option<&str>,
@@ -3238,12 +3271,18 @@ pub async fn start_conversation(
         text,
         cwd,
         workspace_roots,
+        collaboration_mode,
+        projectless_output_directory,
+        workspace_kind,
         approval_policy,
         approvals_reviewer,
         sandbox_policy,
         skip_auto_title_generation,
     } = params;
     let _ = skip_auto_title_generation;
+    let _ = collaboration_mode;
+    let _ = projectless_output_directory;
+    let _ = workspace_kind;
 
     let cwd = cwd
         .as_deref()
@@ -3268,7 +3307,7 @@ pub async fn start_conversation(
         if trimmed.is_empty() {
             return Err("start-conversation requires text or input".to_string());
         }
-        serde_json::json!([{ "type": "text", "text": trimmed }])
+        serde_json::json!([{ "type": "text", "text": trimmed, "text_elements": [] }])
     };
     let permission_overrides = Some(TurnStartPermissionOverrides {
         approval_policy,
@@ -3801,6 +3840,42 @@ pub async fn read_thread(
     map_thread_conversation(state.inner(), response.thread)
 }
 
+#[tauri::command(rename = "maybe-resume-conversation")]
+pub async fn maybe_resume_conversation(
+    app: AppHandle,
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: MaybeResumeConversationParams,
+) -> Result<ThreadConversation, String> {
+    let _ = params.reasoning_effort;
+    let _ = params.collaboration_mode;
+
+    let cwd = params
+        .workspace_roots
+        .iter()
+        .map(String::as_str)
+        .map(str::trim)
+        .find(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+    let value = send_request_for_host(
+        &app,
+        state.inner(),
+        params.host_id.as_deref(),
+        AppServerRequestKind::ThreadResume,
+        serde_json::json!({
+            "threadId": params.conversation_id,
+            "cwd": cwd,
+            "model": params.model,
+        }),
+    )
+    .await?;
+    let response = serde_json::from_value::<ThreadResumeResponse>(value)
+        .map_err(|err| format!("failed to decode thread resume response: {err}"))?;
+    if let Some(latest_turn_id) = response.thread.turns.last().map(|turn| turn.id.clone()) {
+        remember_latest_turn_id(state.inner(), &response.thread.id, &latest_turn_id);
+    }
+    map_thread_conversation(state.inner(), response.thread)
+}
+
 #[tauri::command]
 pub async fn rollback_thread(
     state: State<'_, Arc<AuthBridgeState>>,
@@ -4090,6 +4165,19 @@ fn build_thread_start_payload(
     serde_json::Value::Object(payload)
 }
 
+pub(crate) fn build_thread_start_payload_with_overrides(
+    cwd: Option<String>,
+    personality: Option<String>,
+    mut extra: serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Value {
+    let mut payload = match build_thread_start_payload(cwd, personality) {
+        serde_json::Value::Object(object) => object,
+        _ => serde_json::Map::new(),
+    };
+    payload.append(&mut extra);
+    serde_json::Value::Object(payload)
+}
+
 fn build_turn_start_payload(
     thread_id: String,
     input: serde_json::Value,
@@ -4099,7 +4187,7 @@ fn build_turn_start_payload(
 ) -> serde_json::Value {
     let mut payload = serde_json::Map::new();
     payload.insert("threadId".to_string(), serde_json::Value::String(thread_id));
-    payload.insert("input".to_string(), input);
+    payload.insert("input".to_string(), normalize_turn_input_value(input));
     if let Some(cwd) = cwd {
         payload.insert("cwd".to_string(), serde_json::Value::String(cwd));
     }
@@ -4124,6 +4212,45 @@ fn build_turn_start_payload(
         }
     }
     serde_json::Value::Object(payload)
+}
+
+pub(crate) fn build_turn_start_payload_with_overrides(
+    thread_id: String,
+    input: serde_json::Value,
+    cwd: Option<String>,
+    personality: Option<String>,
+    permission_overrides: Option<TurnStartPermissionOverrides>,
+    mut extra: serde_json::Map<String, serde_json::Value>,
+) -> serde_json::Value {
+    let mut payload =
+        match build_turn_start_payload(thread_id, input, cwd, personality, permission_overrides) {
+            serde_json::Value::Object(object) => object,
+            _ => serde_json::Map::new(),
+        };
+    payload.append(&mut extra);
+    serde_json::Value::Object(payload)
+}
+
+fn normalize_turn_input_value(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Array(items) => {
+            serde_json::Value::Array(items.into_iter().map(normalize_turn_input_item).collect())
+        }
+        other => other,
+    }
+}
+
+fn normalize_turn_input_item(value: serde_json::Value) -> serde_json::Value {
+    let mut object = match value {
+        serde_json::Value::Object(object) => object,
+        other => return other,
+    };
+
+    if let Some(text_elements) = object.remove("textElements") {
+        object.insert("text_elements".to_string(), text_elements);
+    }
+
+    serde_json::Value::Object(object)
 }
 
 pub async fn start_thread_with_personality(
@@ -4152,6 +4279,16 @@ pub(crate) async fn start_ephemeral_thread(state: &Arc<AuthBridgeState>) -> Resu
         }),
     )
     .await?;
+    let response = serde_json::from_value::<ThreadStartResponse>(value)
+        .map_err(|err| format!("failed to decode ephemeral thread start response: {err}"))?;
+    Ok(response.thread.id)
+}
+
+pub(crate) async fn start_ephemeral_thread_with_overrides(
+    state: &Arc<AuthBridgeState>,
+    payload: serde_json::Value,
+) -> Result<String, String> {
+    let value = send_request(state, AppServerRequestKind::ThreadStart, payload).await?;
     let response = serde_json::from_value::<ThreadStartResponse>(value)
         .map_err(|err| format!("failed to decode ephemeral thread start response: {err}"))?;
     Ok(response.thread.id)
@@ -4190,6 +4327,16 @@ pub async fn start_turn_with_input_and_personality(
         build_turn_start_payload(thread_id, input, cwd, personality, permission_overrides),
     )
     .await?;
+    let response = serde_json::from_value::<TurnStartResponse>(value)
+        .map_err(|err| format!("failed to decode turn start response: {err}"))?;
+    Ok(response.turn.id)
+}
+
+pub(crate) async fn start_turn_with_payload(
+    state: &Arc<AuthBridgeState>,
+    payload: serde_json::Value,
+) -> Result<String, String> {
+    let value = send_request(state, AppServerRequestKind::TurnStart, payload).await?;
     let response = serde_json::from_value::<TurnStartResponse>(value)
         .map_err(|err| format!("failed to decode turn start response: {err}"))?;
     Ok(response.turn.id)
@@ -4786,6 +4933,7 @@ fn request_method(kind: &AppServerRequestKind) -> &'static str {
         AppServerRequestKind::ThreadStart => "thread/start",
         AppServerRequestKind::ThreadFork => "thread/fork",
         AppServerRequestKind::ThreadArchive => "thread/archive",
+        AppServerRequestKind::ThreadResume => "thread/resume",
         AppServerRequestKind::ThreadUnsubscribe => "thread/unsubscribe",
         AppServerRequestKind::ThreadUnarchive => "thread/unarchive",
         AppServerRequestKind::ThreadNameSet => "thread/name/set",
@@ -6264,6 +6412,7 @@ mod tests {
     use super::map_account;
     use super::map_account_info_response;
     use super::map_app_tools;
+    use super::normalize_turn_input_value;
     use super::plugin_list_cwds;
     use super::remote_host_id;
     use super::skills_list_cwds;
@@ -6295,6 +6444,7 @@ mod tests {
     use super::MarketplaceUpgradeErrorInfo;
     use super::MarketplaceUpgradeParams;
     use super::MarketplaceUpgradeResponse;
+    use super::MaybeResumeConversationParams;
     use super::McpOauthLoginCompletedNotification;
     use super::McpServerOauthLoginParams;
     use super::McpServerStatusEntry;
@@ -6335,6 +6485,44 @@ mod tests {
     use super::UnarchiveConversationParams;
     use super::UnsubscribeThreadForHostParams;
     use serde_json::json;
+
+    #[test]
+    fn normalize_turn_input_value_renames_text_elements() {
+        let normalized = normalize_turn_input_value(json!([
+            {
+                "type": "text",
+                "text": "hello",
+                "textElements": [
+                    {
+                        "byteRange": {
+                            "start": 0,
+                            "end": 5
+                        },
+                        "placeholder": null
+                    }
+                ]
+            }
+        ]));
+
+        assert_eq!(
+            normalized,
+            json!([
+                {
+                    "type": "text",
+                    "text": "hello",
+                    "text_elements": [
+                        {
+                            "byteRange": {
+                                "start": 0,
+                                "end": 5
+                            },
+                            "placeholder": null
+                        }
+                    ]
+                }
+            ])
+        );
+    }
 
     #[test]
     fn archive_conversation_params_accept_page_owned_shape() {
@@ -6414,6 +6602,31 @@ mod tests {
             response,
             ThreadUnsubscribeResponse {
                 status: ThreadUnsubscribeStatus::NotSubscribed,
+            }
+        );
+    }
+
+    #[test]
+    fn maybe_resume_conversation_params_accept_upstream_shape() {
+        let params: MaybeResumeConversationParams = serde_json::from_value(json!({
+            "hostId": "local",
+            "conversationId": "thr_123",
+            "model": null,
+            "reasoningEffort": null,
+            "workspaceRoots": ["D:/workspace"],
+            "collaborationMode": null
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            MaybeResumeConversationParams {
+                host_id: Some("local".to_string()),
+                conversation_id: "thr_123".to_string(),
+                model: None,
+                reasoning_effort: None,
+                workspace_roots: vec!["D:/workspace".to_string()],
+                collaboration_mode: None,
             }
         );
     }
@@ -6749,6 +6962,7 @@ mod tests {
             ConfigRequirementsReadResponse {
                 requirements: Some(ConfigRequirements {
                     allowed_approval_policies: Some(vec![json!("on-request"), json!("never"),]),
+                    allowed_approvals_reviewers: None,
                     allowed_sandbox_modes: Some(vec![
                         "read-only".to_string(),
                         "workspace-write".to_string(),

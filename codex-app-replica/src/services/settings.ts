@@ -241,6 +241,8 @@ export type GlobalStateKey =
   | "electron:onboarding-welcome-v2-state"
   | "electron:onboarding-welcome-v2-role-state"
   | "electron:onboarding-welcome-v2-role-selection-debug-override"
+  | "has-seen-codex-mobile-home-announcement"
+  | "has-completed-codex-mobile-setup"
   | "last_completed_onboarding"
   | "git-branch-prefix"
   | "git-always-force-push"

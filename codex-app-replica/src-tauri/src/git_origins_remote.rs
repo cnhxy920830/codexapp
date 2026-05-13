@@ -9,7 +9,7 @@ pub(crate) fn resolve_remote_git_origins(
     host_id: &str,
     dirs: Vec<String>,
 ) -> Result<GitOriginsResponse, String> {
-    let connection = read_remote_connection(app, host_id)?;
+    let connection = resolve_remote_connection(app, host_id)?;
     let origins = dirs
         .into_iter()
         .map(|dir| resolve_remote_git_origin(&connection, dir))
@@ -75,7 +75,10 @@ fn parse_remote_git_origin_output(
     connection: &crate::remote_connections::RemoteConnection,
     output: &Output,
 ) -> Result<(Option<String>, Option<String>), String> {
-    let fields = output.stdout.splitn(2, |byte| *byte == b'\0').collect::<Vec<_>>();
+    let fields = output
+        .stdout
+        .splitn(2, |byte| *byte == b'\0')
+        .collect::<Vec<_>>();
     let root = decode_optional_utf8_field(connection, "git root", fields.first().copied())?;
     let origin_url =
         decode_optional_utf8_field(connection, "git origin url", fields.get(1).copied())?;
@@ -167,7 +170,10 @@ mod tests {
 
     #[test]
     fn normalize_remote_dir_requires_absolute_posix_paths() {
-        assert_eq!(normalize_remote_dir("/srv/demo/../repo"), Some("/srv/repo".to_string()));
+        assert_eq!(
+            normalize_remote_dir("/srv/demo/../repo"),
+            Some("/srv/repo".to_string())
+        );
         assert_eq!(normalize_remote_dir("relative"), None);
         assert_eq!(normalize_remote_dir(" "), None);
     }
