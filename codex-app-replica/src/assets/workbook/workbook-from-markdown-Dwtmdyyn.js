@@ -1,0 +1,5 @@
+import{M as e,d as t,j as n}from"./handle-Dm2tT__A.js";import{t as r}from"./lib-CNyRRbOU.js";var i=`Markdown table`,a=31,o=/\\|\/|\?|\*|\[|\]|:/g,s=/<br\s*\/?>/gi,c=`BPS_TABLE_BR_PLACEHOLDER`,l=/:{1,3}contentReference\[[^\]]+\](?:\{[^}]*\})?/g,u=/\u200b/g,d=e().use(t).use(r);function f(e){return((e??i).trim().replace(o,``).trim()||i).slice(0,a)}function p(e){return e.replace(s,c)}function m(e){return e.replace(/\u00a0/g,` `).replaceAll(c,`
+`).replace(u,``).replace(l,``).replace(/\r/g,``).replace(/[ \t]+\n/g,`
+`).replace(/\n[ \t]+/g,`
+`).trim()}function h(e){let t=d.parse(p(e)).children.find(e=>e.type===`table`);if(!t)throw Error(`Unable to build workbook: no markdown table rows found.`);let r=[];for(let e of t.children){let t=e.children.map(e=>m(n(e)));t.every(e=>e.length===0)||r.push(t)}return r}function g(e){return h(e)}export{g as buildTableValuesFromMarkdown,f as sanitizeSheetName};
+//# sourceMappingURL=workbook-from-markdown-Dwtmdyyn.js.map

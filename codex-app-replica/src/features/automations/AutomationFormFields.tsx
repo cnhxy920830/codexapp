@@ -1,8 +1,10 @@
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import type { AutomationRecord } from "../../services/automations";
-import type { ThreadHistoryEntry } from "../../services/history";
 import { AutomationLocalEnvironmentSelector } from "./AutomationLocalEnvironmentSelector";
-import type { TranslateFn } from "./automationsPageUtils";
+import type {
+  HeartbeatThreadOption,
+  TranslateFn,
+} from "./automationsPageUtils";
 import type { AutomationLocalEnvironmentState } from "./useAutomationLocalEnvironmentSelection";
 
 type AutomationFormFieldsProps = {
@@ -13,7 +15,7 @@ type AutomationFormFieldsProps = {
     workspaceRoot: string;
   }) => void;
   onDraftChange: Dispatch<SetStateAction<AutomationRecord | null>>;
-  recentThreads: ThreadHistoryEntry[];
+  heartbeatThreadOptions: HeartbeatThreadOption[];
   t: TranslateFn;
 };
 
@@ -37,7 +39,7 @@ export function AutomationFormFields({
   localEnvironmentState,
   onOpenLocalEnvironmentsSettings,
   onDraftChange,
-  recentThreads,
+  heartbeatThreadOptions,
   t,
 }: AutomationFormFieldsProps) {
   return (
@@ -71,9 +73,9 @@ export function AutomationFormFields({
             <option value="">
               {t("settings.automations.heartbeatThread.placeholder")}
             </option>
-            {recentThreads.map((thread) => (
+            {heartbeatThreadOptions.map((thread) => (
               <option key={thread.id} value={thread.id}>
-                {thread.name?.trim() || thread.preview.trim() || thread.id}
+                {thread.title}
               </option>
             ))}
           </select>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import type { AppToast } from "../../components/AppToastRegion";
 import {
   BackNavigationIcon,
   ForwardNavigationIcon,
@@ -17,27 +18,43 @@ import {
   listAutomations,
   runAutomationNow,
   setAutomationStatus,
-  type AutomationRecord,
   updateAutomation,
+  type AutomationRecord,
+  type CronAutomationRecord,
 } from "../../services/automations";
+import {
+  getGlobalState,
+  listModelsForHost,
+  onGlobalStateUpdated,
+  type ModelListEntry,
+} from "../../services/settings";
 import type { ThreadHistoryEntry } from "../../services/history";
 import { AutomationsCreateDialog } from "./AutomationsCreateDialog";
 import { AutomationsDetailPane } from "./AutomationsDetailPane";
 import { AutomationsOverviewPane } from "./AutomationsOverviewPane";
-import { useAutomationLocalEnvironmentSelection } from "./useAutomationLocalEnvironmentSelection";
 import {
   areAutomationsEqual,
+  buildHeartbeatThreadOptions,
   copyAutomation,
-  type FeedbackState,
   formatErrorMessage,
   hasAutomationRequiredFields,
   isPaused,
   sortAutomations,
 } from "./automationsPageUtils";
 import {
+  parseAutomationsRouteState,
+  serializeAutomationsRouteState,
+  type AutomationsRouteState,
+} from "./automationsRouteState";
+import {
   formatAutomationLastRunLabel,
   formatAutomationNextRunLabel,
 } from "./time";
+import { useAutomationLocalEnvironmentSelection } from "./useAutomationLocalEnvironmentSelection";
+import {
+  onWorkspaceRootOptionsUpdated,
+  readWorkspaceRootOptions,
+} from "../../services/workspaceRoots";
 
 const AUTO_SAVE_DELAY_MS = 600;
 
@@ -47,6 +64,7 @@ type AutomationsRoutePageProps = {
     configPath: string | null;
     workspaceRoot: string;
   }) => void;
+  onShowToast: (toast: AppToast) => void;
   recentThreads: ThreadHistoryEntry[];
   onOpenThread: (threadId: string) => void | Promise<void>;
   selectedHostId: string;
@@ -70,6 +88,37 @@ type ToolbarProps = {
   t: ReturnType<typeof useI18n>["t"];
 };
 
+function getWindowSearch() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  return window.location.search;
+}
+
+function writeAutomationsRouteState(
+  state: AutomationsRouteState,
+  options?: { replace?: boolean },
+) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const params = serializeAutomationsRouteState(state);
+  const nextSearch = params.toString();
+  const nextUrl =
+    nextSearch.length > 0
+      ? `${window.location.pathname}?${nextSearch}`
+      : window.location.pathname;
+  const currentUrl = `${window.location.pathname}${window.location.search}`;
+  if (currentUrl === nextUrl) {
+    return;
+  }
+
+  const method = options?.replace === true ? "replaceState" : "pushState";
+  window.history[method](window.history.state, "", nextUrl);
+}
+
 function Toolbar({
   automationName,
   isDeleting,
@@ -88,7 +137,7 @@ function Toolbar({
   t,
 }: ToolbarProps) {
   return (
-    <div className="draggable grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-b border-[var(--app-shell-border)] px-panel py-2 electron:h-toolbar">
+    <div className="draggable grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 px-panel py-2 electron:h-toolbar">
       <div className="min-w-0 text-base">
         {isDetailVisible && automationName ? (
           <div className="flex min-w-0 items-center gap-1 text-[var(--app-shell-muted)]">
@@ -180,19 +229,50 @@ function Toolbar({
   );
 }
 
+function MissingAutomationPane({
+  onBackToAutomations,
+  t,
+}: {
+  onBackToAutomations: () => void;
+  t: ReturnType<typeof useI18n>["t"];
+}) {
+  return (
+    <div className="mx-auto flex w-full max-w-[var(--thread-content-max-width)] flex-1 flex-col items-start gap-3 px-panel pt-panel pb-panel">
+      <div className="text-lg text-[var(--app-shell-title)]">
+        {t("inbox.automations.missing")}
+      </div>
+      <div className="app-text-muted">
+        {t("inbox.automations.missingSubtitle")}
+      </div>
+      <button
+        type="button"
+        onClick={onBackToAutomations}
+        className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
+      >
+        {t("inbox.automations.missingBack")}
+      </button>
+    </div>
+  );
+}
+
 export function AutomationsRoutePage({
   hasConnectedRemoteConnections,
   onOpenLocalEnvironmentsSettings,
+  onShowToast,
   recentThreads,
   onOpenThread,
   selectedHostId,
 }: AutomationsRoutePageProps) {
   const { locale, t } = useI18n();
+  const [routeState, setRouteState] = useState<AutomationsRouteState>(() =>
+    parseAutomationsRouteState(
+      getWindowSearch(),
+      typeof window === "undefined" ? null : window.history.state,
+    ),
+  );
   const [items, setItems] = useState<AutomationRecord[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<AutomationRecord | null>(null);
-  const [editorMode, setEditorMode] = useState<"create" | "edit" | null>(null);
-  const [feedback, setFeedback] = useState<FeedbackState>(null);
+  const [createDraft, setCreateDraft] = useState<AutomationRecord | null>(null);
+  const [detailDraft, setDetailDraft] = useState<AutomationRecord | null>(null);
   const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreateSaving, setIsCreateSaving] = useState(false);
@@ -203,6 +283,25 @@ export function AutomationsRoutePage({
   const [openRowMenuId, setOpenRowMenuId] = useState<string | null>(null);
   const [failedAutoSaveDraft, setFailedAutoSaveDraft] =
     useState<AutomationRecord | null>(null);
+  const [workspaceRootLabels, setWorkspaceRootLabels] = useState<
+    Record<string, string>
+  >({});
+  const [workspaceRootOptions, setWorkspaceRootOptions] = useState<string[]>([]);
+  const [modelOptions, setModelOptions] = useState<ModelListEntry[]>([]);
+  const [pinnedThreadIds, setPinnedThreadIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setRouteState(
+        parseAutomationsRouteState(getWindowSearch(), window.history.state),
+      );
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, []);
 
   const threadNameById = useMemo(
     () =>
@@ -214,14 +313,64 @@ export function AutomationsRoutePage({
       ),
     [recentThreads],
   );
+  const selectedHeartbeatTargetThreadId =
+    detailDraft?.kind === "heartbeat"
+      ? detailDraft.targetThreadId.trim()
+      : createDraft?.kind === "heartbeat"
+        ? createDraft.targetThreadId.trim()
+        : "";
+  const occupiedHeartbeatThreadIds = useMemo(
+    () =>
+      new Set(
+        items.flatMap((automation) => {
+          if (automation.kind !== "heartbeat" || automation.status !== "ACTIVE") {
+            return [];
+          }
+
+          const targetThreadId = automation.targetThreadId.trim();
+          if (
+            targetThreadId.length === 0 ||
+            (selectedHeartbeatTargetThreadId.length > 0 &&
+              targetThreadId === selectedHeartbeatTargetThreadId)
+          ) {
+            return [];
+          }
+
+          return [targetThreadId];
+        }),
+      ),
+    [items, selectedHeartbeatTargetThreadId],
+  );
+  const heartbeatThreadOptions = useMemo(
+    () =>
+      buildHeartbeatThreadOptions({
+        occupiedThreadIds: occupiedHeartbeatThreadIds,
+        pinnedThreadIds,
+        recentThreads,
+        selectedThreadId: selectedHeartbeatTargetThreadId,
+        threadNameById,
+      }),
+    [
+      occupiedHeartbeatThreadIds,
+      pinnedThreadIds,
+      recentThreads,
+      selectedHeartbeatTargetThreadId,
+      threadNameById,
+    ],
+  );
 
   const sortedItems = useMemo(() => sortAutomations(items), [items]);
+  const isCreateMode = routeState.automationMode === "create";
+  const effectiveSelectedAutomationId = isCreateMode
+    ? null
+    : routeState.automationId;
   const selectedAutomation = useMemo(
     () =>
-      selectedId
-        ? sortedItems.find((item) => item.id === selectedId) ?? null
+      effectiveSelectedAutomationId
+        ? sortedItems.find((item) => item.id === effectiveSelectedAutomationId) ??
+          null
         : null,
-    [selectedId, sortedItems],
+    [effectiveSelectedAutomationId, sortedItems],
   );
   const deleteCandidate = useMemo(
     () =>
@@ -231,59 +380,55 @@ export function AutomationsRoutePage({
     [deleteCandidateId, sortedItems],
   );
 
-  const isCreateMode = editorMode === "create" && draft !== null;
+  const isMissingSelection =
+    effectiveSelectedAutomationId !== null &&
+    selectedAutomation === null &&
+    !isLoading;
   const isDetailVisible =
-    editorMode === "edit" && selectedAutomation !== null && draft !== null;
-  const isRunNowBusy = isRunningNowId !== null;
-  const isSaveRetryVisible =
-    draft !== null &&
-    failedAutoSaveDraft !== null &&
-    areAutomationsEqual(draft, failedAutoSaveDraft);
-
+    effectiveSelectedAutomationId !== null &&
+    selectedAutomation !== null &&
+    detailDraft !== null;
+  const activeDraft = isDetailVisible ? detailDraft : createDraft;
   const detailAutomationName =
-    draft?.name.trim() ||
     selectedAutomation?.name.trim() ||
-    (isDetailVisible || isCreateMode
-      ? t("settings.automations.dialog.newTitle")
-      : null);
+    detailDraft?.name.trim() ||
+    (isDetailVisible ? t("settings.automations.dialog.newTitle") : null);
+  const isSaveRetryVisible =
+    detailDraft !== null &&
+    failedAutoSaveDraft !== null &&
+    areAutomationsEqual(detailDraft, failedAutoSaveDraft);
 
   const nextRunLabel =
-    draft === null
+    activeDraft === null
       ? ""
       : formatAutomationNextRunLabel({
           locale,
-          nextRunAt: draft.nextRunAt,
-          status: draft.status,
+          nextRunAt: activeDraft.nextRunAt,
+          status: activeDraft.status,
           t,
         });
   const lastRunLabel =
-    draft === null
+    activeDraft === null
       ? ""
       : formatAutomationLastRunLabel({
-          lastRunAt: draft.lastRunAt,
+          lastRunAt: activeDraft.lastRunAt,
           locale,
           t,
         });
+
   const localEnvironmentState = useAutomationLocalEnvironmentSelection({
-    automation: draft,
+    automation: activeDraft,
     hostId: selectedHostId,
-    setAutomation: setDraft,
+    setAutomation: isDetailVisible ? setDetailDraft : setCreateDraft,
   });
 
-  async function loadAutomations(nextSelectedId?: string | null) {
+  async function loadAutomations() {
     setIsLoading(true);
     try {
       const nextItems = await listAutomations();
       setItems(nextItems);
-      setSelectedId((current) => {
-        const candidate = nextSelectedId === undefined ? current : nextSelectedId;
-        if (candidate && nextItems.some((item) => item.id === candidate)) {
-          return candidate;
-        }
-        return null;
-      });
     } catch (error) {
-      setFeedback({
+      onShowToast({
         message: error instanceof Error ? error.message : String(error),
         tone: "error",
       });
@@ -293,8 +438,117 @@ export function AutomationsRoutePage({
   }
 
   useEffect(() => {
-    void loadAutomations(null);
+    void loadAutomations();
   }, []);
+
+  useEffect(() => {
+    let disposed = false;
+
+    const reload = () => {
+      void readWorkspaceRootOptions(selectedHostId)
+        .then((response) => {
+          if (disposed) {
+            return;
+          }
+          setWorkspaceRootOptions(response.roots);
+          setWorkspaceRootLabels(response.labels);
+        })
+        .catch(() => {
+          if (disposed) {
+            return;
+          }
+          setWorkspaceRootOptions([]);
+          setWorkspaceRootLabels({});
+        });
+    };
+
+    reload();
+
+    let cleanup: (() => void) | null = null;
+    void onWorkspaceRootOptionsUpdated(reload).then((unsubscribe) => {
+      if (disposed) {
+        unsubscribe();
+        return;
+      }
+      cleanup = unsubscribe;
+    });
+
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, [selectedHostId]);
+
+  useEffect(() => {
+    let disposed = false;
+    let cleanup: (() => void) | null = null;
+
+    const reloadPinnedThreadIds = () => {
+      void getGlobalState("pinned-thread-ids")
+        .then((response) => {
+          if (disposed) {
+            return;
+          }
+
+          setPinnedThreadIds(
+            Array.isArray(response.value)
+              ? response.value.filter(
+                  (entry): entry is string =>
+                    typeof entry === "string" && entry.trim().length > 0,
+                )
+              : [],
+          );
+        })
+        .catch(() => {
+          if (disposed) {
+            return;
+          }
+          setPinnedThreadIds([]);
+        });
+    };
+
+    reloadPinnedThreadIds();
+
+    void onGlobalStateUpdated((notification) => {
+      if (!notification.keys.includes("pinned-thread-ids")) {
+        return;
+      }
+      reloadPinnedThreadIds();
+    }).then((unsubscribe) => {
+      if (disposed) {
+        unsubscribe();
+        return;
+      }
+      cleanup = unsubscribe;
+    });
+
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+
+    void listModelsForHost({ hostId: selectedHostId })
+      .then((response) => {
+        if (disposed) {
+          return;
+        }
+        setModelOptions(response.data);
+      })
+      .catch(() => {
+        if (disposed) {
+          return;
+        }
+        setModelOptions([]);
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [selectedHostId]);
 
   useEffect(() => {
     if (!openRowMenuId) {
@@ -306,7 +560,9 @@ export function AutomationsRoutePage({
         return;
       }
 
-      if (event.target.closest(`[data-automation-menu-root="${openRowMenuId}"]`)) {
+      if (
+        event.target.closest(`[data-automation-menu-root="${openRowMenuId}"]`)
+      ) {
         return;
       }
 
@@ -320,15 +576,90 @@ export function AutomationsRoutePage({
   }, [openRowMenuId]);
 
   useEffect(() => {
-    if (editorMode !== "edit" || selectedId === null || selectedAutomation !== null || isLoading) {
+    if (!isCreateMode) {
+      setCreateDraft(null);
       return;
     }
 
-    setDraft(null);
-    setEditorMode(null);
+    setCreateDraft((current) => current ?? buildAutomationDraft("cron"));
     setFailedAutoSaveDraft(null);
-    setSelectedId(null);
-  }, [editorMode, isLoading, selectedAutomation, selectedId]);
+  }, [isCreateMode]);
+
+  useEffect(() => {
+    if (!selectedAutomation) {
+      setDetailDraft(null);
+      setFailedAutoSaveDraft(null);
+      return;
+    }
+
+    setDetailDraft((current) => {
+      if (current === null || current.id !== selectedAutomation.id) {
+        return copyAutomation(selectedAutomation);
+      }
+
+      return current;
+    });
+  }, [selectedAutomation]);
+
+  const updateRouteState = (
+    nextState: AutomationsRouteState,
+    options?: { replace?: boolean },
+  ) => {
+    setRouteState(nextState);
+    writeAutomationsRouteState(nextState, options);
+  };
+
+  const showCreate = (prefilledDraft?: CronAutomationRecord) => {
+    setOpenRowMenuId(null);
+    setDeleteCandidateId(null);
+    if (prefilledDraft) {
+      setCreateDraft(copyAutomation(prefilledDraft));
+    }
+    updateRouteState(
+      {
+        automationId: null,
+        automationMode: "create",
+      },
+      { replace: false },
+    );
+  };
+
+  const showOverview = (options?: { replace?: boolean; clearFeedback?: boolean }) => {
+    setOpenRowMenuId(null);
+    setDeleteCandidateId(null);
+    setFailedAutoSaveDraft(null);
+    setCreateDraft(null);
+    setDetailDraft(null);
+    updateRouteState(
+      {
+        automationId: null,
+        automationMode: null,
+      },
+      { replace: options?.replace === true },
+    );
+  };
+
+  const selectAutomation = (automation: AutomationRecord) => {
+    setOpenRowMenuId(null);
+    setDeleteCandidateId(null);
+    setFailedAutoSaveDraft(null);
+    setDetailDraft(copyAutomation(automation));
+    updateRouteState(
+      {
+        automationId: automation.id,
+        automationMode: null,
+      },
+      { replace: false },
+    );
+  };
+
+  const updateDetailDraft: typeof setDetailDraft = (value) => {
+    setDetailDraft(value);
+  };
+
+  const updateCreateDraft: typeof setCreateDraft = (value) => {
+    setCreateDraft(value);
+  };
 
   async function persistDetailDraft(
     nextDraft: AutomationRecord,
@@ -346,7 +677,7 @@ export function AutomationsRoutePage({
       setItems((current) =>
         current.map((item) => (item.id === updated.id ? updated : item)),
       );
-      setDraft((current) => {
+      setDetailDraft((current) => {
         if (!current || current.id !== updated.id) {
           return current;
         }
@@ -356,9 +687,8 @@ export function AutomationsRoutePage({
           : current;
       });
       setFailedAutoSaveDraft(null);
-      setFeedback(null);
     } catch (error) {
-      setFeedback({
+      onShowToast({
         message: formatErrorMessage(t("inbox.automations.updateError"), error),
         tone: "error",
       });
@@ -368,11 +698,9 @@ export function AutomationsRoutePage({
         error instanceof Error &&
         error.message === AUTOMATION_UPDATE_MISSING_MESSAGE
       ) {
-        setSelectedId(null);
-        setDraft(null);
-        setEditorMode(null);
+        setDetailDraft(null);
         setFailedAutoSaveDraft(null);
-        await loadAutomations(null);
+        await loadAutomations();
       }
     } finally {
       if (source === "retry") {
@@ -385,88 +713,66 @@ export function AutomationsRoutePage({
 
   useEffect(() => {
     if (
-      editorMode !== "edit" ||
-      draft === null ||
+      !isDetailVisible ||
+      detailDraft === null ||
       selectedAutomation === null ||
       isDetailSaving ||
       isRetrySaving ||
-      !hasAutomationRequiredFields(draft) ||
-      areAutomationsEqual(draft, selectedAutomation) ||
-      (failedAutoSaveDraft !== null && areAutomationsEqual(draft, failedAutoSaveDraft))
+      !hasAutomationRequiredFields(detailDraft) ||
+      areAutomationsEqual(detailDraft, selectedAutomation) ||
+      (failedAutoSaveDraft !== null &&
+        areAutomationsEqual(detailDraft, failedAutoSaveDraft))
     ) {
       return;
     }
 
     const timeoutId = window.setTimeout(() => {
-      void persistDetailDraft(draft, "auto");
+      void persistDetailDraft(detailDraft, "auto");
     }, AUTO_SAVE_DELAY_MS);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
   }, [
-    draft,
-    editorMode,
+    detailDraft,
     failedAutoSaveDraft,
     isDetailSaving,
+    isDetailVisible,
     isRetrySaving,
     selectedAutomation,
   ]);
 
-  const updateDraft: typeof setDraft = (value) => {
-    setDraft(value);
-    setFeedback((current) => (current?.tone === "success" ? null : current));
+  const clearDetailDraft = () => {
+    updateDetailDraft((current) =>
+      current ? { ...current, name: "", prompt: "" } : current,
+    );
   };
 
-  const selectAutomation = (automation: AutomationRecord) => {
-    setOpenRowMenuId(null);
-    setSelectedId(automation.id);
-    setDraft(copyAutomation(automation));
-    setEditorMode("edit");
-    setFailedAutoSaveDraft(null);
-    setFeedback(null);
-  };
-
-  const closeDetail = (clearFeedback = true) => {
-    setOpenRowMenuId(null);
-    setSelectedId(null);
-    setDraft(null);
-    setEditorMode(null);
-    setFailedAutoSaveDraft(null);
-    if (clearFeedback) {
-      setFeedback(null);
-    }
-  };
-
-  const startCreate = () => {
-    setOpenRowMenuId(null);
-    setSelectedId(null);
-    setDraft(buildAutomationDraft("cron"));
-    setEditorMode("create");
-    setFailedAutoSaveDraft(null);
-    setFeedback(null);
-  };
-
-  const clearDraft = () => {
-    updateDraft((current) =>
+  const clearCreateDraft = () => {
+    updateCreateDraft((current) =>
       current ? { ...current, name: "", prompt: "" } : current,
     );
   };
 
   const saveCreate = async () => {
-    if (draft === null || !hasAutomationRequiredFields(draft)) {
+    if (createDraft === null || !hasAutomationRequiredFields(createDraft)) {
       return;
     }
 
     setIsCreateSaving(true);
     try {
-      await createAutomation(draft);
-      setFeedback(null);
-      setEditorMode(null);
-      setDraft(null);
-      await loadAutomations(null);
+      const created = await createAutomation(createDraft);
+      setCreateDraft(null);
+      await loadAutomations();
+      updateRouteState(
+        {
+          automationId: created.id,
+          automationMode: null,
+        },
+        { replace: true },
+      );
     } catch (error) {
-      setFeedback({
+      onShowToast({
         message: formatErrorMessage(t("inbox.automations.createError"), error),
         tone: "error",
       });
@@ -485,13 +791,12 @@ export function AutomationsRoutePage({
       setItems((current) =>
         current.map((item) => (item.id === updated.id ? updated : item)),
       );
-      if (selectedId === updated.id) {
-        setDraft(copyAutomation(updated));
+      if (effectiveSelectedAutomationId === updated.id) {
+        setDetailDraft(copyAutomation(updated));
       }
       setFailedAutoSaveDraft(null);
-      setFeedback(null);
     } catch (error) {
-      setFeedback({
+      onShowToast({
         message: error instanceof Error ? error.message : String(error),
         tone: "error",
       });
@@ -507,7 +812,7 @@ export function AutomationsRoutePage({
     try {
       const result = await deleteAutomationCompat(deleteCandidate.id);
       if (!result.success) {
-        setFeedback({
+        onShowToast({
           message: `${t("inbox.automations.deleteError")}: ${t(
             "inbox.automations.deleteFailedDescription",
           )}`,
@@ -516,14 +821,13 @@ export function AutomationsRoutePage({
         return;
       }
 
-      const wasSelected = selectedId === deleteCandidate.id;
       setDeleteCandidateId(null);
-      if (wasSelected) {
-        closeDetail(false);
+      await loadAutomations();
+      if (effectiveSelectedAutomationId === deleteCandidate.id) {
+        showOverview({ clearFeedback: false, replace: true });
       }
-      await loadAutomations(wasSelected ? null : selectedId);
     } catch (error) {
-      setFeedback({
+      onShowToast({
         message: formatErrorMessage(t("inbox.automations.deleteError"), error),
         tone: "error",
       });
@@ -534,16 +838,15 @@ export function AutomationsRoutePage({
 
   const handleRunNow = async (automation: AutomationRecord) => {
     setIsRunningNowId(automation.id);
-    setFeedback(null);
     try {
       const result = await runAutomationNow(automation.id);
-      setFeedback({
+      onShowToast({
         message: t("inbox.automations.runNowSuccess"),
-        tone: "success",
+        tone: "info",
       });
       await onOpenThread(result.threadId);
     } catch (error) {
-      setFeedback({
+      onShowToast({
         message: formatErrorMessage(t("inbox.automations.runNowError"), error),
         tone: "error",
       });
@@ -553,6 +856,10 @@ export function AutomationsRoutePage({
   };
 
   const detailAutomation = isDetailVisible ? selectedAutomation : null;
+  const quickStartBaseDraft = useMemo(
+    () => buildAutomationDraft("cron") as CronAutomationRecord,
+    [],
+  );
 
   return (
     <>
@@ -567,8 +874,8 @@ export function AutomationsRoutePage({
             detailAutomation ? isRunningNowId === detailAutomation.id : false
           }
           isSaveRetryVisible={isSaveRetryVisible && isDetailVisible}
-          onBackToAutomations={() => closeDetail()}
-          onCreateAutomationClick={startCreate}
+          onBackToAutomations={() => showOverview()}
+          onCreateAutomationClick={showCreate}
           onDeleteAutomation={() => {
             if (detailAutomation) {
               setDeleteCandidateId(detailAutomation.id);
@@ -585,8 +892,8 @@ export function AutomationsRoutePage({
             }
           }}
           onRetrySave={() => {
-            if (draft) {
-              void persistDetailDraft(draft, "retry");
+            if (detailDraft) {
+              void persistDetailDraft(detailDraft, "retry");
             }
           }}
           onRunNow={() => {
@@ -597,62 +904,82 @@ export function AutomationsRoutePage({
           t={t}
         />
 
-        {detailAutomation && draft ? (
-          <AutomationsDetailPane
-            draft={draft}
-            feedback={feedback}
-            hasConnectedRemoteConnections={hasConnectedRemoteConnections}
-            isSaving={isDetailSaving || isRetrySaving}
-            lastRunLabel={lastRunLabel}
-            localEnvironmentState={localEnvironmentState}
-            nextRunLabel={nextRunLabel}
-            onClearDraft={clearDraft}
-            onDraftChange={updateDraft}
-            onOpenLocalEnvironmentsSettings={onOpenLocalEnvironmentsSettings}
-            recentThreads={recentThreads}
-            threadNameById={threadNameById}
-            t={t}
-          />
-        ) : (
-          <AutomationsOverviewPane
-            feedback={feedback}
-            isLoading={isLoading}
-            isRunningNowId={isRunningNowId}
-            items={sortedItems}
-            openRowMenuId={openRowMenuId}
-            selectedId={selectedId}
-            threadNameById={threadNameById}
-            onDeleteAutomation={(automation) => {
-              setDeleteCandidateId(automation.id);
-              setOpenRowMenuId(null);
-            }}
-            onPauseAutomation={(automation) => void updateStatus(automation, "PAUSED")}
-            onResumeAutomation={(automation) => void updateStatus(automation, "ACTIVE")}
-            onRunAutomationNow={(automation) => void handleRunNow(automation)}
-            onSelectAutomation={selectAutomation}
-            onToggleMenu={setOpenRowMenuId}
-            t={t}
-          />
-        )}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {isDetailVisible && detailAutomation && detailDraft ? (
+            <AutomationsDetailPane
+              draft={detailDraft}
+              feedback={null}
+              hasConnectedRemoteConnections={hasConnectedRemoteConnections}
+              heartbeatThreadOptions={heartbeatThreadOptions}
+              isSaving={isDetailSaving || isRetrySaving}
+              lastRunLabel={lastRunLabel}
+              localEnvironmentState={localEnvironmentState}
+              locale={locale}
+              nextRunLabel={nextRunLabel}
+              onClearDraft={clearDetailDraft}
+              onDraftChange={updateDetailDraft}
+              onOpenLocalEnvironmentsSettings={onOpenLocalEnvironmentsSettings}
+              modelOptions={modelOptions}
+              workspaceRootOptions={workspaceRootOptions}
+              workspaceRootLabels={workspaceRootLabels}
+              t={t}
+            />
+          ) : isMissingSelection ? (
+            <MissingAutomationPane
+              onBackToAutomations={() => showOverview({ replace: true })}
+              t={t}
+            />
+          ) : (
+            <AutomationsOverviewPane
+              isLoading={isLoading}
+              isRunningNowId={isRunningNowId}
+              items={sortedItems}
+              locale={locale}
+              openRowMenuId={openRowMenuId}
+              quickStartBaseDraft={quickStartBaseDraft}
+              selectedId={effectiveSelectedAutomationId}
+              threadNameById={threadNameById}
+              workspaceRootLabels={workspaceRootLabels}
+              onDeleteAutomation={(automation) => {
+                setDeleteCandidateId(automation.id);
+                setOpenRowMenuId(null);
+              }}
+              onPauseAutomation={(automation) =>
+                void updateStatus(automation, "PAUSED")
+              }
+              onSelectQuickStart={(draft) => {
+                showCreate(draft);
+              }}
+              onResumeAutomation={(automation) =>
+                void updateStatus(automation, "ACTIVE")
+              }
+              onRunAutomationNow={(automation) => void handleRunNow(automation)}
+              onSelectAutomation={selectAutomation}
+              onToggleMenu={setOpenRowMenuId}
+              t={t}
+            />
+          )}
+        </div>
       </div>
 
-      {isCreateMode ? (
+      {isCreateMode && createDraft ? (
         <AutomationsCreateDialog
-          canSave={draft !== null && hasAutomationRequiredFields(draft)}
-          draft={draft}
-          feedback={feedback}
+          canSave={
+            createDraft !== null && hasAutomationRequiredFields(createDraft)
+          }
+          draft={createDraft}
           isSaving={isCreateSaving}
+          quickStartBaseDraft={quickStartBaseDraft}
           localEnvironmentState={localEnvironmentState}
-          onCancel={() => {
-            setEditorMode(null);
-            setDraft(null);
-            setFeedback(null);
-          }}
-          onClearDraft={clearDraft}
+          onCancel={() => showOverview()}
+          onClearDraft={clearCreateDraft}
           onCreate={() => void saveCreate()}
-          onDraftChange={updateDraft}
+          onDraftChange={updateCreateDraft}
+          onSelectTemplateDraft={(draft) => {
+            setCreateDraft(copyAutomation(draft));
+          }}
           onOpenLocalEnvironmentsSettings={onOpenLocalEnvironmentsSettings}
-          recentThreads={recentThreads}
+          heartbeatThreadOptions={heartbeatThreadOptions}
           t={t}
         />
       ) : null}

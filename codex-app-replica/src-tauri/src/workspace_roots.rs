@@ -141,6 +141,11 @@ pub fn active_workspace_roots(
     })
 }
 
+pub(crate) fn read_active_workspace_roots_from_app(app: &AppHandle) -> Result<Vec<String>, String> {
+    let settings = read_global_settings(app)?;
+    Ok(read_active_workspace_roots(&settings))
+}
+
 #[tauri::command(rename = "paths-exist")]
 pub fn paths_exist(
     host_id: Option<String>,

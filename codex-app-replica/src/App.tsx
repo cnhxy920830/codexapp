@@ -124,6 +124,7 @@ import { SettingsChoiceMenu } from "./components/SettingsChoiceMenu";
 import { ToggleSwitch } from "./components/ToggleSwitch";
 import { ChatConversationMainPane } from "./features/chat/ChatConversationMainPane";
 import { ChatSidePanel } from "./features/chat/ChatSidePanel";
+import { FilePreviewPage } from "./features/chat/FilePreviewPage";
 import { PlanSummaryPage } from "./features/chat/PlanSummaryPage";
 import { RemoteConversationHeaderActions } from "./features/chat/RemoteConversationHeaderActions";
 import { RemoteConversationPage } from "./features/chat/RemoteConversationPage";
@@ -349,6 +350,7 @@ type AppRoute =
   | "welcome"
   | "first-run"
   | "plan-summary"
+  | "file-preview"
   | "editor-diff"
   | "global-dictation"
   | "worktree-init"
@@ -396,6 +398,7 @@ type PendingWindowPageKind =
   | "hotkey-home"
   | "hotkey-new-thread"
   | "plan-summary"
+  | "file-preview"
   | "editor-diff"
   | "global-dictation"
   | "worktree-init"
@@ -576,6 +579,10 @@ function isPlanSummaryRoute(path: string) {
   return path === PLAN_SUMMARY_ROUTE_PATH;
 }
 
+function isFilePreviewRoute(path: string) {
+  return stripRouteSearchAndHash(path) === "/file-preview";
+}
+
 function isHotkeyHomeRoute(path: string) {
   return stripRouteSearchAndHash(path) === HOTKEY_HOME_ROUTE_PATH;
 }
@@ -657,6 +664,10 @@ function readInitialAppRoute(): AppRoute {
     return "first-run";
   }
 
+  if (typeof window !== "undefined" && isFilePreviewRoute(window.location.pathname)) {
+    return "file-preview";
+  }
+
   if (typeof window !== "undefined" && isPullRequestsRoute(window.location.pathname)) {
     return "pull-requests";
   }
@@ -678,6 +689,7 @@ function shouldWindowManagePowerSaveBlocker() {
   if (
     isDebugWindowRoute(pathname) ||
     isPlanSummaryRoute(pathname) ||
+    isFilePreviewRoute(pathname) ||
     isEditorDiffRoute(pathname) ||
     isGlobalDictationRoute(pathname) ||
     isHotkeyHomeRoute(pathname) ||
@@ -1260,6 +1272,7 @@ function App() {
       currentRoute !== "hotkey-home" &&
       currentRoute !== "hotkey-new-thread" &&
       currentRoute !== "plan-summary" &&
+      currentRoute !== "file-preview" &&
       currentRoute !== "editor-diff" &&
       currentRoute !== "global-dictation" &&
       currentRoute !== "first-run" &&
@@ -1534,7 +1547,8 @@ function App() {
       currentRoute === "debug" ||
       currentRoute === "editor-diff" ||
       currentRoute === "global-dictation" ||
-      currentRoute === "plan-summary"
+      currentRoute === "plan-summary" ||
+      currentRoute === "file-preview"
     ) {
       return;
     }
@@ -2394,6 +2408,13 @@ function App() {
           return;
         }
 
+        if (isFilePreviewRoute(path)) {
+          setThreadShellVariant("default");
+          initialWindowPageKindRef.current = "file-preview";
+          setCurrentRoute("file-preview");
+          return;
+        }
+
         if (isHotkeyHomeRoute(path)) {
           setThreadShellVariant("hotkey");
           initialWindowPageKindRef.current = "hotkey-home";
@@ -2857,11 +2878,13 @@ function App() {
       initialWindowPageKindRef.current === "hotkey-home" ||
       initialWindowPageKindRef.current === "hotkey-new-thread" ||
       initialWindowPageKindRef.current === "plan-summary" ||
+      initialWindowPageKindRef.current === "file-preview" ||
       initialWindowPageKindRef.current === "editor-diff" ||
       initialWindowPageKindRef.current === "global-dictation" ||
       initialWindowPageKindRef.current === "worktree-init" ||
       currentRoute === "hotkey-home" ||
       currentRoute === "hotkey-new-thread" ||
+      currentRoute === "file-preview" ||
       currentRoute === "editor-diff" ||
       currentRoute === "global-dictation" ||
       currentRoute === "first-run" ||
@@ -3524,6 +3547,13 @@ function App() {
       setThreadShellVariant("default");
       setSkillsRouteState(null);
       setCurrentRoute("plan-summary");
+      return;
+    }
+
+    if (isFilePreviewRoute(path)) {
+      setThreadShellVariant("default");
+      setSkillsRouteState(null);
+      setCurrentRoute("file-preview");
       return;
     }
 
@@ -4900,7 +4930,13 @@ function App() {
     }
 
     if (settingsSection === "usage") {
-      return <UsageSettings authMethod={authSnapshot.authState.authMethod} onShowToast={(toast) => setAppToast(toast)} />;
+      return (
+        <UsageSettings
+          authMethod={authSnapshot.authState.authMethod}
+          isAuthLoading={!hasLoadedAuthSnapshot || authSnapshot.isLoading}
+          onShowToast={(toast) => setAppToast(toast)}
+        />
+      );
     }
 
     if (settingsSection === "plugins-settings") {
@@ -5507,6 +5543,10 @@ function App() {
 
   if (currentRoute === "editor-diff") {
     return <EditorDiffPage routeState={editorDiffRouteState} />;
+  }
+
+  if (currentRoute === "file-preview") {
+    return <FilePreviewPage routeState={typeof window === "undefined" ? null : window.history.state} t={t} />;
   }
 
   if (currentRoute === "global-dictation") {
@@ -6135,6 +6175,7 @@ function App() {
                       });
                       setCurrentRoute("settings");
                     }}
+                    onShowToast={(toast) => setAppToast(toast)}
                     recentThreads={recentThreadEntries}
                     onOpenThread={selectThread}
                     selectedHostId={selectedSettingsHostId}

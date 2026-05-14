@@ -13,6 +13,8 @@ import {
   type UsagePricingInfo,
 } from "../services/usage";
 import type { AppToast } from "./AppToastRegion";
+import { Button } from "./Button";
+import { Spinner } from "./Spinner";
 
 const CREDIT_PURCHASE_URL = "https://chatgpt.com/codex/settings/usage?credit_modal=true";
 const DEFAULT_THRESHOLD = "125";
@@ -65,6 +67,8 @@ export function UsageAutoTopUpDialog({
   const [isPricingLoading, setIsPricingLoading] = useState(false);
   const [pricingInfo, setPricingInfo] = useState<UsagePricingInfo | null>(null);
   const [submissionAttempts, setSubmissionAttempts] = useState(0);
+  const [isThresholdBlurred, setIsThresholdBlurred] = useState(false);
+  const [isTargetBlurred, setIsTargetBlurred] = useState(false);
   const [hasImmediateTopUpFailure, setHasImmediateTopUpFailure] = useState(false);
   const [immediateTopUpFailureAmount, setImmediateTopUpFailureAmount] = useState<string | null>(null);
   const [isManagePaymentPending, setIsManagePaymentPending] = useState(false);
@@ -78,6 +82,8 @@ export function UsageAutoTopUpDialog({
 
     setDraftState(buildDraftState(serverState));
     setSubmissionAttempts(0);
+    setIsThresholdBlurred(false);
+    setIsTargetBlurred(false);
     setHasImmediateTopUpFailure(false);
     setImmediateTopUpFailureAmount(null);
   }, [open]);
@@ -153,8 +159,8 @@ export function UsageAutoTopUpDialog({
     ? null
     : calculateImmediateTopUpEstimate(locale, creditDetails, draftState, pricingInfo);
   const targetEquivalentEstimate = calculateTargetEquivalentEstimate(locale, draftState, pricingInfo);
-  const thresholdErrorMessage = buildThresholdErrorMessage(t, validation, submissionAttempts);
-  const targetErrorMessage = buildTargetErrorMessage(t, validation, submissionAttempts);
+  const thresholdErrorMessage = buildThresholdErrorMessage(t, validation, submissionAttempts, isThresholdBlurred);
+  const targetErrorMessage = buildTargetErrorMessage(t, validation, submissionAttempts, isTargetBlurred);
 
   if (!open) {
     return null;
@@ -180,7 +186,7 @@ export function UsageAutoTopUpDialog({
         <h2 id={dialogTitleId} className="text-[20px] font-medium leading-7 text-token-text-primary">
           {t("settings.usage.autoTopUp.dialog.title")}
         </h2>
-        <p id={dialogDescriptionId} className="mt-3 text-sm leading-6 text-token-text-secondary">
+        <p id={dialogDescriptionId} className="sr-only">
           {t("settings.usage.autoTopUp.dialog.description")}
         </p>
 
@@ -194,7 +200,7 @@ export function UsageAutoTopUpDialog({
             footerTone="error"
             helperText={t("settings.usage.autoTopUp.threshold.helper")}
             label={t("settings.usage.autoTopUp.threshold.label")}
-            onBlur={() => setSubmissionAttempts((value) => value + 1)}
+            onBlur={() => setIsThresholdBlurred(true)}
             onChange={(value) => {
               clearImmediateFailureState(setHasImmediateTopUpFailure, setImmediateTopUpFailureAmount);
               setDraftState((current) => ({ ...current, rechargeThreshold: value }));
@@ -216,7 +222,7 @@ export function UsageAutoTopUpDialog({
             footerTone={targetErrorMessage == null ? "secondary" : "error"}
             helperText={t("settings.usage.autoTopUp.target.helper")}
             label={t("settings.usage.autoTopUp.target.label")}
-            onBlur={() => setSubmissionAttempts((value) => value + 1)}
+            onBlur={() => setIsTargetBlurred(true)}
             onChange={(value) => {
               clearImmediateFailureState(setHasImmediateTopUpFailure, setImmediateTopUpFailureAmount);
               setDraftState((current) => ({ ...current, rechargeTarget: value }));
@@ -224,60 +230,51 @@ export function UsageAutoTopUpDialog({
             placeholder={DEFAULT_TARGET}
             value={draftState.rechargeTarget}
           />
+          <div className="text-sm leading-5 text-token-text-secondary">
+            {t("settings.usage.autoTopUp.dialog.description")}
+          </div>
           {immediateTopUpEstimate != null && (saveIntent === "enable" || saveIntent === "update") ? (
             <DialogBanner tone="info">
-              {saveIntent === "enable"
-                ? t("settings.usage.autoTopUp.immediateTopUpNotice.enable", {
-                    amount: immediateTopUpEstimate.amount,
-                    creditCount: immediateTopUpEstimate.creditCount,
-                  })
-                : t("settings.usage.autoTopUp.immediateTopUpNotice.update", {
-                    amount: immediateTopUpEstimate.amount,
-                    creditCount: immediateTopUpEstimate.creditCount,
-                  })}
+              {renderStrongMessage(
+                saveIntent === "enable"
+                  ? t("settings.usage.autoTopUp.immediateTopUpNotice.enable", {
+                      amount: immediateTopUpEstimate.amount,
+                      creditCount: immediateTopUpEstimate.creditCount,
+                    })
+                  : t("settings.usage.autoTopUp.immediateTopUpNotice.update", {
+                      amount: immediateTopUpEstimate.amount,
+                      creditCount: immediateTopUpEstimate.creditCount,
+                    }),
+              )}
             </DialogBanner>
           ) : null}
           {hasImmediateTopUpFailure ? (
             <DialogBanner tone="error">
-              <div>
-                {immediateTopUpFailureAmount == null
-                  ? t("settings.usage.autoTopUp.immediateTopUpFailure.generic")
-                  : t("settings.usage.autoTopUp.immediateTopUpFailure.amount", {
-                      amount: immediateTopUpFailureAmount,
-                    })}
-              </div>
-              <div className="mt-2 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  disabled={isManagePaymentPending}
-                  onClick={() =>
-                    void handleManagePayment(
-                      t("settings.usage.autoTopUp.managePayment.error"),
-                      onShowToast,
-                      setIsManagePaymentPending,
-                    )
-                  }
-                  className="font-medium underline underline-offset-2 disabled:pointer-events-none disabled:opacity-60"
-                >
-                  {t("settings.usage.autoTopUp.managePayment.action")}
-                </button>
-                <a
-                  href={CREDIT_PURCHASE_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-medium underline underline-offset-2"
-                >
-                  {t("settings.usage.autoTopUp.purchaseCredit.action")}
-                </a>
-              </div>
+              {renderImmediateTopUpFailureMessage({
+                isManagePaymentPending,
+                template:
+                  immediateTopUpFailureAmount == null
+                    ? t("settings.usage.autoTopUp.immediateTopUpFailure.generic")
+                    : t("settings.usage.autoTopUp.immediateTopUpFailure.amount", {
+                        amount: immediateTopUpFailureAmount,
+                      }),
+                onManagePayment: () =>
+                  void handleManagePayment(
+                    t("settings.usage.autoTopUp.managePayment.error"),
+                    onShowToast,
+                    setIsManagePaymentPending,
+                  ),
+              })}
             </DialogBanner>
           ) : null}
         </div>
 
         <div className="mt-7 flex items-center justify-end gap-2">
           {serverState.isEnabled ? (
-            <button
-              type="button"
+            <Button
+              color="outline"
+              className="min-w-[88px] justify-center"
+              loading={isSavingDisable}
               disabled={isSaving}
               onClick={() =>
                 void handleDisable({
@@ -288,23 +285,24 @@ export function UsageAutoTopUpDialog({
                   t,
                 })
               }
-              className="rounded-lg border border-token-border px-3 py-1.5 text-sm text-token-text-primary disabled:opacity-60"
             >
-              {isSavingDisable ? t("settings.usage.load.loading") : t("settings.usage.autoTopUp.disable")}
-            </button>
+              {t("settings.usage.autoTopUp.disable")}
+            </Button>
           ) : (
-            <button
-              type="button"
+            <Button
+              color="outline"
+              className="min-w-[88px] justify-center"
               disabled={isSaving}
               onClick={onClose}
-              className="rounded-lg border border-token-border px-3 py-1.5 text-sm text-token-text-primary disabled:opacity-60"
             >
               {t("settings.usage.autoTopUp.cancel")}
-            </button>
+            </Button>
           )}
-          <button
-            type="button"
+          <Button
+            color="primary"
+            className="min-w-[88px] justify-center"
             disabled={!isSaveEnabled}
+            loading={isSavingEnableOrUpdate}
             onClick={() =>
               void handleSave({
                 draftState,
@@ -320,14 +318,13 @@ export function UsageAutoTopUpDialog({
                 t,
               })
             }
-            className="rounded-lg bg-token-text-primary px-3 py-1.5 text-sm text-token-main-surface-primary disabled:opacity-60"
           >
-            {isSavingEnableOrUpdate
-              ? t("settings.usage.load.loading")
-              : serverState.isEnabled
-                ? t("settings.usage.autoTopUp.save")
-                : t("settings.usage.autoTopUp.enable")}
-          </button>
+            {serverState.isEnabled ? (
+              t("settings.usage.autoTopUp.save")
+            ) : (
+              t("settings.usage.autoTopUp.enable")
+            )}
+          </Button>
         </div>
       </div>
     </div>
@@ -350,20 +347,25 @@ function clearImmediateFailureState(
   setImmediateTopUpFailureAmount(null);
 }
 
-function resolveThresholdError(validation: DialogValidationState, submissionAttempts: number) {
-  return submissionAttempts > 0 ? validation.rechargeThresholdError : null;
+function resolveThresholdError(
+  validation: DialogValidationState,
+  submissionAttempts: number,
+  isThresholdBlurred: boolean,
+) {
+  return submissionAttempts > 0 || isThresholdBlurred ? validation.rechargeThresholdError : null;
 }
 
-function resolveTargetError(validation: DialogValidationState, submissionAttempts: number) {
-  return submissionAttempts > 0 ? validation.rechargeTargetError : null;
+function resolveTargetError(validation: DialogValidationState, submissionAttempts: number, isTargetBlurred: boolean) {
+  return submissionAttempts > 0 || isTargetBlurred ? validation.rechargeTargetError : null;
 }
 
 function buildThresholdErrorMessage(
   t: (key: MessageKey, values?: Record<string, number | string>) => string,
   validation: DialogValidationState,
   submissionAttempts: number,
+  isThresholdBlurred: boolean,
 ) {
-  const error = resolveThresholdError(validation, submissionAttempts);
+  const error = resolveThresholdError(validation, submissionAttempts, isThresholdBlurred);
   if (error == null) {
     return null;
   }
@@ -391,23 +393,34 @@ function renderTargetFooter({
     return null;
   }
   if (isPricingLoading) {
-    return t("settings.usage.autoTopUp.target.equivalent.loading");
+    return (
+      <span
+        role="status"
+        aria-label={t("settings.usage.autoTopUp.target.equivalent.loading")}
+        className="inline-flex items-center"
+      >
+        <Spinner className="icon-xxs text-token-description-foreground" />
+      </span>
+    );
   }
   if (estimate == null) {
     return null;
   }
-  return t("settings.usage.autoTopUp.target.equivalent", {
-    amount: estimate.amount,
-    creditCount: estimate.creditCount,
-  });
+  return renderStrongMessage(
+    t("settings.usage.autoTopUp.target.equivalent", {
+      amount: estimate.amount,
+      creditCount: estimate.creditCount,
+    }),
+  );
 }
 
 function buildTargetErrorMessage(
   t: (key: MessageKey, values?: Record<string, number | string>) => string,
   validation: DialogValidationState,
   submissionAttempts: number,
+  isTargetBlurred: boolean,
 ) {
-  const error = resolveTargetError(validation, submissionAttempts);
+  const error = resolveTargetError(validation, submissionAttempts, isTargetBlurred);
   if (error == null) {
     return null;
   }
@@ -718,6 +731,154 @@ function normalizeDraftValue(value: string | null) {
   return value == null ? "" : value.trim();
 }
 
+function renderStrongMessage(template: string) {
+  const startTag = "<strong>";
+  const endTag = "</strong>";
+  const startIndex = template.indexOf(startTag);
+  const endIndex = template.indexOf(endTag);
+  if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
+    return template;
+  }
+
+  const prefix = template.slice(0, startIndex);
+  const strongText = template.slice(startIndex + startTag.length, endIndex);
+  const suffix = template.slice(endIndex + endTag.length);
+  return (
+    <>
+      {prefix}
+      <span className="font-medium text-token-text-primary">{strongText}</span>
+      {suffix}
+    </>
+  );
+}
+
+function renderImmediateTopUpFailureMessage({
+  isManagePaymentPending,
+  onManagePayment,
+  template,
+}: {
+  isManagePaymentPending: boolean;
+  onManagePayment: () => void;
+  template: string;
+}) {
+  const actionLineStartTag = "<actionLine>";
+  const actionLineEndTag = "</actionLine>";
+  const actionLineStartIndex = template.indexOf(actionLineStartTag);
+  const actionLineEndIndex = template.indexOf(actionLineEndTag);
+
+  if (
+    actionLineStartIndex === -1 ||
+    actionLineEndIndex === -1 ||
+    actionLineEndIndex < actionLineStartIndex
+  ) {
+    return template;
+  }
+
+  const prefix = template.slice(0, actionLineStartIndex);
+  const actionLineTemplate = template.slice(
+    actionLineStartIndex + actionLineStartTag.length,
+    actionLineEndIndex,
+  );
+  const suffix = template.slice(actionLineEndIndex + actionLineEndTag.length);
+
+  return (
+    <>
+      {prefix}
+      <div className="mt-1">
+        {renderImmediateTopUpFailureActionLine({
+          actionLineTemplate,
+          isManagePaymentPending,
+          onManagePayment,
+        })}
+      </div>
+      {suffix}
+    </>
+  );
+}
+
+function renderImmediateTopUpFailureActionLine({
+  actionLineTemplate,
+  isManagePaymentPending,
+  onManagePayment,
+}: {
+  actionLineTemplate: string;
+  isManagePaymentPending: boolean;
+  onManagePayment: () => void;
+}) {
+  const managePaymentStartTag = "<managePayment>";
+  const managePaymentEndTag = "</managePayment>";
+  const purchaseCreditStartTag = "<purchaseCredit>";
+  const purchaseCreditEndTag = "</purchaseCredit>";
+  const managePaymentStartIndex = actionLineTemplate.indexOf(managePaymentStartTag);
+  const managePaymentEndIndex = actionLineTemplate.indexOf(managePaymentEndTag);
+  const purchaseCreditStartIndex = actionLineTemplate.indexOf(purchaseCreditStartTag);
+  const purchaseCreditEndIndex = actionLineTemplate.indexOf(purchaseCreditEndTag);
+
+  if (
+    managePaymentStartIndex === -1 ||
+    managePaymentEndIndex === -1 ||
+    purchaseCreditStartIndex === -1 ||
+    purchaseCreditEndIndex === -1 ||
+    managePaymentEndIndex < managePaymentStartIndex ||
+    purchaseCreditEndIndex < purchaseCreditStartIndex
+  ) {
+    return actionLineTemplate;
+  }
+
+  const beforeManagePayment = actionLineTemplate.slice(0, managePaymentStartIndex);
+  const managePaymentLabel = actionLineTemplate.slice(
+    managePaymentStartIndex + managePaymentStartTag.length,
+    managePaymentEndIndex,
+  );
+  const betweenActions = actionLineTemplate.slice(
+    managePaymentEndIndex + managePaymentEndTag.length,
+    purchaseCreditStartIndex,
+  );
+  const purchaseCreditLabel = actionLineTemplate.slice(
+    purchaseCreditStartIndex + purchaseCreditStartTag.length,
+    purchaseCreditEndIndex,
+  );
+  const afterPurchaseCredit = actionLineTemplate.slice(
+    purchaseCreditEndIndex + purchaseCreditEndTag.length,
+  );
+
+  return (
+    <>
+      {beforeManagePayment}
+      <a
+        href="#"
+        aria-disabled={isManagePaymentPending}
+        onClick={(event) => {
+          event.preventDefault();
+          if (!isManagePaymentPending) {
+            onManagePayment();
+          }
+        }}
+        className={joinClasses(
+          "font-medium underline underline-offset-2",
+          isManagePaymentPending && "pointer-events-none opacity-60",
+        )}
+      >
+        {managePaymentLabel}
+      </a>
+      {betweenActions}
+      <a
+        href={CREDIT_PURCHASE_URL}
+        target="_blank"
+        rel="noreferrer"
+        className="font-medium underline underline-offset-2"
+      >
+        {purchaseCreditLabel}
+      </a>
+      {afterPurchaseCredit}
+    </>
+  );
+}
+
+function joinClasses(...values: Array<string | false>) {
+  return values.filter((value): value is string => Boolean(value)).join(" ");
+}
+
 function AutoTopUpInputField({
   ariaLabel,
   disabled,
@@ -736,7 +897,7 @@ function AutoTopUpInputField({
   disabled: boolean;
   error: string | null;
   fieldId: string;
-  footerContent: string | null;
+  footerContent: ReactNode;
   footerTone: "error" | "secondary";
   helperText: string;
   label: string;

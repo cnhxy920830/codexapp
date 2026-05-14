@@ -21,6 +21,9 @@ export type WorkspaceFileUnsupportedPreviewKind =
   | "video"
   | "wordDocument";
 
+export type WorkspaceFileWorkbookImportKind = "csv" | "tsv" | "xlsx";
+export type WorkspaceFileArtifactImportKind = WorkspaceFileWorkbookImportKind | "docx";
+
 export type WorkspaceFilePreviewState =
   | {
       kind: "loading";
@@ -128,7 +131,7 @@ const AUDIO_EXTENSIONS = new Set([
   "wav",
   "wma",
 ]);
-const EXCEL_EXTENSIONS = new Set(["xls", "xlsm", "xlsx"]);
+const LEGACY_EXCEL_EXTENSIONS = new Set(["xls"]);
 const KEYNOTE_EXTENSIONS = new Set(["key"]);
 const NUMBERS_EXTENSIONS = new Set(["numbers"]);
 const OPEN_DOCUMENT_PRESENTATION_EXTENSIONS = new Set(["odp"]);
@@ -171,9 +174,53 @@ export function getWorkspaceFileUnsupportedMessageKey(kind: WorkspaceFileUnsuppo
   }
 }
 
+export function getWorkspaceFileArtifactImportKind(
+  file: WorkspaceFilePreviewDescriptor,
+): WorkspaceFileArtifactImportKind | null {
+  const extension = getWorkspaceFileExtension(file);
+  const mimeType = file.mimeType?.toLowerCase() ?? null;
+
+  switch (extension) {
+    case "csv":
+      return "csv";
+    case "tsv":
+      return "tsv";
+    case "xlsx":
+      return "xlsx";
+    case "xlsm":
+      return "xlsx";
+    case "docx":
+      return "docx";
+  }
+
+  switch (mimeType) {
+    case "text/csv":
+      return "csv";
+    case "text/tab-separated-values":
+      return "tsv";
+    case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+    case "application/vnd.ms-excel.sheet.macroenabled.12":
+      return "xlsx";
+    case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+      return "docx";
+    default:
+      return null;
+  }
+}
+
+export function isWorkspaceFileWorkbookImportKind(
+  kind: WorkspaceFileArtifactImportKind | null,
+): kind is WorkspaceFileWorkbookImportKind {
+  return kind === "csv" || kind === "tsv" || kind === "xlsx";
+}
+
 export function getWorkspaceFileUnsupportedPreviewKind(file: WorkspaceFilePreviewDescriptor) {
   const extension = getWorkspaceFileExtension(file);
   const mimeType = file.mimeType?.toLowerCase() ?? null;
+
+  if (getWorkspaceFileArtifactImportKind(file) !== null) {
+    return null;
+  }
 
   if (
     ARCHIVE_EXTENSIONS.has(extension ?? "") ||
@@ -191,12 +238,7 @@ export function getWorkspaceFileUnsupportedPreviewKind(file: WorkspaceFilePrevie
   if (AUDIO_EXTENSIONS.has(extension ?? "") || (mimeType?.startsWith("audio/") ?? false)) {
     return "audio";
   }
-  if (
-    EXCEL_EXTENSIONS.has(extension ?? "") ||
-    mimeType === "application/vnd.ms-excel" ||
-    mimeType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
-    mimeType === "application/vnd.ms-excel.sheet.macroenabled.12"
-  ) {
+  if (LEGACY_EXCEL_EXTENSIONS.has(extension ?? "") || mimeType === "application/vnd.ms-excel") {
     return "excelSpreadsheet";
   }
   if (KEYNOTE_EXTENSIONS.has(extension ?? "") || mimeType === "application/vnd.apple.keynote") {

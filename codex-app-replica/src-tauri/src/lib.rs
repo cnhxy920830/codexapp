@@ -1,3 +1,5 @@
+mod ambient_suggestions_background_refresh;
+mod ambient_suggestions_connector_personalization;
 mod app_shell_signals;
 mod app_state_snapshot;
 mod auth_bridge;
@@ -57,6 +59,9 @@ mod workspace_files;
 mod workspace_roots;
 mod worktrees;
 mod worktrees_remote;
+use ambient_suggestions_background_refresh::handle_window_event as handle_ambient_suggestions_background_refresh_window_event;
+use ambient_suggestions_background_refresh::sync_initial_focus_state as sync_ambient_suggestions_background_refresh_state;
+use ambient_suggestions_background_refresh::AmbientSuggestionsBackgroundRefreshState;
 use app_shell_signals::electron_window_focus_request;
 use app_shell_signals::view_focused;
 use app_state_snapshot::electron_app_state_snapshot_response;
@@ -153,6 +158,7 @@ use auth_bridge::write_config_value;
 use auth_bridge::write_config_value_command;
 use auth_bridge::write_skill_config;
 use auth_bridge::write_skill_config_command;
+use auth_bridge::AuthBridgeState;
 use automations::automation_create_command;
 use automations::automation_delete_command;
 use automations::automation_run_now_command;
@@ -371,6 +377,7 @@ use workspace_agents::read_workspace_agents_md;
 use workspace_agents::write_workspace_agents_md;
 use workspace_files::list_workspace_directory_entries;
 use workspace_files::read_workspace_file;
+use workspace_files::read_workspace_file_binary;
 use workspace_files::read_workspace_file_metadata;
 use workspace_files::search_workspace_files;
 use workspace_roots::active_workspace_roots;
@@ -416,6 +423,19 @@ pub fn run() {
         .on_window_event(|window, event| {
             app_shell_signals::handle_window_event(window, event);
             avatar_overlay::handle_window_event(window, event);
+            if let (Some(auth_state), Some(cache), Some(background_state)) = (
+                window.try_state::<Arc<AuthBridgeState>>(),
+                window.try_state::<Arc<AmbientSuggestionsCache>>(),
+                window.try_state::<AmbientSuggestionsBackgroundRefreshState>(),
+            ) {
+                handle_ambient_suggestions_background_refresh_window_event(
+                    window,
+                    event,
+                    auth_state.inner(),
+                    cache.inner(),
+                    background_state.inner(),
+                );
+            }
         })
         .manage(auth_state.clone())
         .manage(heartbeat_automation_scheduler_state.clone())
@@ -428,7 +448,8 @@ pub fn run() {
         .manage(PendingPlanSummaries::default())
         .manage(PendingDebugWindowOriginConversations::default())
         .manage(PendingWindowRoutes::default())
-        .manage(AmbientSuggestionsCache::default())
+        .manage(Arc::new(AmbientSuggestionsCache::default()))
+        .manage(AmbientSuggestionsBackgroundRefreshState::default())
         .manage(DebugActionRequestSources::default())
         .manage(GlobalDictationWindowState::default())
         .manage(GlobalDictationSettingsState::default())
@@ -711,6 +732,7 @@ pub fn run() {
             list_workspace_directory_entries,
             read_workspace_file_metadata,
             read_workspace_file,
+            read_workspace_file_binary,
             app_server_connection_state,
             get_shared_object_snapshot,
             discover_remote_ssh_connections,
@@ -758,6 +780,11 @@ pub fn run() {
                 &handle,
                 main_window.as_ref(),
                 &avatar_overlay_state,
+            );
+            let ambient_background_state = app.state::<AmbientSuggestionsBackgroundRefreshState>();
+            sync_ambient_suggestions_background_refresh_state(
+                &handle,
+                ambient_background_state.inner(),
             );
             let dictation_settings_state = app.state::<GlobalDictationSettingsState>();
             if let Err(err) = start_global_dictation_hotkey_runtime(

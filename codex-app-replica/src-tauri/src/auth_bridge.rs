@@ -185,6 +185,7 @@ pub struct ConfigSnapshot {
     pub service_tier: Option<String>,
     pub memories: Option<MemoriesConfigSnapshot>,
     pub features: Option<HashMap<String, bool>>,
+    pub apps: Option<serde_json::Value>,
     pub mcp_servers: Option<serde_json::Value>,
 }
 

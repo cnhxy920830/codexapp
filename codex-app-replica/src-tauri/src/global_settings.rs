@@ -135,6 +135,7 @@ fn ensure_supported_key(key: &str) -> Result<(), String> {
         | "git-show-sidebar-pr-icons"
         | "git-commit-instructions"
         | "git-pr-instructions"
+        | "pinned-thread-ids"
         | "worktree-auto-cleanup-enabled"
         | "worktree-auto-cleanup-unpackaged-override-enabled"
         | "worktree-keep-count" => Ok(()),

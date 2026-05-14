@@ -1,4 +1,8 @@
 import { PULL_REQUESTS_PAGE_MESSAGES, type PullRequestsPageMessageKey } from "./pullRequestsPageMessages";
+import {
+  AUTOMATIONS_PAGE_MESSAGES,
+  type AutomationsPageMessageKey,
+} from "./automationsPageMessages";
 
 export const UPSTREAM_LOCALE_CODES = [
   "en-US",
@@ -779,6 +783,16 @@ export type MessageKey =
   | "codex.filePreview.pdb.sequenceLabel"
   | "codex.filePreview.pdb.residueLabel"
   | "codex.filePreview.pdb.residueTitle"
+  | "artifactTab.preview.exitPresentation"
+  | "artifactTab.preview.nextPage"
+  | "artifactTab.preview.open"
+  | "artifactTab.preview.pageIndicator"
+  | "artifactTab.preview.previousPage"
+  | "artifactTab.preview.zoomPercent"
+  | "artifactTab.preview.zoomToFit"
+  | "artifactTab.previewError"
+  | "artifactTab.previewLoading"
+  | "artifactTab.previewTooLarge"
   | "artifactTab.sourceOptions"
   | "codex.diffView.failedToDecodeBase64Diff"
   | "codex.diffView.filesChanged"
@@ -837,6 +851,7 @@ export type MessageKey =
   | "sidebarElectron.noTasks"
   | "sidebarElectron.scratchpadNavLink"
   | PullRequestsPageMessageKey
+  | AutomationsPageMessageKey
   | "inbox.mode.automations"
   | "inbox.automations.createError"
   | "inbox.automations.updateError"
@@ -923,6 +938,25 @@ export type MessageKey =
   | "settings.automations.projectDropdown.localOnlyTooltip"
   | "settings.automations.resumeAria"
   | "settings.automations.rruleSummaryFallback"
+  | "settings.automations.scheduleSummary.daily"
+  | "settings.automations.scheduleSummary.weekdays"
+  | "settings.automations.scheduleSummary.weekends"
+  | "settings.automations.scheduleSummary.weekly"
+  | "settings.automations.scheduleSummary.interval"
+  | "settings.automations.scheduleSummary.intervalDays"
+  | "settings.automations.scheduleSummary.intervalDayCount"
+  | "settings.automations.scheduleSummary.intervalMinute"
+  | "settings.automations.scheduleSummary.intervalMinutes"
+  | "settings.automations.scheduleSummary.intervalHourly"
+  | "settings.automations.scheduleSummary.intervalDaily"
+  | "settings.automations.scheduleSummary.intervalWeekly"
+  | "settings.automations.scheduleSummary.sundaysLabel"
+  | "settings.automations.scheduleSummary.mondaysLabel"
+  | "settings.automations.scheduleSummary.tuesdaysLabel"
+  | "settings.automations.scheduleSummary.wednesdaysLabel"
+  | "settings.automations.scheduleSummary.thursdaysLabel"
+  | "settings.automations.scheduleSummary.fridaysLabel"
+  | "settings.automations.scheduleSummary.saturdaysLabel"
   | "settings.automations.cwdPlaceholder"
   | "settings.automations.heartbeatThread.placeholder"
   | "settings.automations.executionEnvironment.ariaLabel"
@@ -2970,6 +3004,16 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.filePreview.pdb.sequenceLabel": "PDB chain sequence",
     "codex.filePreview.pdb.residueLabel": "{residueName} {residueNumber} in chain {chainId}",
     "codex.filePreview.pdb.residueTitle": "{residueName} {residueNumber}",
+    "artifactTab.preview.exitPresentation": "Exit",
+    "artifactTab.preview.nextPage": "Next page",
+    "artifactTab.preview.open": "Open",
+    "artifactTab.preview.pageIndicator": "{current}/{total}",
+    "artifactTab.preview.previousPage": "Previous page",
+    "artifactTab.preview.zoomPercent": "{zoomPercent}%",
+    "artifactTab.preview.zoomToFit": "Zoom to fit",
+    "artifactTab.previewError": "Couldn’t load this preview",
+    "artifactTab.previewLoading": "Preparing preview…",
+    "artifactTab.previewTooLarge": "This file is too large to preview in the side panel",
     "artifactTab.sourceOptions": "Artifact viewer options",
     "codex.diffView.failedToDecodeBase64Diff": "Couldn’t load this diff",
     "codex.diffView.filesChanged": "{fileCount, plural, one {# file changed} other {# files changed}}",
@@ -3047,7 +3091,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "inbox.automations.missing": "Automation not found",
     "inbox.automations.missingBack": "Back to automations",
     "inbox.automations.missingSubtitle": "This automation may have been deleted or is no longer available on this device.",
-    "inbox.automations.emptySubtitle.learnMore": "Automate recurring chat work by configuring scheduled conversations.",
+    "inbox.automations.emptySubtitle.learnMore": "Automate recurring chat work by configuring scheduled conversations. <link>Learn more</link>",
     "inbox.automations.rowSummary.heartbeat": "Heartbeat • {thread}",
     "inbox.automations.editTooltip": "Edit automation",
     "inbox.automations.moreOptionsTooltip": "More options",
@@ -3115,6 +3159,28 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.automations.projectDropdown.localOnlyTooltip": "Automations can only be created for local projects",
     "settings.automations.resumeAria": "Resume automation",
     "settings.automations.rruleSummaryFallback": "Custom schedule",
+    "settings.automations.scheduleSummary.daily": "Daily at {time}",
+    "settings.automations.scheduleSummary.weekdays": "Weekdays at {time}",
+    "settings.automations.scheduleSummary.weekends": "Weekends at {time}",
+    "settings.automations.scheduleSummary.weekly": "{days} at {time}",
+    "settings.automations.scheduleSummary.interval": "Every {count}h",
+    "settings.automations.scheduleSummary.intervalDays":
+      "{interval} on {days}",
+    "settings.automations.scheduleSummary.intervalDayCount":
+      "{count, plural, one {# day} other {# days}}",
+    "settings.automations.scheduleSummary.intervalMinute": "Every minute",
+    "settings.automations.scheduleSummary.intervalMinutes":
+      "Every {count}m",
+    "settings.automations.scheduleSummary.intervalHourly": "Hourly",
+    "settings.automations.scheduleSummary.intervalDaily": "Daily",
+    "settings.automations.scheduleSummary.intervalWeekly": "Weekly",
+    "settings.automations.scheduleSummary.sundaysLabel": "Sundays",
+    "settings.automations.scheduleSummary.mondaysLabel": "Mondays",
+    "settings.automations.scheduleSummary.tuesdaysLabel": "Tuesdays",
+    "settings.automations.scheduleSummary.wednesdaysLabel": "Wednesdays",
+    "settings.automations.scheduleSummary.thursdaysLabel": "Thursdays",
+    "settings.automations.scheduleSummary.fridaysLabel": "Fridays",
+    "settings.automations.scheduleSummary.saturdaysLabel": "Saturdays",
     "settings.automations.cwdPlaceholder": "One project path per line",
     "settings.automations.heartbeatThread.placeholder": "Select a chat",
     "settings.automations.executionEnvironment.ariaLabel": "Execution environment",
@@ -3620,7 +3686,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.usage.autoTopUp.target.label": "Target balance",
     "settings.usage.autoTopUp.target.helper": "Auto reload brings your credit balance back up to this amount.",
     "settings.usage.autoTopUp.target.ariaLabel": "Auto-reload target balance",
-    "settings.usage.autoTopUp.target.equivalent": "Minimum {creditCount} credit will be purchased, equivalent to {amount}",
+    "settings.usage.autoTopUp.target.equivalent":
+      "Minimum {creditCount} credit will be purchased, equivalent to <strong>{amount}</strong>",
     "settings.usage.autoTopUp.target.equivalent.loading": "Loading price",
     "settings.usage.autoTopUp.target.error.missing": "Enter a target balance.",
     "settings.usage.autoTopUp.target.error.wholeNumber": "Target balance must be a whole number.",
@@ -3629,10 +3696,14 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.usage.autoTopUp.cancel": "Cancel",
     "settings.usage.autoTopUp.save": "Save",
     "settings.usage.autoTopUp.enable": "Turn on",
-    "settings.usage.autoTopUp.immediateTopUpNotice.enable": "Enabling auto reload will trigger a one-time purchase of {creditCount} credit to reach your target balance. Estimated cost: {amount}.",
-    "settings.usage.autoTopUp.immediateTopUpNotice.update": "Updating your settings will trigger a one-time purchase of {creditCount} credit with an estimated cost of {amount}.",
-    "settings.usage.autoTopUp.immediateTopUpFailure.generic": "The initial top-up failed.",
-    "settings.usage.autoTopUp.immediateTopUpFailure.amount": "The initial top-up for an estimated {amount} failed.",
+    "settings.usage.autoTopUp.immediateTopUpNotice.enable":
+      "Enabling auto reload will trigger a one-time purchase of {creditCount} credit to reach your target balance. Estimated cost: <strong>{amount}</strong>.",
+    "settings.usage.autoTopUp.immediateTopUpNotice.update":
+      "Updating your settings will trigger a one-time purchase of {creditCount} credit with an estimated cost of <strong>{amount}</strong>.",
+    "settings.usage.autoTopUp.immediateTopUpFailure.generic":
+      "The initial top-up failed. <actionLine><managePayment>Update your payment method</managePayment> or <purchaseCredit>purchase credit directly</purchaseCredit>.</actionLine>",
+    "settings.usage.autoTopUp.immediateTopUpFailure.amount":
+      "The initial top-up for an estimated {amount} failed. <actionLine><managePayment>Update your payment method</managePayment> or <purchaseCredit>purchase credit directly</purchaseCredit>.</actionLine>",
     "settings.usage.autoTopUp.enable.success": "Enabled auto reload",
     "settings.usage.autoTopUp.enable.error": "Failed to enable auto reload",
     "settings.usage.autoTopUp.update.success": "Updated auto reload settings",
@@ -4376,6 +4447,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "petOverlay.closePet": "Close pet",
     "history.noMessageYet": "(no message yet)",
     ...PULL_REQUESTS_PAGE_MESSAGES["en-US"],
+    ...AUTOMATIONS_PAGE_MESSAGES["en-US"],
   },
   "zh-CN": {
     "app.menu.file": "文件",
@@ -5187,6 +5259,16 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.filePreview.pdb.sequenceLabel": "PDB 链序列",
     "codex.filePreview.pdb.residueLabel": "链 {chainId} 中的 {residueName} {residueNumber}",
     "codex.filePreview.pdb.residueTitle": "{residueName} {residueNumber}",
+    "artifactTab.preview.exitPresentation": "退出",
+    "artifactTab.preview.nextPage": "下一页",
+    "artifactTab.preview.open": "打开",
+    "artifactTab.preview.pageIndicator": "{current}/{total}",
+    "artifactTab.preview.previousPage": "上一页",
+    "artifactTab.preview.zoomPercent": "{zoomPercent}%",
+    "artifactTab.preview.zoomToFit": "缩放以适应",
+    "artifactTab.previewError": "无法加载此预览",
+    "artifactTab.previewLoading": "正在准备预览…",
+    "artifactTab.previewTooLarge": "此文件太大，无法在侧边面板中预览",
     "artifactTab.sourceOptions": "制品查看器选项",
     "codex.diffView.failedToDecodeBase64Diff": "无法加载此差异",
     "codex.diffView.filesChanged": "{fileCount, plural, one {# 个文件已更改} other {# 个文件已更改}}",
@@ -5264,7 +5346,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "inbox.automations.missing": "未找到自动化功能",
     "inbox.automations.missingBack": "返回自动化功能",
     "inbox.automations.missingSubtitle": "该自动化功能可能已被删除，或在此设备上不再可用。",
-    "inbox.automations.emptySubtitle.learnMore": "通过设置定期对话，实现工作自动化。",
+    "inbox.automations.emptySubtitle.learnMore": "通过设置定期对话，实现工作自动化。<link>了解更多</link>",
     "inbox.automations.rowSummary.heartbeat": "心跳 • {thread}",
     "inbox.automations.editTooltip": "编辑自动化",
     "inbox.automations.moreOptionsTooltip": "更多选项",
@@ -5332,6 +5414,28 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.automations.projectDropdown.localOnlyTooltip": "只能为本地项目创建自动化",
     "settings.automations.resumeAria": "恢复自动化",
     "settings.automations.rruleSummaryFallback": "自定义计划",
+    "settings.automations.scheduleSummary.daily": "每天 {time}",
+    "settings.automations.scheduleSummary.weekdays": "工作日 {time}",
+    "settings.automations.scheduleSummary.weekends": "周末 {time}",
+    "settings.automations.scheduleSummary.weekly": "{days} {time}",
+    "settings.automations.scheduleSummary.interval": "每 {count} 小时",
+    "settings.automations.scheduleSummary.intervalDays":
+      "{interval}，覆盖 {days}",
+    "settings.automations.scheduleSummary.intervalDayCount":
+      "{count, plural, one {# 天} other {# 天}}",
+    "settings.automations.scheduleSummary.intervalMinute": "每分钟",
+    "settings.automations.scheduleSummary.intervalMinutes":
+      "每 {count} 分钟",
+    "settings.automations.scheduleSummary.intervalHourly": "每小时",
+    "settings.automations.scheduleSummary.intervalDaily": "每天",
+    "settings.automations.scheduleSummary.intervalWeekly": "每周",
+    "settings.automations.scheduleSummary.sundaysLabel": "每周日",
+    "settings.automations.scheduleSummary.mondaysLabel": "每周一",
+    "settings.automations.scheduleSummary.tuesdaysLabel": "每周二",
+    "settings.automations.scheduleSummary.wednesdaysLabel": "每周三",
+    "settings.automations.scheduleSummary.thursdaysLabel": "每周四",
+    "settings.automations.scheduleSummary.fridaysLabel": "每周五",
+    "settings.automations.scheduleSummary.saturdaysLabel": "每周六",
     "settings.automations.cwdPlaceholder": "每行一个项目路径",
     "settings.automations.heartbeatThread.placeholder": "选择一个对话",
     "settings.automations.executionEnvironment.ariaLabel": "运行环境",
@@ -5807,7 +5911,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.usage.autoTopUp.target.label": "目标余额",
     "settings.usage.autoTopUp.target.helper": "自动充值会将你的额度余额补回到这个数值。",
     "settings.usage.autoTopUp.target.ariaLabel": "自动充值目标余额",
-    "settings.usage.autoTopUp.target.equivalent": "至少会购买 {creditCount} 额度，约合 {amount}",
+    "settings.usage.autoTopUp.target.equivalent":
+      "至少会购买 {creditCount} 额度，约合 <strong>{amount}</strong>",
     "settings.usage.autoTopUp.target.equivalent.loading": "正在加载价格",
     "settings.usage.autoTopUp.target.error.missing": "请输入目标余额。",
     "settings.usage.autoTopUp.target.error.wholeNumber": "目标余额必须是整数。",
@@ -5816,10 +5921,14 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.usage.autoTopUp.cancel": "取消",
     "settings.usage.autoTopUp.save": "保存",
     "settings.usage.autoTopUp.enable": "开启",
-    "settings.usage.autoTopUp.immediateTopUpNotice.enable": "开启自动充值后，会立即一次性购买 {creditCount} 额度以达到你的目标余额。预计费用：{amount}。",
-    "settings.usage.autoTopUp.immediateTopUpNotice.update": "更新设置后，会立即一次性购买 {creditCount} 额度，预计费用为 {amount}。",
-    "settings.usage.autoTopUp.immediateTopUpFailure.generic": "首次充值失败。",
-    "settings.usage.autoTopUp.immediateTopUpFailure.amount": "预计金额为 {amount} 的首次充值失败。",
+    "settings.usage.autoTopUp.immediateTopUpNotice.enable":
+      "开启自动充值后，会立即一次性购买 {creditCount} 额度以达到你的目标余额。预计费用：<strong>{amount}</strong>。",
+    "settings.usage.autoTopUp.immediateTopUpNotice.update":
+      "更新设置后，会立即一次性购买 {creditCount} 额度，预计费用为 <strong>{amount}</strong>。",
+    "settings.usage.autoTopUp.immediateTopUpFailure.generic":
+      "首次充值失败。<actionLine><managePayment>更新付款方式</managePayment>或<purchaseCredit>直接购买额度</purchaseCredit>。</actionLine>",
+    "settings.usage.autoTopUp.immediateTopUpFailure.amount":
+      "预计金额为 {amount} 的首次充值失败。<actionLine><managePayment>更新付款方式</managePayment>或<purchaseCredit>直接购买额度</purchaseCredit>。</actionLine>",
     "settings.usage.autoTopUp.enable.success": "已启用自动充值",
     "settings.usage.autoTopUp.enable.error": "启用自动充值失败",
     "settings.usage.autoTopUp.update.success": "已更新自动充值设置",
@@ -6541,5 +6650,6 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "petOverlay.closePet": "关闭宠物",
     "history.noMessageYet": "(暂无消息)",
     ...PULL_REQUESTS_PAGE_MESSAGES["zh-CN"],
+    ...AUTOMATIONS_PAGE_MESSAGES["zh-CN"],
   },
 };

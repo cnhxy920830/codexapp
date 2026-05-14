@@ -203,6 +203,7 @@ export type GlobalStateKey =
   | "sansFontSize"
   | "codeFontSize"
   | "useFontSmoothing"
+  | "pdf-preview-invert-colors"
   | "ambient-suggestions-enabled"
   | "conversationDetailMode"
   | "localeOverride"
@@ -251,6 +252,7 @@ export type GlobalStateKey =
   | "git-show-sidebar-pr-icons"
   | "git-commit-instructions"
   | "git-pr-instructions"
+  | "pinned-thread-ids"
   | "worktree-auto-cleanup-enabled"
   | "worktree-auto-cleanup-unpackaged-override-enabled"
   | "worktree-keep-count";

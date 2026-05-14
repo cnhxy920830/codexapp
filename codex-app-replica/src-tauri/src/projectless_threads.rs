@@ -28,11 +28,7 @@ pub fn projectless_thread_cwd(
     app: AppHandle,
     params: Option<ProjectlessThreadCwdParams>,
 ) -> Result<ProjectlessThreadCwdResponse, String> {
-    let documents_dir = app
-        .path()
-        .document_dir()
-        .map_err(|err| format!("failed to resolve documents directory: {err}"))?;
-    let workspace_root = documents_dir.join(CODEX_DIRECTORY_NAME);
+    let workspace_root = projectless_workspace_root_path(&app)?;
     ensure_real_directory(&workspace_root)?;
 
     let dated_root = workspace_root.join(current_local_date_directory_name()?);
@@ -48,6 +44,18 @@ pub fn projectless_thread_cwd(
         output_directory: cwd_string,
         workspace_root: workspace_root_string,
     })
+}
+
+pub(crate) fn projectless_workspace_root(app: &AppHandle) -> Result<String, String> {
+    Ok(display_path(&projectless_workspace_root_path(app)?))
+}
+
+fn projectless_workspace_root_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let documents_dir = app
+        .path()
+        .document_dir()
+        .map_err(|err| format!("failed to resolve documents directory: {err}"))?;
+    Ok(documents_dir.join(CODEX_DIRECTORY_NAME))
 }
 
 fn current_local_date_directory_name() -> Result<String, String> {

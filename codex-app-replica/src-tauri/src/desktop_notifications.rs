@@ -14,30 +14,20 @@
 //!   "hostId": "...",
 //!   "notificationId": "...",
 //!   "actionId": null | "...",
-//!   "actionType": "open" | "<custom>",
+//!   "actionType": "open" | "<custom>" | "reply",
 //!   "navigationPath": null | "...",
 //!   "conversationId": null | "...",
 //!   "requestId": null | "...",
-//!   "reply": null
+//!   "reply": null | "..."
 //! }
 //! ```
 //!
-//! Implementation uses `tauri-winrt-notification`, which wraps Windows'
-//! ToastNotificationManager. AppUserModelID is set from
-//! `tauri::Config::identifier` so toast registrations stay aligned with the
-//! installer-time identifier. Reply input (`<input type="text">` toast XML)
-//! is not exposed by `tauri-winrt-notification` 0.7; the upstream contract
-//! only enables it for `kind === "turn-complete"
-//! && typeof replyPlaceholder === "string"`. For now those payloads still
-//! display normally and the click path emits `actionType: "open"` as the
-//! faithful fallback. Adding reply input requires direct WinRT XML
-//! construction and is tracked as a follow-up scope decision.
-//!
-//! Upstream's Electron owner also marks `permission` and `question`
-//! notifications with `timeoutType: "never"`. This replica maps those kinds
-//! to the WinRT reminder scenario so they stay onscreen until dismissal,
-//! matching the extracted sticky-lifetime branch without widening into a new
-//! notification stack.
+//! The upstream Windows owner tracks live `ToastNotification` objects so
+//! `desktop-notification-hide` dismisses already shown toasts rather than
+//! only forgetting local bookkeeping, and it forwards reply text from
+//! `turn-complete` notifications when `replyPlaceholder` is present.
+//! This replica now mirrors that behavior directly through the WinRT toast
+//! APIs while preserving the existing Tauri command and event names.
 
 use serde::Deserialize;
 use serde::Serialize;
@@ -48,13 +38,27 @@ use tauri::Emitter;
 use tauri::Manager;
 use tauri::State;
 use tauri::Window;
-use tauri_winrt_notification::Scenario;
 use tauri_winrt_notification::Toast;
+use windows::core::IInspectable;
+use windows::core::Interface;
+use windows::core::Ref;
+use windows::core::HSTRING;
+use windows::Data::Xml::Dom::XmlDocument;
+use windows::Foundation::Collections::ValueSet;
+use windows::Foundation::IPropertyValue;
+use windows::Foundation::TypedEventHandler;
+use windows::UI::Notifications::ToastActivatedEventArgs;
+use windows::UI::Notifications::ToastNotification;
+use windows::UI::Notifications::ToastNotificationManager;
 
 const DESKTOP_NOTIFICATION_ACTION_EVENT: &str = "desktop-notification-action";
 const DEFAULT_HOST_ID: &str = "local";
 const MAX_ACTIONS: usize = 4;
 const POWERSHELL_AUMID: &str = Toast::POWERSHELL_APP_ID;
+const REPLY_INPUT_ID: &str = "reply";
+const REPLY_ACTION_ARGUMENT: &str = "__reply__";
+const DEFAULT_REPLY_BUTTON_LABEL: &str = "Reply";
+const NOTIFICATION_GROUP: &str = "codex-desktop";
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -128,6 +132,7 @@ struct DesktopNotificationsStateInner {
 
 struct ActiveNotification {
     conversation_id: Option<String>,
+    toast: ToastNotification,
 }
 
 impl DesktopNotificationsState {
@@ -136,7 +141,7 @@ impl DesktopNotificationsState {
         guard.by_id.remove(id)
     }
 
-    fn close_by_conversation(&self, conversation_id: &str) -> Vec<String> {
+    fn close_by_conversation(&self, conversation_id: &str) -> Vec<ActiveNotification> {
         let mut guard = self.inner.lock().expect("notification state poisoned");
         let to_remove: Vec<String> = guard
             .by_id
@@ -145,17 +150,25 @@ impl DesktopNotificationsState {
                 (entry.conversation_id.as_deref() == Some(conversation_id)).then(|| id.clone())
             })
             .collect();
-        for id in &to_remove {
-            guard.by_id.remove(id);
+
+        let mut removed = Vec::with_capacity(to_remove.len());
+        for id in to_remove {
+            if let Some(entry) = guard.by_id.remove(&id) {
+                removed.push(entry);
+            }
         }
-        to_remove
+        removed
     }
 
-    fn record(&self, id: String, conversation_id: Option<String>) {
+    fn record(&self, id: String, conversation_id: Option<String>, toast: ToastNotification) {
         let mut guard = self.inner.lock().expect("notification state poisoned");
-        guard
-            .by_id
-            .insert(id, ActiveNotification { conversation_id });
+        guard.by_id.insert(
+            id,
+            ActiveNotification {
+                conversation_id,
+                toast,
+            },
+        );
     }
 
     fn forget(&self, id: &str) {
@@ -174,13 +187,14 @@ pub fn desktop_notification_show(
     let target_window_label = window.label().to_string();
     let notification = params.notification;
 
-    state.close_by_id(&notification.id);
+    if let Some(existing) = state.close_by_id(&notification.id) {
+        dismiss_toast(&app, &existing.toast).ok();
+    }
 
     let host_id = notification
         .host_id
         .clone()
         .unwrap_or_else(|| DEFAULT_HOST_ID.to_string());
-
     let actions = notification
         .actions
         .iter()
@@ -188,96 +202,128 @@ pub fn desktop_notification_show(
         .cloned()
         .collect::<Vec<_>>();
 
-    let aumid = resolve_aumid(&app);
-
-    let mut toast = Toast::new(&aumid)
-        .title(&notification.title)
-        .text1(&notification.body);
-    if let Some(scenario) = sticky_scenario_for_kind(notification.kind.as_str()) {
-        toast = toast.scenario(scenario);
-    }
-
-    for action in &actions {
-        toast = toast.add_button(&action.title, &action.id);
-    }
-
+    let toast = create_toast_notification(&notification)?;
     let app_for_callback = app.clone();
     let target_label_for_callback = target_window_label.clone();
     let host_id_for_callback = host_id.clone();
     let actions_for_callback = actions.clone();
     let notification_for_callback = notification.clone();
 
-    toast = toast.on_activated(move |action_argument| {
-        let payload = match action_argument {
-            None => build_action_payload(
-                &host_id_for_callback,
-                &notification_for_callback,
-                None,
-                "open".to_string(),
-                None,
-            ),
-            Some(arg) => {
-                let action_id = arg.to_string();
-                let action_type = actions_for_callback
-                    .iter()
-                    .find(|a| a.id == action_id)
-                    .and_then(|a| a.action_type.clone())
-                    .unwrap_or_else(|| action_id.clone());
-                build_action_payload(
+    toast
+        .Activated(&TypedEventHandler::new(
+            move |_, args: Ref<'_, IInspectable>| {
+                let payload = build_activation_payload(
                     &host_id_for_callback,
                     &notification_for_callback,
-                    Some(action_id),
-                    action_type,
-                    None,
-                )
-            }
-        };
-        let _ = app_for_callback.emit_to(
-            target_label_for_callback.as_str(),
-            DESKTOP_NOTIFICATION_ACTION_EVENT,
-            payload,
-        );
-        Ok(())
-    });
+                    &actions_for_callback,
+                    &args.cloned(),
+                );
+                let _ = app_for_callback.emit_to(
+                    target_label_for_callback.as_str(),
+                    DESKTOP_NOTIFICATION_ACTION_EVENT,
+                    payload,
+                );
+                Ok(())
+            },
+        ))
+        .map_err(|err| format!("failed to bind desktop notification activation: {err}"))?;
 
     let app_for_dismiss = app.clone();
     let dismiss_id = notification.id.clone();
-    toast = toast.on_dismissed(move |_reason| {
-        let state = app_for_dismiss.state::<DesktopNotificationsState>();
-        state.forget(&dismiss_id);
-        Ok(())
-    });
+    toast
+        .Dismissed(&TypedEventHandler::new(move |_, _args| {
+            let state = app_for_dismiss.state::<DesktopNotificationsState>();
+            state.forget(&dismiss_id);
+            Ok(())
+        }))
+        .map_err(|err| format!("failed to bind desktop notification dismissal: {err}"))?;
+
+    let notifier = create_toast_notifier(&app)?;
+    notifier
+        .Show(&toast)
+        .map_err(|err| format!("failed to show desktop notification: {err}"))?;
 
     state.record(
         notification.id.clone(),
         notification.conversation_id.clone(),
+        toast,
     );
 
-    toast
-        .show()
-        .map_err(|err| format!("failed to show desktop notification: {err}"))
+    Ok(())
 }
 
 #[tauri::command(rename = "desktop-notification-hide")]
 pub fn desktop_notification_hide(
+    app: AppHandle,
     state: State<'_, DesktopNotificationsState>,
     params: DesktopNotificationHideParams,
 ) -> Result<(), String> {
-    // tauri-winrt-notification 0.7 does not expose a dismiss-by-handle API;
-    // the platform behavior is that the toast remains in Action Center until
-    // the user dismisses it or its timeout elapses. We still clear our
-    // tracking state so subsequent show calls with the same id behave like
-    // upstream's "replace by id" semantics.
     match (params.notification_id, params.conversation_id) {
         (Some(id), _) => {
-            state.close_by_id(&id);
+            if let Some(entry) = state.close_by_id(&id) {
+                dismiss_toast(&app, &entry.toast)?;
+            } else {
+                dismiss_notification_history_entry(&app, &id)?;
+            }
         }
-        (None, Some(conv)) => {
-            state.close_by_conversation(&conv);
+        (None, Some(conversation_id)) => {
+            let removed = state.close_by_conversation(&conversation_id);
+            if removed.is_empty() {
+                return Ok(());
+            }
+            for entry in removed {
+                dismiss_toast(&app, &entry.toast)?;
+            }
         }
         (None, None) => {}
     }
+
     Ok(())
+}
+
+fn build_activation_payload(
+    host_id: &str,
+    notification: &DesktopNotification,
+    actions: &[DesktopNotificationAction],
+    args: &Option<IInspectable>,
+) -> DesktopNotificationActionPayload {
+    let activated_args = args
+        .as_ref()
+        .and_then(|insp| insp.cast::<ToastActivatedEventArgs>().ok());
+    let argument = activated_args
+        .as_ref()
+        .and_then(|args| args.Arguments().ok())
+        .map(|value| value.to_string())
+        .filter(|value| !value.is_empty());
+    let reply = activated_args
+        .as_ref()
+        .and_then(|args| args.UserInput().ok())
+        .and_then(|inputs| read_reply_input(&inputs));
+
+    match argument {
+        None => build_action_payload(
+            host_id,
+            notification,
+            None,
+            "open".to_string(),
+            reply.filter(|value| !value.is_empty()),
+        ),
+        Some(argument) if argument == REPLY_ACTION_ARGUMENT => build_action_payload(
+            host_id,
+            notification,
+            None,
+            "reply".to_string(),
+            reply.or(Some(String::new())),
+        ),
+        Some(argument) => {
+            let action_type = actions
+                .iter()
+                .find(|action| action.id == argument)
+                .and_then(|action| action.action_type.clone())
+                .unwrap_or_else(|| argument.clone());
+            build_action_payload(host_id, notification, Some(argument), action_type, None)
+        }
+    }
 }
 
 fn build_action_payload(
@@ -300,6 +346,119 @@ fn build_action_payload(
     }
 }
 
+fn create_toast_notification(
+    notification: &DesktopNotification,
+) -> Result<ToastNotification, String> {
+    let toast_xml = XmlDocument::new()
+        .map_err(|err| format!("failed to allocate desktop notification xml: {err}"))?;
+    toast_xml
+        .LoadXml(&HSTRING::from(build_toast_xml(notification)))
+        .map_err(|err| format!("failed to parse desktop notification xml: {err}"))?;
+
+    let toast = ToastNotification::CreateToastNotification(&toast_xml)
+        .map_err(|err| format!("failed to create desktop notification: {err}"))?;
+    toast
+        .SetTag(&HSTRING::from(notification.id.clone()))
+        .map_err(|err| format!("failed to set desktop notification tag: {err}"))?;
+    toast
+        .SetGroup(&HSTRING::from(NOTIFICATION_GROUP))
+        .map_err(|err| format!("failed to set desktop notification group: {err}"))?;
+    Ok(toast)
+}
+
+fn build_toast_xml(notification: &DesktopNotification) -> String {
+    let scenario = sticky_scenario_attribute(notification.kind.as_str());
+    let title = escape_xml(&notification.title);
+    let body = escape_xml(&notification.body);
+    let actions_xml = build_actions_xml(notification);
+
+    format!(
+        "<toast {scenario}><visual><binding template=\"ToastGeneric\"><text>{title}</text><text>{body}</text></binding></visual>{actions_xml}</toast>"
+    )
+}
+
+fn build_actions_xml(notification: &DesktopNotification) -> String {
+    let actions = notification
+        .actions
+        .iter()
+        .take(MAX_ACTIONS)
+        .map(|action| {
+            let title = escape_xml(&action.title);
+            let id = escape_xml(&action.id);
+            format!(
+                "<action content=\"{title}\" arguments=\"{id}\" activationType=\"foreground\"/>"
+            )
+        })
+        .collect::<String>();
+
+    if !supports_reply(notification) {
+        if actions.is_empty() {
+            String::new()
+        } else {
+            format!("<actions>{actions}</actions>")
+        }
+    } else {
+        let placeholder = escape_xml(
+            notification
+                .reply_placeholder
+                .as_deref()
+                .unwrap_or_default(),
+        );
+        let reply_label = escape_xml(DEFAULT_REPLY_BUTTON_LABEL);
+        format!(
+            "<actions><input id=\"{REPLY_INPUT_ID}\" type=\"text\" placeHolderContent=\"{placeholder}\"/>{actions}<action content=\"{reply_label}\" arguments=\"{REPLY_ACTION_ARGUMENT}\" activationType=\"foreground\" hint-inputId=\"{REPLY_INPUT_ID}\"/></actions>"
+        )
+    }
+}
+
+fn sticky_scenario_attribute(kind: &str) -> &'static str {
+    match kind {
+        "permission" | "question" => "scenario=\"reminder\"",
+        _ => "",
+    }
+}
+
+fn supports_reply(notification: &DesktopNotification) -> bool {
+    notification.kind == "turn-complete" && notification.reply_placeholder.is_some()
+}
+
+fn create_toast_notifier(
+    app: &AppHandle,
+) -> Result<windows::UI::Notifications::ToastNotifier, String> {
+    let aumid = resolve_aumid(app);
+    ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(aumid))
+        .map_err(|err| format!("failed to create desktop notification notifier: {err}"))
+}
+
+fn dismiss_toast(app: &AppHandle, toast: &ToastNotification) -> Result<(), String> {
+    let notifier = create_toast_notifier(app)?;
+    notifier
+        .Hide(toast)
+        .map_err(|err| format!("failed to dismiss desktop notification: {err}"))
+}
+
+fn dismiss_notification_history_entry(
+    app: &AppHandle,
+    notification_id: &str,
+) -> Result<(), String> {
+    let history = ToastNotificationManager::History()
+        .map_err(|err| format!("failed to access desktop notification history: {err}"))?;
+    let app_id = HSTRING::from(resolve_aumid(app));
+    history
+        .RemoveGroupedTagWithId(
+            &HSTRING::from(notification_id),
+            &HSTRING::from(NOTIFICATION_GROUP),
+            &app_id,
+        )
+        .map_err(|err| format!("failed to remove desktop notification history entry: {err}"))
+}
+
+fn read_reply_input(inputs: &ValueSet) -> Option<String> {
+    let value = inputs.Lookup(&HSTRING::from(REPLY_INPUT_ID)).ok()?;
+    let property = value.cast::<IPropertyValue>().ok()?;
+    property.GetString().ok().map(|value| value.to_string())
+}
+
 fn resolve_aumid(app: &AppHandle) -> String {
     let identifier = app.config().identifier.clone();
     if identifier.is_empty() {
@@ -309,6 +468,22 @@ fn resolve_aumid(app: &AppHandle) -> String {
     }
 }
 
+fn escape_xml(input: &str) -> String {
+    let mut escaped = String::with_capacity(input.len());
+    for ch in input.chars() {
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&apos;"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
+#[cfg(test)]
 fn sticky_scenario_for_kind(kind: &str) -> Option<Scenario> {
     match kind {
         "permission" | "question" => Some(Scenario::Reminder),
@@ -319,6 +494,7 @@ fn sticky_scenario_for_kind(kind: &str) -> Option<Scenario> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tauri_winrt_notification::Scenario;
 
     #[test]
     fn show_params_deserialize_camel_case_with_full_shape() {
@@ -431,7 +607,8 @@ mod tests {
     #[test]
     fn state_close_by_id_is_idempotent() {
         let state = DesktopNotificationsState::default();
-        state.record("n-x".into(), Some("c-x".into()));
+        let toast = sample_toast();
+        state.record("n-x".into(), Some("c-x".into()), toast);
         let removed = state.close_by_id("n-x");
         assert!(removed.is_some());
         let again = state.close_by_id("n-x");
@@ -441,12 +618,12 @@ mod tests {
     #[test]
     fn state_close_by_conversation_clears_matching_entries() {
         let state = DesktopNotificationsState::default();
-        state.record("n-1".into(), Some("c".into()));
-        state.record("n-2".into(), Some("c".into()));
-        state.record("n-3".into(), Some("other".into()));
+        state.record("n-1".into(), Some("c".into()), sample_toast());
+        state.record("n-2".into(), Some("c".into()), sample_toast());
+        state.record("n-3".into(), Some("other".into()), sample_toast());
         let removed = state.close_by_conversation("c");
         assert_eq!(removed.len(), 2);
-        let guard = state.inner.lock().unwrap();
+        let guard = state.inner.lock().expect("lock");
         assert_eq!(guard.by_id.len(), 1);
         assert!(guard.by_id.contains_key("n-3"));
     }
@@ -463,5 +640,88 @@ mod tests {
         ));
         assert!(sticky_scenario_for_kind("turn-complete").is_none());
         assert!(sticky_scenario_for_kind("info").is_none());
+    }
+
+    #[test]
+    fn build_actions_xml_adds_reply_input_for_turn_complete_notifications() {
+        let notification = DesktopNotification {
+            id: "n-1".into(),
+            kind: "turn-complete".into(),
+            title: "Title".into(),
+            body: "Body".into(),
+            host_id: None,
+            conversation_id: None,
+            request_id: None,
+            navigation_path: None,
+            reply_placeholder: Some("Reply here".into()),
+            actions: vec![DesktopNotificationAction {
+                id: "open".into(),
+                title: "Open".into(),
+                action_type: Some("open".into()),
+            }],
+        };
+        let xml = build_actions_xml(&notification);
+        assert!(xml.contains("type=\"text\""));
+        assert!(xml.contains("hint-inputId=\"reply\""));
+        assert!(xml.contains("__reply__"));
+    }
+
+    #[test]
+    fn build_actions_xml_skips_reply_for_non_turn_complete_notifications() {
+        let notification = DesktopNotification {
+            id: "n-2".into(),
+            kind: "info".into(),
+            title: "Title".into(),
+            body: "Body".into(),
+            host_id: None,
+            conversation_id: None,
+            request_id: None,
+            navigation_path: None,
+            reply_placeholder: Some("Reply here".into()),
+            actions: vec![DesktopNotificationAction {
+                id: "dismiss".into(),
+                title: "Dismiss".into(),
+                action_type: Some("dismiss".into()),
+            }],
+        };
+        let xml = build_actions_xml(&notification);
+        assert!(!xml.contains("type=\"text\""));
+        assert!(!xml.contains("__reply__"));
+    }
+
+    #[test]
+    fn build_toast_xml_escapes_special_characters() {
+        let notification = DesktopNotification {
+            id: "n-3".into(),
+            kind: "question".into(),
+            title: "Fish & Chips".into(),
+            body: "2 < 3".into(),
+            host_id: None,
+            conversation_id: None,
+            request_id: None,
+            navigation_path: None,
+            reply_placeholder: None,
+            actions: Vec::new(),
+        };
+        let xml = build_toast_xml(&notification);
+        assert!(xml.contains("scenario=\"reminder\""));
+        assert!(xml.contains("Fish &amp; Chips"));
+        assert!(xml.contains("2 &lt; 3"));
+    }
+
+    fn sample_toast() -> ToastNotification {
+        create_toast_notification(&DesktopNotification {
+            id: "sample".into(),
+            kind: "info".into(),
+            title: "Title".into(),
+            body: "Body".into(),
+            host_id: None,
+            conversation_id: None,
+            request_id: None,
+            navigation_path: None,
+            reply_placeholder: None,
+            actions: Vec::new(),
+        })
+        .expect("create sample toast")
     }
 }

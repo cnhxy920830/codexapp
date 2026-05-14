@@ -32,6 +32,10 @@ export type WorkspaceFileMetadata = {
   mimeType: string | null;
 };
 
+export type ReadWorkspaceFileBinaryResponse = {
+  contentsBase64: string;
+};
+
 export async function searchWorkspaceFiles(params: { workspaceRoot: string; query: string }) {
   return invoke<WorkspaceFileSearchResult[]>("search_workspace_files", { params });
 }
@@ -55,6 +59,10 @@ export async function readWorkspaceFile(params: { workspaceRoot: string; relativ
 
 export async function readWorkspaceFileMetadata(params: { workspaceRoot: string; relativePath: string }) {
   return invoke<WorkspaceFileMetadata>("read_workspace_file_metadata", { params });
+}
+
+export async function readWorkspaceFileBinary(params: { workspaceRoot: string; relativePath: string }) {
+  return invoke<ReadWorkspaceFileBinaryResponse>("read_workspace_file_binary", { params });
 }
 
 export async function openWorkspaceFileInEditor(path: string) {

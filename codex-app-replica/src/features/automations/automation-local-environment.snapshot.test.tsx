@@ -66,15 +66,20 @@ function buildSnapshots(): SnapshotMap {
             draft={draft}
             feedback={null}
             hasConnectedRemoteConnections={false}
+            heartbeatThreadOptions={[]}
             isSaving={false}
             lastRunLabel="Yesterday at 9:41 AM"
             localEnvironmentState={localEnvironmentState}
+            locale="en-US"
+            modelOptions={[{ id: "gpt-5.4", hidden: false, additionalSpeedTiers: [] }]}
             nextRunLabel="Tomorrow at 8:30 AM"
             onClearDraft={noop}
             onDraftChange={noopDraftChange}
             onOpenLocalEnvironmentsSettings={noopOpenSettings}
-            recentThreads={[]}
-            threadNameById={new Map()}
+            workspaceRootOptions={["D:\\workspace\\codex-app"]}
+            workspaceRootLabels={{
+              "D:\\workspace\\codex-app": "codex-app",
+            }}
             t={translate}
           />
         </div>
@@ -87,15 +92,20 @@ function buildSnapshots(): SnapshotMap {
             draft={draft}
             feedback={null}
             hasConnectedRemoteConnections
+            heartbeatThreadOptions={[]}
             isSaving={false}
             lastRunLabel="Yesterday at 9:41 AM"
             localEnvironmentState={localEnvironmentState}
+            locale="en-US"
+            modelOptions={[{ id: "gpt-5.4", hidden: false, additionalSpeedTiers: [] }]}
             nextRunLabel="Tomorrow at 8:30 AM"
             onClearDraft={noop}
             onDraftChange={noopDraftChange}
             onOpenLocalEnvironmentsSettings={noopOpenSettings}
-            recentThreads={[]}
-            threadNameById={new Map()}
+            workspaceRootOptions={["D:\\workspace\\codex-app"]}
+            workspaceRootLabels={{
+              "D:\\workspace\\codex-app": "codex-app",
+            }}
             t={translate}
           />
         </div>
@@ -105,10 +115,10 @@ function buildSnapshots(): SnapshotMap {
       <StaticI18nProvider>
         <AutomationFormFields
           draft={draft}
+          heartbeatThreadOptions={[]}
           localEnvironmentState={localEnvironmentState}
           onOpenLocalEnvironmentsSettings={noopOpenSettings}
           onDraftChange={noopDraftChange}
-          recentThreads={[]}
           t={translate}
         />
       </StaticI18nProvider>,

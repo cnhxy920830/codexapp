@@ -1,15 +1,17 @@
 import {
-  ClockIcon,
   MoreActionsIcon,
   PauseCircleIcon,
   PencilIcon,
   PlayOutlineIcon,
   ResumeCircleIcon,
   TrashIcon,
+  UnselectedCircleIcon,
 } from "../../components/AppShellIcons";
 import type { ReactNode } from "react";
-import type { AutomationRecord } from "../../services/automations";
-import type { FeedbackState, TranslateFn } from "./automationsPageUtils";
+import type { AutomationRecord, CronAutomationRecord } from "../../services/automations";
+import { AutomationsQuickStartTemplates } from "./AutomationsQuickStartTemplates";
+import { SectionedPage, SectionedPageSection } from "./SectionedPage";
+import type { TranslateFn } from "./automationsPageUtils";
 import {
   describeAutomation,
   formatScheduleSummary,
@@ -18,15 +20,18 @@ import {
 } from "./automationsPageUtils";
 
 type AutomationsOverviewPaneProps = {
-  feedback: FeedbackState;
   isLoading: boolean;
   isRunningNowId: string | null;
   items: AutomationRecord[];
+  locale: string;
   openRowMenuId: string | null;
   selectedId: string | null;
   threadNameById: Map<string, string>;
+  workspaceRootLabels: Record<string, string>;
+  quickStartBaseDraft: CronAutomationRecord;
   onDeleteAutomation: (automation: AutomationRecord) => void;
   onPauseAutomation: (automation: AutomationRecord) => void;
+  onSelectQuickStart: (draft: CronAutomationRecord) => void;
   onResumeAutomation: (automation: AutomationRecord) => void;
   onRunAutomationNow: (automation: AutomationRecord) => void;
   onSelectAutomation: (automation: AutomationRecord) => void;
@@ -34,43 +39,11 @@ type AutomationsOverviewPaneProps = {
   t: TranslateFn;
 };
 
-function FeedbackBanner({ feedback }: { feedback: FeedbackState }) {
-  if (feedback === null) {
-    return null;
-  }
-
-  return (
-    <div
-      className={[
-        feedback.tone === "error" ? "app-card-error" : "app-badge",
-        "rounded-[14px] px-4 py-3 text-[13px]",
-      ].join(" ")}
-    >
-      {feedback.message}
-    </div>
-  );
-}
-
-function OverviewSection({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="flex flex-col gap-3">
-      <div className="border-b border-[var(--app-shell-border)] px-0.5 pb-2">
-        <div className="app-title text-[18px] leading-6 font-medium">{title}</div>
-      </div>
-      {children}
-    </section>
-  );
-}
-
 function AutomationRow({
   automation,
   isMenuOpen,
+  locale,
+  isRunNowDisabled,
   isRunNowPending,
   isSelected,
   onDelete,
@@ -85,6 +58,8 @@ function AutomationRow({
 }: {
   automation: AutomationRecord;
   isMenuOpen: boolean;
+  locale: string;
+  isRunNowDisabled: boolean;
   isRunNowPending: boolean;
   isSelected: boolean;
   onDelete: (automation: AutomationRecord) => void;
@@ -97,13 +72,17 @@ function AutomationRow({
   secondaryLabel: string;
   t: TranslateFn;
 }) {
-  const scheduleLabel = formatScheduleSummary(automation, t);
+  const scheduleLabel = formatScheduleSummary(automation, locale, t);
   const statusIcon =
     automation.status === "PAUSED" ? (
       <PauseCircleIcon className="icon-sm shrink-0 app-text-muted" />
     ) : (
-      <ClockIcon className="icon-sm shrink-0 app-text-muted" />
+      <UnselectedCircleIcon className="icon-sm shrink-0 app-text-muted" />
     );
+  const statusLabel =
+    automation.status === "PAUSED"
+      ? formatStatusLabel(automation.status, t)
+      : null;
 
   return (
     <div className="group relative" data-automation-menu-root={automation.id}>
@@ -128,68 +107,93 @@ function AutomationRow({
             {secondaryLabel}
           </div>
         </div>
-        <div className="relative flex shrink-0 items-center text-[13px] text-[var(--app-shell-muted)]">
+        <div
+          className={[
+            "flex shrink-0 items-center text-[13px] text-[var(--app-shell-muted)]",
+            automation.status === "PAUSED" ? "gap-2" : "gap-0",
+          ].join(" ")}
+        >
+          {automation.status === "PAUSED" ? null : (
+            <span
+              className={[
+                "min-w-20 whitespace-nowrap text-right transition-opacity",
+                isMenuOpen ? "opacity-0" : "group-hover:opacity-0",
+              ].join(" ")}
+            >
+              {scheduleLabel}
+            </span>
+          )}
           <span
             className={[
-              "min-w-[96px] whitespace-nowrap text-right transition-opacity",
-              isMenuOpen ? "opacity-0" : "group-hover:opacity-0",
+              "relative inline-flex justify-end",
+              automation.status === "PAUSED" ? "min-w-20" : "",
             ].join(" ")}
           >
-            {automation.status === "PAUSED"
-              ? formatStatusLabel(automation.status, t)
-              : scheduleLabel}
+            {statusLabel ? (
+              <span
+                className={[
+                  "transition-opacity",
+                  isMenuOpen ? "opacity-0" : "group-hover:opacity-0",
+                ].join(" ")}
+              >
+                {statusLabel}
+              </span>
+            ) : (
+              <span />
+            )}
+            <span
+              className={[
+                "absolute inset-y-0 right-0 flex items-center gap-2.5 transition-opacity",
+                isMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+              ].join(" ")}
+            >
+              <button
+                type="button"
+                title={t("settings.automations.runNow")}
+                aria-label={t("settings.automations.runNow")}
+                disabled={isRunNowDisabled}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onRunNow(automation);
+                }}
+                className="app-text-muted flex h-8 w-8 items-center justify-center rounded-[10px] transition-colors hover:text-[var(--app-shell-foreground)] disabled:cursor-default"
+              >
+                {isRunNowPending ? (
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--app-shell-border-heavy)] border-t-transparent" />
+                ) : (
+                  <PlayOutlineIcon className="h-4 w-4" />
+                )}
+              </button>
+              <button
+                type="button"
+                title={t("inbox.automations.editTooltip")}
+                aria-label={t("inbox.automations.editTooltip")}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onEdit(automation);
+                }}
+                className="app-text-muted flex h-8 w-8 items-center justify-center rounded-[10px] transition-colors hover:text-[var(--app-shell-foreground)]"
+              >
+                <PencilIcon className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                title={t("inbox.automations.moreOptionsTooltip")}
+                aria-label={t("inbox.automations.rowActions")}
+                aria-expanded={isMenuOpen}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onToggleMenu(isMenuOpen ? null : automation.id);
+                }}
+                className="app-text-muted flex h-8 w-8 items-center justify-center rounded-[10px] transition-colors hover:text-[var(--app-shell-foreground)]"
+              >
+                <MoreActionsIcon className="h-4 w-4" />
+              </button>
+            </span>
           </span>
-          <div
-            className={[
-              "absolute inset-y-0 right-0 flex items-center gap-2.5 transition-opacity",
-              isMenuOpen ? "opacity-100" : "opacity-0 group-hover:opacity-100",
-            ].join(" ")}
-          >
-            <button
-              type="button"
-              title={t("settings.automations.runNow")}
-              aria-label={t("settings.automations.runNow")}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onRunNow(automation);
-              }}
-              className="app-text-muted flex h-8 w-8 items-center justify-center rounded-[10px] transition-colors hover:text-[var(--app-shell-foreground)]"
-            >
-              {isRunNowPending ? (
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--app-shell-border-heavy)] border-t-transparent" />
-              ) : (
-                <PlayOutlineIcon className="h-4 w-4" />
-              )}
-            </button>
-            <button
-              type="button"
-              title={t("inbox.automations.editTooltip")}
-              aria-label={t("inbox.automations.editTooltip")}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onEdit(automation);
-              }}
-              className="app-text-muted flex h-8 w-8 items-center justify-center rounded-[10px] transition-colors hover:text-[var(--app-shell-foreground)]"
-            >
-              <PencilIcon className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              title={t("inbox.automations.moreOptionsTooltip")}
-              aria-label={t("inbox.automations.rowActions")}
-              aria-expanded={isMenuOpen}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onToggleMenu(isMenuOpen ? null : automation.id);
-              }}
-              className="app-text-muted flex h-8 w-8 items-center justify-center rounded-[10px] transition-colors hover:text-[var(--app-shell-foreground)]"
-            >
-              <MoreActionsIcon className="h-4 w-4" />
-            </button>
-          </div>
         </div>
       </button>
       {isMenuOpen ? (
@@ -228,15 +232,18 @@ function AutomationRow({
 }
 
 export function AutomationsOverviewPane({
-  feedback,
   isLoading,
   isRunningNowId,
   items,
+  locale,
   openRowMenuId,
   selectedId,
   threadNameById,
+  workspaceRootLabels,
+  quickStartBaseDraft,
   onDeleteAutomation,
   onPauseAutomation,
+  onSelectQuickStart,
   onResumeAutomation,
   onRunAutomationNow,
   onSelectAutomation,
@@ -245,6 +252,7 @@ export function AutomationsOverviewPane({
 }: AutomationsOverviewPaneProps) {
   const currentItems = items.filter((item) => !isPaused(item));
   const pausedItems = items.filter(isPaused);
+  const isRunNowDisabled = isRunningNowId !== null;
 
   return (
     <div className="flex min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
@@ -253,7 +261,6 @@ export function AutomationsOverviewPane({
           <div className="heading-xl font-normal text-[var(--app-shell-title)]">
             {t("inbox.automations.header.root")}
           </div>
-          <FeedbackBanner feedback={feedback} />
         </div>
 
         {isLoading ? (
@@ -262,19 +269,31 @@ export function AutomationsOverviewPane({
             {t("inbox.automations.loading")}
           </div>
         ) : items.length === 0 ? (
-          <div className="app-card-muted rounded-[16px] px-5 py-4 text-[14px] leading-6">
-            {t("inbox.automations.emptySubtitle.learnMore")}
-          </div>
+          <AutomationsQuickStartTemplates
+            baseDraft={quickStartBaseDraft}
+            onSelectAction={onSelectQuickStart}
+            t={t}
+          />
         ) : (
-          <div className="flex flex-col gap-8" aria-label={t("inbox.automations.sectionsNav")}>
+          <SectionedPage
+            ariaLabel={t("inbox.automations.sectionsNav")}
+            className="[--sectioned-page-leading-inset:0]"
+            contentInnerClassName="flex flex-col gap-8 px-panel pb-panel [&>section]:gap-2"
+            showNav={false}
+          >
             {currentItems.length > 0 ? (
-              <OverviewSection title={t("inbox.automations.current")}>
+              <SectionedPageSection
+                id="current-automations"
+                title={t("inbox.automations.current")}
+              >
                 <div className="-mx-3 flex flex-col gap-1" role="list">
                   {currentItems.map((automation) => (
                     <div key={automation.id} role="listitem">
                       <AutomationRow
                         automation={automation}
                         isMenuOpen={openRowMenuId === automation.id}
+                        locale={locale}
+                        isRunNowDisabled={isRunNowDisabled}
                         isRunNowPending={isRunningNowId === automation.id}
                         isSelected={selectedId === automation.id}
                         onDelete={onDeleteAutomation}
@@ -287,6 +306,8 @@ export function AutomationsOverviewPane({
                         secondaryLabel={describeAutomation(
                           automation,
                           threadNameById,
+                          locale,
+                          workspaceRootLabels,
                           t,
                         )}
                         t={t}
@@ -294,17 +315,22 @@ export function AutomationsOverviewPane({
                     </div>
                   ))}
                 </div>
-              </OverviewSection>
+              </SectionedPageSection>
             ) : null}
 
             {pausedItems.length > 0 ? (
-              <OverviewSection title={t("inbox.automations.pausedSection")}>
+              <SectionedPageSection
+                id="paused-automations"
+                title={t("inbox.automations.pausedSection")}
+              >
                 <div className="-mx-3 flex flex-col gap-1" role="list">
                   {pausedItems.map((automation) => (
                     <div key={automation.id} role="listitem">
                       <AutomationRow
                         automation={automation}
                         isMenuOpen={openRowMenuId === automation.id}
+                        locale={locale}
+                        isRunNowDisabled={isRunNowDisabled}
                         isRunNowPending={isRunningNowId === automation.id}
                         isSelected={selectedId === automation.id}
                         onDelete={onDeleteAutomation}
@@ -317,6 +343,8 @@ export function AutomationsOverviewPane({
                         secondaryLabel={describeAutomation(
                           automation,
                           threadNameById,
+                          locale,
+                          workspaceRootLabels,
                           t,
                         )}
                         t={t}
@@ -324,9 +352,9 @@ export function AutomationsOverviewPane({
                     </div>
                   ))}
                 </div>
-              </OverviewSection>
+              </SectionedPageSection>
             ) : null}
-          </div>
+          </SectionedPage>
         )}
       </div>
     </div>

@@ -958,6 +958,7 @@ dependencies = [
  "tauri-winrt-notification",
  "tokio",
  "toml 0.8.2",
+ "windows",
 ]
 
 [[package]]

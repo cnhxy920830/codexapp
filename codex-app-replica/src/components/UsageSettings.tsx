@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { CheckIcon } from "./AppShellIcons";
 import type { AppToast } from "./AppToastRegion";
+import { Button } from "./Button";
+import { SettingsContentLayout } from "./SettingsContentLayout";
 import { UsageAutoTopUpDialog } from "./UsageAutoTopUpDialog";
 import { useI18n } from "../i18n/i18n";
 import type { MessageKey } from "../i18n/messages";
@@ -30,14 +32,18 @@ type UsageLimitRowData = {
 
 export function UsageSettings({
   authMethod,
+  isAuthLoading,
   onShowToast,
 }: {
   authMethod: string | null;
+  isAuthLoading: boolean;
   onShowToast?: (toast: AppToast) => void;
 }) {
   const { locale, t } = useI18n();
   const [isUsageSettingsVisible, setIsUsageSettingsVisible] = useState(false);
-  const [isUsageSettingsAccessLoading, setIsUsageSettingsAccessLoading] = useState(authMethod === "chatgpt");
+  const [isUsageSettingsAccessLoading, setIsUsageSettingsAccessLoading] = useState(
+    isAuthLoading || authMethod === "chatgpt",
+  );
   const [rateLimitsResponse, setRateLimitsResponse] = useState<UsageRateLimitsResponse | null>(null);
   const [autoTopUpSettings, setAutoTopUpSettings] = useState<UsageAutoTopUpSettings | null>(null);
   const [isRateLimitsLoading, setIsRateLimitsLoading] = useState(false);
@@ -49,6 +55,14 @@ export function UsageSettings({
   useEffect(() => {
     let cancelled = false;
 
+    if (isAuthLoading) {
+      setIsUsageSettingsAccessLoading(true);
+      setIsUsageSettingsVisible(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     if (authMethod !== "chatgpt") {
       setIsUsageSettingsAccessLoading(false);
       setIsUsageSettingsVisible(false);
@@ -58,6 +72,7 @@ export function UsageSettings({
     }
 
     setIsUsageSettingsAccessLoading(true);
+    setIsUsageSettingsVisible(false);
     void readAccountInfo()
       .then((response) => {
         if (cancelled) {
@@ -79,7 +94,7 @@ export function UsageSettings({
     return () => {
       cancelled = true;
     };
-  }, [authMethod]);
+  }, [authMethod, isAuthLoading]);
 
   useEffect(() => {
     const cancelled = { current: false };
@@ -135,8 +150,9 @@ export function UsageSettings({
         <UsageStateSection
           label={t("settings.usage.load.error")}
           control={
-            <button
-              type="button"
+            <Button
+              color="secondary"
+              size="toolbar"
               onClick={() => {
                 void loadUsageRateLimits({
                   setIsLoading: setIsRateLimitsLoading,
@@ -149,17 +165,16 @@ export function UsageSettings({
                   setLoadError: setAutoTopUpLoadError,
                 });
               }}
-              className="rounded-lg border border-token-border bg-token-main-surface-primary px-3 py-1.5 text-sm text-token-text-primary shadow-sm transition hover:bg-token-list-hover-background"
             >
               {t("settings.usage.load.retry")}
-            </button>
+            </Button>
           }
         />
       </SettingsContentLayout>
     );
   }
 
-  if (isRateLimitsLoading || isAutoTopUpLoading || rateLimitsResponse == null || autoTopUpSettings == null) {
+  if ((isRateLimitsLoading && rateLimitsResponse == null) || (isAutoTopUpLoading && autoTopUpSettings == null)) {
     return (
       <SettingsContentLayout title={t("settings.section.usage")}>
         <UsageStateSection label={t("settings.usage.load.loading")} />
@@ -167,10 +182,14 @@ export function UsageSettings({
     );
   }
 
-  const coreLimitRows = buildUsageLimitRows("core", rateLimitsResponse.rateLimits);
+  if (autoTopUpSettings == null) {
+    return null;
+  }
+
+  const coreLimitRows = buildUsageLimitRows("core", rateLimitsResponse?.rateLimits ?? null);
   const sparkLimitRows = buildUsageLimitRows(
     SPARK_LIMIT_ID,
-    rateLimitsResponse.rateLimitsByLimitId?.[SPARK_LIMIT_ID] ?? null,
+    rateLimitsResponse?.rateLimitsByLimitId?.[SPARK_LIMIT_ID] ?? null,
   );
 
   return (
@@ -188,14 +207,14 @@ export function UsageSettings({
         />
         <UsageCreditSection
           autoTopUpSettings={autoTopUpSettings}
-          creditDetails={rateLimitsResponse.rateLimits.credits ?? null}
+          creditDetails={rateLimitsResponse?.rateLimits.credits ?? null}
           locale={locale}
           onOpenAutoTopUpDialog={() => setIsAutoTopUpDialogOpen(true)}
         />
       </SettingsContentLayout>
       {isAutoTopUpDialogOpen ? (
         <UsageAutoTopUpDialog
-          creditDetails={rateLimitsResponse.rateLimits.credits ?? null}
+          creditDetails={rateLimitsResponse?.rateLimits.credits ?? null}
           open={isAutoTopUpDialogOpen}
           onClose={() => setIsAutoTopUpDialogOpen(false)}
           onSaved={(response) => {
@@ -349,13 +368,9 @@ function UsageCreditSection({
             label={formatCreditRemaining(creditDetails, locale, t)}
             description={renderUsageDocLink(t("settings.usage.credit.remaining.description"))}
             control={
-              <button
-                type="button"
-                onClick={openCreditPurchase}
-                className="rounded-lg border border-token-border bg-token-main-surface-primary px-3 py-1.5 text-sm text-token-text-primary shadow-sm transition hover:bg-token-list-hover-background"
-              >
+              <Button color="secondary" size="toolbar" onClick={openCreditPurchase}>
                 {t("settings.usage.credit.purchase")}
-              </button>
+              </Button>
             }
           />
           <SettingsRow
@@ -367,13 +382,9 @@ function UsageCreditSection({
             }
             description={t("settings.usage.autoTopUp.description")}
             control={
-              <button
-                type="button"
-                onClick={onOpenAutoTopUpDialog}
-                className="rounded-lg border border-token-border bg-token-main-surface-primary px-3 py-1.5 text-sm text-token-text-primary shadow-sm transition hover:bg-token-list-hover-background"
-              >
+              <Button color="secondary" size="toolbar" onClick={onOpenAutoTopUpDialog}>
                 {t("settings.usage.autoTopUp.settings")}
-              </button>
+              </Button>
             }
           />
         </SettingsSurface>
@@ -510,15 +521,17 @@ function formatResetAt(locale: string, resetsAt: number | null) {
   }
 
   const now = new Date();
-  if (
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate()
-  ) {
+  const diffSeconds = Math.floor((date.getTime() - now.getTime()) / 1000);
+  if (diffSeconds <= 0) {
+    return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(0, "second");
+  }
+
+  const sixtyDaysInSeconds = 60 * 24 * 60 * 60;
+  if (diffSeconds < sixtyDaysInSeconds) {
     return new Intl.DateTimeFormat(locale, { timeStyle: "short" }).format(date);
   }
 
-  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(date);
+  return new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(date);
 }
 
 function formatCreditRemaining(
@@ -543,58 +556,40 @@ function openCreditPurchase() {
 }
 
 function renderUsageDocLink(template: string) {
-  const startTag = "<a>";
-  const endTag = "</a>";
-  const startIndex = template.indexOf(startTag);
-  const endIndex = template.indexOf(endTag);
+  const tagPairs = [
+    ["<a>", "</a>"] as const,
+    ["<link>", "</link>"] as const,
+  ];
 
-  if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
-    return template;
+  for (const [startTag, endTag] of tagPairs) {
+    const startIndex = template.indexOf(startTag);
+    const endIndex = template.indexOf(endTag);
+    if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
+      continue;
+    }
+
+    const prefix = template.slice(0, startIndex);
+    const linkLabel = template.slice(startIndex + startTag.length, endIndex);
+    const suffix = template.slice(endIndex + endTag.length);
+
+    return (
+      <>
+        {prefix}
+        <a
+          className="inline-flex items-center gap-1 text-token-text-secondary hover:text-token-text-primary"
+          href={CREDIT_PRICING_URL}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {linkLabel}
+          <LinkExternalIcon className="size-4" />
+        </a>
+        {suffix}
+      </>
+    );
   }
 
-  const prefix = template.slice(0, startIndex);
-  const linkLabel = template.slice(startIndex + startTag.length, endIndex);
-  const suffix = template.slice(endIndex + endTag.length);
-
-  return (
-    <>
-      {prefix}
-      <a
-        className="inline-flex items-center gap-1 text-token-text-secondary hover:text-token-text-primary"
-        href={CREDIT_PRICING_URL}
-        target="_blank"
-        rel="noreferrer"
-      >
-        {linkLabel}
-        <LinkExternalIcon className="size-4" />
-      </a>
-      {suffix}
-    </>
-  );
-}
-
-function SettingsContentLayout({
-  children,
-  title,
-}: {
-  children: ReactNode;
-  title: string;
-}) {
-  return (
-    <div className="main-surface flex h-full min-h-0 flex-col">
-      <div className="scrollbar-stable flex-1 overflow-y-auto p-5">
-        <div className="mx-auto flex w-full max-w-2xl flex-col">
-          <div className="flex items-center justify-between gap-3 pb-5">
-            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-              <h1 className="text-[20px] font-medium leading-7 text-token-text-primary">{title}</h1>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-5">{children}</div>
-        </div>
-      </div>
-    </div>
-  );
+  return template;
 }
 
 function SettingsGroup({ children }: { children: ReactNode }) {

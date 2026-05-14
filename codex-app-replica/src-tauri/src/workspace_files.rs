@@ -1,3 +1,5 @@
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine as _;
 use serde::Deserialize;
 use serde::Serialize;
 use std::ffi::OsStr;
@@ -72,6 +74,12 @@ pub struct WorkspaceFileMetadataResponse {
     pub mime_type: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadWorkspaceFileBinaryResponse {
+    pub contents_base64: String,
+}
+
 #[tauri::command]
 pub fn search_workspace_files(
     params: SearchWorkspaceFilesParams,
@@ -130,6 +138,25 @@ pub fn read_workspace_file(
         contents,
         mime_type,
         is_binary,
+    })
+}
+
+#[tauri::command]
+pub fn read_workspace_file_binary(
+    params: ReadWorkspaceFileParams,
+) -> Result<ReadWorkspaceFileBinaryResponse, String> {
+    let resolved = resolve_workspace_file(&params)?;
+    if !resolved.canonical_target.is_file() {
+        return Err(format!(
+            "workspace file does not exist: {}",
+            resolved.canonical_target.display()
+        ));
+    }
+
+    let contents = fs::read(&resolved.canonical_target)
+        .map_err(|err| format!("failed to read workspace file: {err}"))?;
+    Ok(ReadWorkspaceFileBinaryResponse {
+        contents_base64: STANDARD.encode(contents),
     })
 }
 
