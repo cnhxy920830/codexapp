@@ -32,6 +32,7 @@ import {
 } from "../../services/remoteTasks";
 import type { ToolRequestUserInputQuestion } from "../../services/history";
 import type { ComposerEnterBehavior, FollowUpQueueMode, ReviewDelivery } from "../../services/settings";
+import type { ConfigSnapshot } from "../../services/settings";
 import { updateDiffIfOpen } from "../../services/windowNavigation";
 import type { QueuedLocalFollowUp } from "./localFollowUpQueue";
 import {
@@ -71,6 +72,10 @@ import { isMultiAgentInProgressStatus, toSingleMultiAgentGroupItem } from "./mul
 import { ThreadPageHeader } from "./ThreadPageHeader";
 import { ThreadComposer } from "./ThreadComposer";
 import { CodexMobileOnboarding } from "./CodexMobileOnboarding";
+import type {
+  HotkeyPermissionAgentMode,
+  HotkeyPermissionsState,
+} from "../hotkeyWindow/hotkeyPermissionsMode";
 
 const approvalDecisionLabelKeys: Record<ApprovalDecision, MessageKey> = {
   accept: "app.chat.approval.accept",
@@ -110,15 +115,20 @@ type CurrentPendingRequest =
 
 type ChatConversationMainPaneProps = {
   threadActionsMenuRef: RefObject<HTMLDivElement | null>;
+  threadHeaderStartActions?: ReactNode;
   threadHeaderTrailingActions?: ReactNode;
   composerDraft: string;
   composerEnterBehavior: ComposerEnterBehavior;
   composerFocusNonce?: number | null;
+  composerPermissionConfig: ConfigSnapshot | null;
+  composerPermissionMode: HotkeyPermissionAgentMode;
+  composerPermissionsState: HotkeyPermissionsState;
   followUpQueueMode: FollowUpQueueMode;
   hasAttachedHeartbeatAutomation: boolean;
   isThreadActionsMenuOpen: boolean;
   isThreadHeartbeatAutomationActionDisabled: boolean;
   isThreadHeartbeatAutomationActionVisible: boolean;
+  isThreadPinned?: boolean;
   isWorktreeThread: boolean;
   showThreadHeader?: boolean;
   heartbeatAutomationActionLabelKey: MessageKey;
@@ -129,6 +139,7 @@ type ChatConversationMainPaneProps = {
   currentThreadPermissionsRequestApproval: PendingPermissionsRequestApproval[];
   currentThreadToolRequestUserInput: PendingToolRequestUserInput[];
   currentThreadQueuedFollowUps: QueuedLocalFollowUp[];
+  currentThreadPendingPdfCommentCount?: number;
   onApprovalDecision: (approval: PendingApproval, decision: ApprovalDecision) => void;
   onDismissImplementPlanRequest: (request: PendingImplementPlanRequest) => void;
   onImplementPlanRequestSubmit: (
@@ -150,6 +161,7 @@ type ChatConversationMainPaneProps = {
     values: Record<string, string>,
   ) => void;
   onComposerDraftChange: (value: string) => void;
+  onComposerPermissionModeChange: (mode: HotkeyPermissionAgentMode) => void;
   onOpenRemoteTask: (taskId: string) => void;
   onSelectRemoteTaskAssistantTurn: (assistantTurnId: string) => void;
   onArchiveThread: () => void;
@@ -158,13 +170,19 @@ type ChatConversationMainPaneProps = {
   onCopySessionId: () => void;
   onCopyWorkingDirectory: () => void;
   onForkSelectedThread: () => void;
+  onForkSelectedThreadIntoWorktree: () => void;
+  onOpenInNewWindow: () => void;
+  onMarkThreadUnread?: () => void;
   onOpenSideChat: () => void;
   onOpenAttachedHeartbeatAutomation: () => void;
   onOpenThreadHeartbeatAutomationAction: () => void;
   onOpenRenameDialog: () => void;
+  onOpenWorkspaceFileSearch?: () => void;
   onSelectThread: (threadId: string) => void;
+  onTogglePinnedThread: () => void;
   onEditUserMessage: (text: string) => void | Promise<void>;
   onRemoveQueuedFollowUp: (queuedFollowUpId: string) => void;
+  onClearPendingPdfComments?: () => void;
   onStopTurn: () => void;
   onSubmitTurn: (invertFollowUpAction?: boolean) => void;
   onToggleThreadActionsMenu: () => void;
@@ -197,15 +215,20 @@ type ChatConversationMainPaneProps = {
 
 export function ChatConversationMainPane({
   threadActionsMenuRef,
+  threadHeaderStartActions,
   threadHeaderTrailingActions,
   composerDraft,
   composerEnterBehavior,
   composerFocusNonce,
+  composerPermissionConfig,
+  composerPermissionMode,
+  composerPermissionsState,
   followUpQueueMode,
   hasAttachedHeartbeatAutomation,
   isThreadActionsMenuOpen,
   isThreadHeartbeatAutomationActionDisabled,
   isThreadHeartbeatAutomationActionVisible,
+  isThreadPinned = false,
   isWorktreeThread,
   showThreadHeader = true,
   heartbeatAutomationActionLabelKey,
@@ -216,6 +239,7 @@ export function ChatConversationMainPane({
   currentThreadPermissionsRequestApproval,
   currentThreadToolRequestUserInput,
   currentThreadQueuedFollowUps,
+  currentThreadPendingPdfCommentCount = 0,
   onApprovalDecision,
   onDismissImplementPlanRequest,
   onImplementPlanRequestSubmit,
@@ -223,6 +247,7 @@ export function ChatConversationMainPane({
   onPermissionsRequestApprovalSubmit,
   onToolRequestUserInputSubmit,
   onComposerDraftChange,
+  onComposerPermissionModeChange,
   onOpenRemoteTask,
   onSelectRemoteTaskAssistantTurn,
   onArchiveThread,
@@ -231,13 +256,19 @@ export function ChatConversationMainPane({
   onCopySessionId,
   onCopyWorkingDirectory,
   onForkSelectedThread,
+  onForkSelectedThreadIntoWorktree,
+  onOpenInNewWindow,
+  onMarkThreadUnread,
   onOpenSideChat,
   onOpenAttachedHeartbeatAutomation,
   onOpenThreadHeartbeatAutomationAction,
   onOpenRenameDialog,
+  onOpenWorkspaceFileSearch,
   onSelectThread,
+  onTogglePinnedThread,
   onEditUserMessage,
   onRemoveQueuedFollowUp,
+  onClearPendingPdfComments,
   onStopTurn,
   onSubmitTurn,
   onToggleThreadActionsMenu,
@@ -352,16 +383,18 @@ export function ChatConversationMainPane({
     ) : null;
 
   return (
-    <section className="flex h-full min-h-0 min-w-0 flex-col">
+    <section className="flex h-full min-h-0 min-w-0 flex-col bg-[var(--app-shell-main-surface)]">
       {showThreadHeader ? (
         <ThreadPageHeader
           actionsMenuRef={threadActionsMenuRef}
           hasAttachedHeartbeatAutomation={hasAttachedHeartbeatAutomation}
           heartbeatAutomationActionLabelKey={heartbeatAutomationActionLabelKey}
           heartbeatAutomationButtonTooltip={heartbeatAutomationButtonTooltip}
+          startActions={threadHeaderStartActions}
           isThreadActionsMenuOpen={isThreadActionsMenuOpen}
           isThreadHeartbeatAutomationActionDisabled={isThreadHeartbeatAutomationActionDisabled}
           isThreadHeartbeatAutomationActionVisible={isThreadHeartbeatAutomationActionVisible}
+          isThreadPinned={isThreadPinned}
           isTurnInProgress={submitButtonMode === "stop"}
           isWorktreeThread={isWorktreeThread}
           onArchive={onArchiveThread}
@@ -370,10 +403,14 @@ export function ChatConversationMainPane({
           onCopySessionId={onCopySessionId}
           onCopyWorkingDirectory={onCopyWorkingDirectory}
           onForkThread={onForkSelectedThread}
+          onForkThreadIntoWorktree={onForkSelectedThreadIntoWorktree}
+          onOpenInNewWindow={onOpenInNewWindow}
+          onOpenMarkUnread={onMarkThreadUnread}
           onOpenSideChat={onOpenSideChat}
           onOpenAttachedHeartbeatAutomation={onOpenAttachedHeartbeatAutomation}
           onOpenThreadHeartbeatAutomationAction={onOpenThreadHeartbeatAutomationAction}
           onOpenRenameDialog={onOpenRenameDialog}
+          onTogglePinThread={onTogglePinnedThread}
           onToggleThreadActionsMenu={onToggleThreadActionsMenu}
           t={t}
           trailingActions={threadHeaderTrailingActions}
@@ -390,8 +427,12 @@ export function ChatConversationMainPane({
           <CodexMobileOnboarding onShowToast={onShowToast} />
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-          <div className="mx-auto flex max-w-[820px] flex-col gap-4">
+        <div
+          className="thread-edge-scroll min-h-0 flex-1 overflow-y-auto px-5 pb-4 pt-3"
+          role="main"
+          aria-label={t("homePage.mainContent")}
+        >
+          <div className="mx-auto flex w-full max-w-[var(--thread-content-max-width)] flex-col gap-3">
             {hasTurnContent
               ? conversationGroups.map((group) => (
                   <ConversationGroupContent
@@ -430,34 +471,31 @@ export function ChatConversationMainPane({
             />
 
             {currentThreadQueuedFollowUps.length > 0 ? (
-              <div className="app-card rounded-[18px] px-4 py-4">
-                <div className="app-card-muted rounded-[14px] px-3 py-3">
-                  <div className="app-title text-[12px] font-medium tracking-[0.08em]">
-                    {t("app.chat.queuedFollowUps", { count: currentThreadQueuedFollowUps.length })}
-                  </div>
-                  <div className="mt-2 space-y-2">
-                    {currentThreadQueuedFollowUps.map((followUp) => (
-                      <div
-                        key={followUp.id}
-                        className="app-control flex items-start justify-between gap-3 rounded-[12px] px-3 py-2"
-                      >
-                        <div className="min-w-0 flex-1 break-words text-[13px] leading-6 whitespace-pre-wrap">
-                          {followUp.text}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => onRemoveQueuedFollowUp(followUp.id)}
-                          className="app-control-weak shrink-0 rounded-full px-2.5 py-1 text-[11px]"
-                        >
-                          {t("app.chat.removeQueuedFollowUp")}
-                        </button>
+              <div className="app-card-muted rounded-[16px] px-4 py-3">
+                <div className="app-title text-[12px] font-medium tracking-[0.08em]">
+                  {t("app.chat.queuedFollowUps", { count: currentThreadQueuedFollowUps.length })}
+                </div>
+                <div className="mt-2 space-y-2">
+                  {currentThreadQueuedFollowUps.map((followUp) => (
+                    <div
+                      key={followUp.id}
+                      className="app-control flex items-start justify-between gap-3 rounded-[12px] px-3 py-2"
+                    >
+                      <div className="min-w-0 flex-1 break-words text-[13px] leading-6 whitespace-pre-wrap">
+                        {followUp.text}
                       </div>
-                    ))}
-                  </div>
+                      <button
+                        type="button"
+                        onClick={() => onRemoveQueuedFollowUp(followUp.id)}
+                        className="app-control-weak shrink-0 rounded-full px-2.5 py-1 text-[11px]"
+                      >
+                        {t("app.chat.removeQueuedFollowUp")}
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
             ) : null}
-
           </div>
         </div>
       )}
@@ -468,11 +506,18 @@ export function ChatConversationMainPane({
             composerDraft={composerDraft}
             composerEnterBehavior={composerEnterBehavior}
             focusComposerNonce={composerFocusNonce}
+            composerPermissionConfig={composerPermissionConfig}
+            composerPermissionMode={composerPermissionMode}
+            composerPermissionsState={composerPermissionsState}
             followUpQueueMode={followUpQueueMode}
             isWorktreeThread={isWorktreeThread}
             onComposerDraftChange={onComposerDraftChange}
+            onComposerPermissionModeChange={onComposerPermissionModeChange}
+            onClearPendingPdfComments={onClearPendingPdfComments}
+            onOpenWorkspaceFileSearch={onOpenWorkspaceFileSearch}
             onStopTurn={onStopTurn}
             onSubmitTurn={onSubmitTurn}
+            pendingPdfCommentCount={currentThreadPendingPdfCommentCount}
             queuedFollowUpCount={currentThreadQueuedFollowUps.length}
             reviewDelivery={reviewDelivery}
             selectedAvatar={selectedAvatar}
@@ -1174,10 +1219,10 @@ function ConversationItemList({
   }
 
   return (
-    <div className="space-y-3">
-      {items.map((item) => (
-        <ConversationItemCard key={item.id} conversationId={conversationId} item={item} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      ))}
+      <div className="space-y-3">
+        {items.map((item) => (
+          <ConversationItemCard key={item.id} conversationId={conversationId} item={item} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+        ))}
     </div>
   );
 }
@@ -1263,13 +1308,8 @@ function ConversationItemCard({
     }
 
     return (
-      <div className="rounded-[18px]">
-        <div
-          className={[
-            "max-w-[620px] rounded-[18px] px-4 py-3 shadow-[0_1px_0_rgba(0,0,0,0.02)]",
-            "app-card",
-          ].join(" ")}
-        >
+      <div className="flex w-full justify-start pr-10">
+        <div className="app-assistant-message max-w-[min(780px,100%)] px-0.5 py-0.5">
           {renderMessageContent(item.text)}
         </div>
       </div>
@@ -1660,6 +1700,7 @@ function UserConversationMessageCard({
   }, [locale, sentAtMs]);
   const messageStatusLabel = resolveUserMessageStatusLabel(item, t);
   const canEdit = !normalizedText.startsWith("PLEASE IMPLEMENT THIS PLAN:");
+  const shouldRenderMetaRow = chips.length > 0 || (hasVisibleMessageText && !isEditing);
 
   const handleCopy = async () => {
     if (!hasVisibleText) {
@@ -1694,7 +1735,7 @@ function UserConversationMessageCard({
   return (
     <div className="group flex w-full flex-col items-end justify-end gap-1">
       {shouldRenderBubble && messageStatusLabel !== null ? (
-        <div className="app-text-muted mr-1 ml-1 flex items-center gap-2">
+        <div className="app-text-muted mr-1 ms-1 flex items-center gap-2">
           <UserMessageStatusIcon className="h-[13px] w-[13px] shrink-0" />
           <span className="text-[12px]">{messageStatusLabel}</span>
         </div>
@@ -1703,7 +1744,7 @@ function UserConversationMessageCard({
         <div className="flex justify-end">
           {isEditing ? (
             <form
-              className="app-card w-full max-w-[620px] rounded-[18px] p-1"
+              className="app-card w-full max-w-[77%] rounded-[24px] p-1"
               onSubmit={(event) => {
                 event.preventDefault();
                 void handleEditSubmit();
@@ -1715,7 +1756,7 @@ function UserConversationMessageCard({
                 onChange={(event) => setDraft(event.target.value)}
                 placeholder={t("app.chat.userMessage.editPlaceholder")}
                 rows={4}
-                className="app-text-input min-h-[112px] w-full resize-none rounded-[16px] border-0 bg-transparent px-3 py-3 text-[14px] leading-6 outline-none"
+                className="app-text-input min-h-[104px] w-full resize-none rounded-[20px] border-0 bg-transparent px-3 py-3 text-[14px] leading-6 outline-none"
               />
               <div className="flex justify-end gap-1.5 px-2 pb-2">
                 <button
@@ -1739,22 +1780,24 @@ function UserConversationMessageCard({
               </div>
             </form>
           ) : (
-            <div className="app-segmented-option-active max-w-[620px] rounded-[18px] px-4 py-3 shadow-[0_1px_0_rgba(0,0,0,0.02)]">
+            <div className="app-user-message max-w-[77%] break-words rounded-2xl px-3 py-2 [&_.contain-inline-size]:[contain:initial]">
               {hasVisibleText ? (
                 <UserMessageCollapsibleContent text={visibleText} t={t} />
               ) : (
-                <div className="app-text-subtle text-[13px] leading-6">{t("app.chat.userMessage.noContent")}</div>
+                <div className="app-text-subtle mb-px text-[13px] leading-6">
+                  {t("app.chat.userMessage.noContent")}
+                </div>
               )}
             </div>
           )}
         </div>
       ) : null}
-      <div className="flex flex-row-reverse items-center gap-1">
+      <div className={["flex flex-row-reverse items-center gap-1", shouldRenderMetaRow ? "" : "hidden"].join(" ")}>
         {chips.map((chip) => (
           <UserMessageChip key={`${item.id}:${chip.key}`} label={chip.label} />
         ))}
         {hasVisibleMessageText && !isEditing ? (
-          <div className="ml-1 flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <div className="mr-1 ms-1 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
             {sentAtLabel ? (
               <span className="app-text-muted text-[12px]">{sentAtLabel}</span>
             ) : null}
@@ -1762,7 +1805,7 @@ function UserConversationMessageCard({
               type="button"
               aria-label={copied ? t("app.chat.userMessage.copyCopiedAriaLabel") : t("app.chat.userMessage.copyAriaLabel")}
               onClick={() => void handleCopy()}
-              className="app-control-weak inline-flex h-7 w-7 items-center justify-center rounded-full px-0 py-0"
+              className="app-topbar-button inline-flex h-6 w-6 items-center justify-center rounded-full px-0 py-0"
               title={copied ? t("app.chat.userMessage.copyCopiedTooltip") : t("app.chat.userMessage.copyTooltip")}
             >
               {copied ? <CheckIcon className="h-[14px] w-[14px]" /> : <CopyPathIcon className="h-[14px] w-[14px]" />}
@@ -1775,7 +1818,7 @@ function UserConversationMessageCard({
                   setDraft(item.text);
                   setIsEditing(true);
                 }}
-                className="app-control-weak inline-flex h-7 w-7 items-center justify-center rounded-full px-0 py-0"
+                className="app-topbar-button inline-flex h-6 w-6 items-center justify-center rounded-full px-0 py-0"
                 title={t("app.chat.userMessage.editTooltip")}
               >
                 <PencilIcon className="h-[14px] w-[14px]" />
@@ -1789,7 +1832,11 @@ function UserConversationMessageCard({
 }
 
 function UserMessageChip({ label }: { label: string }) {
-  return <span className="app-text-muted text-[12px]">{label}</span>;
+  return (
+    <span className="app-user-message-chip rounded-full px-2.5 py-0.5 text-[11px] leading-5">
+      {label}
+    </span>
+  );
 }
 
 function resolveUserMessageStatusLabel(

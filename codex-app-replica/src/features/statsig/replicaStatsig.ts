@@ -25,9 +25,25 @@ const GATE_GIT_PR_MERGE_METHOD = "2764989143";
 const GATE_GIT_HIDE_SIDEBAR_PR_ICONS = "2553306736";
 const GATE_REMOTE_CONNECTIONS_HOME_BANNER = "4114442250";
 const GATE_REMOTE_CONTROL_VISIBILITY = "1042620455";
+const GATE_AGENT_EXPERIMENTAL_FEATURES = "2106641128";
 const GATE_GUARDIAN_APPROVAL = "3902016271";
+const GATE_WORKSPACE_ONBOARDING_WELCOME_V2_DEFAULT_FLOW = "3979170498";
+const STATSIG_RUNTIME_LAYER = "2096615506";
+const STATSIG_DEFAULT_FEATURE_NAMES = [
+  "apps",
+  "memories",
+  "plugins",
+  "tool_call_mcp_elicitation",
+  "tool_search",
+  "tool_suggest",
+  "workspace_dependencies",
+] as const;
 
-export type ReplicaStatsigDefaultFeatures = {
+type StatsigDefaultFeatureName = (typeof STATSIG_DEFAULT_FEATURE_NAMES)[number];
+
+type ReplicaStatsigSharedDefaultFeatures = Record<StatsigDefaultFeatureName, boolean>;
+
+export type ReplicaStatsigDefaultFeatures = ReplicaStatsigSharedDefaultFeatures & {
   guardian_approval: boolean;
 };
 
@@ -50,7 +66,14 @@ type StatsigFetchValuesParams = {
 
 const INITIAL_STATE: ReplicaStatsigState = {
   defaultFeatures: {
+    apps: false,
     guardian_approval: false,
+    memories: false,
+    plugins: false,
+    tool_call_mcp_elicitation: false,
+    tool_search: false,
+    tool_suggest: false,
+    workspace_dependencies: false,
   },
   error: null,
   gates: {},
@@ -62,6 +85,7 @@ let currentState: ReplicaStatsigState = INITIAL_STATE;
 const listeners = new Set<() => void>();
 
 export const REPLICA_STATSIG_GATES = {
+  agentExperimentalFeatures: GATE_AGENT_EXPERIMENTAL_FEATURES,
   ambientSuggestions: GATE_AMBIENT_SUGGESTIONS,
   chronicle: GATE_CHRONICLE,
   codexMobileHomeBanner: GATE_CODEx_MOBILE_HOME_BANNER,
@@ -77,6 +101,8 @@ export const REPLICA_STATSIG_GATES = {
   personality: GATE_PERSONALITY,
   remoteControlVisibility: GATE_REMOTE_CONTROL_VISIBILITY,
   remoteConnectionsHomeBanner: GATE_REMOTE_CONNECTIONS_HOME_BANNER,
+  workspaceOnboardingWelcomeV2DefaultFlow:
+    GATE_WORKSPACE_ONBOARDING_WELCOME_V2_DEFAULT_FLOW,
 } as const;
 
 function emitStateChanged() {
@@ -167,8 +193,19 @@ export function useReplicaStatsigOwner(authSnapshot: AuthSnapshot) {
           return;
         }
         const gates = extractGateValues(response);
+        const sharedDefaultFeatures = extractSharedDefaultFeatures(
+          response,
+          currentState.defaultFeatures,
+        );
+        void invoke("sync-primary-runtime-shared-objects", {
+          params: {
+            codexRuntimesConfig: extractCodexRuntimesConfig(response),
+            statsigDefaultEnableFeatures: sharedDefaultFeatures,
+          },
+        }).catch(() => undefined);
         setState({
           defaultFeatures: {
+            ...sharedDefaultFeatures,
             guardian_approval: gates[GATE_GUARDIAN_APPROVAL] === true,
           },
           error: null,
@@ -304,6 +341,59 @@ function extractGateValues(response: unknown) {
   );
 }
 
+function extractCodexRuntimesConfig(response: unknown) {
+  const runtimeLayer = readNamedValueCollection(response, "layer_configs")[
+    STATSIG_RUNTIME_LAYER
+  ]?.value;
+  if (!isPlainObject(runtimeLayer)) {
+    return null;
+  }
+
+  return {
+    runtimes: {
+      "codex-primary-runtime": runtimeLayer,
+    },
+  };
+}
+
+function extractSharedDefaultFeatures(
+  response: unknown,
+  fallback: ReplicaStatsigDefaultFeatures,
+): ReplicaStatsigSharedDefaultFeatures {
+  const source = readStatsigDefaultEnableFeaturesSource(response);
+  return Object.fromEntries(
+    STATSIG_DEFAULT_FEATURE_NAMES.map((featureName) => [
+      featureName,
+      source?.[featureName] === true ? true : fallback[featureName] === true,
+    ]),
+  ) as ReplicaStatsigSharedDefaultFeatures;
+}
+
+function readStatsigDefaultEnableFeaturesSource(response: unknown) {
+  const rootValue =
+    isPlainObject(response) &&
+    isPlainObject(response.statsig_default_enable_features)
+      ? response.statsig_default_enable_features
+      : isPlainObject(response) && isPlainObject(response.default_enable_features)
+        ? response.default_enable_features
+        : null;
+  if (rootValue !== null) {
+    return rootValue;
+  }
+
+  const dynamicValue = readNamedValueCollection(response, "dynamic_configs")[
+    "statsig_default_enable_features"
+  ]?.value;
+  if (isPlainObject(dynamicValue)) {
+    return dynamicValue;
+  }
+
+  const layerValue = readNamedValueCollection(response, "layer_configs")[
+    "statsig_default_enable_features"
+  ]?.value;
+  return isPlainObject(layerValue) ? layerValue : null;
+}
+
 function readNamedValueCollection(
   root: unknown,
   key: "feature_gates" | "layer_configs" | "dynamic_configs",
@@ -361,6 +451,10 @@ function readNamedValueCollection(
       ] as const;
     }),
   );
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function normalizeOptionalString(value: unknown) {

@@ -1,10 +1,22 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import type { MessageKey } from "../../i18n/messages";
 import { openFile, openInBrowser, readFileBinary } from "../../services/hostFiles";
+import type {
+  ThreadConversationUserComment,
+  ThreadConversationUserCommentPageSize,
+  ThreadConversationUserInputComment,
+} from "../../services/history";
 import type { WorkspaceFileDocument } from "../../services/workspaceFiles";
 import { ChevronDownIcon, CloseTabIcon, FolderIcon } from "../../components/AppShellIcons";
 import { Button } from "../../components/Button";
 import { Spinner } from "../../components/Spinner";
+import {
+  filterPendingPdfCommentsForPath,
+  getNextPdfCommentNumber,
+  removePendingPdfCommentsForPath,
+  type PendingPdfCommentAttachment,
+} from "./pdfCommentAttachments";
+import { PdfCommentLayer } from "./PdfCommentLayer";
 
 type PdfViewport = {
   height: number;
@@ -72,14 +84,26 @@ type PdfLinkService = {
 };
 
 type PdfPreviewPanelProps = {
+  comments?: ThreadConversationUserComment[];
   file: WorkspaceFileDocument;
+  fileDataUrl?: string | null;
+  headerRightContent?: ReactNode;
+  hostId?: string | null;
+  onPendingPdfCommentsChange?: ((
+    update: (current: PendingPdfCommentAttachment[]) => PendingPdfCommentAttachment[],
+  ) => void) | null;
+  onSubmitPdfComment?: ((comment: ThreadConversationUserInputComment) => Promise<void>) | null;
+  pendingPdfComments?: PendingPdfCommentAttachment[];
+  path?: string;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
   testMode?: PdfPreviewPanelTestMode;
+  title?: string;
 };
 
 type PdfPreviewPanelTestMode =
   | {
       kind: "ready";
+      commentMode?: boolean;
       currentPage?: number;
       invertColors?: boolean;
       numPages?: number;
@@ -115,13 +139,27 @@ let pdfModulePromise: Promise<PdfModule> | null = null;
 const pdfModuleUrl = new URL("../../assets/pdf/pdf-C4JubaMy.js", import.meta.url).href;
 const pdfWorkerUrl = new URL("../../assets/pdf/pdf.worker.min-qwK7q_zL.mjs", import.meta.url).href;
 
-export function PdfPreviewPanel({ file, t, testMode }: PdfPreviewPanelProps) {
-  const [fileDataUrl, setFileDataUrl] = useState<string | null>(null);
+export function PdfPreviewPanel({
+  comments = [],
+  file,
+  fileDataUrl: providedFileDataUrl = null,
+  headerRightContent = null,
+  hostId,
+  onPendingPdfCommentsChange = null,
+  onSubmitPdfComment = null,
+  pendingPdfComments = [],
+  path,
+  t,
+  testMode,
+  title: providedTitle,
+}: PdfPreviewPanelProps) {
+  const [fileDataUrl, setFileDataUrl] = useState<string | null>(providedFileDataUrl);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [pdfDocument, setPdfDocument] = useState<PdfDocumentProxy | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [zoomMode, setZoomMode] = useState<ZoomMode>({ kind: "fit" });
+  const [isCommentMode, setIsCommentMode] = useState(testMode?.kind === "ready" ? testMode.commentMode ?? false : false);
   const [isZoomMenuOpen, setIsZoomMenuOpen] = useState(false);
   const [isPresentationOpen, setIsPresentationOpen] = useState(testMode?.kind === "presentation");
   const [presentationPage, setPresentationPage] = useState(testMode?.kind === "presentation" ? testMode.currentPage ?? 1 : 1);
@@ -133,10 +171,32 @@ export function PdfPreviewPanel({ file, t, testMode }: PdfPreviewPanelProps) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const contentContainerRef = useRef<HTMLDivElement | null>(null);
   const zoomMenuRef = useRef<HTMLDivElement | null>(null);
+  const previewHostId = hostId ?? file.hostId ?? null;
+  const previewPath = path ?? file.path;
+  const pathPendingPdfComments = useMemo(
+    () => filterPendingPdfCommentsForPath(pendingPdfComments, previewPath),
+    [pendingPdfComments, previewPath],
+  );
 
   useEffect(() => {
     setIsPresentationOpen(testMode?.kind === "presentation");
   }, [testMode]);
+
+  useEffect(() => {
+    setIsCommentMode(testMode?.kind === "ready" ? testMode.commentMode ?? false : false);
+  }, [previewPath, testMode]);
+
+  useEffect(() => {
+    if (onPendingPdfCommentsChange == null) {
+      return;
+    }
+
+    return () => {
+      onPendingPdfCommentsChange((current) =>
+        removePendingPdfCommentsForPath(current, previewPath),
+      );
+    };
+  }, [onPendingPdfCommentsChange, previewPath]);
 
   useEffect(() => {
     if (testMode?.kind === "presentation") {
@@ -178,7 +238,14 @@ export function PdfPreviewPanel({ file, t, testMode }: PdfPreviewPanelProps) {
     setFirstPageSize(null);
     setZoomMode({ kind: "fit" });
 
-    void readFileBinary({ path: file.path })
+    if (providedFileDataUrl != null) {
+      setFileDataUrl(providedFileDataUrl);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    void readFileBinary({ hostId: previewHostId, path: previewPath })
       .then((response) => {
         if (cancelled) {
           return;
@@ -194,7 +261,7 @@ export function PdfPreviewPanel({ file, t, testMode }: PdfPreviewPanelProps) {
     return () => {
       cancelled = true;
     };
-  }, [file.path, testMode]);
+  }, [previewHostId, previewPath, providedFileDataUrl, testMode]);
 
   useEffect(() => {
     if (testMode != null) {
@@ -437,12 +504,23 @@ export function PdfPreviewPanel({ file, t, testMode }: PdfPreviewPanelProps) {
     return Math.max(1, Math.round(firstPageSize.height * scale));
   }, [firstPageSize, zoomPercent]);
 
-  const title = useMemo(() => {
+  const resolvedTitle = useMemo(() => {
+    if (providedTitle != null) {
+      return providedTitle;
+    }
     if (testMode?.kind === "presentation" && testMode.title != null) {
       return testMode.title;
     }
     return file.name.replace(/\.pdf$/i, "");
-  }, [file.name, testMode]);
+  }, [file.name, providedTitle, testMode]);
+  const nextCommentNumber = useMemo(
+    () =>
+      getNextPdfCommentNumber({
+        comments,
+        pendingPdfComments: pathPendingPdfComments,
+      }),
+    [comments, pathPendingPdfComments],
+  );
 
   const effectiveNumPages = testMode?.kind === "presentation"
     ? Math.max(testMode.numPages ?? 3, 1)
@@ -462,6 +540,7 @@ export function PdfPreviewPanel({ file, t, testMode }: PdfPreviewPanelProps) {
     testMode?.kind === "presentation" ? testMode.currentPage ?? 1 : presentationPage,
     Math.max(numPages, 1),
   );
+  const effectiveCommentPageCount = Math.max(effectiveNumPages, 1);
 
   if (testMode?.kind === "presentation") {
     return (
@@ -482,7 +561,7 @@ export function PdfPreviewPanel({ file, t, testMode }: PdfPreviewPanelProps) {
         pdfDocument={null}
         rootRef={presentationRootRef}
         t={t}
-        title={title}
+        title={resolvedTitle}
       />
     );
   }
@@ -492,7 +571,7 @@ export function PdfPreviewPanel({ file, t, testMode }: PdfPreviewPanelProps) {
       <section className="flex h-full min-h-0 flex-col bg-token-side-bar-background">
         <header className="grid h-toolbar-pane shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(max-content,1fr)] items-center gap-2 overflow-hidden border-b border-token-border-light bg-token-main-surface-primary pr-2 pl-4">
           <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
-            <h2 className="truncate text-sm leading-5 font-medium tracking-[-0.18px] text-token-text-primary">{title}</h2>
+            <h2 className="truncate text-sm leading-5 font-medium tracking-[-0.18px] text-token-text-primary">{resolvedTitle}</h2>
             <span className="shrink-0 text-sm leading-5 text-token-text-tertiary">PDF</span>
           </div>
           <div className="min-w-0 justify-self-center">
@@ -522,6 +601,11 @@ export function PdfPreviewPanel({ file, t, testMode }: PdfPreviewPanelProps) {
           </div>
           <div className="flex min-w-0 justify-end overflow-hidden">
             <div className="flex min-w-0 items-center gap-1 overflow-hidden">
+              <PdfAnnotateToggleButton
+                active={isCommentMode}
+                onClick={() => setIsCommentMode((current) => !current)}
+                t={t}
+              />
               <Button color="ghost" size="toolbar" className="shrink-0 gap-1 rounded-md px-1.5 text-sm">
                 <span className="tabular-nums">{t("artifactTab.preview.zoomPercent", { zoomPercent: 100 })}</span>
                 <ChevronDownIcon className="icon-2xs" />
@@ -531,23 +615,42 @@ export function PdfPreviewPanel({ file, t, testMode }: PdfPreviewPanelProps) {
                 color="outline"
                 size="toolbar"
                 className="shrink-0 rounded-md !border-token-border-default bg-token-main-surface-primary px-2 text-sm text-token-text-primary hover:text-token-text-primary"
+                onClick={() => {
+                  void openFile({
+                    hostId: previewHostId,
+                    path: previewPath,
+                    target: "fileManager",
+                  });
+                }}
               >
                 <FolderIcon className="icon-2xs" />
                 <span>{t("artifactTab.preview.open")}</span>
               </Button>
+              {headerRightContent}
             </div>
           </div>
         </header>
-        <div aria-label={file.name} className="min-h-0 flex-1 overflow-auto bg-token-side-bar-background">
+        <div aria-label={resolvedTitle} className="min-h-0 flex-1 overflow-auto bg-token-side-bar-background">
           <div className="min-h-full pt-6" style={{ paddingBottom: PAGE_GAP_PX }}>
             <div className="flex min-h-full w-max min-w-full flex-col items-center gap-6 px-6">
               {Array.from({ length: effectiveNumPages }, (_, index) => (
                 <PdfPlaceholderPage
+                  comments={comments}
                   key={index + 1}
+                  isCommentMode={isCommentMode}
                   invertColors={invertColors}
+                  nextCommentNumber={nextCommentNumber}
+                  onPendingPdfCommentsChange={onPendingPdfCommentsChange}
+                  onSubmitPdfComment={onSubmitPdfComment}
                   pageHeight={effectivePageHeight}
+                  pageCount={effectiveCommentPageCount}
                   pageNumber={index + 1}
+                  path={previewPath}
+                  pendingPdfComments={pathPendingPdfComments}
+                  pageSize={{ height: effectivePageHeight, width: effectivePageWidth }}
                   pageWidth={effectivePageWidth}
+                  t={t}
+                  title={resolvedTitle}
                 />
               ))}
             </div>
@@ -578,13 +681,13 @@ export function PdfPreviewPanel({ file, t, testMode }: PdfPreviewPanelProps) {
           pdfDocument={pdfDocument}
           rootRef={presentationRootRef}
           t={t}
-          title={title}
+          title={resolvedTitle}
         />
       ) : loadState === "ready" && pdfDocument != null ? (
         <>
           <header className="grid h-toolbar-pane shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(max-content,1fr)] items-center gap-2 overflow-hidden border-b border-token-border-light bg-token-main-surface-primary pr-2 pl-4">
             <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
-              <h2 className="truncate text-sm leading-5 font-medium tracking-[-0.18px] text-token-text-primary">{title}</h2>
+              <h2 className="truncate text-sm leading-5 font-medium tracking-[-0.18px] text-token-text-primary">{resolvedTitle}</h2>
               <span className="shrink-0 text-sm leading-5 text-token-text-tertiary">PDF</span>
             </div>
             <div className="min-w-0 justify-self-center">
@@ -616,6 +719,11 @@ export function PdfPreviewPanel({ file, t, testMode }: PdfPreviewPanelProps) {
             </div>
             <div className="flex min-w-0 justify-end overflow-hidden">
               <div className="flex min-w-0 items-center gap-1 overflow-hidden" ref={zoomMenuRef}>
+                <PdfAnnotateToggleButton
+                  active={isCommentMode}
+                  onClick={() => setIsCommentMode((current) => !current)}
+                  t={t}
+                />
                 <div className="relative">
                   <Button
                     color="ghost"
@@ -674,7 +782,8 @@ export function PdfPreviewPanel({ file, t, testMode }: PdfPreviewPanelProps) {
                   className="shrink-0 rounded-md !border-token-border-default bg-token-main-surface-primary px-2 text-sm text-token-text-primary hover:text-token-text-primary"
                   onClick={() => {
                     void openFile({
-                      path: file.path,
+                      hostId: previewHostId,
+                      path: previewPath,
                       target: "fileManager",
                     });
                   }}
@@ -682,23 +791,34 @@ export function PdfPreviewPanel({ file, t, testMode }: PdfPreviewPanelProps) {
                   <FolderIcon className="icon-2xs" />
                   <span>{t("artifactTab.preview.open")}</span>
                 </Button>
+                {headerRightContent}
               </div>
             </div>
           </header>
-          <div ref={scrollContainerRef} aria-label={file.name} className="min-h-0 flex-1 overflow-auto bg-token-side-bar-background">
+          <div ref={scrollContainerRef} aria-label={resolvedTitle} className="min-h-0 flex-1 overflow-auto bg-token-side-bar-background">
             <div ref={contentContainerRef} className="min-h-full pt-6" style={{ paddingBottom: PAGE_GAP_PX }}>
               <div className="flex min-h-full w-max min-w-full flex-col items-center gap-6 px-6">
                 {Array.from({ length: numPages }, (_, index) => {
                   const pageNumber = index + 1;
                   return (
                     <PdfPageCanvas
+                      comments={comments}
                       key={pageNumber}
+                      isCommentMode={isCommentMode}
                       invertColors={invertColors}
+                      nextCommentNumber={nextCommentNumber}
+                      onPendingPdfCommentsChange={onPendingPdfCommentsChange}
+                      onSubmitPdfComment={onSubmitPdfComment}
                       pageHeight={pageHeight}
+                      pageCount={effectiveCommentPageCount}
                       pageNumber={pageNumber}
+                      path={previewPath}
+                      pendingPdfComments={pathPendingPdfComments}
                       pageWidth={pageWidth}
                       pdfDocument={pdfDocument}
                       scale={zoomPercent / 100}
+                      t={t}
+                      title={resolvedTitle}
                       onOpenExternalLink={(url) => {
                         void openInBrowser(url);
                       }}
@@ -743,22 +863,88 @@ export function PdfPreviewPanel({ file, t, testMode }: PdfPreviewPanelProps) {
   }
 }
 
+function PdfAnnotateToggleButton({
+  active,
+  onClick,
+  t,
+}: {
+  active: boolean;
+  onClick: () => void;
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+}) {
+  const label = active ? t("artifactPdfPreview.annotating") : t("artifactPdfPreview.annotate");
+
+  return (
+    <Button
+      aria-label={label}
+      color={active ? "secondary" : "ghost"}
+      size="toolbar"
+      className="shrink-0 gap-1 rounded-md px-2 text-sm"
+      onClick={onClick}
+    >
+      <PdfCommentMarkerIcon className="icon-sm shrink-0" />
+      <span>{label}</span>
+    </Button>
+  );
+}
+
+function PdfCommentMarkerIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      viewBox="0 0 26 25"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M12.6504 0.824799C6.21496 0.824799 0.825466 5.77554 0.825195 12.0885C0.825245 14.2375 1.46183 16.2421 2.55176 17.943L2.02148 20.235L1.99316 20.3756C1.77603 21.655 2.78945 22.7791 4.02832 22.7691L4.0791 22.8209L4.53418 22.7047L7.12305 22.0426C8.77593 22.8778 10.6577 23.3531 12.6504 23.3531C19.086 23.3531 24.4754 18.4014 24.4756 12.0885C24.4753 5.77554 19.0858 0.824799 12.6504 0.824799Z"
+        fill="currentColor"
+        stroke="white"
+        strokeWidth="1.65"
+      />
+    </svg>
+  );
+}
+
 function PdfPageCanvas({
+  comments = [],
+  isCommentMode = false,
   invertColors = false,
+  nextCommentNumber = 1,
   onOpenExternalLink,
+  onPendingPdfCommentsChange = null,
+  onSubmitPdfComment = null,
   pageHeight,
+  pageCount,
   pageNumber,
+  path,
+  pendingPdfComments = [],
   pageWidth,
   pdfDocument,
   scale,
+  t,
+  title,
 }: {
+  comments?: ThreadConversationUserComment[];
+  isCommentMode?: boolean;
   invertColors?: boolean;
+  nextCommentNumber?: number;
   onOpenExternalLink: (url: string) => void;
+  onPendingPdfCommentsChange?: ((
+    update: (current: PendingPdfCommentAttachment[]) => PendingPdfCommentAttachment[],
+  ) => void) | null;
+  onSubmitPdfComment?: ((comment: ThreadConversationUserInputComment) => Promise<void>) | null;
   pageHeight: number;
+  pageCount: number;
   pageNumber: number;
+  path: string;
+  pendingPdfComments?: PendingPdfCommentAttachment[];
   pageWidth: number;
   pdfDocument: PdfDocumentProxy;
   scale: number;
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+  title: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const annotationLayerRef = useRef<HTMLDivElement | null>(null);
@@ -895,6 +1081,13 @@ function PdfPageCanvas({
   const viewportWidth = baseViewport?.width ?? 0;
   const viewportHeight = baseViewport?.height ?? 0;
   const cssScale = viewportWidth > 0 ? pageWidth / viewportWidth : 1;
+  const pageSize = useMemo<ThreadConversationUserCommentPageSize>(
+    () => ({
+      height: Math.max(1, Math.round(baseViewport?.height ?? pageHeight)),
+      width: Math.max(1, Math.round(baseViewport?.width ?? pageWidth)),
+    }),
+    [baseViewport?.height, baseViewport?.width, pageHeight, pageWidth],
+  );
 
   return (
     <div
@@ -915,6 +1108,23 @@ function PdfPageCanvas({
     >
       <canvas ref={canvasRef} className="absolute inset-0 size-full" />
       <div ref={annotationLayerRef} className="annotationLayer" />
+      <PdfCommentLayer
+        comments={comments}
+        isCommentMode={isCommentMode}
+        nextCommentNumber={nextCommentNumber}
+        onPendingPdfCommentsChange={onPendingPdfCommentsChange}
+        onSubmitPdfComment={onSubmitPdfComment}
+        pageCanvas={canvasRef.current}
+        pageHeight={pageHeight}
+        pageCount={pageCount}
+        pageNumber={pageNumber}
+        path={path}
+        pendingPdfComments={pendingPdfComments}
+        pageSize={pageSize}
+        pageWidth={pageWidth}
+        t={t}
+        title={title}
+      />
     </div>
   );
 }
@@ -1013,18 +1223,29 @@ function PdfPresentationOverlay({
           <PdfPlaceholderPage
             invertColors={invertColors}
             pageHeight={pageHeight}
+            pageCount={numPages}
             pageNumber={clampedCurrentPage}
+            path=""
+            pendingPdfComments={[]}
+            pageSize={{ height: pageHeight, width: pageWidth }}
             pageWidth={pageWidth}
+            t={t}
+            title={title}
           />
         ) : (
           <PdfPageCanvas
             invertColors={invertColors}
             onOpenExternalLink={onOpenExternalLink}
             pageHeight={pageHeight}
+            pageCount={numPages}
             pageNumber={clampedCurrentPage}
+            path=""
+            pendingPdfComments={[]}
             pageWidth={pageWidth}
             pdfDocument={pdfDocument}
             scale={1}
+            t={t}
+            title={title}
           />
         )}
       </div>
@@ -1072,15 +1293,39 @@ function PdfPresentationOverlay({
 }
 
 function PdfPlaceholderPage({
+  comments = [],
+  isCommentMode = false,
   invertColors = false,
+  nextCommentNumber = 1,
+  onPendingPdfCommentsChange = null,
+  onSubmitPdfComment = null,
   pageHeight,
+  pageCount,
   pageNumber,
+  path,
+  pendingPdfComments = [],
+  pageSize,
   pageWidth,
+  t,
+  title,
 }: {
+  comments?: ThreadConversationUserComment[];
+  isCommentMode?: boolean;
   invertColors?: boolean;
+  nextCommentNumber?: number;
+  onPendingPdfCommentsChange?: ((
+    update: (current: PendingPdfCommentAttachment[]) => PendingPdfCommentAttachment[],
+  ) => void) | null;
+  onSubmitPdfComment?: ((comment: ThreadConversationUserInputComment) => Promise<void>) | null;
   pageHeight: number;
+  pageCount: number;
   pageNumber: number;
+  path: string;
+  pendingPdfComments?: PendingPdfCommentAttachment[];
+  pageSize: ThreadConversationUserCommentPageSize;
   pageWidth: number;
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+  title: string;
 }) {
   return (
     <div
@@ -1101,6 +1346,23 @@ function PdfPlaceholderPage({
       }
     >
       <div className="absolute inset-0 bg-white" />
+      <PdfCommentLayer
+        comments={comments}
+        isCommentMode={isCommentMode}
+        nextCommentNumber={nextCommentNumber}
+        onPendingPdfCommentsChange={onPendingPdfCommentsChange}
+        onSubmitPdfComment={onSubmitPdfComment}
+        pageCanvas={null}
+        pageHeight={pageHeight}
+        pageCount={pageCount}
+        pageNumber={pageNumber}
+        path={path}
+        pendingPdfComments={pendingPdfComments}
+        pageSize={pageSize}
+        pageWidth={pageWidth}
+        t={t}
+        title={title}
+      />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export type AutomationStatus = "ACTIVE" | "PAUSED" | "DELETED";
+export type AutomationInboxItemStatus = "IN_PROGRESS" | "ARCHIVED" | null;
 export type AutomationDeleteStatus =
   | "deleted"
   | "not_found"
@@ -54,6 +55,18 @@ export type SaveAutomationParams = {
 export type AutomationThreadRunResult = {
   threadId: string;
   turnId: string;
+};
+
+export type AutomationInboxItem = {
+  id: string;
+  automationId: string;
+  automationName: string | null;
+  title: string | null;
+  sourceCwd: string | null;
+  threadId: string | null;
+  readAt: number | null;
+  createdAt: number;
+  status: AutomationInboxItemStatus;
 };
 
 export type AutomationDeleteResult = {
@@ -127,6 +140,19 @@ export async function deleteAutomationCompat(id: string) {
 
 export async function runAutomationNow(id: string) {
   return invoke<AutomationThreadRunResult>("run_automation_now", { params: { id } });
+}
+
+export async function listInboxItems(limit = 200) {
+  const response = await invoke<{ items: AutomationInboxItem[] }>("inbox-items", {
+    params: { limit },
+  });
+  return response.items;
+}
+
+export async function setInboxItemReadState(id: string, isRead: boolean) {
+  return invoke<void>("inbox-item-set-read-state", {
+    params: { id, isRead },
+  });
 }
 
 export async function notifyHeartbeatAutomationThreadStateChanged(

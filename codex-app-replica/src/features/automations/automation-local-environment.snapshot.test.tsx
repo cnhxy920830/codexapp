@@ -67,6 +67,8 @@ function buildSnapshots(): SnapshotMap {
             feedback={null}
             hasConnectedRemoteConnections={false}
             heartbeatThreadOptions={[]}
+            inboxItems={[]}
+            isInboxItemsLoading={false}
             isSaving={false}
             lastRunLabel="Yesterday at 9:41 AM"
             localEnvironmentState={localEnvironmentState}
@@ -75,7 +77,10 @@ function buildSnapshots(): SnapshotMap {
             nextRunLabel="Tomorrow at 8:30 AM"
             onClearDraft={noop}
             onDraftChange={noopDraftChange}
+            onOpenThread={noopOpenThread}
+            onSetInboxItemReadState={noopSetInboxItemReadState}
             onOpenLocalEnvironmentsSettings={noopOpenSettings}
+            threadTitleById={new Map()}
             workspaceRootOptions={["D:\\workspace\\codex-app"]}
             workspaceRootLabels={{
               "D:\\workspace\\codex-app": "codex-app",
@@ -93,6 +98,8 @@ function buildSnapshots(): SnapshotMap {
             feedback={null}
             hasConnectedRemoteConnections
             heartbeatThreadOptions={[]}
+            inboxItems={[]}
+            isInboxItemsLoading={false}
             isSaving={false}
             lastRunLabel="Yesterday at 9:41 AM"
             localEnvironmentState={localEnvironmentState}
@@ -101,7 +108,10 @@ function buildSnapshots(): SnapshotMap {
             nextRunLabel="Tomorrow at 8:30 AM"
             onClearDraft={noop}
             onDraftChange={noopDraftChange}
+            onOpenThread={noopOpenThread}
+            onSetInboxItemReadState={noopSetInboxItemReadState}
             onOpenLocalEnvironmentsSettings={noopOpenSettings}
+            threadTitleById={new Map()}
             workspaceRootOptions={["D:\\workspace\\codex-app"]}
             workspaceRootLabels={{
               "D:\\workspace\\codex-app": "codex-app",
@@ -255,6 +265,8 @@ function formatMessage(template: string, values?: MessageValues) {
 const noop = () => {};
 const noopLocale = async (_locale: LocaleCode) => {};
 const noopConfigPathChange = (_configPath: string | null) => {};
+const noopOpenThread = async (_threadId: string) => {};
+const noopSetInboxItemReadState = async (_id: string, _isRead: boolean) => {};
 const noopOpenSettings = (_params: {
   configPath: string | null;
   workspaceRoot: string;

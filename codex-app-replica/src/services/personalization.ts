@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { batchWriteConfigValueForHost } from "./settings";
 
 export type WorkspaceAgentsMdDocument = {
   path: string;
@@ -53,9 +54,54 @@ export async function listExperimentalFeatures() {
   return invoke<ExperimentalFeature[]>("list_experimental_features");
 }
 
+export async function listExperimentalFeaturesForHost(hostId?: string | null) {
+  return invoke<ExperimentalFeature[]>("list-experimental-features-for-host", {
+    params: {
+      hostId,
+    },
+  });
+}
+
 export async function setExperimentalFeatureEnablement(enablement: Record<string, boolean>) {
   return invoke<void>("set_experimental_feature_enablement", {
     params: { enablement },
+  });
+}
+
+export async function setLocalAppServerFeatureEnablement(params: {
+  featureName: string;
+  enabled: boolean;
+}) {
+  return invoke<void>("set-local-app-server-feature-enablement", {
+    params,
+  });
+}
+
+export async function setExperimentalFeatureForHost(
+  hostId: string | null | undefined,
+  featureName: string,
+  enabled: boolean,
+) {
+  const normalizedHostId = hostId ?? "local";
+  if (normalizedHostId === "local" && featureName === "remote_control") {
+    await setLocalAppServerFeatureEnablement({
+      featureName,
+      enabled,
+    });
+    return;
+  }
+
+  await batchWriteConfigValueForHost({
+    hostId: normalizedHostId,
+    edits: [
+      {
+        keyPath: buildExperimentalFeatureConfigKeyPath(featureName),
+        value: enabled,
+        mergeStrategy: "upsert",
+      },
+    ],
+    filePath: null,
+    expectedVersion: null,
   });
 }
 
@@ -65,4 +111,10 @@ export async function resetMemories() {
 
 export async function readChroniclePermissions() {
   return invoke<ChroniclePermissionsResponse>("chronicle-permissions");
+}
+
+function buildExperimentalFeatureConfigKeyPath(featureName: string) {
+  return featureName.startsWith("features.")
+    ? featureName
+    : `features.${featureName}`;
 }

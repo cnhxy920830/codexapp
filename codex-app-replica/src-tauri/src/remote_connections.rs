@@ -427,6 +427,10 @@ pub async fn get_shared_object_snapshot(
         });
     }
 
+    if let Some(value) = crate::primary_runtime::shared_object_snapshot(&app, &key) {
+        return Ok(SharedObjectSnapshotResponse { value });
+    }
+
     let value = tauri::async_runtime::spawn_blocking(move || {
         shared_object_snapshot_value_blocking(&app, &key)
     })

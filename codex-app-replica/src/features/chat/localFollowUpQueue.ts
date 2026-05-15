@@ -1,7 +1,10 @@
+import type { ThreadConversationUserInput } from "../../services/history";
+
 export type QueuedLocalFollowUp = {
   id: string;
   threadId: string;
   cwd: string | null;
+  input?: ThreadConversationUserInput[] | null;
   text: string;
 };
 

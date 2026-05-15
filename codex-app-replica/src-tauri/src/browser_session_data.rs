@@ -9,34 +9,29 @@
 //!
 //! ## Replica reality
 //!
-//! The replica does not yet host a separate browser-sidebar `WebViewWindow`
-//! with its own `UserDataFolder`, so the Electron `persist:codex-browser-*`
-//! partition family has no installed counterpart at runtime. On a system that
-//! has never opened the browser sidebar, upstream's
-//! `partition.session.clearStorageData(...)` is itself effectively a no-op
-//! against a non-existent storage volume — there is nothing to clear.
+//! The replica now hosts a dedicated browser-sidebar child webview that uses
+//! the same fixed `codex-browser-partitions/app` relative data directory wired
+//! in `browser_sidebar.rs`. This owner still mirrors upstream with a direct
+//! on-disk clear pass over that isolated profile instead of calling WebView2
+//! profile APIs.
 //!
 //! This implementation honors the page-owned desktop bridge contract:
 //!
 //! 1. deserialize the extracted `dataTypes` array shape,
-//! 2. resolve the future `UserDataFolder` for the fixed `app` partition
-//!    (without creating it),
+//! 2. resolve the browser-sidebar profile storage directory for the fixed
+//!    `app` partition (without creating it),
 //! 3. if the folder exists, attempt to clear the matching subdirectories;
 //!    otherwise return success (faithful "no-op against empty partition"),
 //! 4. respond with `{ ok: true }` to satisfy the page's promise.
-//!
-//! When the browser sidebar surface lands, this owner becomes the natural
-//! seam to call `WebView2.Profile.ClearBrowsingDataAsync(...)` once the
-//! sidebar's profile is wired up.
 
+use crate::browser_sidebar::browser_sidebar_partition_relative_dir;
+use crate::browser_sidebar::BROWSER_SIDEBAR_LABEL;
 use serde::Deserialize;
 use serde::Serialize;
 use std::path::Path;
 use std::path::PathBuf;
 use tauri::AppHandle;
 use tauri::Manager;
-
-const PARTITION_ROOT_DIR: &str = "codex-browser-partitions";
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -75,12 +70,12 @@ pub fn browser_browsing_data_clear(
     app: AppHandle,
     params: BrowserBrowsingDataClearParams,
 ) -> Result<BrowserBrowsingDataClearResponse, String> {
-    let app_data_dir = app
+    let local_data_dir = app
         .path()
-        .app_data_dir()
-        .map_err(|err| format!("failed to resolve app data dir: {err}"))?;
+        .local_data_dir()
+        .map_err(|err| format!("failed to resolve local data dir: {err}"))?;
 
-    let partition_dir = app_partition_dir(&app_data_dir);
+    let partition_dir = app_partition_dir(&local_data_dir);
     if !partition_dir.exists() {
         // Faithful no-op: upstream `clearStorageData` is itself a no-op when
         // the partition has never been materialized.
@@ -100,8 +95,10 @@ pub fn browser_browsing_data_clear(
     Ok(BrowserBrowsingDataClearResponse { ok: true })
 }
 
-fn app_partition_dir(app_data_dir: &Path) -> PathBuf {
-    app_data_dir.join(PARTITION_ROOT_DIR).join("app")
+fn app_partition_dir(local_data_dir: &Path) -> PathBuf {
+    local_data_dir
+        .join(BROWSER_SIDEBAR_LABEL)
+        .join(browser_sidebar_partition_relative_dir())
 }
 
 fn clear_partition_subdirs(partition_dir: &Path, subdirs: &[&str]) -> Result<(), String> {
@@ -177,11 +174,13 @@ mod tests {
     }
 
     #[test]
-    fn app_partition_dir_uses_fixed_app_partition() {
-        let app_data_dir = PathBuf::from(r"C:\tmp\codex-app-replica");
+    fn app_partition_dir_uses_browser_sidebar_storage_root() {
+        let local_data_dir = PathBuf::from(r"C:\tmp\local-app-data");
         assert_eq!(
-            app_partition_dir(&app_data_dir),
-            app_data_dir.join(PARTITION_ROOT_DIR).join("app")
+            app_partition_dir(&local_data_dir),
+            local_data_dir
+                .join(BROWSER_SIDEBAR_LABEL)
+                .join(browser_sidebar_partition_relative_dir())
         );
     }
 

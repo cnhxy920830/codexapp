@@ -1,4 +1,8 @@
 use crate::auth_bridge::PermissionProfilePayload;
+use crate::automation_run_history::attach_automation_run_history_thread_id;
+use crate::automation_run_history::create_automation_run_history_item;
+use crate::automation_run_history::delete_automation_run_history_item;
+use crate::automation_run_history::NewAutomationRunHistoryItem;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -9,6 +13,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
+use tauri::AppHandle;
 use tauri::State;
 use tokio::time::interval_at;
 use tokio::time::Duration;
@@ -350,22 +355,25 @@ pub fn automation_delete_command(
 
 #[tauri::command]
 pub async fn run_automation_now(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: AutomationIdParams,
 ) -> Result<AutomationThreadRunResult, String> {
-    run_automation_now_inner(state.inner(), params).await
+    run_automation_now_inner(&app, state.inner(), params).await
 }
 
 #[tauri::command(rename = "automation-run-now")]
 pub async fn automation_run_now_command(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: AutomationIdParams,
 ) -> Result<AutomationRunNowResponse, String> {
-    run_automation_now_inner(state.inner(), params).await?;
+    run_automation_now_inner(&app, state.inner(), params).await?;
     Ok(AutomationRunNowResponse { success: true })
 }
 
 pub fn spawn_heartbeat_automation_scheduler(
+    app: AppHandle,
     auth_state: Arc<AuthBridgeState>,
     scheduler_state: Arc<HeartbeatAutomationSchedulerState>,
 ) {
@@ -378,12 +386,13 @@ pub fn spawn_heartbeat_automation_scheduler(
 
         loop {
             ticker.tick().await;
-            let _ = process_due_heartbeat_automations(&auth_state, &scheduler_state).await;
+            let _ = process_due_heartbeat_automations(&app, &auth_state, &scheduler_state).await;
         }
     });
 }
 
 async fn process_due_heartbeat_automations(
+    app: &AppHandle,
     auth_state: &Arc<AuthBridgeState>,
     scheduler_state: &Arc<HeartbeatAutomationSchedulerState>,
 ) -> Result<(), String> {
@@ -418,7 +427,7 @@ async fn process_due_heartbeat_automations(
             continue;
         }
 
-        if run_automation_record_now_inner(auth_state, automation.clone())
+        if run_automation_record_now_inner(app, auth_state, automation.clone())
             .await
             .is_err()
         {
@@ -510,16 +519,18 @@ fn update_automation_inner(automation: AutomationRecord) -> Result<AutomationRec
 }
 
 async fn run_automation_now_inner(
+    app: &AppHandle,
     state: &Arc<AuthBridgeState>,
     params: AutomationIdParams,
 ) -> Result<AutomationThreadRunResult, String> {
     let Some(automation) = read_automation(params)? else {
         return Err("automation not found".to_string());
     };
-    run_automation_record_now_inner(state, automation).await
+    run_automation_record_now_inner(app, state, automation).await
 }
 
 async fn run_automation_record_now_inner(
+    app: &AppHandle,
     state: &Arc<AuthBridgeState>,
     automation: AutomationRecord,
 ) -> Result<AutomationThreadRunResult, String> {
@@ -547,8 +558,28 @@ async fn run_automation_record_now_inner(
         }
         AutomationRecord::Cron { cwds, prompt, .. } => {
             let cwd = cwds.first().cloned();
+            let item_id = create_automation_run_history_item(
+                app,
+                NewAutomationRunHistoryItem {
+                    automation_id: automation.id().to_string(),
+                    automation_name: Some(automation.name().to_string()),
+                    title: {
+                        let trimmed_name = automation.name().trim();
+                        if trimmed_name.is_empty() {
+                            None
+                        } else {
+                            Some(trimmed_name.to_string())
+                        }
+                    },
+                    source_cwd: cwd.clone(),
+                },
+            )?;
             let thread_id =
                 start_thread_with_personality(state, cwd.clone(), personality.clone()).await?;
+            if let Err(err) = attach_automation_run_history_thread_id(app, &item_id, &thread_id) {
+                let _ = delete_automation_run_history_item(app, &item_id);
+                return Err(err);
+            }
             let turn_id = start_turn_with_personality(
                 state,
                 thread_id.clone(),
@@ -557,7 +588,10 @@ async fn run_automation_record_now_inner(
                 personality,
                 None,
             )
-            .await?;
+            .await
+            .inspect_err(|_| {
+                let _ = delete_automation_run_history_item(app, &item_id);
+            })?;
             Ok::<AutomationThreadRunResult, String>(AutomationThreadRunResult {
                 thread_id,
                 turn_id,

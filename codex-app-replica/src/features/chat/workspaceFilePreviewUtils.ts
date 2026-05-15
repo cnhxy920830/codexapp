@@ -22,7 +22,7 @@ export type WorkspaceFileUnsupportedPreviewKind =
   | "wordDocument";
 
 export type WorkspaceFileWorkbookImportKind = "csv" | "tsv" | "xlsx";
-export type WorkspaceFileArtifactImportKind = WorkspaceFileWorkbookImportKind | "docx";
+export type WorkspaceFileArtifactImportKind = WorkspaceFileWorkbookImportKind | "docx" | "ipynb" | "pptx" | "tex";
 
 export type WorkspaceFilePreviewState =
   | {
@@ -191,6 +191,12 @@ export function getWorkspaceFileArtifactImportKind(
       return "xlsx";
     case "docx":
       return "docx";
+    case "ipynb":
+      return "ipynb";
+    case "pptx":
+      return "pptx";
+    case "tex":
+      return "tex";
   }
 
   switch (mimeType) {
@@ -203,6 +209,15 @@ export function getWorkspaceFileArtifactImportKind(
       return "xlsx";
     case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
       return "docx";
+    case "application/x-ipynb+json":
+      return "ipynb";
+    case "application/x-jupyter+json":
+      return "ipynb";
+    case "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+      return "pptx";
+    case "application/x-tex":
+    case "text/x-tex":
+      return "tex";
     default:
       return null;
   }
@@ -212,6 +227,10 @@ export function isWorkspaceFileWorkbookImportKind(
   kind: WorkspaceFileArtifactImportKind | null,
 ): kind is WorkspaceFileWorkbookImportKind {
   return kind === "csv" || kind === "tsv" || kind === "xlsx";
+}
+
+export function supportsWorkspaceFileArtifactSourceView(kind: WorkspaceFileArtifactImportKind | null) {
+  return kind === "csv" || kind === "ipynb" || kind === "tex" || kind === "tsv";
 }
 
 export function getWorkspaceFileUnsupportedPreviewKind(file: WorkspaceFilePreviewDescriptor) {

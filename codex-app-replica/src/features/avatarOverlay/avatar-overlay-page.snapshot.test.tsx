@@ -13,6 +13,7 @@ import {
   resolveAvatarOption,
 } from "../../components/appearance/avatarData";
 import { AvatarOverlayView } from "./AvatarOverlayView";
+import type { AvatarOverlayNotification } from "./avatarOverlayNotifications";
 
 const SNAPSHOT_PATH = path.join(
   process.cwd(),
@@ -43,10 +44,86 @@ type SnapshotMap = {
   collapsedNoNotifications: string;
   collapsedWithBadge: string;
   expandedTray: string;
+  expandedTrayExpandedRow: string;
+  expandedTrayReplyEditor: string;
+  expandedTrayScrollControls: string;
 };
 
 function buildSnapshots(): SnapshotMap {
   const avatar = resolveAvatarOption("codex", BUILTIN_AVATARS);
+  const notifications: AvatarOverlayNotification[] = [
+    {
+      id: "local:thread-1",
+      actionPath: "/local/thread-1",
+      body: "Needs approval to continue work on the repo setup",
+      canDismiss: true,
+      expiresAtMs: 86_400_000,
+      isLoading: false,
+      level: "warning",
+      localConversationId: "thread-1",
+      source: "local",
+      status: "waiting",
+      title: "Repo setup",
+      turnKey: "3",
+      updatedAtMs: 1_000,
+    },
+    {
+      id: "local:thread-2",
+      actionPath: "/local/thread-2",
+      body: "Running cargo check",
+      canDismiss: true,
+      expiresAtMs: 180_000,
+      isLoading: true,
+      level: "info",
+      localConversationId: "thread-2",
+      source: "local",
+      status: "running",
+      title: "Rust parity",
+      turnKey: "4",
+      updatedAtMs: 900,
+    },
+    {
+      id: "cloud:task-7",
+      actionPath: "/remote/task-7",
+      body: null,
+      canDismiss: true,
+      expiresAtMs: 604_800_000,
+      isLoading: false,
+      level: "success",
+      localConversationId: null,
+      source: "cloud",
+      status: "review",
+      title: "Remote review",
+      turnKey: "turn-7",
+      updatedAtMs: 950,
+    },
+    {
+      id: "local:thread-3",
+      actionPath: "/local/thread-3",
+      body: null,
+      canDismiss: true,
+      expiresAtMs: 3_600_000,
+      isLoading: false,
+      level: "danger",
+      localConversationId: "thread-3",
+      source: "local",
+      status: "failed",
+      title: "Window bridge",
+      turnKey: "2",
+      updatedAtMs: 800,
+    },
+  ];
+  const longBodyNotifications: AvatarOverlayNotification[] = [
+    {
+      ...notifications[0],
+      body: [
+        "Needs approval to continue work on the repo setup.",
+        "Approval is still pending for the workspace trust prompt.",
+        "Waiting for confirmation before dependency install can proceed.",
+      ].join(" "),
+    },
+    ...notifications.slice(1),
+  ];
 
   return {
     collapsedNoNotifications: renderSnapshot(
@@ -54,10 +131,12 @@ function buildSnapshots(): SnapshotMap {
         <div className="h-[600px] w-[420px]">
           <AvatarOverlayView
             selectedAvatar={avatar}
-            notificationCount={0}
+            notifications={[]}
             isTrayOpen={false}
             onToggleTray={noop}
             onCollapseTray={noop}
+            onOpenNotification={noopNotification}
+            onDismissNotification={noopNotification}
           />
         </div>
       </StaticI18nProvider>,
@@ -67,10 +146,12 @@ function buildSnapshots(): SnapshotMap {
         <div className="h-[600px] w-[420px]">
           <AvatarOverlayView
             selectedAvatar={avatar}
-            notificationCount={3}
+            notifications={notifications}
             isTrayOpen={false}
             onToggleTray={noop}
             onCollapseTray={noop}
+            onOpenNotification={noopNotification}
+            onDismissNotification={noopNotification}
           />
         </div>
       </StaticI18nProvider>,
@@ -80,10 +161,76 @@ function buildSnapshots(): SnapshotMap {
         <div className="h-[600px] w-[420px]">
           <AvatarOverlayView
             selectedAvatar={avatar}
-            notificationCount={0}
+            notifications={notifications}
             isTrayOpen
             onToggleTray={noop}
             onCollapseTray={noop}
+            onOpenNotification={noopNotification}
+            onDismissNotification={noopNotification}
+          />
+        </div>
+      </StaticI18nProvider>,
+    ),
+    expandedTrayExpandedRow: renderSnapshot(
+      <StaticI18nProvider>
+        <div className="h-[600px] w-[420px]">
+          <AvatarOverlayView
+            selectedAvatar={avatar}
+            notifications={longBodyNotifications}
+            isTrayOpen
+            onToggleTray={noop}
+            onCollapseTray={noop}
+            onOpenNotification={noopNotification}
+            onDismissNotification={noopNotification}
+            onOpenNotificationReply={noopNotification}
+            onSubmitNotificationReply={noopReply}
+            testState={{
+              expandedNotificationIds: ["local:thread-1"],
+              forceControlsVisible: true,
+              forceExpandableNotificationIds: ["local:thread-1"],
+            }}
+          />
+        </div>
+      </StaticI18nProvider>,
+    ),
+    expandedTrayReplyEditor: renderSnapshot(
+      <StaticI18nProvider>
+        <div className="h-[600px] w-[420px]">
+          <AvatarOverlayView
+            selectedAvatar={avatar}
+            notifications={notifications}
+            isTrayOpen
+            onToggleTray={noop}
+            onCollapseTray={noop}
+            onOpenNotification={noopNotification}
+            onDismissNotification={noopNotification}
+            onOpenNotificationReply={noopNotification}
+            onSubmitNotificationReply={noopReply}
+            testState={{
+              replyOpenNotificationId: "local:thread-1",
+            }}
+          />
+        </div>
+      </StaticI18nProvider>,
+    ),
+    expandedTrayScrollControls: renderSnapshot(
+      <StaticI18nProvider>
+        <div className="h-[600px] w-[420px]">
+          <AvatarOverlayView
+            selectedAvatar={avatar}
+            notifications={notifications}
+            isTrayOpen
+            onToggleTray={noop}
+            onCollapseTray={noop}
+            onOpenNotification={noopNotification}
+            onDismissNotification={noopNotification}
+            testState={{
+              forceTrayScrollState: {
+                hasScrollableContent: true,
+                hasLatestNotificationsAbove: true,
+                hiddenOlderNotificationCount: 3,
+              },
+            }}
           />
         </div>
       </StaticI18nProvider>,
@@ -134,4 +281,9 @@ function translate(key: MessageKey, values?: MessageValues) {
 }
 
 const noop = () => {};
+const noopNotification = (_notification: AvatarOverlayNotification) => {};
+const noopReply = async (
+  _notification: AvatarOverlayNotification,
+  _prompt: string,
+) => undefined;
 const noopLocale = async (_locale: LocaleCode) => {};

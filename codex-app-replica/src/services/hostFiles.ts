@@ -36,6 +36,11 @@ export type ReadFileMetadataResponse = {
 
 export type ReadFileBinaryResponse = {
   contentsBase64: string;
+  mimeType: string | null;
+};
+
+export type CompileLatexArtifactResponse = {
+  contentsBase64: string | null;
 };
 
 export async function openFile(params: OpenFileParams) {
@@ -59,4 +64,8 @@ export async function readFileMetadata(params: ReadFileParams) {
 
 export async function readFileBinary(params: ReadFileParams) {
   return invoke<ReadFileBinaryResponse>("read-file-binary", { params });
+}
+
+export async function compileLatexArtifact(params: ReadFileParams) {
+  return invoke<CompileLatexArtifactResponse>("compile-latex-artifact", { params });
 }

@@ -38,8 +38,8 @@ export function RemoteConversationFooter({
   t,
 }: RemoteConversationFooterProps) {
   return (
-    <div className="px-5 pt-2 pb-5">
-      <div className="mx-auto w-full max-w-3xl">
+    <div className="px-5 pb-4 pt-2">
+      <div className="mx-auto w-full max-w-[var(--thread-composer-max-width)]">
         {latestTurnPreview ? <div className="mb-2">{latestTurnPreview}</div> : null}
         {showRemoteApplyFooter ? (
           <div className="mb-2">

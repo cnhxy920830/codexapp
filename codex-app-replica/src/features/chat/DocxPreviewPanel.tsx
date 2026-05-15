@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject } from "react";
 import { CheckIcon, ChevronDownIcon } from "../../components/AppShellIcons";
 import { Button } from "../../components/Button";
 import type { MessageKey } from "../../i18n/messages";
@@ -6,6 +6,7 @@ import { openFile } from "../../services/hostFiles";
 
 type DocxPreviewPanelProps = {
   bytes: Uint8Array;
+  hostId?: string | null;
   path: string;
   title: string;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
@@ -38,6 +39,8 @@ const DOCX_ZOOM_OPTIONS = [50, 75, 100, 125, 150, 200];
 const MIN_ZOOM_PERCENT = 10;
 const MAX_ZOOM_PERCENT = 400;
 const WHEEL_ZOOM_FACTOR = 0.01;
+const DOCX_PAGE_VISIBILITY_THRESHOLDS = [0, 0.25, 0.5, 0.75, 1];
+const PROGRAMMATIC_SCROLL_SETTLE_DELAY_MS = 100;
 const DOCX_BODY_CLASS_NAME = "h-full min-h-0 overflow-auto bg-token-side-bar-background overscroll-contain";
 const DOCX_WRAPPER_STYLE = `
   .${DOCX_CLASS_NAME}-wrapper {
@@ -64,10 +67,12 @@ const DOCX_WRAPPER_STYLE = `
 let docxRenderAsyncPromise: Promise<DocxRenderAsync | null> | null = null;
 const docxRendererModuleUrl = new URL("../../assets/docx/docx-preview-gi_LmAqq.js", import.meta.url).href;
 
-export function DocxPreviewPanel({ bytes, path, title, t }: DocxPreviewPanelProps) {
+export function DocxPreviewPanel({ bytes, hostId = null, path, title, t }: DocxPreviewPanelProps) {
   const bodyContainerRef = useRef<HTMLDivElement | null>(null);
   const styleContainerRef = useRef<HTMLDivElement | null>(null);
   const renderGenerationRef = useRef(0);
+  const pendingProgrammaticPageRef = useRef<number | null>(null);
+  const clearProgrammaticScrollRef = useRef<(() => void) | null>(null);
   const touchZoomStateRef = useRef<{ distance: number; zoomPercent: number } | null>(null);
   const zoomMenuRef = useRef<HTMLDivElement | null>(null);
   const [renderAsync, setRenderAsync] = useState<DocxRenderAsync | null>(null);
@@ -151,7 +156,7 @@ export function DocxPreviewPanel({ bytes, path, title, t }: DocxPreviewPanelProp
       return;
     }
 
-    const pageElements = Array.from(bodyContainer.querySelectorAll<HTMLElement>(DOCX_PAGE_SELECTOR));
+    const pageElements = getDocxPageElements(bodyContainer);
     if (pageElements.length === 0) {
       return;
     }
@@ -168,13 +173,28 @@ export function DocxPreviewPanel({ bytes, path, title, t }: DocxPreviewPanelProp
           pageElements,
           pageVisibilityByElement,
         });
-        if (nextVisiblePage != null) {
-          setCurrentPage((previousPage) => (previousPage === nextVisiblePage ? previousPage : nextVisiblePage));
+        if (nextVisiblePage == null) {
+          return;
         }
+
+        if (
+          pendingProgrammaticPageRef.current != null &&
+          nextVisiblePage !== pendingProgrammaticPageRef.current
+        ) {
+          return;
+        }
+
+        if (nextVisiblePage === pendingProgrammaticPageRef.current) {
+          pendingProgrammaticPageRef.current = null;
+          clearProgrammaticScrollRef.current?.();
+          clearProgrammaticScrollRef.current = null;
+        }
+
+        setCurrentPage((previousPage) => (previousPage === nextVisiblePage ? previousPage : nextVisiblePage));
       },
       {
         root: bodyContainer,
-        threshold: [0, 0.25, 0.5, 0.75, 1],
+        threshold: DOCX_PAGE_VISIBILITY_THRESHOLDS,
       },
     );
 
@@ -194,6 +214,9 @@ export function DocxPreviewPanel({ bytes, path, title, t }: DocxPreviewPanelProp
 
     return () => {
       observer.disconnect();
+      pendingProgrammaticPageRef.current = null;
+      clearProgrammaticScrollRef.current?.();
+      clearProgrammaticScrollRef.current = null;
     };
   }, [loadState, totalPages, bodyContainerWidth, zoomMode]);
 
@@ -207,6 +230,9 @@ export function DocxPreviewPanel({ bytes, path, title, t }: DocxPreviewPanelProp
     const nextGeneration = renderGenerationRef.current + 1;
     renderGenerationRef.current = nextGeneration;
 
+    pendingProgrammaticPageRef.current = null;
+    clearProgrammaticScrollRef.current?.();
+    clearProgrammaticScrollRef.current = null;
     bodyContainer.replaceChildren();
     styleContainer.replaceChildren();
     setLoadState("loading");
@@ -237,6 +263,9 @@ export function DocxPreviewPanel({ bytes, path, title, t }: DocxPreviewPanelProp
 
     return () => {
       renderGenerationRef.current += 1;
+      pendingProgrammaticPageRef.current = null;
+      clearProgrammaticScrollRef.current?.();
+      clearProgrammaticScrollRef.current = null;
       bodyContainer.replaceChildren();
       styleContainer.replaceChildren();
     };
@@ -263,8 +292,9 @@ export function DocxPreviewPanel({ bytes, path, title, t }: DocxPreviewPanelProp
     [effectiveZoomPercent],
   );
 
+  const effectiveCurrentPage = clampDocxPage(currentPage, totalPages);
   const currentPageLabel = t("artifactTab.preview.pageIndicator", {
-    current: currentPage,
+    current: effectiveCurrentPage,
     total: Math.max(totalPages, 1),
   });
   const isZoomToFitSelected = zoomMode.kind === "fit-width";
@@ -285,14 +315,16 @@ export function DocxPreviewPanel({ bytes, path, title, t }: DocxPreviewPanelProp
                 aria-label={t("artifactTab.preview.previousPage")}
                 className="[@container_(max-width:240px)]:hidden"
                 color="ghost"
-                disabled={currentPage <= 1}
+                disabled={effectiveCurrentPage <= 1}
                 size="toolbar"
                 uniform
                 onClick={() => {
-                  setCurrentPage((page) => Math.max(page - 1, 1));
                   scrollToDocxPage({
+                    clearProgrammaticScrollRef,
                     container: bodyContainerRef.current,
-                    pageNumber: currentPage - 1,
+                    onCurrentPageChange: setCurrentPage,
+                    pageNumber: effectiveCurrentPage - 1,
+                    pendingProgrammaticPageRef,
                   });
                 }}
               >
@@ -305,14 +337,16 @@ export function DocxPreviewPanel({ bytes, path, title, t }: DocxPreviewPanelProp
                 aria-label={t("artifactTab.preview.nextPage")}
                 className="[@container_(max-width:240px)]:hidden"
                 color="ghost"
-                disabled={currentPage >= totalPages}
+                disabled={effectiveCurrentPage >= totalPages}
                 size="toolbar"
                 uniform
                 onClick={() => {
-                  setCurrentPage((page) => Math.min(page + 1, Math.max(totalPages, 1)));
                   scrollToDocxPage({
+                    clearProgrammaticScrollRef,
                     container: bodyContainerRef.current,
-                    pageNumber: currentPage + 1,
+                    onCurrentPageChange: setCurrentPage,
+                    pageNumber: effectiveCurrentPage + 1,
+                    pendingProgrammaticPageRef,
                   });
                 }}
               >
@@ -395,6 +429,7 @@ export function DocxPreviewPanel({ bytes, path, title, t }: DocxPreviewPanelProp
                 onClick={() => {
                   void openFile({
                     cwd: null,
+                    hostId,
                     path,
                     target: "fileManager",
                   });
@@ -561,16 +596,76 @@ function getVisibleDocxPage(params: {
   return nearestPageIndex + 1;
 }
 
+function getDocxPageElements(container: ParentNode) {
+  return Array.from(container.querySelectorAll<HTMLElement>(DOCX_PAGE_SELECTOR));
+}
+
 function scrollToDocxPage(params: {
+  clearProgrammaticScrollRef: MutableRefObject<(() => void) | null>;
   container: HTMLElement | null;
+  onCurrentPageChange: (pageNumber: number) => void;
   pageNumber: number;
+  pendingProgrammaticPageRef: MutableRefObject<number | null>;
 }) {
   if (params.container == null || params.pageNumber < 1) {
     return;
   }
 
-  const targetElement = Array.from(params.container.querySelectorAll<HTMLElement>(DOCX_PAGE_SELECTOR)).at(params.pageNumber - 1);
-  targetElement?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const targetElement = getDocxPageElements(params.container).at(params.pageNumber - 1);
+  if (targetElement == null) {
+    return;
+  }
+
+  params.clearProgrammaticScrollRef.current?.();
+  params.clearProgrammaticScrollRef.current = null;
+  params.pendingProgrammaticPageRef.current = params.pageNumber;
+
+  let settleTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  const clearScrollTracking = () => {
+    if (settleTimeoutId != null) {
+      clearTimeout(settleTimeoutId);
+      settleTimeoutId = null;
+    }
+
+    params.container?.removeEventListener("scroll", handleScroll);
+  };
+
+  const settleCurrentPage = () => {
+    if (params.pendingProgrammaticPageRef.current !== params.pageNumber || params.container == null) {
+      return;
+    }
+
+    params.pendingProgrammaticPageRef.current = null;
+    clearScrollTracking();
+
+    const nextVisiblePage = getVisibleDocxPage({
+      container: params.container,
+      pageElements: getDocxPageElements(params.container),
+      pageVisibilityByElement: new Map(),
+    });
+    if (nextVisiblePage != null) {
+      params.onCurrentPageChange(nextVisiblePage);
+    }
+  };
+
+  const handleScroll = () => {
+    if (settleTimeoutId != null) {
+      clearTimeout(settleTimeoutId);
+    }
+
+    settleTimeoutId = setTimeout(settleCurrentPage, PROGRAMMATIC_SCROLL_SETTLE_DELAY_MS);
+  };
+
+  params.clearProgrammaticScrollRef.current = clearScrollTracking;
+  targetElement.scrollIntoView({ behavior: "smooth", block: "start" });
+  params.onCurrentPageChange(params.pageNumber);
+  handleScroll();
+  params.container.addEventListener("scroll", handleScroll);
+}
+
+function clampDocxPage(pageNumber: number, totalPages: number) {
+  return Math.min(Math.max(pageNumber, 1), Math.max(totalPages, 1));
 }
 
 function clampZoomPercent(zoomPercent: number) {

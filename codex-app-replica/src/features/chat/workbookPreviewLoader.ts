@@ -1,6 +1,18 @@
 import { cloneWorkbookWalnutConfig, WORKBOOK_WALNUT_RESOURCE_URLS } from "./workbookWalnutConfig";
 import type { WorkspaceFileWorkbookImportKind } from "./workspaceFilePreviewUtils";
 
+type PresentationProtoModule = {
+  Presentation: {
+    decode: (input: unknown) => unknown;
+  };
+};
+
+type DocumentProtoModule = {
+  Document: {
+    decode: (input: unknown) => unknown;
+  };
+};
+
 type WorkbookCsvModule = {
   Workbook: {
     fromCSV: (
@@ -21,6 +33,12 @@ type SpreadsheetProtoModule = {
 };
 
 type WalnutAssemblyExports = {
+  DocxReader: {
+    ExtractDocxProto: (bytes: Uint8Array, readOnly: boolean) => unknown;
+  };
+  PptxReader: {
+    ExtractSlidesProto: (bytes: Uint8Array, readOnly: boolean) => unknown;
+  };
   XlsxReader: {
     ExtractXlsxProto: (bytes: Uint8Array, readOnly: boolean) => unknown;
   };
@@ -41,43 +59,64 @@ type DotnetBuilder = {
   create: () => Promise<DotnetRuntime>;
 };
 
-export type WorkbookPreviewProto = unknown;
+export type ArtifactPreviewProto = unknown;
+export type DocumentPreviewProto = ArtifactPreviewProto;
+export type PresentationPreviewProto = ArtifactPreviewProto;
+export type WorkbookPreviewProto = ArtifactPreviewProto;
+export type ParsedArtifactPreview =
+  | {
+      kind: "document";
+      proto: DocumentPreviewProto;
+    }
+  | {
+      kind: "presentation";
+      proto: PresentationPreviewProto;
+    }
+  | {
+      kind: "spreadsheet";
+      proto: WorkbookPreviewProto;
+    };
+export type WorkspaceFileParsedArtifactImportKind = WorkspaceFileWorkbookImportKind | "docx" | "pptx";
 
 const MAX_PARSED_WORKBOOK_CACHE_ENTRIES = 5;
 
-const parsedWorkbookCache = new Map<
+const parsedArtifactCache = new Map<
   string,
   {
     contentsBytes: Uint8Array;
-    workbookProto: WorkbookPreviewProto;
+    parsedArtifact: ParsedArtifactPreview;
   }
 >();
 
 let walnutAssemblyExportsPromise: Promise<WalnutAssemblyExports> | null = null;
 
-export async function loadWorkbookPreviewProto(params: {
+export async function loadArtifactPreviewProto(params: {
   cacheKey: string;
   contentsBase64: string;
-  importKind: WorkspaceFileWorkbookImportKind;
-}): Promise<WorkbookPreviewProto> {
+  importKind: WorkspaceFileParsedArtifactImportKind;
+}): Promise<ParsedArtifactPreview> {
   const contentsBytes = decodeBase64ToBytes(params.contentsBase64);
-  const cachedWorkbookProto = getCachedWorkbookProto(params.cacheKey, contentsBytes);
-  if (cachedWorkbookProto != null) {
-    return cachedWorkbookProto;
+  const cachedParsedArtifact = getCachedArtifactProto(params.cacheKey, contentsBytes);
+  if (cachedParsedArtifact != null) {
+    return cachedParsedArtifact;
   }
 
-  const workbookProto = await parseWorkbookPreviewProto(contentsBytes, params.importKind);
-  setCachedWorkbookProto(params.cacheKey, contentsBytes, workbookProto);
-  return workbookProto;
+  const parsedArtifact = await parseArtifactPreviewProto(contentsBytes, params.importKind);
+  setCachedArtifactProto(params.cacheKey, contentsBytes, parsedArtifact);
+  return parsedArtifact;
 }
 
-async function parseWorkbookPreviewProto(
+async function parseArtifactPreviewProto(
   contentsBytes: Uint8Array,
-  importKind: WorkspaceFileWorkbookImportKind,
-): Promise<WorkbookPreviewProto> {
+  importKind: WorkspaceFileParsedArtifactImportKind,
+): Promise<ParsedArtifactPreview> {
   switch (importKind) {
     case "csv":
       return parseCsvWorkbookPreviewProto(contentsBytes);
+    case "docx":
+      return parseDocxPreviewProto(contentsBytes);
+    case "pptx":
+      return parsePptxPreviewProto(contentsBytes);
     case "tsv":
       return parseCsvWorkbookPreviewProto(contentsBytes, "\t");
     case "xlsx":
@@ -92,7 +131,22 @@ async function parseCsvWorkbookPreviewProto(contentsBytes: Uint8Array, separator
     new TextDecoder().decode(contentsBytes),
     separator == null ? undefined : { separator },
   );
-  return workbook.toProto();
+  return {
+    kind: "spreadsheet" as const,
+    proto: workbook.toProto(),
+  };
+}
+
+async function parseDocxPreviewProto(contentsBytes: Uint8Array) {
+  const [documentModule, walnutAssemblyExports] = await Promise.all([
+    // @ts-ignore -- extracted upstream document bundle ships without declarations.
+    import("../../assets/workbook/document-C3vk4qvU.js") as Promise<DocumentProtoModule>,
+    loadWalnutAssemblyExports(),
+  ]);
+  return {
+    kind: "document" as const,
+    proto: documentModule.Document.decode(walnutAssemblyExports.DocxReader.ExtractDocxProto(contentsBytes, false)),
+  };
 }
 
 async function parseXlsxWorkbookPreviewProto(contentsBytes: Uint8Array) {
@@ -101,7 +155,24 @@ async function parseXlsxWorkbookPreviewProto(contentsBytes: Uint8Array) {
     import("../../assets/workbook/spreadsheet-2JHjVHI6.js") as Promise<SpreadsheetProtoModule>,
     loadWalnutAssemblyExports(),
   ]);
-  return spreadsheetModule.Workbook.decode(walnutAssemblyExports.XlsxReader.ExtractXlsxProto(contentsBytes, false));
+  return {
+    kind: "spreadsheet" as const,
+    proto: spreadsheetModule.Workbook.decode(walnutAssemblyExports.XlsxReader.ExtractXlsxProto(contentsBytes, false)),
+  };
+}
+
+async function parsePptxPreviewProto(contentsBytes: Uint8Array) {
+  const [presentationModule, walnutAssemblyExports] = await Promise.all([
+    // @ts-ignore -- extracted upstream presentation bundle ships without declarations.
+    import("../../assets/workbook/presentation-DaHxu2ui.js") as Promise<PresentationProtoModule>,
+    loadWalnutAssemblyExports(),
+  ]);
+  return {
+    kind: "presentation" as const,
+    proto: presentationModule.Presentation.decode(
+      walnutAssemblyExports.PptxReader.ExtractSlidesProto(contentsBytes, false),
+    ),
+  };
 }
 
 async function loadWalnutAssemblyExports() {
@@ -136,8 +207,8 @@ async function createWalnutAssemblyExportsPromise() {
   return dotnetRuntime.getAssemblyExports(mainAssemblyName);
 }
 
-function getCachedWorkbookProto(cacheKey: string, contentsBytes: Uint8Array) {
-  const cachedEntry = parsedWorkbookCache.get(cacheKey);
+function getCachedArtifactProto(cacheKey: string, contentsBytes: Uint8Array) {
+  const cachedEntry = parsedArtifactCache.get(cacheKey);
   if (cachedEntry == null || cachedEntry.contentsBytes.length !== contentsBytes.length) {
     return null;
   }
@@ -148,21 +219,21 @@ function getCachedWorkbookProto(cacheKey: string, contentsBytes: Uint8Array) {
     }
   }
 
-  parsedWorkbookCache.delete(cacheKey);
-  parsedWorkbookCache.set(cacheKey, cachedEntry);
-  return cachedEntry.workbookProto;
+  parsedArtifactCache.delete(cacheKey);
+  parsedArtifactCache.set(cacheKey, cachedEntry);
+  return cachedEntry.parsedArtifact;
 }
 
-function setCachedWorkbookProto(cacheKey: string, contentsBytes: Uint8Array, workbookProto: WorkbookPreviewProto) {
-  parsedWorkbookCache.delete(cacheKey);
-  parsedWorkbookCache.set(cacheKey, { contentsBytes, workbookProto });
+function setCachedArtifactProto(cacheKey: string, contentsBytes: Uint8Array, parsedArtifact: ParsedArtifactPreview) {
+  parsedArtifactCache.delete(cacheKey);
+  parsedArtifactCache.set(cacheKey, { contentsBytes, parsedArtifact });
 
-  while (parsedWorkbookCache.size > MAX_PARSED_WORKBOOK_CACHE_ENTRIES) {
-    const oldestCacheKey = parsedWorkbookCache.keys().next().value;
+  while (parsedArtifactCache.size > MAX_PARSED_WORKBOOK_CACHE_ENTRIES) {
+    const oldestCacheKey = parsedArtifactCache.keys().next().value;
     if (oldestCacheKey == null) {
       return;
     }
-    parsedWorkbookCache.delete(oldestCacheKey);
+    parsedArtifactCache.delete(oldestCacheKey);
   }
 }
 

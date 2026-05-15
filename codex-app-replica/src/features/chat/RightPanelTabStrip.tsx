@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   BrowserTabIcon,
+  ChevronDownIcon,
   CloseTabIcon,
   ForkedConversationIcon,
   PlusIcon,
@@ -28,7 +29,13 @@ type RightPanelTabStripProps = RightPanelOpenTabMenuProps & {
   activeTabId: string | null;
   onActivateTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
+  onTogglePanel: () => void;
   openTabs: RightPanelTab[];
+};
+
+type RightPanelCollapsedRailProps = RightPanelOpenTabMenuProps & {
+  collapsedTabs: RightPanelTab[];
+  onActivateTab: (tabId: string) => void;
 };
 
 type RightPanelTabContextMenuState = {
@@ -45,7 +52,7 @@ export function RightPanelOpenTabMenu({
   onOpenReviewTab,
   onOpenWorkspaceFileSearch,
   t,
-  triggerClassName = "app-control-weak flex h-8 w-8 items-center justify-center rounded-[10px] text-[12px]",
+  triggerClassName = "app-topbar-button no-drag flex h-8 w-8 items-center justify-center rounded-md text-[12px]",
 }: RightPanelOpenTabMenuProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -138,6 +145,69 @@ export function RightPanelOpenTabMenu({
   );
 }
 
+export function RightPanelCollapsedRail({
+  canOfferBrowserTab,
+  canOfferReviewTab,
+  canOpenWorkspaceFileSearch,
+  collapsedTabs,
+  onActivateTab,
+  onOpenBrowserTab,
+  onOpenReviewTab,
+  onOpenWorkspaceFileSearch,
+  t,
+}: RightPanelCollapsedRailProps) {
+  const hasQuickActions = canOpenWorkspaceFileSearch || canOfferReviewTab || canOfferBrowserTab;
+
+  if (collapsedTabs.length === 0 && !hasQuickActions) {
+    return null;
+  }
+
+  return (
+    <aside className="app-right-panel-collapsed-rail flex w-[54px] shrink-0 flex-col items-center gap-2 px-2 py-3">
+      {collapsedTabs.map((tab) => {
+        const title = getRightPanelTabTitle(tab, t);
+        const tooltip = getRightPanelTabTooltip(tab, t);
+        return (
+          <IconActionButton
+            key={tab.id}
+            className="app-topbar-button flex h-8 w-8 items-center justify-center rounded-[10px]"
+            label={title}
+            onClick={() => onActivateTab(tab.id)}
+            title={tooltip}
+          >
+            {renderRightPanelTabIcon(tab)}
+          </IconActionButton>
+        );
+      })}
+      {collapsedTabs.length > 0 && hasQuickActions ? (
+        <div className="my-1 h-px w-6 bg-[var(--app-shell-border)]" />
+      ) : null}
+      <RightPanelQuickOpenActions
+        canOfferBrowserTab={canOfferBrowserTab}
+        canOfferReviewTab={canOfferReviewTab}
+        canOpenWorkspaceFileSearch={canOpenWorkspaceFileSearch}
+        onOpenBrowserTab={onOpenBrowserTab}
+        onOpenReviewTab={onOpenReviewTab}
+        onOpenWorkspaceFileSearch={onOpenWorkspaceFileSearch}
+        t={t}
+        buttonClassName="app-topbar-button flex h-8 w-8 items-center justify-center rounded-[10px]"
+      />
+      {hasQuickActions ? (
+        <RightPanelOpenTabMenu
+          canOfferBrowserTab={canOfferBrowserTab}
+          canOfferReviewTab={canOfferReviewTab}
+          canOpenWorkspaceFileSearch={canOpenWorkspaceFileSearch}
+          onOpenBrowserTab={onOpenBrowserTab}
+          onOpenReviewTab={onOpenReviewTab}
+          onOpenWorkspaceFileSearch={onOpenWorkspaceFileSearch}
+          t={t}
+          triggerClassName="app-topbar-button flex h-8 w-8 items-center justify-center rounded-[10px]"
+        />
+      ) : null}
+    </aside>
+  );
+}
+
 export function RightPanelTabStrip({
   activeTabId,
   canOfferBrowserTab,
@@ -145,6 +215,7 @@ export function RightPanelTabStrip({
   canOpenWorkspaceFileSearch,
   onActivateTab,
   onCloseTab,
+  onTogglePanel,
   onOpenBrowserTab,
   onOpenReviewTab,
   onOpenWorkspaceFileSearch,
@@ -182,7 +253,7 @@ export function RightPanelTabStrip({
   }, [contextMenuState]);
 
   return (
-    <div className="flex h-10 shrink-0 items-center border-b border-l border-[var(--app-shell-border)] bg-[var(--app-shell-right)] px-2">
+    <div className="app-right-panel-tab-strip flex h-[var(--app-shell-toolbar-pane)] shrink-0 items-center gap-2 border-b border-[var(--app-shell-border)] px-2.5">
       <div className="hide-scrollbar flex min-w-0 flex-1 items-center overflow-x-auto py-1">
         {openTabs.map((tab) => {
           const title = getRightPanelTabTitle(tab, t);
@@ -202,10 +273,10 @@ export function RightPanelTabStrip({
                 });
               }}
               className={[
-                "group mr-1 flex h-7 max-w-40 shrink-0 items-center gap-1 rounded-lg border px-1.5",
+                "group mr-1 flex h-7 max-w-40 shrink-0 items-center gap-1 rounded-[10px] px-1.5",
                 isActive
-                  ? "border-[var(--app-shell-border-heavy)] bg-[var(--app-shell-card-bg-selected)] text-[var(--app-shell-text)]"
-                  : "border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)] text-[var(--app-shell-muted)] hover:bg-[var(--app-shell-control-hover)]",
+                  ? "bg-[var(--app-shell-main-surface)] text-[var(--app-shell-text)] shadow-[var(--app-shell-card-shadow)]"
+                  : "text-[var(--app-shell-muted)] hover:bg-[var(--app-shell-control-hover)]",
               ].join(" ")}
             >
               <button
@@ -221,7 +292,7 @@ export function RightPanelTabStrip({
                   onCloseTab(tab.id);
                 }}
                 onClick={() => onActivateTab(tab.id)}
-                className="flex min-w-0 flex-1 items-center gap-2 rounded-[7px] px-1 text-left text-[13px]"
+                className="flex min-w-0 flex-1 items-center gap-2 rounded-[8px] px-1 text-left text-[13px]"
               >
                 {icon}
                 <span className="truncate">{title}</span>
@@ -245,7 +316,17 @@ export function RightPanelTabStrip({
           );
         })}
       </div>
-      <div className="ml-2 flex shrink-0 items-center">
+      <div className="flex shrink-0 items-center gap-1">
+        <RightPanelQuickOpenActions
+          canOfferBrowserTab={canOfferBrowserTab}
+          canOfferReviewTab={canOfferReviewTab}
+          canOpenWorkspaceFileSearch={canOpenWorkspaceFileSearch}
+          onOpenBrowserTab={onOpenBrowserTab}
+          onOpenReviewTab={onOpenReviewTab}
+          onOpenWorkspaceFileSearch={onOpenWorkspaceFileSearch}
+          t={t}
+          buttonClassName="app-topbar-button no-drag flex h-7 w-7 items-center justify-center rounded-[8px] text-[12px]"
+        />
         <RightPanelOpenTabMenu
           canOfferBrowserTab={canOfferBrowserTab}
           canOfferReviewTab={canOfferReviewTab}
@@ -254,8 +335,17 @@ export function RightPanelTabStrip({
           onOpenReviewTab={onOpenReviewTab}
           onOpenWorkspaceFileSearch={onOpenWorkspaceFileSearch}
           t={t}
-          triggerClassName="app-control-weak flex h-7 w-7 items-center justify-center rounded-[8px] text-[12px]"
+          triggerClassName="app-topbar-button no-drag flex h-7 w-7 items-center justify-center rounded-[8px] text-[12px]"
         />
+        <button
+          type="button"
+          title={t("thread.sidePanel.toggle")}
+          aria-label={t("thread.sidePanel.toggle")}
+          onClick={onTogglePanel}
+          className="app-topbar-button no-drag flex h-7 w-7 items-center justify-center rounded-[8px] text-[12px]"
+        >
+          <ChevronDownIcon className="h-4 w-4 -rotate-90" />
+        </button>
       </div>
       {contextMenuState ? (
         <div
@@ -279,6 +369,77 @@ export function RightPanelTabStrip({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function RightPanelQuickOpenActions({
+  canOfferBrowserTab,
+  canOfferReviewTab,
+  canOpenWorkspaceFileSearch,
+  onOpenBrowserTab,
+  onOpenReviewTab,
+  onOpenWorkspaceFileSearch,
+  t,
+  buttonClassName,
+}: RightPanelOpenTabMenuProps & {
+  buttonClassName: string;
+}) {
+  return (
+    <>
+      {canOpenWorkspaceFileSearch ? (
+        <IconActionButton
+          className={buttonClassName}
+          label={t("thread.sidePanel.openFile")}
+          onClick={onOpenWorkspaceFileSearch}
+        >
+          <SearchIcon className="h-4 w-4" />
+        </IconActionButton>
+      ) : null}
+      {canOfferReviewTab ? (
+        <IconActionButton
+          className={buttonClassName}
+          label={t("thread.sidePanel.openReviewTab")}
+          onClick={onOpenReviewTab}
+        >
+          <ReviewTabIcon className="h-4 w-4" />
+        </IconActionButton>
+      ) : null}
+      {canOfferBrowserTab ? (
+        <IconActionButton
+          className={buttonClassName}
+          label={t("thread.sidePanel.openBrowserTab")}
+          onClick={onOpenBrowserTab}
+        >
+          <BrowserTabIcon className="h-4 w-4" />
+        </IconActionButton>
+      ) : null}
+    </>
+  );
+}
+
+function IconActionButton({
+  children,
+  className,
+  label,
+  onClick,
+  title,
+}: {
+  children: ReactNode;
+  className: string;
+  label: string;
+  onClick: () => void;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      title={title ?? label}
+      aria-label={label}
+      onClick={onClick}
+      className={className}
+    >
+      {children}
+    </button>
   );
 }
 

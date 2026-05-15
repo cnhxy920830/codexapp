@@ -1,27 +1,48 @@
-import { useEffect, useState, type ComponentType } from "react";
+import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import type { MessageKey } from "../../i18n/messages";
 import type { WorkbookPreviewProto } from "./workbookPreviewLoader";
+
+type ArtifactPreviewHeaderFitOption = {
+  label: string;
+  onSelect: () => void;
+  selected: boolean;
+};
+
+type RenderArtifactPreviewHeaderZoomControl = (params: {
+  fitOption?: ArtifactPreviewHeaderFitOption | null;
+  onZoomPercentChange: (zoomPercent: number) => void;
+  triggerTestId: string;
+  zoomPercent: number;
+}) => ReactNode;
 
 type PopcornElectronWorkbookPanelModule = {
   PopcornElectronWorkbookPanel: ComponentType<{
     className?: string;
+    headerRightContent?: ReactNode;
     initialWorkbookProto: WorkbookPreviewProto;
+    renderHeaderZoomControl?: RenderArtifactPreviewHeaderZoomControl;
     title?: string;
   }>;
 };
 
 export function WorkbookPreviewPanel({
+  headerRightContent,
+  renderHeaderZoomControl,
   title,
   t,
   workbookProto,
 }: {
+  headerRightContent?: ReactNode;
+  renderHeaderZoomControl?: RenderArtifactPreviewHeaderZoomControl;
   title: string;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
   workbookProto: WorkbookPreviewProto;
 }) {
   const [panelComponent, setPanelComponent] = useState<ComponentType<{
     className?: string;
+    headerRightContent?: ReactNode;
     initialWorkbookProto: WorkbookPreviewProto;
+    renderHeaderZoomControl?: RenderArtifactPreviewHeaderZoomControl;
     title?: string;
   }> | null>(null);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
@@ -59,16 +80,24 @@ export function WorkbookPreviewPanel({
     return <section className="no-drag relative h-full min-h-0 bg-token-bg-primary" data-testid="popcorn-electron-workbook-panel" />;
   }
 
-  if (loadState === "error" || panelComponent == null) {
-    return <WorkbookPreviewPanelErrorState t={t} />;
-  }
-
   if (loadState === "loading") {
     return <WorkbookPreviewPanelLoadingState t={t} />;
   }
 
+  if (loadState === "error" || panelComponent == null) {
+    return <WorkbookPreviewPanelErrorState t={t} />;
+  }
+
   const PanelComponent = panelComponent;
-  return <PanelComponent className="h-full min-h-0" initialWorkbookProto={workbookProto} title={title} />;
+  return (
+    <PanelComponent
+      className="h-full min-h-0"
+      headerRightContent={headerRightContent}
+      initialWorkbookProto={workbookProto}
+      renderHeaderZoomControl={renderHeaderZoomControl}
+      title={title}
+    />
+  );
 }
 
 function WorkbookPreviewPanelLoadingState({

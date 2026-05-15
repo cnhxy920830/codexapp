@@ -15,6 +15,8 @@ export type AppInfo = {
   name: string;
   description: string | null;
   installUrl: string | null;
+  logoUrl: string | null;
+  logoUrlDark: string | null;
   isAccessible: boolean;
   isEnabled: boolean;
   pluginDisplayNames: string[];

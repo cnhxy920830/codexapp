@@ -16,12 +16,13 @@ import {
   SettingsCogIcon,
   WorkspaceFileIcon,
 } from "../../components/AppShellIcons";
-import type { AutomationRecord } from "../../services/automations";
+import type { AutomationInboxItem, AutomationRecord } from "../../services/automations";
 import type { ModelListEntry } from "../../services/settings";
 import { SettingsHostDropdown } from "../../components/SettingsHostDropdown";
 import { LOCAL_SETTINGS_HOST_ID } from "../../services/settingsHosts";
 import { AutomationLocalEnvironmentSelector } from "./AutomationLocalEnvironmentSelector";
 import { AutomationFormFields } from "./AutomationFormFields";
+import { AutomationPreviousRunsList } from "./AutomationPreviousRunsList";
 import type { FeedbackState, TranslateFn } from "./automationsPageUtils";
 import {
   describeScheduleConfig,
@@ -41,6 +42,8 @@ type AutomationsDetailPaneProps = {
   draft: AutomationRecord;
   feedback: FeedbackState;
   heartbeatThreadOptions: HeartbeatThreadOption[];
+  inboxItems: AutomationInboxItem[];
+  isInboxItemsLoading: boolean;
   isSaving: boolean;
   lastRunLabel: string;
   localEnvironmentState: AutomationLocalEnvironmentState;
@@ -48,12 +51,15 @@ type AutomationsDetailPaneProps = {
   nextRunLabel: string;
   onClearDraft: () => void;
   onDraftChange: Dispatch<SetStateAction<AutomationRecord | null>>;
+  onOpenThread: (threadId: string) => void | Promise<void>;
+  onSetInboxItemReadState: (id: string, isRead: boolean) => Promise<void>;
   onOpenLocalEnvironmentsSettings: (params: {
     configPath: string | null;
     workspaceRoot: string;
   }) => void;
   modelOptions: ModelListEntry[];
   locale: string;
+  threadTitleById: ReadonlyMap<string, string>;
   workspaceRootOptions: string[];
   workspaceRootLabels: Record<string, string>;
   t: TranslateFn;
@@ -108,6 +114,8 @@ export function AutomationsDetailPane({
   draft,
   feedback,
   heartbeatThreadOptions,
+  inboxItems,
+  isInboxItemsLoading,
   isSaving,
   lastRunLabel,
   localEnvironmentState,
@@ -115,9 +123,12 @@ export function AutomationsDetailPane({
   nextRunLabel,
   onClearDraft,
   onDraftChange,
+  onOpenThread,
+  onSetInboxItemReadState,
   onOpenLocalEnvironmentsSettings,
   modelOptions,
   locale,
+  threadTitleById,
   workspaceRootOptions,
   workspaceRootLabels,
   t,
@@ -552,6 +563,23 @@ export function AutomationsDetailPane({
                         />
                       }
                     />
+                    <div className="mt-6 min-h-0 flex-1">
+                      <SectionLabel>{t("inbox.automations.history")}</SectionLabel>
+                      <div className="min-h-0 flex-1">
+                        <AutomationPreviousRunsList
+                          automationId={draft.id}
+                          formatRootLabel={(root) =>
+                            formatWorkspaceRootsLabel([root], locale, workspaceRootLabels, t)
+                          }
+                          inboxItems={inboxItems}
+                          isLoading={isInboxItemsLoading}
+                          onOpenThread={onOpenThread}
+                          onSetInboxItemReadState={onSetInboxItemReadState}
+                          threadTitleById={threadTitleById}
+                          t={t}
+                        />
+                      </div>
+                    </div>
                   </>
                 ) : null}
               </div>

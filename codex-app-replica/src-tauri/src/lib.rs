@@ -3,9 +3,11 @@ mod ambient_suggestions_connector_personalization;
 mod app_shell_signals;
 mod app_state_snapshot;
 mod auth_bridge;
+mod automation_run_history;
 mod automations;
 mod avatar_overlay;
 mod browser_session_data;
+mod browser_sidebar;
 mod browser_use_settings;
 mod chronicle;
 mod codex_app_config;
@@ -34,6 +36,7 @@ mod open_targets;
 mod pending_worktrees;
 mod power_save_blocker;
 mod primary_runtime;
+mod primary_runtime_post_install;
 mod projectless_threads;
 mod pull_request_git;
 mod pull_requests;
@@ -90,6 +93,7 @@ use auth_bridge::list_apps;
 use auth_bridge::list_archived_threads;
 use auth_bridge::list_archived_threads_command;
 use auth_bridge::list_experimental_features;
+use auth_bridge::list_experimental_features_for_host;
 use auth_bridge::list_hooks_for_host;
 use auth_bridge::list_mcp_server_status;
 use auth_bridge::list_mcp_server_status_command;
@@ -136,7 +140,9 @@ use auth_bridge::rollback_thread;
 use auth_bridge::save_plugin_share;
 use auth_bridge::save_plugin_share_command;
 use auth_bridge::send_add_credits_nudge_email;
+use auth_bridge::send_follow_up_message;
 use auth_bridge::set_experimental_feature_enablement;
+use auth_bridge::set_local_app_server_feature_enablement;
 use auth_bridge::set_personality;
 use auth_bridge::set_thread_goal;
 use auth_bridge::set_thread_name;
@@ -159,6 +165,9 @@ use auth_bridge::write_config_value_command;
 use auth_bridge::write_skill_config;
 use auth_bridge::write_skill_config_command;
 use auth_bridge::AuthBridgeState;
+use automation_run_history::inbox_item_set_read_state;
+use automation_run_history::inbox_items;
+use automation_run_history::AutomationRunHistoryState;
 use automations::automation_create_command;
 use automations::automation_delete_command;
 use automations::automation_run_now_command;
@@ -184,6 +193,11 @@ use avatar_overlay::avatar_overlay_open_state_request;
 use avatar_overlay::avatar_overlay_pointer_interaction_changed;
 use avatar_overlay::AvatarOverlayState;
 use browser_session_data::browser_browsing_data_clear;
+use browser_sidebar::browser_sidebar_navigate;
+use browser_sidebar::browser_sidebar_open_file;
+use browser_sidebar::browser_sidebar_set_bounds;
+use browser_sidebar::browser_sidebar_set_visible;
+use browser_sidebar::BrowserSidebarState;
 use browser_use_settings::add_browser_use_file_transfer_origin;
 use browser_use_settings::add_browser_use_origin;
 use browser_use_settings::browser_use_approval_mode_write;
@@ -260,6 +274,7 @@ use global_settings::get_global_state_command;
 use global_settings::set_global_state;
 use global_settings::set_global_state_command;
 use global_settings::wsl_bash_availability;
+use host_files::compile_latex_artifact;
 use host_files::open_file;
 use host_files::open_in_browser;
 use host_files::read_file;
@@ -300,6 +315,7 @@ use primary_runtime::primary_runtime_update_run_now;
 use primary_runtime::primary_runtime_update_status;
 use primary_runtime::reset_primary_runtime_dependencies;
 use primary_runtime::set_primary_runtime_install_release;
+use primary_runtime::sync_primary_runtime_shared_objects;
 use primary_runtime::PrimaryRuntimeState;
 use projectless_threads::projectless_thread_cwd;
 use pull_request_git::gh_pr_file_content;
@@ -332,6 +348,7 @@ use remote_control::remote_control_mfa_required_but_disabled_read;
 use remote_control::remote_control_mfa_requirement_read;
 use remote_diff_apply::apply_patch;
 use remote_tasks::remote_task_image_read;
+use remote_tasks::remote_task_list;
 use remote_tasks::remote_task_pr_create;
 use remote_tasks::remote_task_read;
 use remote_tasks::remote_task_turn_logs_read;
@@ -413,6 +430,7 @@ pub fn run() {
     let heartbeat_automation_scheduler_state =
         Arc::new(HeartbeatAutomationSchedulerState::default());
     let app_state_snapshot_state = Arc::new(AppStateSnapshotState::default());
+    let automation_run_history_state = Arc::new(AutomationRunHistoryState::default());
     if let Some(path) = parse_open_project_path() {
         *launch_state
             .open_project_path
@@ -440,9 +458,11 @@ pub fn run() {
         .manage(auth_state.clone())
         .manage(heartbeat_automation_scheduler_state.clone())
         .manage(app_state_snapshot_state.clone())
+        .manage(automation_run_history_state)
         .manage(launch_state)
         .manage(PowerSaveBlockerState::default())
         .manage(AvatarOverlayState::default())
+        .manage(BrowserSidebarState::default())
         .manage(PrimaryWindowModeState::default())
         .manage(DebugWindowOriginConversations::default())
         .manage(PendingPlanSummaries::default())
@@ -501,10 +521,15 @@ pub fn run() {
             desktop_notification_show,
             desktop_notification_hide,
             browser_browsing_data_clear,
+            browser_sidebar_navigate,
+            browser_sidebar_open_file,
+            browser_sidebar_set_bounds,
+            browser_sidebar_set_visible,
             remote_control_mfa_requirement_read,
             mfa_info_read,
             remote_control_clients_list,
             remote_control_mfa_required_but_disabled_read,
+            remote_task_list,
             remote_task_read,
             remote_task_turns_read,
             remote_task_turn_read,
@@ -521,6 +546,7 @@ pub fn run() {
             primary_runtime_update_run_now,
             reset_primary_runtime_dependencies,
             set_primary_runtime_install_release,
+            sync_primary_runtime_shared_objects,
             list_apps,
             read_app_tools,
             read_app_tools_command,
@@ -530,11 +556,14 @@ pub fn run() {
             fast_mode_rollout_metrics,
             list_automations,
             list_automations_command,
+            inbox_items,
+            inbox_item_set_read_state,
             read_config,
             read_config_for_host,
             get_config_requirements_for_host,
             list_models_for_host,
             list_experimental_features,
+            list_experimental_features_for_host,
             list_plugins,
             list_plugins_command,
             list_plugin_shares,
@@ -624,10 +653,12 @@ pub fn run() {
             set_thread_goal,
             start_turn,
             start_turn_with_input,
+            send_follow_up_message,
             start_review,
             steer_turn,
             interrupt_turn,
             set_experimental_feature_enablement,
+            set_local_app_server_feature_enablement,
             reset_memories,
             reset_memories_for_host,
             respond_to_approval_request,
@@ -679,6 +710,7 @@ pub fn run() {
             read_file,
             read_file_metadata,
             read_file_binary,
+            compile_latex_artifact,
             open_file,
             open_in_browser,
             open_in_targets,
@@ -770,6 +802,7 @@ pub fn run() {
         .setup(move |app| {
             let handle = app.handle().clone();
             spawn_heartbeat_automation_scheduler(
+                handle.clone(),
                 auth_state.clone(),
                 heartbeat_automation_scheduler_state.clone(),
             );

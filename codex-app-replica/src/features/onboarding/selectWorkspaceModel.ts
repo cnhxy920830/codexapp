@@ -5,6 +5,7 @@ import { getLocalEnvironmentProjectName, normalizePathForComparison } from "../.
 import type { PendingWorktreeEntry } from "../../services/pendingWorktrees";
 
 const WORKSPACE_ONBOARDING_EXPERIMENT_NAME = "93537254";
+export const WORKSPACE_ONBOARDING_DEFAULT_PROJECT_NAME = "Playground";
 
 export type WorkspaceOnboardingExperimentArm =
   | "control"
@@ -24,7 +25,10 @@ export type WorkspaceRootOption = {
   label: string;
 };
 
-export type WorkspaceAutoLaunchAction = "none" | "select_workspace_skip_to_playground";
+export type WorkspaceAutoLaunchAction =
+  | "none"
+  | "home_open_picker_or_create_default"
+  | "select_workspace_skip_to_playground";
 
 export function normalizeWorkspaceOnboardingExperimentAssignment(
   value: unknown,
@@ -65,6 +69,25 @@ export function readWorkspaceOnboardingExperimentArm(
   return arm === "t5_onboarding_v2" ? "control" : arm;
 }
 
+export function readWorkspaceOnboardingExperimentRouteArm(
+  assignment: WorkspaceOnboardingExperimentAssignment,
+) {
+  return assignment?.arm ?? "control";
+}
+
+export function shouldUseWelcomeV2WorkspaceOnboarding({
+  assignment,
+  welcomeV2DefaultFlowEnabled,
+}: {
+  assignment: WorkspaceOnboardingExperimentAssignment;
+  welcomeV2DefaultFlowEnabled: boolean;
+}) {
+  return (
+    welcomeV2DefaultFlowEnabled ||
+    readWorkspaceOnboardingExperimentRouteArm(assignment) === "t5_onboarding_v2"
+  );
+}
+
 export function isWorkspaceOnboardingExperimentAssignment(
   assignment: WorkspaceOnboardingExperimentAssignment,
 ) {
@@ -90,6 +113,10 @@ export function deriveWorkspaceAutoLaunchAction({
 }): WorkspaceAutoLaunchAction {
   if (isRemoteHost || isLoadingRoots || hasPersistedRoots || autoLaunchApplied) {
     return "none";
+  }
+
+  if (arm === "t2_direct_folder_picker") {
+    return "home_open_picker_or_create_default";
   }
 
   return arm === "t3_auto_playground" ? "select_workspace_skip_to_playground" : "none";

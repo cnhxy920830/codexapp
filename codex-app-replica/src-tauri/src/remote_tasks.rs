@@ -31,6 +31,15 @@ pub struct RemoteTaskReadParams {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct RemoteTaskListParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task_filter: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct RemoteTaskTurnsReadParams {
     pub task_id: String,
 }
@@ -76,10 +85,26 @@ struct RemoteTaskPullRequestCreateRequestBody {
     additional_labels: Option<Vec<String>>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct RemoteTaskListQuery {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    task_filter: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    limit: Option<u32>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteTaskImageReadParams {
     pub asset_pointer: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct RemoteTaskListResponse {
+    #[serde(default)]
+    pub items: Vec<RemoteTask>,
+    #[serde(flatten)]
+    pub extra: HashMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -140,6 +165,12 @@ pub struct RemoteTask {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archived: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub has_unread_turn: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_status_display: Option<RemoteTaskStatusDisplay>,
@@ -163,6 +194,8 @@ pub struct RemoteTaskStatusDisplay {
 pub struct RemoteTaskLatestTurnStatusDisplay {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_status: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diff_stats: Option<RemoteTaskDiffStats>,
     #[serde(flatten)]
@@ -323,6 +356,20 @@ pub async fn remote_task_read(
         .await
 }
 
+#[tauri::command(rename = "remote-task-list")]
+pub async fn remote_task_list(
+    params: RemoteTaskListParams,
+) -> Result<RemoteTaskListResponse, String> {
+    let query = RemoteTaskListQuery {
+        task_filter: params.task_filter,
+        limit: params.limit,
+    };
+    RemoteTasksClient::load()
+        .await?
+        .get_json_with_query("/wham/tasks/list", &query)
+        .await
+}
+
 #[tauri::command(rename = "remote-task-turns-read")]
 pub async fn remote_task_turns_read(
     params: RemoteTaskTurnsReadParams,
@@ -471,6 +518,23 @@ impl RemoteTasksClient {
         }
     }
 
+    async fn get_json_with_query<T: DeserializeOwned, Q: Serialize>(
+        &self,
+        path: &str,
+        query: &Q,
+    ) -> Result<T, String> {
+        match self.send_get_with_query(path, query).await {
+            Ok(value) => Ok(value),
+            Err(error) if error.is_unauthorized() => {
+                self.refresh_auth().await?;
+                self.send_get_with_query(path, query)
+                    .await
+                    .map_err(|err| err.message)
+            }
+            Err(error) => Err(error.message),
+        }
+    }
+
     async fn post_json<T: DeserializeOwned, B: Serialize>(
         &self,
         path: &str,
@@ -522,6 +586,41 @@ impl RemoteTasksClient {
             .http
             .get(&url)
             .headers(headers)
+            .send()
+            .await
+            .map_err(|err| RequestFailure {
+                status: err.status(),
+                message: format!("failed to GET {url}: {err}"),
+            })?;
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(RequestFailure {
+                status: Some(status),
+                message: format!("GET {url} returned status {status}; body: {body}"),
+            });
+        }
+        serde_json::from_str(&body).map_err(|err| RequestFailure {
+            status: Some(status),
+            message: format!("GET {url} response did not match expected shape: {err}"),
+        })
+    }
+
+    async fn send_get_with_query<T: DeserializeOwned, Q: Serialize>(
+        &self,
+        path: &str,
+        query: &Q,
+    ) -> Result<T, RequestFailure> {
+        let auth = self.current_auth().await.map_err(RequestFailure::other)?;
+        let headers = self
+            .headers_for_auth(&auth)
+            .map_err(RequestFailure::other)?;
+        let url = format!("{CHATGPT_BACKEND_BASE_URL}{path}");
+        let response = self
+            .http
+            .get(&url)
+            .headers(headers)
+            .query(query)
             .send()
             .await
             .map_err(|err| RequestFailure {
@@ -635,6 +734,15 @@ mod tests {
         let parsed: RemoteTaskReadParams =
             serde_json::from_value(serde_json::json!({"taskId": "task_123"})).expect("decode");
         assert_eq!(parsed.task_id, "task_123");
+    }
+
+    #[test]
+    fn remote_task_list_params_deserialize_camel_case() {
+        let parsed: RemoteTaskListParams =
+            serde_json::from_value(serde_json::json!({"taskFilter": "current", "limit": 20}))
+                .expect("decode");
+        assert_eq!(parsed.task_filter.as_deref(), Some("current"));
+        assert_eq!(parsed.limit, Some(20));
     }
 
     #[test]
@@ -758,6 +866,7 @@ mod tests {
                 "task_status_display": {
                     "environment_label": "qa",
                     "latest_turn_status_display": {
+                        "turn_id": "turn_2",
                         "turn_status": "in_progress",
                         "diff_stats": {
                             "lines_added": 12,
@@ -795,6 +904,16 @@ mod tests {
                 .task
                 .task_status_display
                 .as_ref()
+                .and_then(|status| status.latest_turn_status_display.as_ref())
+                .and_then(|status| status.turn_id.as_deref()),
+            Some("turn_2")
+        );
+        assert_eq!(parsed.task.has_unread_turn, Some(true));
+        assert_eq!(
+            parsed
+                .task
+                .task_status_display
+                .as_ref()
                 .and_then(|status| status.environment_label.as_deref()),
             Some("qa")
         );
@@ -812,6 +931,45 @@ mod tests {
                 .as_ref()
                 .map(|turn| turn.id.as_str()),
             Some("turn_3")
+        );
+    }
+
+    #[test]
+    fn remote_task_list_response_reads_overlay_fields() {
+        let parsed: RemoteTaskListResponse = serde_json::from_value(serde_json::json!({
+            "items": [
+                {
+                    "id": "task_1",
+                    "title": "Remote review",
+                    "archived": false,
+                    "created_at": 100,
+                    "updated_at": 120,
+                    "has_unread_turn": true,
+                    "task_status_display": {
+                        "environment_label": "qa",
+                        "latest_turn_status_display": {
+                            "turn_id": "turn_7",
+                            "turn_status": "completed"
+                        }
+                    }
+                }
+            ]
+        }))
+        .expect("decode");
+
+        assert_eq!(parsed.items.len(), 1);
+        assert_eq!(parsed.items[0].id, "task_1");
+        assert_eq!(parsed.items[0].archived, Some(false));
+        assert_eq!(parsed.items[0].created_at, Some(100));
+        assert_eq!(parsed.items[0].updated_at, Some(120));
+        assert_eq!(parsed.items[0].has_unread_turn, Some(true));
+        assert_eq!(
+            parsed.items[0]
+                .task_status_display
+                .as_ref()
+                .and_then(|status| status.latest_turn_status_display.as_ref())
+                .and_then(|status| status.turn_id.as_deref()),
+            Some("turn_7")
         );
     }
 

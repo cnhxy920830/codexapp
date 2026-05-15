@@ -31,6 +31,11 @@ export type UpdateDiffIfOpenParams = {
   unifiedDiff: string;
 };
 
+export type SetPrimaryWindowModeParams = {
+  mode: "app" | "onboarding";
+  onboardingVariant?: "v2";
+};
+
 export async function showPlanSummary(params: PendingPlanSummaryState) {
   await invoke("show-plan-summary", { params });
 }
@@ -55,6 +60,13 @@ export async function openInMainWindow(path: string) {
   await invoke("open-in-main-window", { path });
 }
 
+export async function openInNewWindow(params: {
+  hostId: string | null;
+  path: string;
+}) {
+  await invoke("open-in-new-window", { params });
+}
+
 export async function openInHotkeyWindow(path: string) {
   await invoke("open-in-hotkey-window", {
     params: { path },
@@ -63,6 +75,10 @@ export async function openInHotkeyWindow(path: string) {
 
 export async function notifyDebugWindowOriginConversationChanged(conversationId: string) {
   await invoke("debug-window-origin-conversation-changed", { conversationId });
+}
+
+export async function setPrimaryWindowMode(params: SetPrimaryWindowModeParams) {
+  await invoke("electron-set-window-mode", { params });
 }
 
 export async function takePendingDebugWindowOriginConversation() {

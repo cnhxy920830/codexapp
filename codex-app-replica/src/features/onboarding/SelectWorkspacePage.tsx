@@ -24,6 +24,7 @@ import {
   filterExistingWorkspaceRootOptions,
   normalizeWorkspaceOnboardingExperimentAssignment,
   readWorkspaceOnboardingExperimentArm,
+  WORKSPACE_ONBOARDING_DEFAULT_PROJECT_NAME,
   shouldUsePlaygroundCopy,
 } from "./selectWorkspaceModel";
 import { SelectWorkspacePageView } from "./SelectWorkspacePageView";
@@ -32,8 +33,6 @@ type SelectWorkspacePageProps = {
   onContinueToHome: (state: { focusComposerNonce: number }) => void;
   recentThreads: ThreadHistoryEntry[];
 };
-
-const PLAYGROUND_PROJECT_NAME = "Playground";
 
 export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectWorkspacePageProps) {
   const { t } = useI18n();
@@ -492,7 +491,9 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     setSkipErrorMessage(null);
     setIsSkipPending(true);
     try {
-      await skipWorkspaceOnboarding(usePlaygroundCopy ? PLAYGROUND_PROJECT_NAME : null);
+      await skipWorkspaceOnboarding(
+        usePlaygroundCopy ? WORKSPACE_ONBOARDING_DEFAULT_PROJECT_NAME : null,
+      );
     } catch (error) {
       setIsSkipPending(false);
       setSkipErrorMessage(getErrorMessage(error, t("electron.onboarding.workspace.skip.error.unknown")));

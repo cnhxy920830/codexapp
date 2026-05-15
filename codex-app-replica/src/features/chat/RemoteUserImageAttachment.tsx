@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ImagePreviewDialog } from "../../components/ImagePreviewDialog";
 import { useI18n } from "../../i18n/i18n";
 import {
   readRemoteTaskImageAsset,
@@ -13,23 +14,6 @@ export function RemoteUserImageAttachment({
   const { t } = useI18n();
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const { isError, isLoading, refetch, src } = useRemoteUserImageAttachmentSrc(attachment);
-
-  useEffect(() => {
-    if (!isPreviewOpen) {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setIsPreviewOpen(false);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isPreviewOpen]);
 
   if (isError) {
     return null;
@@ -50,56 +34,40 @@ export function RemoteUserImageAttachment({
   }
 
   return (
-    <>
-      <button
-        type="button"
-        aria-label={altText}
-        onClick={() => setIsPreviewOpen(true)}
-        className="size-16 cursor-zoom-in overflow-hidden rounded-md focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--app-shell-accent)]"
-      >
-        <img
-          src={src}
-          width={attachment.width ?? undefined}
-          height={attachment.height ?? undefined}
-          className="h-full w-full rounded-md object-contain"
-          referrerPolicy="no-referrer"
-          onError={() => void refetch()}
-          alt={altText}
-        />
-      </button>
-      {isPreviewOpen ? (
+    <ImagePreviewDialog
+      alt={altText}
+      closeAriaLabel={closeLabel}
+      contentMaxWidthClassName="max-w-[min(90vw,calc(var(--thread-content-max-width)+16rem))]"
+      imageReferrerPolicy="no-referrer"
+      onImageError={() => void refetch()}
+      onOpenChange={setIsPreviewOpen}
+      open={isPreviewOpen}
+      src={src}
+      triggerContent={
         <div
-          className="fixed inset-0 z-20 flex items-center justify-center bg-[rgba(0,0,0,0.72)] p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-label={closeLabel}
-          onClick={() => setIsPreviewOpen(false)}
+          className="size-16 cursor-interaction rounded-md focus:outline-none focus-visible:ring-1 focus-visible:ring-token-focus-border"
+          role="button"
+          tabIndex={0}
+          aria-label={altText}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setIsPreviewOpen(true);
+            }
+          }}
         >
-          <button
-            type="button"
-            aria-label={closeLabel}
-            onClick={() => setIsPreviewOpen(false)}
-            className="app-control absolute top-4 right-4 rounded-full px-3 py-1.5 text-[13px]"
-          >
-            ×
-          </button>
-          <div
-            className="w-full max-w-[min(90vw,calc(var(--thread-content-max-width)+16rem))]"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <img
-              src={src}
-              width={attachment.width ?? undefined}
-              height={attachment.height ?? undefined}
-              className="max-h-[90vh] w-full object-contain"
-              referrerPolicy="no-referrer"
-              onError={() => void refetch()}
-              alt={altText}
-            />
-          </div>
+          <img
+            src={src}
+            width={attachment.width ?? undefined}
+            height={attachment.height ?? undefined}
+            className="h-full w-full rounded-md object-contain"
+            referrerPolicy="no-referrer"
+            onError={() => void refetch()}
+            alt={altText}
+          />
         </div>
-      ) : null}
-    </>
+      }
+    />
   );
 }
 

@@ -8,11 +8,23 @@ export type ThreadHistoryEntry = {
   preview: string;
   createdAt: number;
   updatedAt: number;
+  status: ThreadHistoryStatus;
   cwd: string;
   path: string | null;
   name: string | null;
   source: ThreadHistoryEntrySource | null;
 };
+
+export type ThreadHistoryStatus =
+  | { type: "notLoaded" }
+  | { type: "idle" }
+  | { type: "systemError" }
+  | {
+      type: "active";
+      activeFlags: ThreadHistoryActiveFlag[];
+    };
+
+export type ThreadHistoryActiveFlag = "waitingOnApproval" | "waitingOnUserInput";
 
 export type ThreadHistoryEntrySource = {
   parentThreadId: string | null;
@@ -30,6 +42,66 @@ export type HistoryProjectGroup = {
   threads: HistoryThreadView[];
 };
 
+export type ThreadConversationUserCommentContent = {
+  contentType: string;
+  text?: string | null;
+  label?: string | null;
+};
+
+export type ThreadConversationUserCommentPosition = {
+  path: string;
+  line: number;
+};
+
+export type ThreadConversationUserCommentPagePoint = {
+  x: number;
+  y: number;
+};
+
+export type ThreadConversationUserCommentPageRect = ThreadConversationUserCommentPagePoint & {
+  width: number;
+  height: number;
+};
+
+export type ThreadConversationUserCommentPageSize = {
+  width: number;
+  height: number;
+};
+
+export type ThreadConversationUserCommentLocalPdfContext = {
+  pageCount: number;
+  pageNumber: number;
+  path: string;
+  title: string | null;
+};
+
+export type ThreadConversationUserCommentLocalPdfCommentMetadata = {
+  kind: "point" | "region";
+  pagePoint?: ThreadConversationUserCommentPagePoint | null;
+  pageRect?: ThreadConversationUserCommentPageRect | null;
+  pageSize: ThreadConversationUserCommentPageSize;
+};
+
+export type ThreadConversationUserCommentLocalPdfScreenshot = {
+  commentId: string;
+  dataUrl: string;
+  width: number;
+  height: number;
+  pageNumber: number;
+};
+
+export type ThreadConversationUserComment = {
+  path: string;
+  lineRange?: string | null;
+  body: string;
+  content?: ThreadConversationUserCommentContent[];
+  position?: ThreadConversationUserCommentPosition | null;
+  origin?: string | null;
+  localPdfContext?: ThreadConversationUserCommentLocalPdfContext | null;
+  localPdfCommentMetadata?: ThreadConversationUserCommentLocalPdfCommentMetadata | null;
+  localPdfScreenshot?: ThreadConversationUserCommentLocalPdfScreenshot | null;
+};
+
 export type ThreadConversationMessage = {
   type: "userMessage" | "agentMessage";
   id: string;
@@ -42,11 +114,7 @@ export type ThreadConversationMessage = {
     label: string;
     path: string;
   }>;
-  comments?: Array<{
-    path: string;
-    lineRange?: string | null;
-    body: string;
-  }>;
+  comments?: ThreadConversationUserComment[];
   referencesPriorConversation?: boolean;
   reviewMode?: boolean;
   pullRequestFixMode?: boolean;
@@ -268,6 +336,30 @@ export type ThreadConversationTextElement = {
   placeholder: string | null;
 };
 
+export type ThreadConversationUserInputCommentContent = {
+  content_type: string;
+  text?: string | null;
+  label?: string | null;
+};
+
+export type ThreadConversationUserInputCommentPosition = {
+  side?: string | null;
+  path: string;
+  line: number;
+};
+
+export type ThreadConversationUserInputComment = {
+  type: "comment";
+  path: string;
+  body: string;
+  content: ThreadConversationUserInputCommentContent[];
+  position: ThreadConversationUserInputCommentPosition | null;
+  origin?: string | null;
+  localPdfContext?: ThreadConversationUserCommentLocalPdfContext | null;
+  localPdfCommentMetadata?: ThreadConversationUserCommentLocalPdfCommentMetadata | null;
+  localPdfScreenshot?: ThreadConversationUserCommentLocalPdfScreenshot | null;
+};
+
 export type ThreadConversationUserInput =
   | {
       type: "text";
@@ -291,7 +383,8 @@ export type ThreadConversationUserInput =
       type: "mention";
       name: string;
       path: string;
-    };
+    }
+  | ThreadConversationUserInputComment;
 
 export type ThreadConversationWorkedFor = {
   type: "workedFor";
@@ -1000,11 +1093,31 @@ export async function startTurnWithInput(params: {
   return invoke<string>("start_turn_with_input", params);
 }
 
+export async function sendFollowUpMessage(params: {
+  conversationId: string;
+  prompt: string;
+  model?: string | null;
+  reasoningEffort?: string | null;
+}) {
+  return invoke<string>("send-follow-up-message", {
+    params: {
+      conversationId: params.conversationId,
+      prompt: params.prompt,
+      model: params.model ?? null,
+      reasoningEffort: params.reasoningEffort ?? null,
+    },
+  });
+}
+
 export async function startReview(params: { threadId: string; delivery: ReviewDelivery }) {
   return invoke<ReviewStartResponse>("start_review", { params });
 }
 
-export async function steerTurn(params: { threadId: string; turnId: string; text: string }) {
+export async function steerTurn(params: {
+  threadId: string;
+  turnId: string;
+  input: ThreadConversationUserInput[];
+}) {
   return invoke<string>("steer_turn", params);
 }
 
@@ -1177,11 +1290,111 @@ function normalizeThreadConversationUserInput(
   if (input.type === "skill" || input.type === "mention") {
     return typeof input.name === "string" && typeof input.path === "string" ? input : null;
   }
+  if (input.type === "comment") {
+    return normalizeThreadConversationUserInputComment(input);
+  }
 
   return null;
 }
 
+function normalizeThreadConversationUserInputComment(
+  input: ThreadConversationUserInputComment,
+): ThreadConversationUserInputComment | null {
+  const path = typeof input.path === "string" ? input.path : "";
+  const body = typeof input.body === "string" ? input.body : "";
+  const content = normalizeThreadConversationUserInputCommentContent(input.content, body);
+  const position = normalizeThreadConversationUserInputCommentPosition(input.position, path);
+
+  if (path.length === 0 && body.length === 0 && content.length === 0) {
+    return null;
+  }
+
+  return {
+    type: "comment",
+    path,
+    body,
+    content,
+    position,
+    origin: typeof input.origin === "string" ? input.origin : null,
+    localPdfContext: normalizeThreadConversationUserCommentLocalPdfContext(input.localPdfContext),
+    localPdfCommentMetadata: normalizeThreadConversationUserCommentLocalPdfCommentMetadata(
+      input.localPdfCommentMetadata,
+    ),
+    localPdfScreenshot: normalizeThreadConversationUserCommentLocalPdfScreenshot(input.localPdfScreenshot),
+  };
+}
+
+function normalizeThreadConversationUserInputCommentContent(
+  content: ThreadConversationUserInputCommentContent[] | undefined,
+  body: string,
+): ThreadConversationUserInputCommentContent[] {
+  if (!Array.isArray(content) || content.length === 0) {
+    return body.length > 0
+      ? [
+          {
+            content_type: "text",
+            text: body,
+          },
+        ]
+      : [];
+  }
+
+  return content
+    .map((item): ThreadConversationUserInputCommentContent | null => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const contentRecord = item as ThreadConversationUserInputCommentContent & {
+        contentType?: string | null;
+      };
+      const contentType =
+        typeof contentRecord.content_type === "string"
+          ? contentRecord.content_type
+          : typeof contentRecord.contentType === "string"
+            ? contentRecord.contentType
+            : null;
+      if (contentType == null || contentType.length === 0) {
+        return null;
+      }
+
+      return {
+        content_type: contentType,
+        text: typeof item.text === "string" ? item.text : null,
+        label: typeof item.label === "string" ? item.label : null,
+      };
+    })
+    .filter((item): item is ThreadConversationUserInputCommentContent => item !== null);
+}
+
+function normalizeThreadConversationUserInputCommentPosition(
+  position: ThreadConversationUserInputCommentPosition | null | undefined,
+  fallbackPath: string,
+) {
+  const line =
+    typeof position?.line === "number" && Number.isFinite(position.line)
+      ? position.line
+      : null;
+  const path = typeof position?.path === "string" && position.path.length > 0 ? position.path : fallbackPath;
+  if (line === null || path.length === 0) {
+    return null;
+  }
+
+  return {
+    side: typeof position?.side === "string" ? position.side : null,
+    path,
+    line,
+  };
+}
+
 export function normalizeThreadConversationItem(item: ThreadConversationItem): ThreadConversationItem | null {
+  if (item.type === "userMessage") {
+    return {
+      ...item,
+      comments: normalizeThreadConversationComments(item.comments),
+    };
+  }
+
   if (item.type === "hook") {
     return {
       ...item,
@@ -1210,6 +1423,275 @@ export function normalizeThreadConversationItem(item: ThreadConversationItem): T
   }
 
   return item;
+}
+
+function normalizeThreadConversationComments(comments: ThreadConversationUserComment[] | undefined) {
+  if (!Array.isArray(comments)) {
+    return [];
+  }
+
+  return comments
+    .map(normalizeThreadConversationUserComment)
+    .filter((comment): comment is ThreadConversationUserComment => comment !== null);
+}
+
+function normalizeThreadConversationUserComment(
+  comment: ThreadConversationUserComment,
+): ThreadConversationUserComment | null {
+  if (!comment || typeof comment !== "object") {
+    return null;
+  }
+
+  const path = typeof comment.path === "string" ? comment.path : "";
+  const body = typeof comment.body === "string" ? comment.body : "";
+  if (path.length === 0 && body.length === 0) {
+    return null;
+  }
+
+  const lineRange = typeof comment.lineRange === "string" ? comment.lineRange : null;
+  const content = normalizeThreadConversationUserCommentContent(comment.content, body);
+  const position = normalizeThreadConversationUserCommentPosition(comment.position, path, lineRange);
+
+  return {
+    path,
+    lineRange,
+    body,
+    content,
+    position,
+    origin: typeof comment.origin === "string" ? comment.origin : null,
+    localPdfContext: normalizeThreadConversationUserCommentLocalPdfContext(comment.localPdfContext),
+    localPdfCommentMetadata: normalizeThreadConversationUserCommentLocalPdfCommentMetadata(
+      comment.localPdfCommentMetadata,
+    ),
+    localPdfScreenshot: normalizeThreadConversationUserCommentLocalPdfScreenshot(comment.localPdfScreenshot),
+  };
+}
+
+function normalizeThreadConversationUserCommentContent(
+  content: ThreadConversationUserCommentContent[] | undefined,
+  body: string,
+): ThreadConversationUserCommentContent[] {
+  if (!Array.isArray(content) || content.length === 0) {
+    return body.length > 0
+      ? [
+          {
+            contentType: "text",
+            text: body,
+          },
+        ]
+      : [];
+  }
+
+  return content
+    .map((item): ThreadConversationUserCommentContent | null => {
+      if (!item || typeof item !== "object" || typeof item.contentType !== "string") {
+        return null;
+      }
+
+      return {
+        contentType: item.contentType,
+        text: typeof item.text === "string" ? item.text : null,
+        label: typeof item.label === "string" ? item.label : null,
+      };
+    })
+    .filter((item): item is ThreadConversationUserCommentContent => item !== null);
+}
+
+function normalizeThreadConversationUserCommentPosition(
+  position: ThreadConversationUserCommentPosition | null | undefined,
+  fallbackPath: string,
+  lineRange: string | null,
+) {
+  const line =
+    typeof position?.line === "number" && Number.isFinite(position.line)
+      ? position.line
+      : parseFirstCommentLineNumber(lineRange);
+  const path = typeof position?.path === "string" && position.path.length > 0 ? position.path : fallbackPath;
+  if (line === null || path.length === 0) {
+    return null;
+  }
+
+  return {
+    path,
+    line,
+  };
+}
+
+function normalizeThreadConversationUserCommentLocalPdfContext(
+  context: ThreadConversationUserCommentLocalPdfContext | null | undefined,
+) {
+  if (!context || typeof context !== "object") {
+    return null;
+  }
+
+  if (
+    typeof context.pageCount !== "number" ||
+    !Number.isFinite(context.pageCount) ||
+    typeof context.pageNumber !== "number" ||
+    !Number.isFinite(context.pageNumber) ||
+    typeof context.path !== "string" ||
+    context.path.length === 0
+  ) {
+    return null;
+  }
+
+  return {
+    pageCount: context.pageCount,
+    pageNumber: context.pageNumber,
+    path: context.path,
+    title: typeof context.title === "string" ? context.title : null,
+  };
+}
+
+function normalizeThreadConversationUserCommentLocalPdfCommentMetadata(
+  metadata: ThreadConversationUserCommentLocalPdfCommentMetadata | null | undefined,
+): ThreadConversationUserCommentLocalPdfCommentMetadata | null {
+  if (!metadata || typeof metadata !== "object") {
+    return null;
+  }
+
+  const pageSize = normalizeThreadConversationUserCommentPageSize(metadata.pageSize);
+  if (pageSize === null) {
+    return null;
+  }
+
+  if (metadata.kind === "point") {
+    const pagePoint = normalizeThreadConversationUserCommentPagePoint(metadata.pagePoint);
+    if (pagePoint === null) {
+      return null;
+    }
+
+    return {
+      kind: "point",
+      pagePoint,
+      pageRect: null,
+      pageSize,
+    };
+  }
+
+  if (metadata.kind === "region") {
+    const pageRect = normalizeThreadConversationUserCommentPageRect(metadata.pageRect);
+    if (pageRect === null) {
+      return null;
+    }
+
+    return {
+      kind: "region",
+      pagePoint: null,
+      pageRect,
+      pageSize,
+    };
+  }
+
+  return null;
+}
+
+function normalizeThreadConversationUserCommentLocalPdfScreenshot(
+  screenshot: ThreadConversationUserCommentLocalPdfScreenshot | null | undefined,
+) {
+  if (!screenshot || typeof screenshot !== "object") {
+    return null;
+  }
+
+  if (
+    typeof screenshot.commentId !== "string" ||
+    screenshot.commentId.length === 0 ||
+    typeof screenshot.dataUrl !== "string" ||
+    screenshot.dataUrl.length === 0 ||
+    typeof screenshot.width !== "number" ||
+    !Number.isFinite(screenshot.width) ||
+    typeof screenshot.height !== "number" ||
+    !Number.isFinite(screenshot.height) ||
+    typeof screenshot.pageNumber !== "number" ||
+    !Number.isFinite(screenshot.pageNumber)
+  ) {
+    return null;
+  }
+
+  return {
+    commentId: screenshot.commentId,
+    dataUrl: screenshot.dataUrl,
+    width: screenshot.width,
+    height: screenshot.height,
+    pageNumber: screenshot.pageNumber,
+  };
+}
+
+function normalizeThreadConversationUserCommentPageSize(
+  pageSize: ThreadConversationUserCommentPageSize | null | undefined,
+) {
+  if (
+    !pageSize ||
+    typeof pageSize.width !== "number" ||
+    !Number.isFinite(pageSize.width) ||
+    typeof pageSize.height !== "number" ||
+    !Number.isFinite(pageSize.height)
+  ) {
+    return null;
+  }
+
+  return {
+    width: pageSize.width,
+    height: pageSize.height,
+  };
+}
+
+function normalizeThreadConversationUserCommentPagePoint(
+  pagePoint: ThreadConversationUserCommentPagePoint | null | undefined,
+) {
+  if (
+    !pagePoint ||
+    typeof pagePoint.x !== "number" ||
+    !Number.isFinite(pagePoint.x) ||
+    typeof pagePoint.y !== "number" ||
+    !Number.isFinite(pagePoint.y)
+  ) {
+    return null;
+  }
+
+  return {
+    x: pagePoint.x,
+    y: pagePoint.y,
+  };
+}
+
+function normalizeThreadConversationUserCommentPageRect(
+  pageRect: ThreadConversationUserCommentPageRect | null | undefined,
+) {
+  if (
+    !pageRect ||
+    typeof pageRect.x !== "number" ||
+    !Number.isFinite(pageRect.x) ||
+    typeof pageRect.y !== "number" ||
+    !Number.isFinite(pageRect.y) ||
+    typeof pageRect.width !== "number" ||
+    !Number.isFinite(pageRect.width) ||
+    typeof pageRect.height !== "number" ||
+    !Number.isFinite(pageRect.height)
+  ) {
+    return null;
+  }
+
+  return {
+    x: pageRect.x,
+    y: pageRect.y,
+    width: pageRect.width,
+    height: pageRect.height,
+  };
+}
+
+function parseFirstCommentLineNumber(lineRange: string | null) {
+  if (lineRange == null) {
+    return null;
+  }
+
+  const match = /\d+/.exec(lineRange);
+  if (match == null) {
+    return null;
+  }
+
+  const line = Number.parseInt(match[0], 10);
+  return Number.isFinite(line) ? line : null;
 }
 
 export function normalizeThreadEvent(event: ThreadEvent): ThreadEvent | null {

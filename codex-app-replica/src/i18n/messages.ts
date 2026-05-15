@@ -247,6 +247,7 @@ export type MessageKey =
   | "app.shell.appMenu"
   | "app.shell.back"
   | "app.shell.forward"
+  | "app.shell.toggleSidebar"
   | "app.shell.settings"
   | "app.shell.share"
   | "home.hero.letsBuild"
@@ -311,6 +312,7 @@ export type MessageKey =
   | "app.chat.send"
   | "app.chat.stop"
   | "app.chat.queuedFollowUps"
+  | "commentAttachments.numAnnotations"
   | "app.chat.removeQueuedFollowUp"
   | "app.chat.commandExecution"
   | "app.chat.fileChange"
@@ -554,6 +556,22 @@ export type MessageKey =
   | "codex.remoteConversation.userImageAttachment"
   | "codex.remoteConversation.closeImagePreview"
   | "codex.remoteConversation.loadingImage"
+  | "imagePreviewDialog.label"
+  | "imagePreviewDialog.close"
+  | "imagePreviewDialog.download"
+  | "imagePreviewDialog.zoomIn"
+  | "imagePreviewDialog.zoomOut"
+  | "imagePreviewDialog.previousImage"
+  | "imagePreviewDialog.nextImage"
+  | "artifactPdfPreview.annotate"
+  | "artifactPdfPreview.annotating"
+  | "artifactPdfPreview.commentInput"
+  | "artifactPdfPreview.commentMarkerLabel"
+  | "markdown.videoPlayer"
+  | "markdown.videoUnavailable"
+  | "markdown.imagePreviewButton"
+  | "markdown.imageUnavailable"
+  | "markdown.imageLoading"
   | "codex.remoteConversation.taskFailed"
   | "codex.remoteConversation.turnFailed"
   | "codex.remoteConversation.turnTab.title"
@@ -734,6 +752,23 @@ export type MessageKey =
   | "codex.review.fileSearch.empty"
   | "thread.fileTreePanel.noMatchingFiles"
   | "thread.fileTreePanel.searchingFiles"
+  | "markdown.externalLink.openInBrowser"
+  | "markdown.externalLink.openInExternalBrowser"
+  | "markdown.externalLink.copyLink"
+  | "markdown.fileReference.openInTarget"
+  | "markdown.fileReference.viewInCodexBrowser"
+  | "markdown.fileReference.viewFile"
+  | "markdown.fileReference.openWith"
+  | "markdown.fileReference.openWithTarget"
+  | "markdown.fileReference.copyPath"
+  | "markdown.fileReference.openInFinder"
+  | "markdown.fileReference.openInExplorer"
+  | "markdown.fileReference.openInFileManager"
+  | "mermaidDiagram.fitToWidth"
+  | "mermaidDiagram.viewActualSize"
+  | "mermaidDiagram.copySource"
+  | "mermaidDiagram.ariaLabel"
+  | "mermaidDiagram.originalCode"
   | "review.fileSource.breadcrumb.ariaLabel"
   | "review.fileSource.breadcrumb.openInEditor.ariaLabel"
   | "review.fileSource.breadcrumb.openInEditor.tooltip"
@@ -793,7 +828,36 @@ export type MessageKey =
   | "artifactTab.previewError"
   | "artifactTab.previewLoading"
   | "artifactTab.previewTooLarge"
+  | "copyButton.copyAriaLabel"
+  | "copyButton.copied"
+  | "copyButton.copiedAriaLabel"
+  | "copyButton.copyCode"
+  | "notebookPreview.cellCount"
+  | "notebookPreview.codeCellTitle"
+  | "notebookPreview.codeDisclosure"
+  | "notebookPreview.empty"
+  | "notebookPreview.emptyCodeCell"
+  | "notebookPreview.emptyMarkdownCell"
+  | "notebookPreview.emptyUnknownCell"
+  | "notebookPreview.emptyRawCell"
+  | "notebookPreview.errorOutput"
+  | "notebookPreview.executionCount"
+  | "notebookPreview.htmlOutputTitle"
+  | "notebookPreview.imageOutputAlt"
+  | "notebookPreview.markdownCellTitle"
+  | "notebookPreview.rawCellTitle"
+  | "notebookPreview.rawCodeTitle"
+  | "notebookPreview.rawOutputDisclosure"
+  | "notebookPreview.readOnlyBadge"
+  | "notebookPreview.restartKernelDisabled"
+  | "notebookPreview.restartKernelDisabledTooltip"
+  | "notebookPreview.runAllDisabled"
+  | "notebookPreview.runAllDisabledTooltip"
+  | "notebookPreview.runCellDisabledTooltip"
+  | "notebookPreview.cellPosition"
+  | "notebookPreview.pythonCodeTitle"
   | "artifactTab.sourceOptions"
+  | "artifactTab.sourceOptions.viewSource"
   | "codex.diffView.failedToDecodeBase64Diff"
   | "codex.diffView.filesChanged"
   | "codex.diffView.linesAdded"
@@ -826,11 +890,19 @@ export type MessageKey =
   | "threadHeader.copyWorkingDirectorySuccess"
   | "threadHeader.editAutomation"
   | "threadHeader.forkIntoLocal"
+  | "threadHeader.forkIntoWorktree"
+  | "threadHeader.forkPendingWorktreePrompt"
+  | "threadHeader.forkPendingWorktreeTitle"
+  | "threadHeader.forkThreadRequiresGitRepo"
   | "threadHeader.forkIntoSameWorktree"
   | "threadHeader.forkThreadError"
   | "threadHeader.openSideChat"
+  | "threadHeader.openInNewWindow"
   | "threadHeader.openSideChatError"
   | "threadHeader.moreActions"
+  | "sidebarElectron.markThreadUnread"
+  | "sidebarElectron.pinThread"
+  | "sidebarElectron.unpinThread"
   | "localConversation.sideChat.title"
   | "localConversation.sideChat.numberedTitle"
   | "sidebarElectron.archiveThread"
@@ -1584,6 +1656,13 @@ export type MessageKey =
   | "notifications.permissions.description"
   | "notifications.questions.label"
   | "notifications.questions.description"
+  | "settings.general.experimentalFeatures"
+  | "settings.general.experimentalFeatures.restartNote"
+  | "settings.general.experimentalFeatures.loading"
+  | "settings.general.experimentalFeatures.empty"
+  | "settings.general.experimentalFeatures.toggle"
+  | "settings.general.experimentalFeatures.plugins.label"
+  | "settings.general.experimentalFeatures.plugins.description"
   | "settings.general.experimentalFeatures.hotkeyWindowHotkey.label"
   | "settings.general.experimentalFeatures.hotkeyWindowHotkey.description"
   | "settings.general.experimentalFeatures.hotkeyWindowHotkey.off"
@@ -1594,6 +1673,35 @@ export type MessageKey =
   | "settings.general.experimentalFeatures.hotkeyWindowHotkey.change"
   | "settings.general.experimentalFeatures.hotkeyWindowHotkey.clear"
   | "settings.general.experimentalFeatures.hotkeyWindowHotkey.errorGeneric"
+  | "settings.agent.dependencies.sectionTitle"
+  | "settings.agent.dependencies.bundleVersion.label"
+  | "settings.agent.dependencies.bundleVersion.loading"
+  | "settings.agent.dependencies.bundleVersion.notInstalled"
+  | "settings.agent.dependencies.bundleVersion.problemDescription"
+  | "settings.agent.dependencies.enabled.label"
+  | "settings.agent.dependencies.enabled.description"
+  | "settings.agent.dependencies.enabled.ariaLabel"
+  | "settings.agent.dependencies.diagnose.label"
+  | "settings.agent.dependencies.diagnose.description"
+  | "settings.agent.dependencies.diagnose.button"
+  | "settings.agent.dependencies.diagnose.ok"
+  | "settings.agent.dependencies.diagnose.problem"
+  | "settings.agent.dependencies.diagnose.failed"
+  | "settings.agent.dependencies.reset.label"
+  | "settings.agent.dependencies.reset.description"
+  | "settings.agent.dependencies.reset.button"
+  | "settings.agent.dependencies.reset.installed"
+  | "settings.agent.dependencies.reset.canceled"
+  | "settings.agent.dependencies.reset.failed"
+  | "settings.agent.dependencies.cancel.button"
+  | "settings.agent.dependencies.cancel.noop"
+  | "settings.agent.dependencies.cancel.canceled"
+  | "settings.agent.dependencies.cancel.failed"
+  | "settings.remoteControlConnections.localRemoteControl.label"
+  | "settings.remoteControlConnections.localRemoteControl.description"
+  | "localConversation.primaryRuntimeInstallStatus.downloading"
+  | "localConversation.primaryRuntimeInstallStatus.extracting"
+  | "localConversation.primaryRuntimeInstallStatus.finalizing"
   | "settings.general.power.preventSleepWhileRunning.label"
   | "settings.general.power.preventSleepWhileRunning.description"
   | "settings.agentEnvironment.label"
@@ -2443,6 +2551,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.shell.appMenu": "App menu",
     "app.shell.back": "Back",
     "app.shell.forward": "Forward",
+    "app.shell.toggleSidebar": "Toggle sidebar",
     "app.shell.settings": "Settings",
     "app.shell.share": "Share",
     "codex.alert.closeAriaLabel": "Close",
@@ -2504,6 +2613,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.send": "Send",
     "app.chat.stop": "Stop",
     "app.chat.queuedFollowUps": "Queued follow-ups ({count})",
+    "commentAttachments.numAnnotations": "{count, plural, one {# annotation} other {# annotations}}",
     "app.chat.removeQueuedFollowUp": "Remove",
     "app.chat.commandExecution": "Command",
     "app.chat.fileChange": "File change",
@@ -2765,6 +2875,22 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.remoteConversation.userImageAttachment": "User attachment",
     "codex.remoteConversation.closeImagePreview": "Close image preview",
     "codex.remoteConversation.loadingImage": "Loading image",
+    "imagePreviewDialog.label": "Image preview",
+    "imagePreviewDialog.close": "Close image preview",
+    "imagePreviewDialog.download": "Download image",
+    "imagePreviewDialog.zoomIn": "Zoom in image",
+    "imagePreviewDialog.zoomOut": "Zoom out image",
+    "imagePreviewDialog.previousImage": "Previous image",
+    "imagePreviewDialog.nextImage": "Next image",
+    "artifactPdfPreview.annotate": "Annotate",
+    "artifactPdfPreview.annotating": "Annotating",
+    "artifactPdfPreview.commentInput": "PDF annotation",
+    "artifactPdfPreview.commentMarkerLabel": "PDF annotation {commentNumber}",
+    "markdown.videoPlayer": "Video",
+    "markdown.videoUnavailable": "Video unavailable",
+    "markdown.imagePreviewButton": "Open image preview",
+    "markdown.imageUnavailable": "Image unavailable",
+    "markdown.imageLoading": "Image loading",
     "codex.remoteConversation.taskFailed": "Task failed",
     "codex.remoteConversation.turnFailed": "An error occurred during this task",
     "codex.remoteConversation.turnTab.title": "Attempt {number}",
@@ -3011,10 +3137,56 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "artifactTab.preview.previousPage": "Previous page",
     "artifactTab.preview.zoomPercent": "{zoomPercent}%",
     "artifactTab.preview.zoomToFit": "Zoom to fit",
+    "markdown.externalLink.openInBrowser": "Open in browser",
+    "markdown.externalLink.openInExternalBrowser": "Open in external browser",
+    "markdown.externalLink.copyLink": "Copy link",
+    "markdown.fileReference.openInTarget": "Open in {target}",
+    "markdown.fileReference.viewInCodexBrowser": "View in browser",
+    "markdown.fileReference.viewFile": "Open file",
+    "markdown.fileReference.openWith": "Open with",
+    "markdown.fileReference.openWithTarget": "{target}",
+    "markdown.fileReference.copyPath": "Copy path",
+    "markdown.fileReference.openInFinder": "Open in Finder",
+    "markdown.fileReference.openInExplorer": "Open in Explorer",
+    "markdown.fileReference.openInFileManager": "Open in File Manager",
+    "mermaidDiagram.fitToWidth": "Fit diagram to width",
+    "mermaidDiagram.viewActualSize": "View actual size",
+    "mermaidDiagram.copySource": "Copy mermaid",
+    "mermaidDiagram.ariaLabel": "Mermaid diagram",
+    "mermaidDiagram.originalCode": "Mermaid source code",
     "artifactTab.previewError": "Couldn’t load this preview",
     "artifactTab.previewLoading": "Preparing preview…",
     "artifactTab.previewTooLarge": "This file is too large to preview in the side panel",
+    "copyButton.copyAriaLabel": "Copy",
+    "copyButton.copied": "Copied",
+    "copyButton.copiedAriaLabel": "Copied",
+    "copyButton.copyCode": "Copy code",
+    "notebookPreview.cellCount": "{cellCount, plural, one {# cell} other {# cells}}",
+    "notebookPreview.codeCellTitle": "Code cell {cellNumber}",
+    "notebookPreview.codeDisclosure": "Code",
+    "notebookPreview.empty": "This notebook does not contain any cells",
+    "notebookPreview.emptyCodeCell": "Empty code cell",
+    "notebookPreview.emptyMarkdownCell": "Empty Markdown cell",
+    "notebookPreview.emptyUnknownCell": "Empty notebook cell",
+    "notebookPreview.emptyRawCell": "Empty raw cell",
+    "notebookPreview.errorOutput": "{name}: {message}",
+    "notebookPreview.executionCount": "Run {executionCount}",
+    "notebookPreview.htmlOutputTitle": "Notebook HTML output",
+    "notebookPreview.imageOutputAlt": "Notebook output {outputNumber}",
+    "notebookPreview.markdownCellTitle": "Markdown cell {cellNumber}",
+    "notebookPreview.rawCellTitle": "Raw cell {cellNumber}",
+    "notebookPreview.rawCodeTitle": "Raw",
+    "notebookPreview.rawOutputDisclosure": "Raw output",
+    "notebookPreview.readOnlyBadge": "Read only",
+    "notebookPreview.restartKernelDisabled": "Restart kernel",
+    "notebookPreview.restartKernelDisabledTooltip": "Kernels are not connected in this preview",
+    "notebookPreview.runAllDisabled": "Run all",
+    "notebookPreview.runAllDisabledTooltip": "Running is not available in this preview",
+    "notebookPreview.runCellDisabledTooltip": "Running is disabled in read-only preview",
+    "notebookPreview.cellPosition": "Cell {cellNumber} of {totalCellCount}",
+    "notebookPreview.pythonCodeTitle": "Python",
     "artifactTab.sourceOptions": "Artifact viewer options",
+    "artifactTab.sourceOptions.viewSource": "View source",
     "codex.diffView.failedToDecodeBase64Diff": "Couldn’t load this diff",
     "codex.diffView.filesChanged": "{fileCount, plural, one {# file changed} other {# files changed}}",
     "codex.diffView.linesAdded": "+{linesAdded}",
@@ -3049,11 +3221,19 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "threadHeader.copyWorkingDirectorySuccess": "Copied working directory",
     "threadHeader.editAutomation": "Edit automation",
     "threadHeader.forkIntoLocal": "Fork into local",
+    "threadHeader.forkIntoWorktree": "Fork into new worktree",
+    "threadHeader.forkPendingWorktreePrompt": "Fork this conversation into a new worktree.",
+    "threadHeader.forkPendingWorktreeTitle": "Forked conversation",
+    "threadHeader.forkThreadRequiresGitRepo": "Fork into new worktree requires a git repository",
     "threadHeader.forkIntoSameWorktree": "Fork into same worktree",
     "threadHeader.forkThreadError": "Failed to fork chat",
+    "threadHeader.openInNewWindow": "Open in new window",
     "threadHeader.openSideChat": "Open side chat",
     "threadHeader.openSideChatError": "Failed to open side chat",
     "threadHeader.moreActions": "Thread actions",
+    "sidebarElectron.markThreadUnread": "Mark as unread",
+    "sidebarElectron.pinThread": "Pin chat",
+    "sidebarElectron.unpinThread": "Unpin chat",
     "localConversation.sideChat.title": "Side chat",
     "localConversation.sideChat.numberedTitle": "Side chat {index}",
     "sidebarElectron.archiveThread": "Archive chat",
@@ -3834,6 +4014,18 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "notifications.permissions.description": "Show alerts when notification permissions are required",
     "notifications.questions.label": "Enable question notifications",
     "notifications.questions.description": "Show alerts when input is needed to continue",
+    "settings.general.experimentalFeatures": "Experimental features (Beta)",
+    "settings.general.experimentalFeatures.restartNote":
+      "Restart Codex to apply experimental feature changes",
+    "settings.general.experimentalFeatures.loading":
+      "Loading experimental features…",
+    "settings.general.experimentalFeatures.empty":
+      "No beta experimental features available",
+    "settings.general.experimentalFeatures.toggle":
+      "Toggle {featureName}",
+    "settings.general.experimentalFeatures.plugins.label": "Plugins",
+    "settings.general.experimentalFeatures.plugins.description":
+      "Enable the plugins experience in Codex",
     "settings.general.experimentalFeatures.hotkeyWindowHotkey.label": "Popout Window hotkey",
     "settings.general.experimentalFeatures.hotkeyWindowHotkey.description":
       "Set a global shortcut for Popout Window. Leave unset to keep it off.",
@@ -3848,6 +4040,55 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.general.experimentalFeatures.hotkeyWindowHotkey.clear": "Clear",
     "settings.general.experimentalFeatures.hotkeyWindowHotkey.errorGeneric":
       "Failed to update Popout Window hotkey.",
+    "settings.agent.dependencies.sectionTitle": "Workspace Dependencies",
+    "settings.agent.dependencies.bundleVersion.label": "Current version",
+    "settings.agent.dependencies.bundleVersion.loading": "Checking…",
+    "settings.agent.dependencies.bundleVersion.notInstalled": "Not installed",
+    "settings.agent.dependencies.bundleVersion.problemDescription":
+      "Run diagnostics or reinstall if tool calls fail",
+    "settings.agent.dependencies.enabled.label": "Codex dependencies",
+    "settings.agent.dependencies.enabled.description":
+      "Allow Codex to install and expose bundled Node.js and Python tools",
+    "settings.agent.dependencies.enabled.ariaLabel":
+      "Enable Codex dependencies",
+    "settings.agent.dependencies.diagnose.label":
+      "Diagnose issues in Codex Workspace",
+    "settings.agent.dependencies.diagnose.description":
+      "Checks the current bundle and records diagnostic logs",
+    "settings.agent.dependencies.diagnose.button": "Diagnose",
+    "settings.agent.dependencies.diagnose.ok":
+      "Codex dependencies look healthy",
+    "settings.agent.dependencies.diagnose.problem":
+      "Codex dependencies may need repair. Send /feedback if this keeps happening",
+    "settings.agent.dependencies.diagnose.failed":
+      "Couldn’t diagnose Codex dependencies",
+    "settings.agent.dependencies.reset.label": "Reset and install Workspace",
+    "settings.agent.dependencies.reset.description":
+      "Deletes the local bundle, downloads it again, and reloads tools",
+    "settings.agent.dependencies.reset.button": "Reinstall",
+    "settings.agent.dependencies.reset.installed":
+      "Codex dependencies were reinstalled",
+    "settings.agent.dependencies.reset.canceled":
+      "Codex dependency download canceled",
+    "settings.agent.dependencies.reset.failed":
+      "Couldn’t reinstall Codex dependencies",
+    "settings.agent.dependencies.cancel.button": "Cancel download",
+    "settings.agent.dependencies.cancel.noop":
+      "No Codex dependency download is running",
+    "settings.agent.dependencies.cancel.canceled":
+      "Canceling Codex dependency download",
+    "settings.agent.dependencies.cancel.failed":
+      "Couldn’t cancel Codex dependency download",
+    "settings.remoteControlConnections.localRemoteControl.label":
+      "Enable Remote Control on this Computer",
+    "settings.remoteControlConnections.localRemoteControl.description":
+      "Allows other signed-in Codex clients to connect to this computer",
+    "localConversation.primaryRuntimeInstallStatus.downloading":
+      "Setting up your workspace: {percent}%",
+    "localConversation.primaryRuntimeInstallStatus.extracting":
+      "Preparing your workspace",
+    "localConversation.primaryRuntimeInstallStatus.finalizing":
+      "Finalizing your workspace",
     "settings.general.power.preventSleepWhileRunning.label":
       "Prevent sleep while running",
     "settings.general.power.preventSleepWhileRunning.description":
@@ -4702,6 +4943,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.shell.appMenu": "应用菜单",
     "app.shell.back": "返回",
     "app.shell.forward": "前进",
+    "app.shell.toggleSidebar": "显示或隐藏侧边栏",
     "app.shell.settings": "设置",
     "app.shell.share": "共享",
     "codex.alert.closeAriaLabel": "关闭",
@@ -4762,6 +5004,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.send": "发送",
     "app.chat.stop": "停止",
     "app.chat.queuedFollowUps": "排队中的跟进（{count}）",
+    "commentAttachments.numAnnotations": "{count, plural, one {# 条批注} other {# 条批注}}",
     "app.chat.removeQueuedFollowUp": "移除",
     "app.chat.commandExecution": "命令",
     "app.chat.fileChange": "文件修改",
@@ -5022,6 +5265,22 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.remoteConversation.userImageAttachment": "用户附件",
     "codex.remoteConversation.closeImagePreview": "关闭图片预览",
     "codex.remoteConversation.loadingImage": "正在加载图片",
+    "imagePreviewDialog.label": "图片预览",
+    "imagePreviewDialog.close": "关闭图片预览",
+    "imagePreviewDialog.download": "下载图片",
+    "imagePreviewDialog.zoomIn": "放大图片",
+    "imagePreviewDialog.zoomOut": "缩小图片",
+    "imagePreviewDialog.previousImage": "上一张图片",
+    "imagePreviewDialog.nextImage": "下一张图片",
+    "artifactPdfPreview.annotate": "批注",
+    "artifactPdfPreview.annotating": "批注中",
+    "artifactPdfPreview.commentInput": "PDF 注释",
+    "artifactPdfPreview.commentMarkerLabel": "PDF 注释 {commentNumber}",
+    "markdown.videoPlayer": "视频",
+    "markdown.videoUnavailable": "视频不可用",
+    "markdown.imagePreviewButton": "打开图片预览",
+    "markdown.imageUnavailable": "图片不可用",
+    "markdown.imageLoading": "图片加载中",
     "codex.remoteConversation.taskFailed": "任务失败",
     "codex.remoteConversation.turnFailed": "此任务执行期间发生错误",
     "codex.remoteConversation.turnTab.title": "尝试 {number}",
@@ -5266,10 +5525,56 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "artifactTab.preview.previousPage": "上一页",
     "artifactTab.preview.zoomPercent": "{zoomPercent}%",
     "artifactTab.preview.zoomToFit": "缩放以适应",
+    "markdown.externalLink.openInBrowser": "在浏览器中打开",
+    "markdown.externalLink.openInExternalBrowser": "在外部浏览器中打开",
+    "markdown.externalLink.copyLink": "复制链接",
+    "markdown.fileReference.openInTarget": "在 {target} 中打开",
+    "markdown.fileReference.viewInCodexBrowser": "在浏览器中查看",
+    "markdown.fileReference.viewFile": "打开文件",
+    "markdown.fileReference.openWith": "打开方式",
+    "markdown.fileReference.openWithTarget": "{target}",
+    "markdown.fileReference.copyPath": "复制路径",
+    "markdown.fileReference.openInFinder": "在 Finder 中打开",
+    "markdown.fileReference.openInExplorer": "在资源管理器中打开",
+    "markdown.fileReference.openInFileManager": "在文件管理器中打开",
+    "mermaidDiagram.fitToWidth": "将图表适配到宽度",
+    "mermaidDiagram.viewActualSize": "查看实际尺寸",
+    "mermaidDiagram.copySource": "复制 Mermaid",
+    "mermaidDiagram.ariaLabel": "Mermaid 图表",
+    "mermaidDiagram.originalCode": "Mermaid 源代码",
     "artifactTab.previewError": "无法加载此预览",
     "artifactTab.previewLoading": "正在准备预览…",
     "artifactTab.previewTooLarge": "此文件太大，无法在侧边面板中预览",
+    "copyButton.copyAriaLabel": "复制",
+    "copyButton.copied": "已复制",
+    "copyButton.copiedAriaLabel": "已复制",
+    "copyButton.copyCode": "复制代码",
+    "notebookPreview.cellCount": "{cellCount, plural, one {# 个单元格} other {# 个单元格}}",
+    "notebookPreview.codeCellTitle": "代码单元格 {cellNumber}",
+    "notebookPreview.codeDisclosure": "代码",
+    "notebookPreview.empty": "此笔记本不包含任何单元格",
+    "notebookPreview.emptyCodeCell": "空代码单元格",
+    "notebookPreview.emptyMarkdownCell": "空 Markdown 单元格",
+    "notebookPreview.emptyUnknownCell": "空笔记本单元格",
+    "notebookPreview.emptyRawCell": "空原始单元格",
+    "notebookPreview.errorOutput": "{name}: {message}",
+    "notebookPreview.executionCount": "运行 {executionCount}",
+    "notebookPreview.htmlOutputTitle": "笔记本 HTML 输出",
+    "notebookPreview.imageOutputAlt": "笔记本输出 {outputNumber}",
+    "notebookPreview.markdownCellTitle": "Markdown 单元格 {cellNumber}",
+    "notebookPreview.rawCellTitle": "原始单元格 {cellNumber}",
+    "notebookPreview.rawCodeTitle": "原始",
+    "notebookPreview.rawOutputDisclosure": "原始输出",
+    "notebookPreview.readOnlyBadge": "只读",
+    "notebookPreview.restartKernelDisabled": "重启内核",
+    "notebookPreview.restartKernelDisabledTooltip": "此预览未连接内核",
+    "notebookPreview.runAllDisabled": "运行全部",
+    "notebookPreview.runAllDisabledTooltip": "此预览中无法运行",
+    "notebookPreview.runCellDisabledTooltip": "只读预览中已禁用运行",
+    "notebookPreview.cellPosition": "第 {cellNumber} 个单元格，共 {totalCellCount} 个",
+    "notebookPreview.pythonCodeTitle": "Python",
     "artifactTab.sourceOptions": "制品查看器选项",
+    "artifactTab.sourceOptions.viewSource": "查看源码",
     "codex.diffView.failedToDecodeBase64Diff": "无法加载此差异",
     "codex.diffView.filesChanged": "{fileCount, plural, one {# 个文件已更改} other {# 个文件已更改}}",
     "codex.diffView.linesAdded": "+{linesAdded}",
@@ -5304,11 +5609,19 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "threadHeader.copyWorkingDirectorySuccess": "已复制工作目录",
     "threadHeader.editAutomation": "编辑自动化",
     "threadHeader.forkIntoLocal": "派生到本地",
+    "threadHeader.forkIntoWorktree": "分叉到新工作树",
+    "threadHeader.forkPendingWorktreePrompt": "将此对话分叉到新的工作树。",
+    "threadHeader.forkPendingWorktreeTitle": "已分叉的对话",
+    "threadHeader.forkThreadRequiresGitRepo": "分叉到新工作树需要 git 仓库",
     "threadHeader.forkIntoSameWorktree": "分叉到同一工作树",
     "threadHeader.forkThreadError": "创建对话分支失败",
+    "threadHeader.openInNewWindow": "在新窗口中打开",
     "threadHeader.openSideChat": "打开侧边对话",
     "threadHeader.openSideChatError": "打开侧边对话失败",
     "threadHeader.moreActions": "对话操作",
+    "sidebarElectron.markThreadUnread": "标记为未读",
+    "sidebarElectron.pinThread": "固定对话",
+    "sidebarElectron.unpinThread": "取消固定对话",
     "localConversation.sideChat.title": "侧边对话",
     "localConversation.sideChat.numberedTitle": "侧边对话 {index}",
     "sidebarElectron.archiveThread": "归档对话",
@@ -6055,6 +6368,18 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "notifications.permissions.description": "在需要通知权限时显示提醒",
     "notifications.questions.label": "启用问题通知",
     "notifications.questions.description": "需要输入才能继续时显示提醒",
+    "settings.general.experimentalFeatures": "实验性功能（Beta）",
+    "settings.general.experimentalFeatures.restartNote":
+      "重启 Codex 以应用实验性功能更改",
+    "settings.general.experimentalFeatures.loading":
+      "正在加载实验性功能…",
+    "settings.general.experimentalFeatures.empty":
+      "当前没有可用的 Beta 实验性功能",
+    "settings.general.experimentalFeatures.toggle":
+      "切换{featureName}",
+    "settings.general.experimentalFeatures.plugins.label": "插件",
+    "settings.general.experimentalFeatures.plugins.description":
+      "在 Codex 中启用插件体验",
     "settings.general.experimentalFeatures.hotkeyWindowHotkey.label": "弹出窗口快捷键",
     "settings.general.experimentalFeatures.hotkeyWindowHotkey.description":
       "为弹出窗口设置全局快捷键。留空则保持关闭。",
@@ -6069,6 +6394,54 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.general.experimentalFeatures.hotkeyWindowHotkey.clear": "清除",
     "settings.general.experimentalFeatures.hotkeyWindowHotkey.errorGeneric":
       "更新弹出窗口快捷键失败。",
+    "settings.agent.dependencies.sectionTitle": "工作空间依赖项",
+    "settings.agent.dependencies.bundleVersion.label": "当前版本",
+    "settings.agent.dependencies.bundleVersion.loading": "正在检查…",
+    "settings.agent.dependencies.bundleVersion.notInstalled": "未安装",
+    "settings.agent.dependencies.bundleVersion.problemDescription":
+      "如果工具调用失败，请运行诊断或重新安装",
+    "settings.agent.dependencies.enabled.label": "Codex 依赖项",
+    "settings.agent.dependencies.enabled.description":
+      "允许 Codex 安装并提供随附的 Node.js 和 Python 工具",
+    "settings.agent.dependencies.enabled.ariaLabel":
+      "启用 Codex 依赖项",
+    "settings.agent.dependencies.diagnose.label":
+      "诊断 Codex 工作空间中的问题",
+    "settings.agent.dependencies.diagnose.description":
+      "检查当前捆绑包并记录诊断日志",
+    "settings.agent.dependencies.diagnose.button": "诊断",
+    "settings.agent.dependencies.diagnose.ok": "Codex 依赖项状态良好",
+    "settings.agent.dependencies.diagnose.problem":
+      "Codex 依赖项可能需要修复。若此问题持续出现，请发送 /feedback",
+    "settings.agent.dependencies.diagnose.failed":
+      "无法诊断 Codex 依赖项",
+    "settings.agent.dependencies.reset.label": "重置并安装工作空间",
+    "settings.agent.dependencies.reset.description":
+      "删除本地捆绑包，重新下载后再重新加载工具",
+    "settings.agent.dependencies.reset.button": "重新安装",
+    "settings.agent.dependencies.reset.installed":
+      "Codex 依赖项已重新安装",
+    "settings.agent.dependencies.reset.canceled":
+      "Codex 依赖项下载已取消",
+    "settings.agent.dependencies.reset.failed":
+      "无法重新安装 Codex 依赖项",
+    "settings.agent.dependencies.cancel.button": "取消下载",
+    "settings.agent.dependencies.cancel.noop":
+      "当前没有正在进行的 Codex 依赖下载",
+    "settings.agent.dependencies.cancel.canceled":
+      "正在取消 Codex 依赖项下载",
+    "settings.agent.dependencies.cancel.failed":
+      "无法取消 Codex 依赖项下载",
+    "settings.remoteControlConnections.localRemoteControl.label":
+      "在此电脑上启用远程控制",
+    "settings.remoteControlConnections.localRemoteControl.description":
+      "允许其他已登录的 Codex 客户端连接到这台电脑",
+    "localConversation.primaryRuntimeInstallStatus.downloading":
+      "正在设置工作区：{percent}%",
+    "localConversation.primaryRuntimeInstallStatus.extracting":
+      "正在准备工作区",
+    "localConversation.primaryRuntimeInstallStatus.finalizing":
+      "正在完成工作区设置",
     "settings.general.power.preventSleepWhileRunning.label":
       "运行时防止系统休眠",
     "settings.general.power.preventSleepWhileRunning.description":

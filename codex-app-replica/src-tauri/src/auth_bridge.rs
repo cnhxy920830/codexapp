@@ -9,6 +9,8 @@ use tokio::sync::{mpsc, oneshot, Mutex as AsyncMutex, Notify};
 use tokio::time::{sleep, Duration};
 
 use crate::app_state_snapshot::AppStateSnapshotState;
+use crate::automation_run_history::archive_automation_run_history_for_thread;
+use crate::automation_run_history::complete_automation_run_history_for_thread;
 use crate::query_cache::emit_query_cache_invalidate;
 use crate::remote_app_server_runtime;
 use crate::thread_history::append_agent_message_delta;
@@ -120,6 +122,7 @@ pub struct ThreadHistoryEntry {
     pub preview: String,
     pub created_at: i64,
     pub updated_at: i64,
+    pub status: ThreadHistoryStatus,
     pub cwd: String,
     pub path: Option<String>,
     pub name: Option<String>,
@@ -130,6 +133,25 @@ pub struct ThreadHistoryEntry {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadHistorySource {
     pub parent_thread_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ThreadHistoryStatus {
+    NotLoaded,
+    Idle,
+    SystemError,
+    #[serde(rename_all = "camelCase")]
+    Active {
+        active_flags: Vec<ThreadHistoryActiveFlag>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ThreadHistoryActiveFlag {
+    WaitingOnApproval,
+    WaitingOnUserInput,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -241,6 +263,15 @@ pub struct MaybeResumeConversationParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct SendFollowUpMessageParams {
+    pub conversation_id: String,
+    pub prompt: String,
+    pub model: Option<String>,
+    pub reasoning_effort: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct MemoriesConfigSnapshot {
     pub generate_memories: bool,
     pub use_memories: bool,
@@ -347,6 +378,7 @@ struct ThreadListItem {
     preview: String,
     created_at: i64,
     updated_at: i64,
+    status: ThreadHistoryStatus,
     cwd: String,
     path: Option<String>,
     name: Option<String>,
@@ -578,6 +610,10 @@ pub struct AppInfo {
     pub description: Option<String>,
     #[serde(default)]
     pub install_url: Option<String>,
+    #[serde(default)]
+    pub logo_url: Option<String>,
+    #[serde(default)]
+    pub logo_url_dark: Option<String>,
     #[serde(default)]
     pub is_accessible: bool,
     #[serde(default)]
@@ -1123,6 +1159,13 @@ pub struct ReviewStartResult {
 #[serde(rename_all = "camelCase")]
 pub struct ExperimentalFeatureEnablementSetParams {
     pub enablement: HashMap<String, bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalAppServerFeatureEnablementParams {
+    pub feature_name: String,
+    pub enabled: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1685,6 +1728,7 @@ pub(crate) enum AppServerRequestKind {
     ThreadRead,
     ThreadRollback,
     ReviewStart,
+    SendFollowUpMessage,
     TurnStart,
     TurnSteer,
     TurnInterrupt,
@@ -2344,6 +2388,28 @@ pub async fn list_experimental_features(
     Ok(response.data)
 }
 
+#[tauri::command(rename = "list-experimental-features-for-host")]
+pub async fn list_experimental_features_for_host(
+    app: AppHandle,
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: HostScopedParams,
+) -> Result<Vec<ExperimentalFeature>, String> {
+    let value = send_request_for_host(
+        &app,
+        state.inner(),
+        params.host_id.as_deref(),
+        AppServerRequestKind::ExperimentalFeatureList,
+        serde_json::json!({
+            "limit": 100,
+        }),
+    )
+    .await?;
+    let response = serde_json::from_value::<ExperimentalFeatureListResponse>(value)
+        .map_err(|err| format!("failed to decode experimental feature list response: {err}"))?;
+    let _ = response.next_cursor;
+    Ok(response.data)
+}
+
 #[tauri::command]
 pub async fn set_experimental_feature_enablement(
     state: State<'_, Arc<AuthBridgeState>>,
@@ -2354,6 +2420,22 @@ pub async fn set_experimental_feature_enablement(
         AppServerRequestKind::ExperimentalFeatureEnablementSet,
         serde_json::json!({
             "enablement": params.enablement,
+        }),
+    )
+    .await
+    .map(|_| ())
+}
+
+#[tauri::command(rename = "set-local-app-server-feature-enablement")]
+pub async fn set_local_app_server_feature_enablement(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: LocalAppServerFeatureEnablementParams,
+) -> Result<(), String> {
+    send_request(
+        state.inner(),
+        AppServerRequestKind::ExperimentalFeatureEnablementSet,
+        serde_json::json!({
+            "enablement": HashMap::from([(params.feature_name, params.enabled)]),
         }),
     )
     .await
@@ -3224,6 +3306,7 @@ fn list_threads_from_value(value: serde_json::Value) -> Result<Vec<ThreadHistory
             preview: thread.preview,
             created_at: thread.created_at,
             updated_at: thread.updated_at,
+            status: thread.status,
             cwd: thread.cwd,
             path: thread.path,
             name: thread.name,
@@ -3503,6 +3586,7 @@ pub async fn discard_conversation_from_cache(
 
 #[tauri::command]
 pub async fn archive_thread(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     thread_id: String,
 ) -> Result<(), String> {
@@ -3514,16 +3598,19 @@ pub async fn archive_thread(
         }),
     )
     .await
-    .map(|_| ())
+    .map(|_| ())?;
+    archive_automation_run_history_for_thread(&app, &thread_id)?;
+    Ok(())
 }
 
 #[tauri::command(rename = "archive-conversation")]
 pub async fn archive_conversation_command(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: ArchiveConversationParams,
 ) -> Result<(), String> {
     let _ = params.cleanup_worktree;
-    archive_thread(state, params.conversation_id).await
+    archive_thread(app, state, params.conversation_id).await
 }
 
 #[tauri::command]
@@ -3702,16 +3789,14 @@ pub async fn steer_turn(
     state: State<'_, Arc<AuthBridgeState>>,
     thread_id: String,
     turn_id: String,
-    text: String,
+    input: Vec<serde_json::Value>,
 ) -> Result<String, String> {
     let value = send_request(
         state.inner(),
         AppServerRequestKind::TurnSteer,
         serde_json::json!({
             "threadId": thread_id,
-            "input": [
-                { "type": "text", "text": text }
-            ],
+            "input": input,
             "expectedTurnId": turn_id,
         }),
     )
@@ -3719,6 +3804,49 @@ pub async fn steer_turn(
     let response = serde_json::from_value::<TurnSteerResponse>(value)
         .map_err(|err| format!("failed to decode turn steer response: {err}"))?;
     Ok(response.turn_id)
+}
+
+#[tauri::command(rename = "send-follow-up-message")]
+pub async fn send_follow_up_message(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: SendFollowUpMessageParams,
+) -> Result<String, String> {
+    let prompt = params.prompt.trim();
+    if prompt.is_empty() {
+        return Err("send-follow-up-message requires a non-empty prompt".to_string());
+    }
+
+    let mut payload = serde_json::Map::new();
+    payload.insert(
+        "threadId".to_string(),
+        serde_json::Value::String(params.conversation_id),
+    );
+    payload.insert(
+        "prompt".to_string(),
+        serde_json::Value::String(prompt.to_string()),
+    );
+    if let Some(model) = params.model.filter(|value| !value.trim().is_empty()) {
+        payload.insert("model".to_string(), serde_json::Value::String(model));
+    }
+    if let Some(reasoning_effort) = params
+        .reasoning_effort
+        .filter(|value| !value.trim().is_empty())
+    {
+        payload.insert(
+            "reasoningEffort".to_string(),
+            serde_json::Value::String(reasoning_effort),
+        );
+    }
+
+    let value = send_request(
+        state.inner(),
+        AppServerRequestKind::SendFollowUpMessage,
+        serde_json::Value::Object(payload),
+    )
+    .await?;
+    let response = serde_json::from_value::<TurnStartResponse>(value)
+        .map_err(|err| format!("failed to decode send follow-up response: {err}"))?;
+    Ok(response.turn.id)
 }
 
 #[tauri::command]
@@ -4942,6 +5070,7 @@ fn request_method(kind: &AppServerRequestKind) -> &'static str {
         AppServerRequestKind::ThreadRead => "thread/read",
         AppServerRequestKind::ThreadRollback => "thread/rollback",
         AppServerRequestKind::ReviewStart => "review/start",
+        AppServerRequestKind::SendFollowUpMessage => "send-follow-up-message",
         AppServerRequestKind::TurnStart => "turn/start",
         AppServerRequestKind::TurnSteer => "turn/steer",
         AppServerRequestKind::TurnInterrupt => "turn/interrupt",
@@ -5326,6 +5455,7 @@ fn handle_turn_completed(app: &AppHandle, state: &Arc<AuthBridgeState>, params: 
         );
     }
     state.observed_turn_completion_notify.notify_waiters();
+    let _ = complete_automation_run_history_for_thread(app, thread_id);
     let _ = app.emit(
         THREAD_EVENT,
         ThreadEventPayload::TurnCompleted {
@@ -6479,8 +6609,10 @@ mod tests {
     use super::SkillInterface;
     use super::SkillsConfigWriteParams;
     use super::SkillsListParams;
+    use super::ThreadHistoryActiveFlag;
     use super::ThreadHistoryEntry;
     use super::ThreadHistorySource;
+    use super::ThreadHistoryStatus;
     use super::ThreadUnsubscribeResponse;
     use super::ThreadUnsubscribeStatus;
     use super::UnarchiveConversationParams;
@@ -6641,6 +6773,10 @@ mod tests {
                     "preview": "hello",
                     "createdAt": 100,
                     "updatedAt": 200,
+                    "status": {
+                        "type": "active",
+                        "activeFlags": ["waitingOnUserInput"]
+                    },
                     "cwd": "D:/workspace",
                     "path": "D:/workspace/.codex/session.jsonl",
                     "name": "Demo",
@@ -6664,6 +6800,9 @@ mod tests {
                 preview: "hello".to_string(),
                 created_at: 100,
                 updated_at: 200,
+                status: ThreadHistoryStatus::Active {
+                    active_flags: vec![ThreadHistoryActiveFlag::WaitingOnUserInput],
+                },
                 cwd: "D:/workspace".to_string(),
                 path: Some("D:/workspace/.codex/session.jsonl".to_string()),
                 name: Some("Demo".to_string()),

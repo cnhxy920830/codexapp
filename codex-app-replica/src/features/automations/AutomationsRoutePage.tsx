@@ -15,10 +15,13 @@ import {
   buildAutomationDraft,
   createAutomation,
   deleteAutomationCompat,
+  listInboxItems,
   listAutomations,
   runAutomationNow,
+  setInboxItemReadState,
   setAutomationStatus,
   updateAutomation,
+  type AutomationInboxItem,
   type AutomationRecord,
   type CronAutomationRecord,
 } from "../../services/automations";
@@ -55,8 +58,13 @@ import {
   onWorkspaceRootOptionsUpdated,
   readWorkspaceRootOptions,
 } from "../../services/workspaceRoots";
+import {
+  onQueryCacheInvalidated,
+  queryKeyMatchesPrefix,
+} from "../../services/queryCache";
 
 const AUTO_SAVE_DELAY_MS = 600;
+const INBOX_ITEMS_QUERY_KEY = ["inbox-items"] as const;
 
 type AutomationsRoutePageProps = {
   hasConnectedRemoteConnections: boolean;
@@ -271,6 +279,8 @@ export function AutomationsRoutePage({
     ),
   );
   const [items, setItems] = useState<AutomationRecord[]>([]);
+  const [inboxItems, setInboxItems] = useState<AutomationInboxItem[]>([]);
+  const [isInboxItemsLoading, setIsInboxItemsLoading] = useState(true);
   const [createDraft, setCreateDraft] = useState<AutomationRecord | null>(null);
   const [detailDraft, setDetailDraft] = useState<AutomationRecord | null>(null);
   const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
@@ -437,9 +447,72 @@ export function AutomationsRoutePage({
     }
   }
 
+  async function loadInboxItems() {
+    setIsInboxItemsLoading(true);
+    try {
+      const nextItems = await listInboxItems();
+      setInboxItems(nextItems);
+    } catch (error) {
+      onShowToast({
+        message: error instanceof Error ? error.message : String(error),
+        tone: "error",
+      });
+    } finally {
+      setIsInboxItemsLoading(false);
+    }
+  }
+
+  const handleSetInboxItemReadState = async (id: string, isRead: boolean) => {
+    const nextReadAt = isRead ? Date.now() : null;
+    setInboxItems((current) =>
+      current.map((item) => (item.id === id ? { ...item, readAt: nextReadAt } : item)),
+    );
+
+    try {
+      await setInboxItemReadState(id, isRead);
+    } catch (error) {
+      onShowToast({
+        message: error instanceof Error ? error.message : String(error),
+        tone: "error",
+      });
+      void loadInboxItems();
+    }
+  };
+
   useEffect(() => {
     void loadAutomations();
+    void loadInboxItems();
   }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let cleanup: (() => void) | null = null;
+
+    const reload = () => {
+      if (disposed) {
+        return;
+      }
+      void loadInboxItems();
+    };
+
+    void onQueryCacheInvalidated((notification) => {
+      if (!queryKeyMatchesPrefix(notification.queryKey, INBOX_ITEMS_QUERY_KEY)) {
+        return;
+      }
+      reload();
+    }).then((unsubscribe) => {
+      if (disposed) {
+        unsubscribe();
+        return;
+      }
+      cleanup = unsubscribe;
+    });
+
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, [onShowToast]);
 
   useEffect(() => {
     let disposed = false;
@@ -911,6 +984,8 @@ export function AutomationsRoutePage({
               feedback={null}
               hasConnectedRemoteConnections={hasConnectedRemoteConnections}
               heartbeatThreadOptions={heartbeatThreadOptions}
+              inboxItems={inboxItems}
+              isInboxItemsLoading={isInboxItemsLoading}
               isSaving={isDetailSaving || isRetrySaving}
               lastRunLabel={lastRunLabel}
               localEnvironmentState={localEnvironmentState}
@@ -918,7 +993,10 @@ export function AutomationsRoutePage({
               nextRunLabel={nextRunLabel}
               onClearDraft={clearDetailDraft}
               onDraftChange={updateDetailDraft}
+              onOpenThread={onOpenThread}
+              onSetInboxItemReadState={handleSetInboxItemReadState}
               onOpenLocalEnvironmentsSettings={onOpenLocalEnvironmentsSettings}
+              threadTitleById={threadNameById}
               modelOptions={modelOptions}
               workspaceRootOptions={workspaceRootOptions}
               workspaceRootLabels={workspaceRootLabels}

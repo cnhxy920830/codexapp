@@ -122,6 +122,7 @@ function createThread({
     preview,
     createdAt,
     updatedAt: createdAt,
+    status: { type: "idle" },
     cwd: "D:\\workspace\\codex-app",
     path: null,
     name,

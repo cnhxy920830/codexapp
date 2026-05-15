@@ -484,9 +484,9 @@ fn escape_xml(input: &str) -> String {
 }
 
 #[cfg(test)]
-fn sticky_scenario_for_kind(kind: &str) -> Option<Scenario> {
+fn sticky_scenario_for_kind(kind: &str) -> Option<tauri_winrt_notification::Scenario> {
     match kind {
-        "permission" | "question" => Some(Scenario::Reminder),
+        "permission" | "question" => Some(tauri_winrt_notification::Scenario::Reminder),
         _ => None,
     }
 }

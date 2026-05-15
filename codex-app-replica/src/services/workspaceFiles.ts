@@ -8,6 +8,7 @@ export type WorkspaceFileSearchResult = {
 };
 
 export type WorkspaceFilePreviewTarget = WorkspaceFileSearchResult & {
+  hostId?: string | null;
   workspaceRoot: string;
 };
 
@@ -18,6 +19,7 @@ export type WorkspaceDirectoryEntry = {
 };
 
 export type WorkspaceFileDocument = {
+  hostId?: string | null;
   name: string;
   path: string;
   relativePath: string;

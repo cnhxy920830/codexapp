@@ -17,7 +17,7 @@ type InlineToken =
 export function renderMessageContent(text: string) {
   const blocks = parseBlocks(normalizeText(text));
   return (
-    <div className="space-y-3">
+    <div className="app-message-markdown space-y-3">
       {blocks.map((block, index) => renderBlock(block, index))}
     </div>
   );

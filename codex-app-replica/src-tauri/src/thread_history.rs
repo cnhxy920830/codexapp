@@ -277,6 +277,16 @@ pub enum ThreadConversationUserInput {
         name: String,
         path: String,
     },
+    Comment {
+        path: String,
+        body: String,
+        content: Vec<ThreadConversationUserCommentContent>,
+        position: Option<ThreadConversationUserInputCommentPosition>,
+        origin: Option<String>,
+        local_pdf_context: Option<ThreadConversationUserCommentLocalPdfContext>,
+        local_pdf_comment_metadata: Option<ThreadConversationUserCommentLocalPdfCommentMetadata>,
+        local_pdf_screenshot: Option<ThreadConversationUserCommentLocalPdfScreenshot>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -374,6 +384,86 @@ pub struct ThreadConversationUserComment {
     pub path: String,
     pub line_range: Option<String>,
     pub body: String,
+    pub content: Vec<ThreadConversationUserCommentContent>,
+    pub position: Option<ThreadConversationUserCommentPosition>,
+    pub origin: Option<String>,
+    pub local_pdf_context: Option<ThreadConversationUserCommentLocalPdfContext>,
+    pub local_pdf_comment_metadata: Option<ThreadConversationUserCommentLocalPdfCommentMetadata>,
+    pub local_pdf_screenshot: Option<ThreadConversationUserCommentLocalPdfScreenshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadConversationUserCommentContent {
+    pub content_type: String,
+    pub text: Option<String>,
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadConversationUserCommentPosition {
+    pub path: String,
+    pub line: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadConversationUserInputCommentPosition {
+    pub side: Option<String>,
+    pub path: String,
+    pub line: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadConversationPdfPoint {
+    pub x: i64,
+    pub y: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadConversationPdfRect {
+    pub x: i64,
+    pub y: i64,
+    pub width: i64,
+    pub height: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadConversationPdfSize {
+    pub width: i64,
+    pub height: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadConversationUserCommentLocalPdfContext {
+    pub page_count: i64,
+    pub page_number: i64,
+    pub path: String,
+    pub title: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadConversationUserCommentLocalPdfCommentMetadata {
+    pub kind: String,
+    pub page_point: Option<ThreadConversationPdfPoint>,
+    pub page_rect: Option<ThreadConversationPdfRect>,
+    pub page_size: ThreadConversationPdfSize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadConversationUserCommentLocalPdfScreenshot {
+    pub comment_id: String,
+    pub data_url: String,
+    pub width: i64,
+    pub height: i64,
+    pub page_number: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1570,6 +1660,7 @@ fn map_user_input_item(value: &serde_json::Value) -> Option<ThreadConversationUs
             name: value.get("name")?.as_str()?.to_string(),
             path: value.get("path")?.as_str()?.to_string(),
         }),
+        "comment" => map_user_input_comment(value),
         _ => None,
     }
 }
@@ -1584,6 +1675,43 @@ fn map_text_element(value: &serde_json::Value) -> Option<ThreadConversationTextE
             .get("placeholder")
             .and_then(serde_json::Value::as_str)
             .map(str::to_string),
+    })
+}
+
+fn map_user_input_comment(value: &serde_json::Value) -> Option<ThreadConversationUserInput> {
+    let path = value
+        .get("path")
+        .or_else(|| {
+            value
+                .get("position")
+                .and_then(|position| position.get("path"))
+        })
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)?;
+    let body = value
+        .get("body")
+        .and_then(extract_text_from_json)
+        .unwrap_or_default();
+    let content = extract_user_comment_content(value, &body);
+    let position = extract_user_input_comment_position(
+        value,
+        &path,
+        extract_comment_line_range(value).as_deref(),
+    );
+    if body.is_empty() && content.is_empty() {
+        return None;
+    }
+    Some(ThreadConversationUserInput::Comment {
+        path,
+        body,
+        content,
+        position,
+        origin: extract_user_comment_origin(value),
+        local_pdf_context: extract_local_pdf_context(value),
+        local_pdf_comment_metadata: extract_local_pdf_comment_metadata(value),
+        local_pdf_screenshot: extract_local_pdf_screenshot(value),
     })
 }
 
@@ -1615,10 +1743,18 @@ fn extract_user_comment_attachments(
                     .map(str::to_string)?;
                 let body = extract_text_from_json(item.get("body")?)?;
                 let line_range = extract_comment_line_range(item);
+                let content = extract_user_comment_content(item, &body);
+                let position = extract_user_comment_position(item, &path, line_range.as_deref());
                 Some(ThreadConversationUserComment {
                     path,
                     line_range,
                     body,
+                    content,
+                    position,
+                    origin: extract_user_comment_origin(item),
+                    local_pdf_context: extract_local_pdf_context(item),
+                    local_pdf_comment_metadata: extract_local_pdf_comment_metadata(item),
+                    local_pdf_screenshot: extract_local_pdf_screenshot(item),
                 })
             })
             .collect::<Vec<_>>()
@@ -1678,10 +1814,21 @@ fn parse_user_comment_lines(lines: &[&str]) -> Option<ThreadConversationUserComm
         if body.is_empty() {
             return None;
         }
+        let content = build_text_comment_content(&body);
+        let position = build_user_comment_position(
+            &path,
+            parse_first_comment_line_number(line_range.as_deref()),
+        );
         return Some(ThreadConversationUserComment {
             path,
             line_range,
             body,
+            content,
+            position,
+            origin: None,
+            local_pdf_context: None,
+            local_pdf_comment_metadata: None,
+            local_pdf_screenshot: None,
         });
     }
 
@@ -1701,11 +1848,22 @@ fn parse_user_comment_lines(lines: &[&str]) -> Option<ThreadConversationUserComm
     if body.is_empty() {
         return None;
     }
+    let content = build_text_comment_content(&body);
+    let position = build_user_comment_position(
+        &path,
+        parse_first_comment_line_number(line_range.as_deref()),
+    );
 
     Some(ThreadConversationUserComment {
         path,
         line_range,
         body,
+        content,
+        position,
+        origin: None,
+        local_pdf_context: None,
+        local_pdf_comment_metadata: None,
+        local_pdf_screenshot: None,
     })
 }
 
@@ -1767,6 +1925,283 @@ fn extract_comment_line_range(value: &serde_json::Value) -> Option<String> {
         (Some(start), _) => Some(start.to_string()),
         _ => None,
     }
+}
+
+fn extract_user_comment_content(
+    value: &serde_json::Value,
+    body: &str,
+) -> Vec<ThreadConversationUserCommentContent> {
+    let content = value
+        .get("content")
+        .and_then(serde_json::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| {
+                    let content_type = item
+                        .get("content_type")
+                        .or_else(|| item.get("contentType"))
+                        .and_then(serde_json::Value::as_str)
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .map(str::to_string)?;
+                    Some(ThreadConversationUserCommentContent {
+                        content_type,
+                        text: item
+                            .get("text")
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .map(str::to_string),
+                        label: item
+                            .get("label")
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .map(str::to_string),
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if content.is_empty() {
+        return build_text_comment_content(body);
+    }
+
+    content
+}
+
+fn build_text_comment_content(body: &str) -> Vec<ThreadConversationUserCommentContent> {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+
+    vec![ThreadConversationUserCommentContent {
+        content_type: "text".to_string(),
+        text: Some(trimmed.to_string()),
+        label: None,
+    }]
+}
+
+fn extract_user_comment_position(
+    value: &serde_json::Value,
+    fallback_path: &str,
+    line_range: Option<&str>,
+) -> Option<ThreadConversationUserCommentPosition> {
+    let path = value
+        .get("position")
+        .and_then(|position| position.get("path"))
+        .or_else(|| value.get("path"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(fallback_path);
+    let line =
+        extract_position_line(value).or_else(|| parse_first_comment_line_number(line_range))?;
+    build_user_comment_position(path, Some(line))
+}
+
+fn extract_user_input_comment_position(
+    value: &serde_json::Value,
+    fallback_path: &str,
+    line_range: Option<&str>,
+) -> Option<ThreadConversationUserInputCommentPosition> {
+    let path = value
+        .get("position")
+        .and_then(|position| position.get("path"))
+        .or_else(|| value.get("path"))
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(fallback_path);
+    let line =
+        extract_position_line(value).or_else(|| parse_first_comment_line_number(line_range))?;
+    let trimmed_path = path.trim();
+    if trimmed_path.is_empty() {
+        return None;
+    }
+
+    Some(ThreadConversationUserInputCommentPosition {
+        side: value
+            .get("position")
+            .and_then(|position| position.get("side"))
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        path: trimmed_path.to_string(),
+        line,
+    })
+}
+
+fn build_user_comment_position(
+    path: &str,
+    line: Option<i64>,
+) -> Option<ThreadConversationUserCommentPosition> {
+    let trimmed_path = path.trim();
+    let line = line?;
+    if trimmed_path.is_empty() {
+        return None;
+    }
+
+    Some(ThreadConversationUserCommentPosition {
+        path: trimmed_path.to_string(),
+        line,
+    })
+}
+
+fn extract_position_line(value: &serde_json::Value) -> Option<i64> {
+    extract_integer(
+        value
+            .get("position")
+            .and_then(|position| position.get("startLine")),
+    )
+    .or_else(|| extract_integer(value.get("startLine")))
+    .or_else(|| {
+        extract_integer(
+            value
+                .get("position")
+                .and_then(|position| position.get("line")),
+        )
+    })
+    .or_else(|| extract_integer(value.get("line")))
+}
+
+fn parse_first_comment_line_number(line_range: Option<&str>) -> Option<i64> {
+    let line_range = line_range?;
+    let digits = line_range
+        .chars()
+        .skip_while(|character| !character.is_ascii_digit())
+        .take_while(|character| character.is_ascii_digit())
+        .collect::<String>();
+    if digits.is_empty() {
+        return None;
+    }
+
+    digits.parse::<i64>().ok()
+}
+
+fn extract_user_comment_origin(value: &serde_json::Value) -> Option<String> {
+    value
+        .get("origin")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|origin| !origin.is_empty())
+        .map(str::to_string)
+}
+
+fn extract_local_pdf_context(
+    value: &serde_json::Value,
+) -> Option<ThreadConversationUserCommentLocalPdfContext> {
+    let context = value.get("localPdfContext")?;
+    let page_count = extract_integer(context.get("pageCount"))?;
+    let page_number = extract_integer(context.get("pageNumber"))?;
+    let path = context
+        .get("path")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)?;
+    let title = context
+        .get("title")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string);
+
+    Some(ThreadConversationUserCommentLocalPdfContext {
+        page_count,
+        page_number,
+        path,
+        title,
+    })
+}
+
+fn extract_local_pdf_comment_metadata(
+    value: &serde_json::Value,
+) -> Option<ThreadConversationUserCommentLocalPdfCommentMetadata> {
+    let metadata = value.get("localPdfCommentMetadata")?;
+    let kind = metadata
+        .get("kind")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)?;
+    let page_size = extract_pdf_size(metadata.get("pageSize"))?;
+    let page_point = extract_pdf_point(metadata.get("pagePoint"));
+    let page_rect = extract_pdf_rect(metadata.get("pageRect"));
+
+    Some(ThreadConversationUserCommentLocalPdfCommentMetadata {
+        kind,
+        page_point,
+        page_rect,
+        page_size,
+    })
+}
+
+fn extract_local_pdf_screenshot(
+    value: &serde_json::Value,
+) -> Option<ThreadConversationUserCommentLocalPdfScreenshot> {
+    let screenshot = value.get("localPdfScreenshot")?;
+    let comment_id = screenshot
+        .get("commentId")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)?;
+    let data_url = screenshot
+        .get("dataUrl")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)?;
+    let width = extract_integer(screenshot.get("width"))?;
+    let height = extract_integer(screenshot.get("height"))?;
+    let page_number = extract_integer(screenshot.get("pageNumber"))?;
+
+    Some(ThreadConversationUserCommentLocalPdfScreenshot {
+        comment_id,
+        data_url,
+        width,
+        height,
+        page_number,
+    })
+}
+
+fn extract_pdf_size(value: Option<&serde_json::Value>) -> Option<ThreadConversationPdfSize> {
+    let value = value?;
+    Some(ThreadConversationPdfSize {
+        width: extract_integer(value.get("width"))?,
+        height: extract_integer(value.get("height"))?,
+    })
+}
+
+fn extract_pdf_point(value: Option<&serde_json::Value>) -> Option<ThreadConversationPdfPoint> {
+    let value = value?;
+    Some(ThreadConversationPdfPoint {
+        x: extract_integer(value.get("x"))?,
+        y: extract_integer(value.get("y"))?,
+    })
+}
+
+fn extract_pdf_rect(value: Option<&serde_json::Value>) -> Option<ThreadConversationPdfRect> {
+    let value = value?;
+    Some(ThreadConversationPdfRect {
+        x: extract_integer(value.get("x"))?,
+        y: extract_integer(value.get("y"))?,
+        width: extract_integer(value.get("width"))?,
+        height: extract_integer(value.get("height"))?,
+    })
+}
+
+fn extract_integer(value: Option<&serde_json::Value>) -> Option<i64> {
+    let value = value?;
+    value
+        .as_i64()
+        .or_else(|| value.as_u64().and_then(|number| i64::try_from(number).ok()))
+        .or_else(|| value.as_f64().map(|number| number.round() as i64))
 }
 
 fn extract_string_array(value: Option<&serde_json::Value>) -> Vec<String> {

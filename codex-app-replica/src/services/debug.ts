@@ -1,10 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+export {
+  PRIMARY_RUNTIME_INSTALL_RELEASE_LATEST,
+  PRIMARY_RUNTIME_INSTALL_RELEASE_LATEST_ALPHA,
+  primaryRuntimeUpdateRunNow,
+  readPrimaryRuntimeUpdateStatus,
+  setPrimaryRuntimeInstallRelease,
+  type PrimaryRuntimeUpdateRunNowResponse,
+  type PrimaryRuntimeUpdateStatusResponse,
+} from "./primaryRuntime";
 
 export const DEBUG_RUN_APP_ACTION_REQUEST_EVENT = "debug-run-app-action-request";
 export const DEBUG_RUN_APP_ACTION_RESPONSE_EVENT = "debug-run-app-action-response";
-export const PRIMARY_RUNTIME_INSTALL_RELEASE_LATEST = "latest";
-export const PRIMARY_RUNTIME_INSTALL_RELEASE_LATEST_ALPHA = "latest-alpha";
 
 export type AppFlavor = "agent" | "dev" | "internal-alpha" | "nightly" | "owl" | "prod" | "public-beta";
 
@@ -29,21 +36,6 @@ export type DebugRunAppActionResponseParams = {
   ok: boolean;
   result?: unknown | null;
   errorMessage?: string | null;
-};
-
-export type PrimaryRuntimeUpdateStatusResponse = {
-  disabledReason: string | null;
-  enabled: boolean;
-  isRunning: boolean;
-  nextRunAt: number | null;
-  startupChecked: boolean;
-};
-
-export type PrimaryRuntimeUpdateRunNowResponse = {
-  bundleVersion: string | null;
-  nextRunAt: number | null;
-  reason: string | null;
-  status: "already-current" | "installed" | "skipped";
 };
 
 export type AmbientSuggestionsGenerationStatus = {
@@ -83,14 +75,6 @@ export type AmbientSuggestionsReadResponse = {
   file: AmbientSuggestionsFile;
 };
 
-export async function readPrimaryRuntimeUpdateStatus() {
-  return invoke<PrimaryRuntimeUpdateStatusResponse>("primary-runtime-update-status");
-}
-
-export async function primaryRuntimeUpdateRunNow() {
-  return invoke<PrimaryRuntimeUpdateRunNowResponse>("primary-runtime-update-run-now");
-}
-
 export async function readAmbientSuggestionsGenerationStatuses() {
   return invoke<AmbientSuggestionsGenerationStatusesResponse>("ambient-suggestions-generation-statuses");
 }
@@ -118,12 +102,6 @@ export async function refreshAmbientSuggestions(params: {
       projectRoot: params.projectRoot,
       mode: params.mode ?? "default",
     },
-  });
-}
-
-export async function setPrimaryRuntimeInstallRelease(release: string) {
-  await invoke<void>("set-primary-runtime-install-release", {
-    params: { release },
   });
 }
 

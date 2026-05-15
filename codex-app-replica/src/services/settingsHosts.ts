@@ -4,6 +4,8 @@ import { listen } from "@tauri-apps/api/event";
 export const LOCAL_SETTINGS_HOST_ID = "local";
 export const REMOTE_CONNECTIONS_SHARED_OBJECT_KEY = "remote_connections";
 export const REMOTE_PROJECTS_SHARED_OBJECT_KEY = "remote-projects";
+export const CODEX_RUNTIMES_CONFIG_SHARED_OBJECT_KEY = "codex_runtimes_config";
+export const STATSIG_DEFAULT_ENABLE_FEATURES_SHARED_OBJECT_KEY = "statsig_default_enable_features";
 
 const REMOTE_HOST_FORBIDDEN_HUE_RANGES = [
   { start: 330, end: 45 },
@@ -58,17 +60,30 @@ type SaveRemoteProjectResponse = {
 };
 
 export async function readSettingsRemoteConnectionsSnapshot() {
-  const response = await invoke<SharedObjectSnapshotResponse>("get-shared-object-snapshot", {
-    key: REMOTE_CONNECTIONS_SHARED_OBJECT_KEY,
-  });
-  return normalizeRemoteConnectionsSnapshot(response.value);
+  return readSharedObjectSnapshot(
+    REMOTE_CONNECTIONS_SHARED_OBJECT_KEY,
+    normalizeRemoteConnectionsSnapshot,
+  );
 }
 
 export async function readSettingsRemoteProjectsSnapshot() {
-  const response = await invoke<SharedObjectSnapshotResponse>("get-shared-object-snapshot", {
-    key: REMOTE_PROJECTS_SHARED_OBJECT_KEY,
-  });
-  return normalizeRemoteProjectsSnapshot(response.value);
+  return readSharedObjectSnapshot(
+    REMOTE_PROJECTS_SHARED_OBJECT_KEY,
+    normalizeRemoteProjectsSnapshot,
+  );
+}
+
+export async function readSharedObjectSnapshot<T = unknown>(
+  key: string,
+  normalize?: (value: unknown) => T,
+) {
+  const response = await invoke<SharedObjectSnapshotResponse>(
+    "get-shared-object-snapshot",
+    {
+      key,
+    },
+  );
+  return normalize ? normalize(response.value) : (response.value as T);
 }
 
 export function onSharedObjectUpdated(handler: (notification: SharedObjectUpdatedNotification) => void) {

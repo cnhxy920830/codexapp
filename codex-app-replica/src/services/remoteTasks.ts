@@ -11,6 +11,11 @@ export type RemoteTaskReadParams = {
   taskId: string;
 };
 
+export type RemoteTaskListParams = {
+  taskFilter?: string | null;
+  limit?: number | null;
+};
+
 export type RemoteTaskTurnsReadParams = {
   taskId: string;
 };
@@ -41,11 +46,15 @@ export type RemoteTaskImageReadParams = {
 export type RemoteTask = {
   id: string;
   title?: string | null;
+  archived?: boolean | null;
+  created_at?: number | null;
+  updated_at?: number | null;
   has_unread_turn?: boolean | null;
   task_status_display?: {
     environment_label?: string | null;
     latest_turn_status_display?: {
       turn_status?: string | null;
+      turn_id?: string | null;
       diff_stats?: {
         lines_added?: number | null;
         lines_removed?: number | null;
@@ -110,6 +119,11 @@ export type RemoteTaskReadResponse = {
   current_user_turn?: RemoteTaskTurn | null;
   current_assistant_turn?: RemoteTaskTurn | null;
   current_diff_task_turn?: RemoteTaskTurn | null;
+};
+
+export type RemoteTaskListResponse = {
+  items: RemoteTask[];
+  [key: string]: unknown;
 };
 
 export type RemoteTaskTurnsReadResponse = {
@@ -255,6 +269,15 @@ type RemoteTaskTurnEventParams = {
 
 export async function readRemoteTask(params: RemoteTaskReadParams) {
   return invoke<RemoteTaskReadResponse>("remote-task-read", { params });
+}
+
+export async function listRemoteTasks(params: RemoteTaskListParams) {
+  return invoke<RemoteTaskListResponse>("remote-task-list", {
+    params: {
+      taskFilter: params.taskFilter ?? null,
+      limit: params.limit ?? null,
+    },
+  });
 }
 
 export async function readRemoteTaskTurns(params: RemoteTaskTurnsReadParams) {

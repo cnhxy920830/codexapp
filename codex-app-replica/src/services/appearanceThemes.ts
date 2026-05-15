@@ -161,7 +161,10 @@ const SKILL_HUE_RANGE = { max: 320, min: 210 };
 const SKILL_FALLBACK_HUE = 265;
 const CODE_THEME_COLLATOR = new Intl.Collator(undefined, { sensitivity: "base" });
 
-const themeModuleLoaders = import.meta.glob("../assets/upstream-code-themes/*.js");
+const themeModuleLoaders =
+  typeof import.meta.glob === "function"
+    ? import.meta.glob("../assets/upstream-code-themes/*.js")
+    : {};
 
 const CODE_THEME_OPTIONS: CodeThemeOption[] = [
   defineCodeTheme("ayu", "Ayu", { dark: registration("ayu-dark-drYq2dpB.js", "ayu-dark") }),
