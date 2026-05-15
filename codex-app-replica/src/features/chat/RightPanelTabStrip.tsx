@@ -6,7 +6,6 @@ import {
   ForkedConversationIcon,
   PlusIcon,
   ReviewTabIcon,
-  SearchIcon,
   WorkspaceFileIcon,
 } from "../../components/AppShellIcons";
 import type { MessageKey } from "../../i18n/messages";
@@ -17,10 +16,8 @@ type Translate = (key: MessageKey, values?: Record<string, number | string>) => 
 type RightPanelOpenTabMenuProps = {
   canOfferBrowserTab: boolean;
   canOfferReviewTab: boolean;
-  canOpenWorkspaceFileSearch: boolean;
   onOpenBrowserTab: () => void;
   onOpenReviewTab: () => void;
-  onOpenWorkspaceFileSearch: () => void;
   t: Translate;
   triggerClassName?: string;
 };
@@ -47,16 +44,14 @@ type RightPanelTabContextMenuState = {
 export function RightPanelOpenTabMenu({
   canOfferBrowserTab,
   canOfferReviewTab,
-  canOpenWorkspaceFileSearch,
   onOpenBrowserTab,
   onOpenReviewTab,
-  onOpenWorkspaceFileSearch,
   t,
   triggerClassName = "app-topbar-button no-drag flex h-8 w-8 items-center justify-center rounded-md text-[12px]",
 }: RightPanelOpenTabMenuProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const canOpenAnotherTab = canOpenWorkspaceFileSearch || canOfferReviewTab || canOfferBrowserTab;
+  const canOpenAnotherTab = canOfferReviewTab || canOfferBrowserTab;
 
   useEffect(() => {
     if (!isMenuOpen) {
@@ -94,22 +89,6 @@ export function RightPanelOpenTabMenu({
       </button>
       {isMenuOpen ? (
         <div className="app-card absolute top-9 right-0 z-10 min-w-[168px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
-          {canOpenWorkspaceFileSearch ? (
-            <button
-              type="button"
-              onClick={() => {
-                setIsMenuOpen(false);
-                onOpenWorkspaceFileSearch();
-              }}
-              className="app-nav-item-idle flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
-            >
-              <SearchIcon className="h-4 w-4 shrink-0" />
-              <span>{t("thread.sidePanel.openFile")}</span>
-            </button>
-          ) : null}
-          {canOpenWorkspaceFileSearch && (canOfferReviewTab || canOfferBrowserTab) ? (
-            <div className="my-1 h-px bg-[var(--app-shell-border)]" />
-          ) : null}
           {canOfferReviewTab ? (
             <button
               type="button"
@@ -148,15 +127,13 @@ export function RightPanelOpenTabMenu({
 export function RightPanelCollapsedRail({
   canOfferBrowserTab,
   canOfferReviewTab,
-  canOpenWorkspaceFileSearch,
   collapsedTabs,
   onActivateTab,
   onOpenBrowserTab,
   onOpenReviewTab,
-  onOpenWorkspaceFileSearch,
   t,
 }: RightPanelCollapsedRailProps) {
-  const hasQuickActions = canOpenWorkspaceFileSearch || canOfferReviewTab || canOfferBrowserTab;
+  const hasQuickActions = canOfferReviewTab || canOfferBrowserTab;
 
   if (collapsedTabs.length === 0 && !hasQuickActions) {
     return null;
@@ -185,10 +162,8 @@ export function RightPanelCollapsedRail({
       <RightPanelQuickOpenActions
         canOfferBrowserTab={canOfferBrowserTab}
         canOfferReviewTab={canOfferReviewTab}
-        canOpenWorkspaceFileSearch={canOpenWorkspaceFileSearch}
         onOpenBrowserTab={onOpenBrowserTab}
         onOpenReviewTab={onOpenReviewTab}
-        onOpenWorkspaceFileSearch={onOpenWorkspaceFileSearch}
         t={t}
         buttonClassName="app-topbar-button flex h-8 w-8 items-center justify-center rounded-[10px]"
       />
@@ -196,10 +171,8 @@ export function RightPanelCollapsedRail({
         <RightPanelOpenTabMenu
           canOfferBrowserTab={canOfferBrowserTab}
           canOfferReviewTab={canOfferReviewTab}
-          canOpenWorkspaceFileSearch={canOpenWorkspaceFileSearch}
           onOpenBrowserTab={onOpenBrowserTab}
           onOpenReviewTab={onOpenReviewTab}
-          onOpenWorkspaceFileSearch={onOpenWorkspaceFileSearch}
           t={t}
           triggerClassName="app-topbar-button flex h-8 w-8 items-center justify-center rounded-[10px]"
         />
@@ -212,13 +185,11 @@ export function RightPanelTabStrip({
   activeTabId,
   canOfferBrowserTab,
   canOfferReviewTab,
-  canOpenWorkspaceFileSearch,
   onActivateTab,
   onCloseTab,
   onTogglePanel,
   onOpenBrowserTab,
   onOpenReviewTab,
-  onOpenWorkspaceFileSearch,
   openTabs,
   t,
 }: RightPanelTabStripProps) {
@@ -317,23 +288,11 @@ export function RightPanelTabStrip({
         })}
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        <RightPanelQuickOpenActions
-          canOfferBrowserTab={canOfferBrowserTab}
-          canOfferReviewTab={canOfferReviewTab}
-          canOpenWorkspaceFileSearch={canOpenWorkspaceFileSearch}
-          onOpenBrowserTab={onOpenBrowserTab}
-          onOpenReviewTab={onOpenReviewTab}
-          onOpenWorkspaceFileSearch={onOpenWorkspaceFileSearch}
-          t={t}
-          buttonClassName="app-topbar-button no-drag flex h-7 w-7 items-center justify-center rounded-[8px] text-[12px]"
-        />
         <RightPanelOpenTabMenu
           canOfferBrowserTab={canOfferBrowserTab}
           canOfferReviewTab={canOfferReviewTab}
-          canOpenWorkspaceFileSearch={canOpenWorkspaceFileSearch}
           onOpenBrowserTab={onOpenBrowserTab}
           onOpenReviewTab={onOpenReviewTab}
-          onOpenWorkspaceFileSearch={onOpenWorkspaceFileSearch}
           t={t}
           triggerClassName="app-topbar-button no-drag flex h-7 w-7 items-center justify-center rounded-[8px] text-[12px]"
         />
@@ -375,10 +334,8 @@ export function RightPanelTabStrip({
 function RightPanelQuickOpenActions({
   canOfferBrowserTab,
   canOfferReviewTab,
-  canOpenWorkspaceFileSearch,
   onOpenBrowserTab,
   onOpenReviewTab,
-  onOpenWorkspaceFileSearch,
   t,
   buttonClassName,
 }: RightPanelOpenTabMenuProps & {
@@ -386,15 +343,6 @@ function RightPanelQuickOpenActions({
 }) {
   return (
     <>
-      {canOpenWorkspaceFileSearch ? (
-        <IconActionButton
-          className={buttonClassName}
-          label={t("thread.sidePanel.openFile")}
-          onClick={onOpenWorkspaceFileSearch}
-        >
-          <SearchIcon className="h-4 w-4" />
-        </IconActionButton>
-      ) : null}
       {canOfferReviewTab ? (
         <IconActionButton
           className={buttonClassName}

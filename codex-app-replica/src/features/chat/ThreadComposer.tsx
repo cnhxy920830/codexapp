@@ -3,7 +3,7 @@ import type { AvatarOption } from "../../components/appearance/avatarData";
 import {
   ChevronDownIcon,
   CheckIcon,
-  PlusIcon,
+  WorkspaceFileIcon,
 } from "../../components/AppShellIcons";
 import type { MessageKey } from "../../i18n/messages";
 import {
@@ -223,7 +223,70 @@ export function ThreadComposer({
   return (
     <>
       <div className="app-thread-composer overflow-visible rounded-[24px] border border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)] shadow-[var(--app-shell-card-shadow)]">
-        <div className="px-4 pt-4 pb-3">
+        <div className="flex flex-wrap items-center gap-2 border-b border-[var(--app-shell-border)] px-3.5 py-2.5">
+          <div className="app-thread-composer-footer-pill">
+            <span>{modeLabel}</span>
+          </div>
+          <div className="app-thread-composer-footer-pill">
+            <span>{t(followUpModeLabelKey)}</span>
+          </div>
+          <div className="app-thread-composer-footer-pill">
+            <span>{t(reviewDeliveryLabelKey)}</span>
+          </div>
+          <div className="relative ml-auto" ref={permissionMenuRef}>
+            <button
+              type="button"
+              disabled={composerPermissionsState.isDropdownDisabled}
+              onClick={() => setIsPermissionMenuOpen((current) => !current)}
+              className="app-thread-composer-pill"
+              aria-label={permissionTriggerLabel}
+              title={permissionTriggerLabel}
+            >
+              <span>{permissionTriggerLabel}</span>
+              <ChevronDownIcon className="h-3.5 w-3.5" />
+            </button>
+            {isPermissionMenuOpen ? (
+              <div className="app-card absolute top-[calc(100%+10px)] right-0 z-20 min-w-[236px] rounded-[16px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+                {permissionOptions.map((option) => {
+                  const selected = option.value === permissionMenuValue;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => handlePermissionOptionChange(option.value)}
+                      className="app-nav-item-idle flex w-full items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-left text-[13px]"
+                    >
+                      <span>{option.label}</span>
+                      {selected ? <CheckIcon className="h-3.5 w-3.5 shrink-0" /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+          {canOpenWorkspaceFileSearch ? (
+            <button
+              type="button"
+              onClick={() => onOpenWorkspaceFileSearch?.()}
+              className="app-thread-composer-action-button"
+              aria-label={t("thread.sidePanel.openFile")}
+              title={t("thread.sidePanel.openFile")}
+            >
+              <WorkspaceFileIcon className="h-4 w-4" />
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={handleInsertMention}
+            className="app-thread-composer-action-button"
+            aria-label="@"
+            title="@"
+          >
+            <span className="text-[15px] font-medium leading-none">@</span>
+          </button>
+        </div>
+
+        <div className="px-4 pt-3 pb-3">
           <textarea
             ref={textareaRef}
             value={composerDraft}
@@ -295,57 +358,11 @@ export function ThreadComposer({
               {helperOrStatusText}
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <div className="relative" ref={permissionMenuRef}>
-                <button
-                  type="button"
-                  disabled={composerPermissionsState.isDropdownDisabled}
-                  onClick={() => setIsPermissionMenuOpen((current) => !current)}
-                  className="app-thread-composer-pill"
-                  aria-label={permissionTriggerLabel}
-                  title={permissionTriggerLabel}
-                >
-                  <span>{permissionTriggerLabel}</span>
-                  <ChevronDownIcon className="h-3.5 w-3.5" />
-                </button>
-                {isPermissionMenuOpen ? (
-                  <div className="app-card absolute right-0 bottom-[calc(100%+10px)] z-20 min-w-[236px] rounded-[16px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
-                    {permissionOptions.map((option) => {
-                      const selected = option.value === permissionMenuValue;
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => handlePermissionOptionChange(option.value)}
-                          className="app-nav-item-idle flex w-full items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-left text-[13px]"
-                        >
-                          <span>{option.label}</span>
-                          {selected ? <CheckIcon className="h-3.5 w-3.5 shrink-0" /> : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-              {canOpenWorkspaceFileSearch ? (
-                <button
-                  type="button"
-                  onClick={() => onOpenWorkspaceFileSearch?.()}
-                  className="app-thread-composer-action-button"
-                  aria-label={t("thread.sidePanel.openFile")}
-                  title={t("thread.sidePanel.openFile")}
-                >
-                  <PlusIcon className="h-4 w-4" />
-                </button>
+              {footerStatusLabel ? (
+                <div className="app-thread-composer-footer-pill max-w-[280px]" title={footerStatusTitle || undefined}>
+                  <span className="truncate">{footerStatusLabel}</span>
+                </div>
               ) : null}
-              <button
-                type="button"
-                onClick={handleInsertMention}
-                className="app-thread-composer-action-button"
-                aria-label="@"
-                title="@"
-              >
-                <span className="text-[15px] font-medium leading-none">@</span>
-              </button>
               <button
                 type="button"
                 disabled={isSubmitDisabled}
@@ -362,21 +379,6 @@ export function ThreadComposer({
               >
                 {submitButtonMode === "stop" ? "■" : "↑"}
               </button>
-            </div>
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <div className="app-thread-composer-footer-pill">
-              <span>{modeLabel}</span>
-            </div>
-            <div className="app-thread-composer-footer-pill">
-              <span>{footerStatusLabel}</span>
-            </div>
-            <div className="app-thread-composer-footer-pill">
-              <span>{t(followUpModeLabelKey)}</span>
-            </div>
-            <div className="app-thread-composer-footer-pill">
-              <span>{t(reviewDeliveryLabelKey)}</span>
             </div>
           </div>
         </div>

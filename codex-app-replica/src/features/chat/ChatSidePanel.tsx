@@ -53,6 +53,7 @@ type ChatSidePanelProps = {
   pendingPdfComments?: PendingPdfCommentAttachment[];
   threadConversation: ThreadConversation | null;
   onOpenBrowserTarget: (target: BrowserSidebarTarget) => void;
+  onOpenWorkspaceFileSearch?: (() => void) | null;
   onOpenReviewFile: (change: FileChangeSummary) => void;
   onSelectWorkspaceFile: (file: WorkspaceFilePreviewTarget) => void;
   onSubmitPdfComment: (comment: ThreadConversationUserInputComment) => Promise<void>;
@@ -115,6 +116,7 @@ export function ChatSidePanel({
   pendingPdfComments = [],
   threadConversation,
   onOpenBrowserTarget,
+  onOpenWorkspaceFileSearch = null,
   onOpenReviewFile,
   onSelectWorkspaceFile,
   onSubmitPdfComment,
@@ -222,7 +224,12 @@ export function ChatSidePanel({
         </div>
       ) : activeTab?.kind === "review" ? (
         <div className="min-h-0 flex-1 overflow-hidden">
-          <ReviewSidePanel onOpenReviewFile={onOpenReviewFile} threadDiffSummary={threadDiffSummary} t={t} />
+          <ReviewSidePanel
+            onOpenReviewFile={onOpenReviewFile}
+            onOpenWorkspaceFileSearch={onOpenWorkspaceFileSearch}
+            threadDiffSummary={threadDiffSummary}
+            t={t}
+          />
         </div>
       ) : activeTab?.kind === "browser" ? (
         <div className="min-h-0 flex-1">

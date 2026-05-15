@@ -1,0 +1,2 @@
+var e=null;function t(t){e=t}function n(t){e?.(`log-message`,t)}var r={trace:(e,t)=>{i(`trace`,e,t)},debug:(e,t)=>{i(`debug`,e,t)},info:(e,t)=>{i(`info`,e,t)},warning:(e,t)=>{i(`warning`,e,t)},error:(e,t)=>{i(`error`,e,t)}};function i(e,t,r){n({level:e,message:t,...r==null?{}:{tags:a(r)}})}function a(e){return{...e,sensitive:e.sensitive??{}}}export{t as n,r as t};
+//# sourceMappingURL=logger-DlXCjIgk.js.map

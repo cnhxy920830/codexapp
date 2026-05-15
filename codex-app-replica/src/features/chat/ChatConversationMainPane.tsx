@@ -1308,8 +1308,8 @@ function ConversationItemCard({
     }
 
     return (
-      <div className="flex w-full justify-start pr-10">
-        <div className="app-assistant-message max-w-[min(780px,100%)] px-0.5 py-0.5">
+      <div className="flex w-full justify-start pr-6">
+        <div className="app-assistant-message max-w-[min(780px,100%)] px-0.5 py-1">
           {renderMessageContent(item.text)}
         </div>
       </div>
@@ -1733,9 +1733,9 @@ function UserConversationMessageCard({
   const shouldRenderBubble = hasVisibleText || chips.length === 0;
 
   return (
-    <div className="group flex w-full flex-col items-end justify-end gap-1">
+    <div className="group flex w-full flex-col items-end justify-end gap-1.5">
       {shouldRenderBubble && messageStatusLabel !== null ? (
-        <div className="app-text-muted mr-1 ms-1 flex items-center gap-2">
+        <div className="app-text-muted mr-1 flex items-center gap-2">
           <UserMessageStatusIcon className="h-[13px] w-[13px] shrink-0" />
           <span className="text-[12px]">{messageStatusLabel}</span>
         </div>
@@ -1780,7 +1780,7 @@ function UserConversationMessageCard({
               </div>
             </form>
           ) : (
-            <div className="app-user-message max-w-[77%] break-words rounded-2xl px-3 py-2 [&_.contain-inline-size]:[contain:initial]">
+            <div className="app-user-message max-w-[77%] break-words rounded-[22px] px-3.5 py-2.5 [&_.contain-inline-size]:[contain:initial]">
               {hasVisibleText ? (
                 <UserMessageCollapsibleContent text={visibleText} t={t} />
               ) : (
@@ -1792,12 +1792,12 @@ function UserConversationMessageCard({
           )}
         </div>
       ) : null}
-      <div className={["flex flex-row-reverse items-center gap-1", shouldRenderMetaRow ? "" : "hidden"].join(" ")}>
+      <div className={["flex flex-row-reverse items-center gap-1.5", shouldRenderMetaRow ? "" : "hidden"].join(" ")}>
         {chips.map((chip) => (
           <UserMessageChip key={`${item.id}:${chip.key}`} label={chip.label} />
         ))}
         {hasVisibleMessageText && !isEditing ? (
-          <div className="mr-1 ms-1 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <div className="mr-1 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
             {sentAtLabel ? (
               <span className="app-text-muted text-[12px]">{sentAtLabel}</span>
             ) : null}

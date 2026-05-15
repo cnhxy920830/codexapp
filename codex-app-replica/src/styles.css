@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./assets/katex/katex.css";
 
 :root {
   --app-shell-surface: var(--color-background-panel, #e9e7e3);
@@ -42,6 +43,8 @@
   --padding-panel: var(--app-shell-panel-gap);
   --thread-composer-max-width: 48rem;
   --thread-content-max-width: 48rem;
+  --markdown-wide-block-max-width: 64rem;
+  --markdown-wide-block-max-height: 80vh;
   --height-toolbar: var(--app-shell-toolbar);
   --height-toolbar-sm: var(--app-shell-toolbar-sm);
   --codex-window-zoom: 1;
@@ -115,6 +118,10 @@ select {
 
 .no-drag {
   -webkit-app-region: no-drag;
+}
+
+.draggable {
+  -webkit-app-region: drag;
 }
 
 button {
@@ -376,6 +383,11 @@ html.electron-dark .codex-logo-shimmer-overlay {
   cursor: not-allowed;
 }
 
+.thread-edge-scroll {
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable both-edges;
+}
+
 .vertical-scroll-fade-mask {
   --vertical-scroll-fade-mask-size: 20px;
   -webkit-mask-image: linear-gradient(
@@ -625,8 +637,17 @@ body[data-hotkey-window-home-composer-menu-open] .hotkey-window-home-underlay {
   color: var(--app-shell-muted);
 }
 
+.app-topbar-button:disabled {
+  color: var(--app-shell-control-disabled);
+  cursor: not-allowed;
+}
+
 .app-topbar-button:hover {
   background: var(--app-shell-control-hover);
+}
+
+.app-topbar-button:disabled:hover {
+  background: transparent;
 }
 
 .app-command-tab-active {
@@ -669,6 +690,169 @@ body[data-hotkey-window-home-composer-menu-open] .hotkey-window-home-underlay {
   background: color-mix(in srgb, var(--app-shell-control-text) 35%, transparent);
   color: var(--app-shell-control-disabled);
   cursor: not-allowed;
+}
+
+.app-right-panel-shell {
+  border-left: 1px solid var(--app-shell-border);
+  background: color-mix(in srgb, var(--app-shell-right) 94%, var(--app-shell-main-surface));
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--app-shell-border) 55%, transparent);
+}
+
+.app-right-panel-collapsed-rail {
+  border-left: 1px solid var(--app-shell-border);
+  background: color-mix(in srgb, var(--app-shell-right) 96%, var(--app-shell-main-surface));
+}
+
+.app-right-panel-content {
+  background: color-mix(in srgb, var(--app-shell-right) 92%, var(--app-shell-main-surface));
+}
+
+.app-right-panel-tab-strip {
+  background: color-mix(in srgb, var(--app-shell-right) 96%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--app-shell-border) 55%, transparent);
+}
+
+.app-right-panel-splitter,
+.app-right-panel-splitter-active {
+  position: relative;
+}
+
+.app-right-panel-splitter:hover .app-right-panel-splitter-line,
+.app-right-panel-splitter-active .app-right-panel-splitter-line {
+  background: color-mix(in srgb, var(--app-shell-accent) 22%, var(--app-shell-border));
+}
+
+.app-right-panel-splitter:hover .app-right-panel-splitter-grip,
+.app-right-panel-splitter-active .app-right-panel-splitter-grip {
+  color: var(--app-shell-accent);
+  background: color-mix(in srgb, var(--app-shell-main-surface) 85%, transparent);
+}
+
+.app-right-panel-splitter-line {
+  background: var(--app-shell-border);
+  transition: background-color 120ms ease-out;
+}
+
+.app-right-panel-splitter-grip {
+  color: var(--app-shell-subtle);
+  transition:
+    color 120ms ease-out,
+    background-color 120ms ease-out;
+}
+
+.app-thread-composer {
+  background: color-mix(in srgb, var(--app-shell-main-surface) 94%, transparent);
+  backdrop-filter: blur(16px);
+}
+
+.app-thread-composer-pill,
+.app-thread-composer-footer-pill {
+  appearance: none;
+  border: 1px solid var(--app-shell-control-border);
+  outline: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  border-radius: 999px;
+  padding: 0 12px;
+  background: color-mix(in srgb, var(--app-shell-control-bg) 88%, transparent);
+  color: var(--app-shell-control-text-muted);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.app-thread-composer-pill {
+  cursor: pointer;
+}
+
+.app-thread-composer-pill:hover {
+  background: var(--app-shell-control-hover);
+  color: var(--app-shell-control-text);
+}
+
+.app-thread-composer-pill:disabled {
+  color: var(--app-shell-control-disabled);
+  cursor: not-allowed;
+}
+
+.app-thread-composer-pill:disabled:hover {
+  background: color-mix(in srgb, var(--app-shell-control-bg) 88%, transparent);
+  color: var(--app-shell-control-disabled);
+}
+
+.app-thread-composer-pill-active {
+  background: var(--app-shell-control-bg);
+  color: var(--app-shell-control-text);
+}
+
+.app-thread-composer-action-button {
+  border: 1px solid var(--app-shell-control-border);
+  background: color-mix(in srgb, var(--app-shell-control-bg) 90%, transparent);
+  color: var(--app-shell-control-text-muted);
+  display: inline-flex;
+  height: 36px;
+  width: 36px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+}
+
+.app-thread-composer-action-button:hover {
+  background: var(--app-shell-control-hover);
+  color: var(--app-shell-control-text);
+}
+
+.app-thread-composer-action-button:disabled {
+  color: var(--app-shell-control-disabled);
+  cursor: not-allowed;
+}
+
+.app-thread-composer-action-button:disabled:hover {
+  background: color-mix(in srgb, var(--app-shell-control-bg) 90%, transparent);
+  color: var(--app-shell-control-disabled);
+}
+
+.app-assistant-message {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--app-shell-text);
+  line-height: 1.68;
+}
+
+.app-user-message {
+  border: 1px solid color-mix(in srgb, var(--app-shell-border) 92%, transparent);
+  background: color-mix(in srgb, var(--app-shell-card-bg-muted) 84%, var(--app-shell-control-bg));
+  color: var(--app-shell-control-text);
+  box-shadow: var(--app-shell-card-shadow);
+}
+
+.app-user-message-chip {
+  background: color-mix(in srgb, var(--app-shell-card-bg-muted) 92%, transparent);
+  color: var(--app-shell-muted);
+  border: 1px solid color-mix(in srgb, var(--app-shell-border) 78%, transparent);
+  letter-spacing: 0;
+}
+
+.app-message-markdown {
+  color: var(--app-shell-text);
+}
+
+.app-message-markdown > :first-child {
+  margin-top: 0;
+}
+
+.app-message-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.app-message-markdown code {
+  background: color-mix(in srgb, var(--app-shell-card-bg-muted) 90%, transparent);
+}
+
+.app-message-markdown pre {
+  margin: 0;
 }
 
 .app-approval-button-primary {

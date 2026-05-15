@@ -8,6 +8,7 @@ import {
   DiffUnifiedIcon,
   ExpandAllDiffsIcon,
   MoreActionsIcon,
+  OpenFilesIcon,
   RefreshIcon,
   WrapDisabledIcon,
   WrapEnabledIcon,
@@ -41,6 +42,7 @@ export function ReviewSidePanel({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [copiedApplyCommand, setCopiedApplyCommand] = useState(false);
   const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState(false);
+  const [isChangedFilesPaneOpen, setIsChangedFilesPaneOpen] = useState(true);
   const optionsMenuRef = useRef<HTMLDivElement | null>(null);
   const fileKeys = useMemo(
     () => threadDiffSummary.files.map((file, index) => buildReviewFileKey(file, index)),
@@ -114,178 +116,191 @@ export function ReviewSidePanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="border-b border-[var(--app-shell-border)] px-2.5 py-2">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="app-title text-[13px] font-medium">
-              {t("thread.sidePanel.diffTab")}
-            </div>
-            <div className="app-text-muted mt-1 flex flex-wrap items-center gap-3 text-[11px]">
-              <span>{t("app.chat.filesChanged", { fileCount: threadDiffSummary.fileCount })}</span>
-              <span className="text-[#21a05b]">+{threadDiffSummary.linesAdded}</span>
-              <span className="text-[#c3564e]">-{threadDiffSummary.linesDeleted}</span>
-            </div>
+      <div className="grid h-[var(--app-shell-toolbar-pane)] grid-cols-[minmax(0,1fr)_auto] items-center gap-1 border-b border-[var(--app-shell-border)] px-2 text-[var(--app-shell-muted)]">
+        <div className="flex min-w-0 items-center gap-3 overflow-hidden">
+          <div className="app-title truncate text-[13px] font-medium text-[var(--app-shell-text)]">
+            {t("thread.sidePanel.diffTab")}
           </div>
-
-          <div className="flex shrink-0 items-center gap-1">
-            <div className="relative" ref={optionsMenuRef}>
-              <ToolbarButton
-                label={t("codex.review.header.moreOptions")}
-                onClick={() => setIsOptionsMenuOpen((current) => !current)}
-              >
-                <MoreActionsIcon className="h-4 w-4" />
-              </ToolbarButton>
-              {isOptionsMenuOpen ? (
-                <div className="app-card absolute top-[calc(100%+8px)] right-0 z-10 min-w-[220px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
-                  <OptionsMenuButton
-                    label={
-                      loadFullFilesEnabled
-                        ? t("codex.review.loadFullFiles.disable")
-                        : t("codex.review.loadFullFiles.enable")
-                    }
-                    onClick={() => {
-                      setLoadFullFilesEnabled((current) => !current);
-                      setIsOptionsMenuOpen(false);
-                    }}
-                    selected={loadFullFilesEnabled}
-                  />
-                  <OptionsMenuButton
-                    label={
-                      richPreviewEnabled
-                        ? t("codex.review.richPreview.disable")
-                        : t("codex.review.richPreview.enable")
-                    }
-                    onClick={() => {
-                      setRichPreviewEnabled((current) => !current);
-                      setIsOptionsMenuOpen(false);
-                    }}
-                    selected={richPreviewEnabled}
-                  />
-                  <OptionsMenuButton
-                    label={
-                      wordDiffsEnabled
-                        ? t("codex.review.wordDiffs.disable")
-                        : t("codex.review.wordDiffs.enable")
-                    }
-                    onClick={() => {
-                      setWordDiffsEnabled((current) => !current);
-                      setIsOptionsMenuOpen(false);
-                    }}
-                    selected={wordDiffsEnabled}
-                  />
-                  <OptionsMenuButton
-                    label={
-                      hideWhitespace
-                        ? t("codex.review.whitespace.show")
-                        : t("codex.review.whitespace.hide")
-                    }
-                    onClick={() => {
-                      setHideWhitespace((current) => !current);
-                      setIsOptionsMenuOpen(false);
-                    }}
-                    selected={hideWhitespace}
-                  />
-                  <div className="my-1 h-px bg-[var(--app-shell-border)]" />
-                  <OptionsMenuButton
-                    label={t("codex.review.copyGitApplyCommand")}
-                    onClick={() => void handleCopyGitApplyCommand()}
-                    selected={false}
-                    trailingIcon={<CopyPathIcon className="h-3.5 w-3.5" />}
-                  />
-                </div>
-              ) : null}
-            </div>
-
-            <ToolbarButton label={t("codex.review.refreshGitQueries")} onClick={handleRefresh}>
-              <RefreshIcon className={["h-4 w-4", isRefreshing ? "animate-spin" : ""].join(" ")} />
-            </ToolbarButton>
-            <ToolbarButton
-              label={wrap ? t("codex.review.wrap.disable") : t("codex.review.wrap.enable")}
-              onClick={() => setWrap((current) => !current)}
-            >
-              {wrap ? (
-                <WrapEnabledIcon className="h-4 w-4" />
-              ) : (
-                <WrapDisabledIcon className="h-4 w-4" />
-              )}
-            </ToolbarButton>
-            <ToolbarButton
-              label={
-                isAllExpanded
-                  ? t("codex.review.expandOrCollapseDiffMenu.collapse")
-                  : t("codex.review.expandOrCollapseDiffMenu.expand")
-              }
-              onClick={() =>
-                setExpandedFileKeys(
-                  isAllExpanded ? new Set<string>() : new Set(fileKeys),
-                )
-              }
-            >
-              {isAllExpanded ? (
-                <CollapseAllDiffsIcon className="h-4 w-4" />
-              ) : (
-                <ExpandAllDiffsIcon className="h-4 w-4" />
-              )}
-            </ToolbarButton>
-            <ToolbarButton
-              label={
-                diffMode === "unified"
-                  ? t("codex.review.switchToSplit")
-                  : t("codex.review.switchToUnified")
-              }
-              onClick={() =>
-                setDiffMode((current) => (current === "unified" ? "split" : "unified"))
-              }
-            >
-              {diffMode === "unified" ? (
-                <DiffSplitIcon className="h-4 w-4" />
-              ) : (
-                <DiffUnifiedIcon className="h-4 w-4" />
-              )}
-            </ToolbarButton>
+          <div className="app-text-muted flex min-w-0 items-center gap-2 overflow-hidden text-[11px]">
+            <span className="truncate">
+              {t("app.chat.filesChanged", { fileCount: threadDiffSummary.fileCount })}
+            </span>
+            <span className="shrink-0 text-[#21a05b]">+{threadDiffSummary.linesAdded}</span>
+            <span className="shrink-0 text-[#c3564e]">-{threadDiffSummary.linesDeleted}</span>
           </div>
         </div>
 
-        {copiedApplyCommand ? (
-          <div className="app-text-muted mt-2 text-[11px]">
-            {t("codex.review.copyGitApplyCommand.toast")}
+        <div className="flex items-center gap-px">
+          <div className="relative" ref={optionsMenuRef}>
+            <ToolbarButton
+              label={t("codex.review.header.moreOptions")}
+              onClick={() => setIsOptionsMenuOpen((current) => !current)}
+            >
+              <MoreActionsIcon className="h-4 w-4" />
+            </ToolbarButton>
+            {isOptionsMenuOpen ? (
+              <div className="app-card absolute top-[calc(100%+8px)] right-0 z-10 min-w-[220px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+                <OptionsMenuButton
+                  label={
+                    loadFullFilesEnabled
+                      ? t("codex.review.loadFullFiles.disable")
+                      : t("codex.review.loadFullFiles.enable")
+                  }
+                  onClick={() => {
+                    setLoadFullFilesEnabled((current) => !current);
+                    setIsOptionsMenuOpen(false);
+                  }}
+                  selected={loadFullFilesEnabled}
+                />
+                <OptionsMenuButton
+                  label={
+                    richPreviewEnabled
+                      ? t("codex.review.richPreview.disable")
+                      : t("codex.review.richPreview.enable")
+                  }
+                  onClick={() => {
+                    setRichPreviewEnabled((current) => !current);
+                    setIsOptionsMenuOpen(false);
+                  }}
+                  selected={richPreviewEnabled}
+                />
+                <OptionsMenuButton
+                  label={
+                    wordDiffsEnabled
+                      ? t("codex.review.wordDiffs.disable")
+                      : t("codex.review.wordDiffs.enable")
+                  }
+                  onClick={() => {
+                    setWordDiffsEnabled((current) => !current);
+                    setIsOptionsMenuOpen(false);
+                  }}
+                  selected={wordDiffsEnabled}
+                />
+                <OptionsMenuButton
+                  label={
+                    hideWhitespace
+                      ? t("codex.review.whitespace.show")
+                      : t("codex.review.whitespace.hide")
+                  }
+                  onClick={() => {
+                    setHideWhitespace((current) => !current);
+                    setIsOptionsMenuOpen(false);
+                  }}
+                  selected={hideWhitespace}
+                />
+                <div className="my-1 h-px bg-[var(--app-shell-border)]" />
+                <OptionsMenuButton
+                  label={t("codex.review.copyGitApplyCommand")}
+                  onClick={() => void handleCopyGitApplyCommand()}
+                  selected={false}
+                  trailingIcon={<CopyPathIcon className="h-3.5 w-3.5" />}
+                />
+              </div>
+            ) : null}
           </div>
-        ) : null}
+          <ToolbarButton label={t("codex.review.refreshGitQueries")} onClick={handleRefresh}>
+            <RefreshIcon className={["h-4 w-4", isRefreshing ? "animate-spin" : ""].join(" ")} />
+          </ToolbarButton>
+          <ToolbarButton
+            label={wrap ? t("codex.review.wrap.disable") : t("codex.review.wrap.enable")}
+            onClick={() => setWrap((current) => !current)}
+          >
+            {wrap ? (
+              <WrapEnabledIcon className="h-4 w-4" />
+            ) : (
+              <WrapDisabledIcon className="h-4 w-4" />
+            )}
+          </ToolbarButton>
+          <ToolbarButton
+            label={
+              isAllExpanded
+                ? t("codex.review.expandOrCollapseDiffMenu.collapse")
+                : t("codex.review.expandOrCollapseDiffMenu.expand")
+            }
+            onClick={() =>
+              setExpandedFileKeys(isAllExpanded ? new Set<string>() : new Set(fileKeys))
+            }
+          >
+            {isAllExpanded ? (
+              <CollapseAllDiffsIcon className="h-4 w-4" />
+            ) : (
+              <ExpandAllDiffsIcon className="h-4 w-4" />
+            )}
+          </ToolbarButton>
+          <ToolbarButton
+            label={
+              diffMode === "unified"
+                ? t("codex.review.switchToSplit")
+                : t("codex.review.switchToUnified")
+            }
+            onClick={() =>
+              setDiffMode((current) => (current === "unified" ? "split" : "unified"))
+            }
+          >
+            {diffMode === "unified" ? (
+              <DiffSplitIcon className="h-4 w-4" />
+            ) : (
+              <DiffUnifiedIcon className="h-4 w-4" />
+            )}
+          </ToolbarButton>
+          <ToolbarButton
+            label={t("thread.sidePanel.openFile")}
+            onClick={() => setIsChangedFilesPaneOpen((current) => !current)}
+            pressed={isChangedFilesPaneOpen}
+          >
+            <OpenFilesIcon className="h-4 w-4" />
+          </ToolbarButton>
+        </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
-        <div className="space-y-2">
-          {threadDiffSummary.files.map((file, index) => {
-            const fileKey = buildReviewFileKey(file, index);
-            return (
-              <ReviewFileCard
-                key={fileKey}
-                change={file}
-                diffMode={diffMode}
-                fileKey={fileKey}
-                hideWhitespace={hideWhitespace}
-                isExpanded={expandedFileKeys.has(fileKey)}
-                loadFullFilesEnabled={loadFullFilesEnabled}
-                onOpenReviewFile={onOpenReviewFile}
-                onToggleExpanded={() =>
-                  setExpandedFileKeys((current) => {
-                    const next = new Set(current);
-                    if (next.has(fileKey)) {
-                      next.delete(fileKey);
-                    } else {
-                      next.add(fileKey);
-                    }
-                    return next;
-                  })
-                }
-                richPreviewEnabled={richPreviewEnabled}
-                t={t}
-                wordDiffsEnabled={wordDiffsEnabled}
-                wrap={wrap}
-              />
-            );
-          })}
+      {copiedApplyCommand ? (
+        <div className="border-b border-[var(--app-shell-border)] px-3 py-2 text-[11px] text-[var(--app-shell-muted)]">
+          {t("codex.review.copyGitApplyCommand.toast")}
         </div>
+      ) : null}
+
+      <div className="flex min-h-0 flex-1">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-3 py-3">
+          <div className="space-y-2">
+            {threadDiffSummary.files.map((file, index) => {
+              const fileKey = buildReviewFileKey(file, index);
+              return (
+                <ReviewFileCard
+                  key={fileKey}
+                  change={file}
+                  diffMode={diffMode}
+                  fileKey={fileKey}
+                  hideWhitespace={hideWhitespace}
+                  isExpanded={expandedFileKeys.has(fileKey)}
+                  loadFullFilesEnabled={loadFullFilesEnabled}
+                  onOpenReviewFile={onOpenReviewFile}
+                  onToggleExpanded={() =>
+                    setExpandedFileKeys((current) => {
+                      const next = new Set(current);
+                      if (next.has(fileKey)) {
+                        next.delete(fileKey);
+                      } else {
+                        next.add(fileKey);
+                      }
+                      return next;
+                    })
+                  }
+                  richPreviewEnabled={richPreviewEnabled}
+                  t={t}
+                  wordDiffsEnabled={wordDiffsEnabled}
+                  wrap={wrap}
+                />
+              );
+            })}
+          </div>
+        </div>
+        {isChangedFilesPaneOpen ? (
+          <ReviewChangedFilesPane
+            files={threadDiffSummary.files}
+            onOpenReviewFile={onOpenReviewFile}
+            t={t}
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -402,21 +417,73 @@ function ToolbarButton({
   children,
   label,
   onClick,
+  pressed = false,
 }: {
   children: ReactNode;
   label: string;
   onClick: () => void;
+  pressed?: boolean;
 }) {
   return (
     <button
       type="button"
       title={label}
       aria-label={label}
+      aria-pressed={pressed}
       onClick={onClick}
-      className="app-topbar-button flex h-8 w-8 items-center justify-center rounded-[10px]"
+      className={[
+        "app-topbar-button flex h-8 w-8 items-center justify-center rounded-[10px]",
+        pressed ? "bg-[var(--app-shell-control-hover)] text-[var(--app-shell-text)]" : "",
+      ].join(" ")}
     >
       {children}
     </button>
+  );
+}
+
+function ReviewChangedFilesPane({
+  files,
+  onOpenReviewFile,
+  t,
+}: {
+  files: FileChangeSummary[];
+  onOpenReviewFile: (change: FileChangeSummary) => void;
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+}) {
+  return (
+    <aside className="flex w-[220px] shrink-0 flex-col border-l border-[var(--app-shell-border)] bg-[color:var(--app-shell-right)]">
+      <div className="border-b border-[var(--app-shell-border)] px-3 py-2">
+        <div className="app-title text-[12px] font-medium tracking-[0.04em]">
+          {t("app.chat.filesChanged", { fileCount: files.length })}
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+        <div className="space-y-1">
+          {files.map((file, index) => {
+            const key = buildReviewFileKey(file, index);
+            const { linesAdded, linesDeleted } = countFileChangeDiffLines(file.diff);
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => onOpenReviewFile(file)}
+                className="app-nav-item-idle flex w-full items-start gap-2 rounded-[10px] px-2.5 py-2 text-left"
+              >
+                <OpenFilesIcon className="mt-0.5 h-4 w-4 shrink-0 text-[var(--app-shell-muted)]" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[12px] text-[var(--app-shell-text)]">{file.path}</div>
+                  <div className="mt-1 flex items-center gap-2 text-[11px] text-[var(--app-shell-muted)]">
+                    <span>{file.kind}</span>
+                    <span className="text-[#21a05b]">+{linesAdded}</span>
+                    <span className="text-[#c3564e]">-{linesDeleted}</span>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </aside>
   );
 }
 

@@ -80,16 +80,10 @@ export function ThreadPageHeader({
   const title = threadConversation.title.trim().length > 0 ? threadConversation.title : t("app.nav.newChat");
   const hasWorkingDirectory = threadConversation.cwd.trim().length > 0;
   const canCopyWorkingDirectory = hasWorkingDirectory;
-  const hasTrailingActions = trailingActions != null;
 
   return (
-    <header className="border-b border-[var(--app-shell-border)] px-5 py-2.5">
-      <div
-        className={[
-          "draggable w-full min-w-0 items-center gap-x-4",
-          hasTrailingActions ? "grid grid-cols-[minmax(0,1fr)_auto]" : "flex",
-        ].join(" ")}
-      >
+    <header className="border-b border-[var(--app-shell-border)] px-4 py-2">
+      <div className="draggable grid min-h-[var(--app-shell-toolbar)] w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4">
         <div className="flex min-w-0 flex-1 items-center gap-2 truncate text-base electron:font-medium">
           <span className="app-title no-drag pointer-events-auto max-w-[320px] min-w-[2ch] truncate text-[15px] font-medium">
             {title}
@@ -221,7 +215,7 @@ export function ThreadPageHeader({
           </div>
         </div>
 
-        {hasTrailingActions ? (
+        {trailingActions ? (
           <div className="no-drag flex items-center justify-end gap-1.5">
             {trailingActions}
           </div>

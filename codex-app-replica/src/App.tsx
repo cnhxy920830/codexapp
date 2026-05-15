@@ -29,6 +29,7 @@ import {
   buildProjectGroups,
   type ThreadConversationItem,
   type ThreadConversationUserInput,
+  type ThreadConversationUserInputComment,
   getRecentThreads,
   interruptTurn,
   onThreadEvent,
@@ -63,11 +64,15 @@ import {
   applyAppearanceSettingsSnapshot,
   buildConfigScopeOptions,
   chooseDefaultConfigScopeKey,
+  getConfigRequirementsForHost,
   getGlobalState,
+  setGlobalState,
   onGpuTearingDebugSettingsChanged,
   onGlobalStateUpdated,
   readPreventSleepWhileRunningPreference,
+  readComposerPermissionModeVisibility,
   type ComposerEnterBehavior,
+  type ConversationDetailMode,
   type FollowUpQueueMode,
   type ReviewDelivery,
   readAppearanceSettingsSnapshot,
@@ -80,6 +85,7 @@ import {
   type ConfigSnapshot,
 } from "./services/settings";
 import { AppearanceSettings } from "./components/AppearanceSettings";
+import { AgentExperimentalFeaturesSettings } from "./components/AgentExperimentalFeaturesSettings";
 import { AccountSettings } from "./components/AccountSettings";
 import {
   DEFAULT_AVATAR_ID,
@@ -88,19 +94,17 @@ import {
 } from "./components/appearance/avatarData";
 import {
   BackNavigationIcon,
-  BrowserTabIcon,
   CheckIcon,
   ChevronDownIcon,
   ClockIcon,
-  ForkedConversationIcon,
   ForwardNavigationIcon,
   MoreActionsIcon,
   PlusIcon,
   NewChatIcon,
-  ReviewTabIcon,
   SearchIcon,
   SettingsCogIcon,
-  WorkspaceFileIcon,
+  SidebarToggleIcon,
+  SplitterGripIcon,
 } from "./components/AppShellIcons";
 import { AppToastRegion, type AppToast } from "./components/AppToastRegion";
 import { ConfigScopeMenu } from "./components/ConfigScopeMenu";
@@ -120,6 +124,7 @@ import { PluginsSettings } from "./components/PluginsSettings";
 import { BackToAppIcon, SettingsSectionIcon } from "./components/SettingsSectionIcons";
 import { SkillsSettings } from "./components/SkillsSettings";
 import { UsageSettings } from "./components/UsageSettings";
+import { WorkspaceDependenciesSettings } from "./components/WorkspaceDependenciesSettings";
 import { SettingsChoiceMenu } from "./components/SettingsChoiceMenu";
 import { ToggleSwitch } from "./components/ToggleSwitch";
 import { ChatConversationMainPane } from "./features/chat/ChatConversationMainPane";
@@ -128,7 +133,10 @@ import { FilePreviewPage } from "./features/chat/FilePreviewPage";
 import { PlanSummaryPage } from "./features/chat/PlanSummaryPage";
 import { RemoteConversationHeaderActions } from "./features/chat/RemoteConversationHeaderActions";
 import { RemoteConversationPage } from "./features/chat/RemoteConversationPage";
-import { RightPanelOpenTabMenu, RightPanelTabStrip } from "./features/chat/RightPanelTabStrip";
+import {
+  RightPanelCollapsedRail,
+  RightPanelTabStrip,
+} from "./features/chat/RightPanelTabStrip";
 import {
   WorkspaceFileCommandMenu,
   type WorkspaceFileCommandMenuMode,
@@ -145,8 +153,8 @@ import { HotkeyWindowNewThreadPage } from "./features/hotkeyWindow/HotkeyWindowN
 import { HotkeyWindowThreadPage } from "./features/hotkeyWindow/HotkeyWindowThreadPage";
 import { LoginRoutePage } from "./features/auth/LoginRoutePage";
 import {
-  isLoginOnboardingRoute,
   resolveLoginOnboardingRouteTarget,
+  type LoginOnboardingRouteTarget,
 } from "./features/auth/loginRouteRouting";
 import { PullRequestsRoutePage } from "./features/pullRequests/PullRequestsRoutePage";
 import { ThreadHeartbeatAutomationDialog } from "./features/automations/ThreadHeartbeatAutomationDialog";
@@ -154,11 +162,30 @@ import { formatHeartbeatAutomationTooltip } from "./features/automations/time";
 import { FirstRunPage } from "./features/firstRun/FirstRunPage";
 import { SelectWorkspacePage } from "./features/onboarding/SelectWorkspacePage";
 import { WelcomePage } from "./features/onboarding/WelcomePage";
+import {
+  deriveWorkspaceAutoLaunchAction,
+  normalizeWorkspaceOnboardingExperimentAssignment,
+  readWorkspaceOnboardingExperimentArm,
+  readWorkspaceOnboardingExperimentRouteArm,
+  shouldUseWelcomeV2WorkspaceOnboarding,
+  WORKSPACE_ONBOARDING_DEFAULT_PROJECT_NAME,
+  type WorkspaceOnboardingExperimentAssignment,
+} from "./features/onboarding/selectWorkspaceModel";
 import { AvatarOverlayPage } from "./features/avatarOverlay/AvatarOverlayPage";
 import { DebugWindowPage as DebugWindowPageContent } from "./features/debug/DebugWindowPage";
-import { useReplicaStatsigOwner } from "./features/statsig/replicaStatsig";
+import {
+  REPLICA_STATSIG_GATES,
+  useReplicaStatsigDefaultFeatures,
+  useReplicaStatsigGateValue,
+  useReplicaStatsigOwner,
+} from "./features/statsig/replicaStatsig";
 import { WorktreesSettingsPage } from "./features/worktrees/WorktreesSettingsPage";
 import { WorktreeInitV2Page } from "./features/worktreeInit/WorktreeInitV2Page";
+import {
+  buildTurnStartPermissionOverrides,
+  resolveHotkeyPermissionsState,
+  type HotkeyPermissionAgentMode,
+} from "./features/hotkeyWindow/hotkeyPermissionsMode";
 import {
   createSideChatRightPanelTab,
   createStaticRightPanelTab,
@@ -178,6 +205,10 @@ import {
   takeNextQueuedLocalFollowUp,
   type QueuedLocalFollowUp,
 } from "./features/chat/localFollowUpQueue";
+import {
+  buildThreadConversationInputWithPendingPdfComments,
+  type PendingPdfCommentAttachment,
+} from "./features/chat/pdfCommentAttachments";
 import {
   approvalRequestKey,
   appendSteeringUserMessage,
@@ -232,8 +263,10 @@ import {
   buildWorktreeInitV2RoutePath,
   notifyDebugWindowOriginConversationChanged,
   openInHotkeyWindow,
+  openInNewWindow,
   PLAN_SUMMARY_ROUTE_PATH,
   SELECT_WORKSPACE_ROUTE_PATH,
+  setPrimaryWindowMode,
   WORKTREE_INIT_V2_ROUTE_PREFIX,
   WELCOME_ROUTE_PATH,
   takePendingDebugWindowOriginConversation,
@@ -275,9 +308,12 @@ import {
 } from "./services/settingsHosts";
 import {
   onActiveWorkspaceRootsUpdated,
+  onOnboardingPickWorkspaceOrCreateDefaultResult,
+  pickWorkspaceOrCreateDefault,
   readActiveWorkspaceRoots,
 } from "./services/workspaceRoots";
 import { createPendingWorktree, type PendingWorktreeStartingState } from "./services/pendingWorktrees";
+import type { BrowserSidebarTarget } from "./services/browserSidebar";
 import type { WorkspaceFilePreviewTarget } from "./services/workspaceFiles";
 import {
   buildAutomationDraft,
@@ -302,6 +338,12 @@ const NAVIGATE_TO_ROUTE_EVENT = "navigate-to-route";
 const TOGGLE_DIFF_PANEL_EVENT = "toggle-diff-panel";
 const WELCOME_V2_ONBOARDING_QUERY_PARAM = "welcomeV2Onboarding";
 const HOTKEY_HOME_ROUTE_PATH = "/hotkey-window";
+const RIGHT_PANEL_WIDTH_STORAGE_KEY = "codex-app-replica:right-panel-width";
+const LEFT_SIDEBAR_OPEN_STORAGE_KEY = "codex-app-replica:left-sidebar-open";
+const RIGHT_PANEL_WIDTH_DEFAULT = 392;
+const RIGHT_PANEL_WIDTH_MIN = 320;
+const RIGHT_PANEL_WIDTH_MAX = 720;
+const LOCAL_COMPOSER_PERMISSION_VISIBILITY = readComposerPermissionModeVisibility();
 type WorkspaceFileRightPanelTabState = Extract<RightPanelTab, { kind: "workspaceFile" }>;
 type PersistedWorkspaceFileRightPanelTabState = {
   workspaceFileTabsByThreadId: Array<[string, WorkspaceFileRightPanelTabState[]]>;
@@ -711,6 +753,45 @@ function stripRouteSearchAndHash(path: string) {
   return path.split(/[?#]/, 1)[0] ?? path;
 }
 
+function clampRightPanelWidth(width: number) {
+  if (!Number.isFinite(width)) {
+    return RIGHT_PANEL_WIDTH_DEFAULT;
+  }
+  return Math.min(RIGHT_PANEL_WIDTH_MAX, Math.max(RIGHT_PANEL_WIDTH_MIN, Math.round(width)));
+}
+
+function readInitialRightPanelWidth() {
+  if (typeof window === "undefined") {
+    return RIGHT_PANEL_WIDTH_DEFAULT;
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(RIGHT_PANEL_WIDTH_STORAGE_KEY);
+    if (rawValue == null) {
+      return RIGHT_PANEL_WIDTH_DEFAULT;
+    }
+    return clampRightPanelWidth(Number(rawValue));
+  } catch {
+    return RIGHT_PANEL_WIDTH_DEFAULT;
+  }
+}
+
+function readInitialLeftSidebarOpen() {
+  if (typeof window === "undefined") {
+    return true;
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(LEFT_SIDEBAR_OPEN_STORAGE_KEY);
+    if (rawValue == null) {
+      return true;
+    }
+    return rawValue !== "false";
+  } catch {
+    return true;
+  }
+}
+
 function decodeRouteSegment(value: string) {
   const trimmed = value.trim();
   if (trimmed.length === 0) {
@@ -737,32 +818,6 @@ function buildRemoteThreadRoutePath(threadId: string, shell: ThreadShellVariant)
   return shell === "hotkey"
     ? `/hotkey-window/remote/${encodedThreadId}`
     : `/remote/${encodedThreadId}`;
-}
-
-function getRightPanelTabLabel(tab: RightPanelTab, t: (key: MessageKey) => string) {
-  switch (tab.kind) {
-    case "review":
-      return t("thread.sidePanel.diffTab");
-    case "browser":
-      return t("thread.sidePanel.browserTab");
-    case "sideChat":
-      return tab.title;
-    case "workspaceFile":
-      return tab.title;
-  }
-}
-
-function renderRightPanelTabIcon(tab: RightPanelTab, className?: string) {
-  switch (tab.kind) {
-    case "review":
-      return <ReviewTabIcon className={className} />;
-    case "browser":
-      return <BrowserTabIcon className={className} />;
-    case "sideChat":
-      return <ForkedConversationIcon className={className} />;
-    case "workspaceFile":
-      return <WorkspaceFileIcon className={className} />;
-  }
 }
 
 function getConfigScopeLabel(
@@ -1001,6 +1056,14 @@ function App() {
   const [loginRouteOverride, setLoginRouteOverride] = useState<string | null>("auto");
   const [postLoginWelcomePending, setPostLoginWelcomePending] = useState(false);
   const [projectlessOnboardingCompleted, setProjectlessOnboardingCompleted] = useState(false);
+  const [
+    workspaceOnboardingExperimentAssignment,
+    setWorkspaceOnboardingExperimentAssignment,
+  ] = useState<WorkspaceOnboardingExperimentAssignment>(null);
+  const [
+    workspaceOnboardingAutoLaunchApplied,
+    setWorkspaceOnboardingAutoLaunchApplied,
+  ] = useState(false);
   const [activeWorkspaceRootCount, setActiveWorkspaceRootCount] = useState<number | null>(null);
   const [isActiveWorkspaceRootsLoading, setIsActiveWorkspaceRootsLoading] = useState(true);
   const [hasLoadedInitialWindowRoute, setHasLoadedInitialWindowRoute] = useState(false);
@@ -1024,6 +1087,8 @@ function App() {
   const [composerEnterBehavior, setComposerEnterBehavior] = useState<ComposerEnterBehavior>("enter");
   const [followUpQueueMode, setFollowUpQueueMode] = useState<FollowUpQueueMode>("queue");
   const [reviewDelivery, setReviewDelivery] = useState<ReviewDelivery>("inline");
+  const [conversationDetailMode, setConversationDetailMode] =
+    useState<ConversationDetailMode>("STEPS_COMMANDS");
   const [preventSleepWhileRunning, setPreventSleepWhileRunning] = useState(false);
   const [customAvatarsSnapshot, setCustomAvatarsSnapshot] = useState(getCustomAvatarsSnapshot());
   const [selectedAvatarId, setSelectedAvatarId] = useState<string>(DEFAULT_AVATAR_ID);
@@ -1036,6 +1101,9 @@ function App() {
     selectedAssistantTurnId: string | null;
   } | null>(null);
   const [queuedFollowUps, setQueuedFollowUps] = useState<QueuedLocalFollowUp[]>([]);
+  const [pendingPdfCommentsByThreadId, setPendingPdfCommentsByThreadId] = useState<
+    Record<string, PendingPdfCommentAttachment[]>
+  >({});
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [pendingMcpServerElicitationRequest, setPendingMcpServerElicitationRequest] = useState<
     PendingMcpServerElicitationRequest[]
@@ -1047,9 +1115,14 @@ function App() {
   const [pendingImplementPlanRequests, setPendingImplementPlanRequests] = useState<PendingImplementPlanRequest[]>([]);
   const [approvalActionErrors, setApprovalActionErrors] = useState<Record<string, string>>({});
   const [respondingApprovalKeys, setRespondingApprovalKeys] = useState<string[]>([]);
+  const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(readInitialLeftSidebarOpen);
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
+  const [rightPanelWidth, setRightPanelWidth] = useState<number>(readInitialRightPanelWidth);
+  const [isRightPanelResizing, setIsRightPanelResizing] = useState(false);
   const [openRightPanelTabs, setOpenRightPanelTabs] = useState<RightPanelTab[]>([]);
   const [activeRightPanelTabId, setActiveRightPanelTabId] = useState<string | null>(null);
+  const [pinnedThreadIds, setPinnedThreadIds] = useState<string[]>([]);
+  const [browserSidebarTarget, setBrowserSidebarTarget] = useState<BrowserSidebarTarget | null>(null);
   const [sideChatConversationsById, setSideChatConversationsById] = useState<Record<string, ThreadConversation>>({});
   const [sideChatComposerDraftsById, setSideChatComposerDraftsById] = useState<Record<string, string>>({});
   const [sideChatTurnErrorsById, setSideChatTurnErrorsById] = useState<Record<string, string | null>>({});
@@ -1075,6 +1148,10 @@ function App() {
   const [threadHeartbeatAutomationDialogMode, setThreadHeartbeatAutomationDialogMode] =
     useState<"create" | "edit">("create");
   useReplicaStatsigOwner(authSnapshot);
+  const workspaceOnboardingWelcomeV2DefaultFlowEnabled =
+    useReplicaStatsigGateValue(
+      REPLICA_STATSIG_GATES.workspaceOnboardingWelcomeV2DefaultFlow,
+    );
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general-settings");
   const [settingsSectionState, setSettingsSectionState] = useState<SettingsSectionState>(null);
   const [settingsRemoteConnections, setSettingsRemoteConnections] = useState<RemoteConnection[]>([]);
@@ -1085,6 +1162,10 @@ function App() {
   const [hasComputerUseApprovalStore, setHasComputerUseApprovalStore] = useState(false);
   const [codexHome, setCodexHome] = useState<string | null>(null);
   const [configSnapshot, setConfigSnapshot] = useState<ConfigSnapshot | null>(null);
+  const [localComposerConfigRequirements, setLocalComposerConfigRequirements] =
+    useState<Awaited<ReturnType<typeof getConfigRequirementsForHost>>["requirements"]>(null);
+  const [selectedLocalPermissionMode, setSelectedLocalPermissionMode] =
+    useState<HotkeyPermissionAgentMode | null>(null);
   const [configScopeOptions, setConfigScopeOptions] = useState<ConfigScopeOption[]>([]);
   const [selectedConfigScopeKey, setSelectedConfigScopeKey] = useState<string>("user");
   const [agentConfigControlErrors, setAgentConfigControlErrors] = useState<AgentConfigControlErrors>({});
@@ -1101,10 +1182,45 @@ function App() {
   const connectedSettingsRemoteConnections = useMemo(() => {
     return filterConnectedSettingsRemoteConnections(settingsRemoteConnections, settingsRemoteConnectionStates);
   }, [settingsRemoteConnectionStates, settingsRemoteConnections]);
+  const hasExplicitLoginRouteOverride = isExplicitLoginRouteOverride(loginRouteOverride);
+  const workspaceOnboardingExperimentArm = readWorkspaceOnboardingExperimentArm(
+    workspaceOnboardingExperimentAssignment,
+  );
+  const workspaceOnboardingExperimentRouteArm = readWorkspaceOnboardingExperimentRouteArm(
+    workspaceOnboardingExperimentAssignment,
+  );
+  const shouldUseWelcomeV2Onboarding = shouldUseWelcomeV2WorkspaceOnboarding({
+    assignment: workspaceOnboardingExperimentAssignment,
+    welcomeV2DefaultFlowEnabled: workspaceOnboardingWelcomeV2DefaultFlowEnabled,
+  });
+  const baseLoginOnboardingRouteTarget = resolveLoginOnboardingRouteTarget({
+    activeWorkspaceRootCount,
+    authState: authSnapshot.authState,
+    forcedOverride: loginRouteOverride,
+    isActiveWorkspaceRootsLoading,
+    isAuthLoading: !hasLoadedAuthSnapshot || authSnapshot.isLoading,
+    postLoginWelcomePending,
+    projectlessOnboardingCompleted,
+  });
+  const effectiveLoginOnboardingRouteTarget = resolveEffectiveOnboardingRouteTarget({
+    baseTarget: baseLoginOnboardingRouteTarget,
+    hasExplicitOverride: hasExplicitLoginRouteOverride,
+    shouldUseWelcomeV2Onboarding,
+    workspaceOnboardingExperimentRouteArm,
+  });
+  const workspaceOnboardingAutoLaunchAction = deriveWorkspaceAutoLaunchAction({
+    arm: workspaceOnboardingExperimentArm,
+    autoLaunchApplied: workspaceOnboardingAutoLaunchApplied,
+    hasPersistedRoots: activeWorkspaceRootCount !== null && activeWorkspaceRootCount > 0,
+    isLoadingRoots: isActiveWorkspaceRootsLoading || activeWorkspaceRootCount === null,
+    isRemoteHost: false,
+  });
   const isPluginsRouteEnabled = usePluginsRouteEnabled(selectedSettingsHostId, {
     allowRemoteHost: true,
   });
+  const defaultFeatures = useReplicaStatsigDefaultFeatures();
   const queuedFollowUpsRef = useRef<QueuedLocalFollowUp[]>([]);
+  const pendingPdfCommentsByThreadIdRef = useRef<Record<string, PendingPdfCommentAttachment[]>>({});
   const drainingQueuedThreadIdsRef = useRef(new Set<string>());
   const threadActionsMenuRef = useRef<HTMLDivElement | null>(null);
   const openRightPanelTabsRef = useRef<RightPanelTab[]>([]);
@@ -1115,6 +1231,7 @@ function App() {
   const recentThreadsRef = useRef<ThreadHistoryEntry[]>([]);
   const loadedConversationsByIdRef = useRef(new Map<string, ThreadConversation>());
   const snapshotSessionStartedAtMsRef = useRef(Date.now());
+  const workspaceOnboardingAutoLaunchRequestedRef = useRef(false);
   const initialWindowThreadIdRef = useRef<string | null>(null);
   const initialWindowPageKindRef = useRef<PendingWindowPageKind>(null);
   const initialThreadSnapshotLoadedRef = useRef(false);
@@ -1208,7 +1325,6 @@ function App() {
   );
   const isCurrentSettingsSectionDirectRoute = directSettingsRouteIds.has(settingsSection);
   const isCurrentSettingsSubpage = settingsSection === "open-source-licenses";
-  const menuItems = [t("app.menu.file"), t("app.menu.edit"), t("app.menu.view"), t("app.menu.window"), t("app.menu.help")];
   const navItems: NavItem[] = [
     { action: "new-thread", icon: <NewChatIcon className="h-4 w-4" />, label: t("app.nav.newChat"), route: "chat" },
     {
@@ -1282,7 +1398,13 @@ function App() {
       currentRoute !== "welcome");
   const isTurnInProgress = activeTurn !== null && activeTurn.threadId === selectedThreadId;
   const editableUserMessage = findLastEditableUserMessage(threadConversation, activeTurn);
-  const submitButtonMode = isTurnInProgress && composerDraft.trim().length === 0 ? "stop" : "send";
+  const currentThreadPendingPdfComments =
+    selectedThreadId == null ? [] : (pendingPdfCommentsByThreadId[selectedThreadId] ?? []);
+  const currentThreadPendingPdfCommentCount = currentThreadPendingPdfComments.length;
+  const submitButtonMode =
+    isTurnInProgress && composerDraft.trim().length === 0 && currentThreadPendingPdfCommentCount === 0
+      ? "stop"
+      : "send";
   const currentThreadApprovals = pendingApprovals.filter((approval) => approval.threadId === selectedThreadId);
   const currentThreadPermissionsRequestApproval = pendingPermissionsRequestApproval.filter(
     (request) => request.threadId === selectedThreadId,
@@ -1297,7 +1419,70 @@ function App() {
     (request) => request.threadId === selectedThreadId,
   );
   const currentThreadQueuedFollowUps = queuedLocalFollowUpsForThread(queuedFollowUps, selectedThreadId);
+  const localComposerConfigWithStatsigFeatures = useMemo(() => {
+    if (defaultFeatures.guardian_approval) {
+      if (configSnapshot === null) {
+        return {
+          approvalPolicy: null,
+          approvalsReviewer: null,
+          features: {
+            guardian_approval: true,
+          },
+          mcpServers: null,
+          memories: null,
+          modelPersonality: null,
+          personality: null,
+          sandboxMode: null,
+          sandboxWorkspaceWrite: null,
+          serviceTier: null,
+        } satisfies ConfigSnapshot;
+      }
+
+      return {
+        ...configSnapshot,
+        features: {
+          ...(configSnapshot.features ?? {}),
+          guardian_approval: true,
+        },
+      };
+    }
+
+    return configSnapshot;
+  }, [configSnapshot, defaultFeatures.guardian_approval]);
+  const localComposerPermissionsState = useMemo(
+    () =>
+      resolveHotkeyPermissionsState({
+        config: localComposerConfigWithStatsigFeatures,
+        conversationDetailMode,
+        guardianApprovalEnabledByStatsig: defaultFeatures.guardian_approval,
+        requirements: localComposerConfigRequirements,
+        visibility: LOCAL_COMPOSER_PERMISSION_VISIBILITY,
+      }),
+    [
+      conversationDetailMode,
+      defaultFeatures.guardian_approval,
+      localComposerConfigRequirements,
+      localComposerConfigWithStatsigFeatures,
+    ],
+  );
+  const localComposerPermissionMode =
+    selectedLocalPermissionMode ?? localComposerPermissionsState.initialAgentMode;
+  const localComposerPermissionOverrides = useMemo(
+    () =>
+      buildTurnStartPermissionOverrides({
+        agentMode: localComposerPermissionMode,
+        config: localComposerConfigWithStatsigFeatures,
+        workspaceRoots: chatWorkspaceRoot === null ? [] : [chatWorkspaceRoot],
+      }),
+    [
+      chatWorkspaceRoot,
+      localComposerConfigWithStatsigFeatures,
+      localComposerPermissionMode,
+    ],
+  );
   const activeRightPanelTab = openRightPanelTabs.find((tab) => tab.id === activeRightPanelTabId) ?? null;
+  const isSelectedThreadPinned =
+    selectedThreadId !== null && pinnedThreadIds.includes(selectedThreadId);
   const activeSideChatConversationId =
     activeRightPanelTab && isSideChatRightPanelTab(activeRightPanelTab) ? activeRightPanelTab.conversationId : null;
   const activeSideChatConversation =
@@ -1316,6 +1501,17 @@ function App() {
     (request) => request.threadId === activeSideChatConversationId,
   );
   const currentSideChatQueuedFollowUps = queuedLocalFollowUpsForThread(queuedFollowUps, activeSideChatConversationId);
+  useEffect(() => {
+    setSelectedLocalPermissionMode((current) => {
+      if (
+        current !== null &&
+        localComposerPermissionsState.availableAgentModes.includes(current)
+      ) {
+        return current;
+      }
+      return localComposerPermissionsState.initialAgentMode;
+    });
+  }, [localComposerPermissionsState]);
   const recentThreadEntries = recentThreads;
   const totalPendingRequestCount =
     pendingApprovals.length +
@@ -1462,23 +1658,103 @@ function App() {
     };
   }, []);
 
+  const refreshPinnedThreads = useEffectEvent(async () => {
+    try {
+      const response = await getGlobalState("pinned-thread-ids");
+      setPinnedThreadIds(
+        Array.isArray(response.value)
+          ? response.value.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+          : [],
+      );
+    } catch {
+      setPinnedThreadIds([]);
+    }
+  });
+
+  useEffect(() => {
+    let disposed = false;
+    let unlistenGlobalState: (() => void) | undefined;
+
+    void refreshPinnedThreads();
+
+    void onGlobalStateUpdated((notification) => {
+      if (!notification.keys.includes("pinned-thread-ids")) {
+        return;
+      }
+      void refreshPinnedThreads();
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+      unlistenGlobalState = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      unlistenGlobalState?.();
+    };
+  }, [refreshPinnedThreads]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(RIGHT_PANEL_WIDTH_STORAGE_KEY, String(rightPanelWidth));
+    } catch {
+      // Ignore local persistence failures and keep the in-memory width.
+    }
+  }, [rightPanelWidth]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(LEFT_SIDEBAR_OPEN_STORAGE_KEY, String(isLeftSidebarOpen));
+    } catch {
+      // Ignore local persistence failures and keep the in-memory state.
+    }
+  }, [isLeftSidebarOpen]);
+
   const refreshLoginOnboardingState = useEffectEvent(async () => {
     try {
-      const [overrideResponse, welcomePendingResponse, projectlessCompletedResponse] =
+      const [
+        overrideResponse,
+        welcomePendingResponse,
+        projectlessCompletedResponse,
+        workspaceExperimentAssignmentResponse,
+        workspaceAutoLaunchAppliedResponse,
+      ] =
         await Promise.all([
           getGlobalState("electron:onboarding-override"),
           getGlobalState("electron:onboarding-welcome-pending"),
           getGlobalState("electron:onboarding-projectless-completed"),
+          getGlobalState("electron:onboarding-workspace-experiment-assignment"),
+          getGlobalState("electron:onboarding-workspace-autolaunch-applied"),
         ]);
       setLoginRouteOverride(
         typeof overrideResponse.value === "string" ? overrideResponse.value : "auto",
       );
       setPostLoginWelcomePending(welcomePendingResponse.value === true);
       setProjectlessOnboardingCompleted(projectlessCompletedResponse.value === true);
+      setWorkspaceOnboardingExperimentAssignment(
+        normalizeWorkspaceOnboardingExperimentAssignment(
+          workspaceExperimentAssignmentResponse.value,
+        ),
+      );
+      setWorkspaceOnboardingAutoLaunchApplied(
+        workspaceAutoLaunchAppliedResponse.value === true,
+      );
     } catch {
       setLoginRouteOverride("auto");
       setPostLoginWelcomePending(false);
       setProjectlessOnboardingCompleted(false);
+      setWorkspaceOnboardingExperimentAssignment(null);
+      setWorkspaceOnboardingAutoLaunchApplied(false);
     }
   });
 
@@ -1506,7 +1782,9 @@ function App() {
       if (
         !notification.keys.includes("electron:onboarding-override") &&
         !notification.keys.includes("electron:onboarding-welcome-pending") &&
-        !notification.keys.includes("electron:onboarding-projectless-completed")
+        !notification.keys.includes("electron:onboarding-projectless-completed") &&
+        !notification.keys.includes("electron:onboarding-workspace-experiment-assignment") &&
+        !notification.keys.includes("electron:onboarding-workspace-autolaunch-applied")
       ) {
         return;
       }
@@ -1566,25 +1844,15 @@ function App() {
   ]);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !isLoginOnboardingRoute(window.location.pathname)) {
+    if (typeof window === "undefined" || !isMainShellOnboardingRoute(currentRoute)) {
       return;
     }
 
-    const targetRoute = resolveLoginOnboardingRouteTarget({
-      activeWorkspaceRootCount,
-      authState: authSnapshot.authState,
-      forcedOverride: loginRouteOverride,
-      isActiveWorkspaceRootsLoading,
-      isAuthLoading: !hasLoadedAuthSnapshot || authSnapshot.isLoading,
-      postLoginWelcomePending,
-      projectlessOnboardingCompleted,
-    });
-
-    if (targetRoute === null) {
+    if (effectiveLoginOnboardingRouteTarget === null) {
       return;
     }
 
-    if (targetRoute === "login") {
+    if (effectiveLoginOnboardingRouteTarget === "login") {
       if (window.location.pathname !== LOGIN_ROUTE_PATH) {
         window.history.replaceState(window.history.state, "", LOGIN_ROUTE_PATH);
       }
@@ -1594,7 +1862,7 @@ function App() {
       return;
     }
 
-    if (targetRoute === "welcome") {
+    if (effectiveLoginOnboardingRouteTarget === "welcome") {
       if (window.location.pathname !== WELCOME_ROUTE_PATH) {
         window.history.replaceState(window.history.state, "", WELCOME_ROUTE_PATH);
       }
@@ -1604,7 +1872,7 @@ function App() {
       return;
     }
 
-    if (targetRoute === "select-workspace") {
+    if (effectiveLoginOnboardingRouteTarget === "select-workspace") {
       if (window.location.pathname !== SELECT_WORKSPACE_ROUTE_PATH) {
         window.history.replaceState(window.history.state, "", SELECT_WORKSPACE_ROUTE_PATH);
       }
@@ -1619,16 +1887,74 @@ function App() {
       setCurrentRoute("chat");
     }
   }, [
-    activeWorkspaceRootCount,
-    authSnapshot.authState,
-    authSnapshot.isLoading,
     currentRoute,
-    hasLoadedAuthSnapshot,
-    isActiveWorkspaceRootsLoading,
-    loginRouteOverride,
-    postLoginWelcomePending,
-    projectlessOnboardingCompleted,
+    effectiveLoginOnboardingRouteTarget,
   ]);
+
+  useEffect(() => {
+    if (effectiveLoginOnboardingRouteTarget === null) {
+      return;
+    }
+
+    const nextMode =
+      effectiveLoginOnboardingRouteTarget === "app" ||
+      (effectiveLoginOnboardingRouteTarget === "welcome" &&
+        !shouldUseWelcomeV2Onboarding)
+        ? "app"
+        : "onboarding";
+
+    void setPrimaryWindowMode(
+      nextMode === "onboarding" && shouldUseWelcomeV2Onboarding
+        ? { mode: nextMode, onboardingVariant: "v2" }
+        : { mode: nextMode },
+    ).catch(() => undefined);
+  }, [effectiveLoginOnboardingRouteTarget, shouldUseWelcomeV2Onboarding]);
+
+  useEffect(() => {
+    if (
+      workspaceOnboardingAutoLaunchRequestedRef.current ||
+      currentRoute !== "chat" ||
+      workspaceOnboardingAutoLaunchAction !== "home_open_picker_or_create_default"
+    ) {
+      return;
+    }
+
+    workspaceOnboardingAutoLaunchRequestedRef.current = true;
+    setWorkspaceOnboardingAutoLaunchApplied(true);
+    void setGlobalState("electron:onboarding-workspace-autolaunch-applied", true).catch(
+      () => undefined,
+    );
+    void pickWorkspaceOrCreateDefault(
+      WORKSPACE_ONBOARDING_DEFAULT_PROJECT_NAME,
+    ).catch(() => undefined);
+  }, [currentRoute, workspaceOnboardingAutoLaunchAction]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void onOnboardingPickWorkspaceOrCreateDefaultResult((notification) => {
+      if (disposed || !notification.success) {
+        return;
+      }
+
+      void setGlobalState(
+        "last_completed_onboarding",
+        Math.floor(Date.now() / 1000),
+      ).catch(() => undefined);
+    }).then((dispose) => {
+      if (disposed) {
+        dispose();
+        return;
+      }
+      unlisten = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     void readAppearanceSettingsSnapshot()
@@ -1636,6 +1962,7 @@ function App() {
         applyAppearanceSettingsSnapshot(settings);
         applyGpuTearingDebugSettings(readGpuTearingDebugSettings());
         setComposerEnterBehavior(settings.composerEnterBehavior);
+        setConversationDetailMode(settings.conversationDetailMode);
         setFollowUpQueueMode(settings.followUpQueueMode);
         setPreventSleepWhileRunning(settings.preventSleepWhileRunning);
         setReviewDelivery(settings.reviewDelivery);
@@ -1655,13 +1982,22 @@ function App() {
     let unlisten: (() => void) | undefined;
 
     void onGlobalStateUpdated((notification) => {
-      if (!notification.keys.includes("preventSleepWhileRunning")) {
+      if (
+        !notification.keys.includes("preventSleepWhileRunning") &&
+        !notification.keys.includes("conversationDetailMode")
+      ) {
         return;
       }
 
-      void readPreventSleepWhileRunningPreference()
-        .then((value) => {
-          setPreventSleepWhileRunning(value);
+      void Promise.all([
+        readPreventSleepWhileRunningPreference(),
+        getGlobalState("conversationDetailMode"),
+      ])
+        .then(([preventSleep, detailModeResponse]) => {
+          setPreventSleepWhileRunning(preventSleep);
+          setConversationDetailMode(
+            detailModeResponse.value === "STEPS_PROSE" ? "STEPS_PROSE" : "STEPS_COMMANDS",
+          );
         })
         .catch(() => undefined);
     }).then((dispose) => {
@@ -2096,6 +2432,10 @@ function App() {
   useEffect(() => {
     queuedFollowUpsRef.current = queuedFollowUps;
   }, [queuedFollowUps]);
+
+  useEffect(() => {
+    pendingPdfCommentsByThreadIdRef.current = pendingPdfCommentsByThreadId;
+  }, [pendingPdfCommentsByThreadId]);
 
   useEffect(() => {
     recentThreadsRef.current = recentThreads;
@@ -2537,11 +2877,18 @@ function App() {
         setTurnError(null);
       }
       try {
-        const turnId = await startTurn({
-          threadId,
-          text: nextQueuedFollowUp.followUp.text,
-          cwd: nextQueuedFollowUp.followUp.cwd,
-        });
+        const turnId =
+          nextQueuedFollowUp.followUp.input != null && nextQueuedFollowUp.followUp.input.length > 0
+            ? await startTurnWithInput({
+                threadId,
+                input: nextQueuedFollowUp.followUp.input,
+                cwd: nextQueuedFollowUp.followUp.cwd,
+              })
+            : await startTurn({
+                threadId,
+                text: nextQueuedFollowUp.followUp.text,
+                cwd: nextQueuedFollowUp.followUp.cwd,
+              });
         completeImplementPlanFlowForThread(threadId);
         setActiveTurn({ threadId, turnId });
       } catch (error) {
@@ -3010,9 +3357,26 @@ function App() {
     };
   }, [currentRoute, settingsWorkspaceRoot]);
 
-  const startDragging = async () => {
-    await appWindow.startDragging();
-  };
+  useEffect(() => {
+    let cancelled = false;
+
+    void getConfigRequirementsForHost({ hostId: null })
+      .then((response) => {
+        if (cancelled) {
+          return;
+        }
+        setLocalComposerConfigRequirements(response.requirements);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLocalComposerConfigRequirements(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const minimizeWindow = async () => {
     await appWindow.minimize();
@@ -3026,25 +3390,30 @@ function App() {
   const closeWindow = async () => {
     await appWindow.close();
   };
-
-  const handleDragMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (event.button === 0 && event.target === event.currentTarget) {
-      void startDragging();
-    }
-  };
-
-  const shellColumns = {
-    gridTemplateColumns: isRightPanelOpen ? "minmax(0, 1fr) var(--app-shell-right-width)" : "minmax(0, 1fr)",
-  } as const;
   const collapsedRightPanelTabs = !isRightPanelOpen ? openRightPanelTabs.slice(0, 3) : [];
   const canOfferReviewRightPanelTab = !openRightPanelTabs.some((tab) => tab.kind === "review");
   const canOfferBrowserRightPanelTab = !openRightPanelTabs.some((tab) => tab.kind === "browser");
+  const shouldShowCollapsedRightPanelRail =
+    currentRoute === "chat" &&
+    !isRightPanelOpen &&
+    (collapsedRightPanelTabs.length > 0 ||
+      chatWorkspaceRoot !== null ||
+      canOfferReviewRightPanelTab ||
+      canOfferBrowserRightPanelTab);
+  const rightPanelInlineStyle = {
+    width: `${rightPanelWidth}px`,
+  } as const;
   const openRightPanelTab = (tabId: StaticRightPanelTabId) => {
     setOpenRightPanelTabs((current) =>
       current.some((tab) => tab.id === tabId) ? current : [...current, createStaticRightPanelTab(tabId)],
     );
     setActiveRightPanelTabId(tabId);
     setIsRightPanelOpen(true);
+  };
+
+  const openBrowserSidebarTarget = (target: BrowserSidebarTarget) => {
+    setBrowserSidebarTarget(target);
+    openRightPanelTab("browser");
   };
 
   const activateRightPanelTab = (tabId: string) => {
@@ -3103,6 +3472,48 @@ function App() {
 
   const toggleRightPanel = () => {
     setIsRightPanelOpen((current) => !current);
+  };
+
+  const toggleLeftSidebar = () => {
+    setIsLeftSidebarOpen((current) => !current);
+  };
+
+  const handleRightPanelResizePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isRightPanelOpen || event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    const pointerId = event.pointerId;
+    const nextTarget = event.currentTarget;
+    nextTarget.setPointerCapture(pointerId);
+    setIsRightPanelResizing(true);
+
+    const updateWidth = (clientX: number) => {
+      if (typeof window === "undefined") {
+        return;
+      }
+      const nextWidth = clampRightPanelWidth(window.innerWidth - clientX);
+      setRightPanelWidth(nextWidth);
+    };
+
+    updateWidth(event.clientX);
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      updateWidth(moveEvent.clientX);
+    };
+
+    const handlePointerUp = () => {
+      setIsRightPanelResizing(false);
+      nextTarget.releasePointerCapture(pointerId);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
   };
 
   const openWorkspaceFileCommandMenu = (mode: WorkspaceFileCommandMenuMode) => {
@@ -3346,6 +3757,38 @@ function App() {
       queuedFollowUpsRef.current = next;
       return next;
     });
+  };
+
+  const updatePendingPdfCommentsForThread = (
+    threadId: string,
+    update: (current: PendingPdfCommentAttachment[]) => PendingPdfCommentAttachment[],
+  ) => {
+    setPendingPdfCommentsByThreadId((current) => {
+      const existing = current[threadId] ?? [];
+      const nextAttachments = update(existing);
+      if (nextAttachments === existing) {
+        return current;
+      }
+      if (nextAttachments.length === 0) {
+        if (!(threadId in current)) {
+          return current;
+        }
+        const next = { ...current };
+        delete next[threadId];
+        pendingPdfCommentsByThreadIdRef.current = next;
+        return next;
+      }
+      const next = {
+        ...current,
+        [threadId]: nextAttachments,
+      };
+      pendingPdfCommentsByThreadIdRef.current = next;
+      return next;
+    });
+  };
+
+  const clearPendingPdfCommentsForThread = (threadId: string) => {
+    updatePendingPdfCommentsForThread(threadId, () => []);
   };
 
   const clearConversationTurnError = (threadId: string) => {
@@ -3960,6 +4403,105 @@ function App() {
     }
   };
 
+  const openSelectedThreadInNewWindow = async () => {
+    if (!selectedThreadId) {
+      return;
+    }
+
+    const path =
+      currentRoute === "chat" && remoteTaskState !== null
+        ? buildRemoteThreadRoutePath(selectedThreadId, "default")
+        : buildLocalThreadRoutePath(selectedThreadId, "default");
+
+    try {
+      await openInNewWindow({
+        hostId: LOCAL_SETTINGS_HOST_ID,
+        path,
+      });
+      setIsThreadActionsMenuOpen(false);
+    } catch (error) {
+      setThreadActionFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  const toggleSelectedThreadPinnedState = async () => {
+    if (!selectedThreadId) {
+      return;
+    }
+
+    const nextPinnedThreadIds = isSelectedThreadPinned
+      ? pinnedThreadIds.filter((threadId) => threadId !== selectedThreadId)
+      : [...pinnedThreadIds, selectedThreadId];
+
+    try {
+      await setGlobalState("pinned-thread-ids", nextPinnedThreadIds);
+      setPinnedThreadIds(nextPinnedThreadIds);
+      setIsThreadActionsMenuOpen(false);
+    } catch (error) {
+      setThreadActionFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  const forkSelectedThreadIntoWorktree = async () => {
+    if (!selectedThreadId || isTurnInProgress) {
+      return;
+    }
+
+    const sourceWorkspaceRoot = threadConversation?.cwd ?? openProjectPath ?? null;
+    if (!sourceWorkspaceRoot) {
+      setThreadActionFeedback({
+        tone: "error",
+        message: t("threadHeader.forkThreadRequiresGitRepo"),
+      });
+      return;
+    }
+
+    const pendingWorktreeId = `fork-${selectedThreadId}-${Date.now()}`;
+    const threadTitle = threadConversation?.title?.trim() ?? "";
+
+    try {
+      await createPendingWorktree({
+        hostId: LOCAL_SETTINGS_HOST_ID,
+        request: {
+          id: pendingWorktreeId,
+          hostId: LOCAL_SETTINGS_HOST_ID,
+          label: t("threadHeader.forkPendingWorktreeTitle"),
+          initialThreadTitle: threadTitle.length > 0 ? threadTitle : null,
+          sourceWorkspaceRoot,
+          startingState: { type: "working-tree" },
+          localEnvironmentConfigPath: null,
+          prompt: t("threadHeader.forkPendingWorktreePrompt"),
+          launchMode: "fork-conversation",
+          startConversationParamsInput: null,
+          threadGoalObjective: null,
+          sourceConversationId: selectedThreadId,
+          sourceCollaborationMode: null,
+          targetTurnId: null,
+        },
+      });
+      setIsThreadActionsMenuOpen(false);
+      if (typeof window !== "undefined") {
+        window.history.pushState(window.history.state, "", buildWorktreeInitV2RoutePath(pendingWorktreeId));
+      }
+      setWorktreeInitRoute({
+        pendingWorktreeId,
+        shell: "default",
+      });
+      setCurrentRoute("worktree-init");
+    } catch {
+      setThreadActionFeedback({
+        tone: "error",
+        message: t("threadHeader.forkThreadError"),
+      });
+    }
+  };
+
   const forkSelectedThread = async () => {
     if (!selectedThreadId || isTurnInProgress) {
       return;
@@ -4145,7 +4687,7 @@ function App() {
 
   const submitTurn = async (invertFollowUpAction = false) => {
     const text = composerDraft.trim();
-    if (text.length === 0) {
+    if (text.length === 0 && currentThreadPendingPdfCommentCount === 0) {
       return;
     }
     setTurnError(null);
@@ -4156,6 +4698,20 @@ function App() {
       }
       const threadId = thread.id;
       const cwd = thread.cwd || openProjectPath || null;
+      const pendingPdfComments = pendingPdfCommentsByThreadIdRef.current[threadId] ?? [];
+      const input = buildThreadConversationInputWithPendingPdfComments({
+        text,
+        pendingPdfComments,
+      });
+      if (input.length === 0) {
+        return;
+      }
+      const submissionPreviewText =
+        text.length > 0
+          ? text
+          : t("commentAttachments.numAnnotations", {
+              count: pendingPdfComments.length,
+            });
       if (activeTurn && activeTurn.threadId === threadId) {
         const effectiveFollowUpAction = invertFollowUpAction
           ? followUpQueueMode === "queue"
@@ -4167,16 +4723,18 @@ function App() {
             enqueueQueuedLocalFollowUp(current, {
               threadId,
               cwd,
-              text,
+              input,
+              text: submissionPreviewText,
             }),
           );
+          clearPendingPdfCommentsForThread(threadId);
           setComposerDraft("");
           return;
         }
         const turnId = await steerTurn({
           threadId,
           turnId: activeTurn.turnId,
-          text,
+          input,
         });
         setThreadConversation((current) =>
           current && current.id === threadId
@@ -4188,7 +4746,7 @@ function App() {
                 createSteeringUserMessage({
                   threadId,
                   turnId,
-                  text,
+                  text: submissionPreviewText,
                   cwd,
                 }),
               )
@@ -4196,10 +4754,11 @@ function App() {
         );
         completeImplementPlanFlowForThread(threadId);
         setActiveTurn({ threadId, turnId });
+        clearPendingPdfCommentsForThread(threadId);
         setComposerDraft("");
         return;
       }
-      if (text === "/review") {
+      if (pendingPdfComments.length === 0 && text === "/review") {
         const review = await startReview({ threadId, delivery: reviewDelivery });
         const [threads, reviewThread] = await Promise.all([
           getRecentThreads(),
@@ -4211,7 +4770,20 @@ function App() {
         setComposerDraft("");
         return;
       }
-      const turnId = await startTurn({ threadId, text, cwd });
+      const turnId =
+        pendingPdfComments.length > 0 || text.length === 0
+          ? await startTurnWithInput({
+              threadId,
+              input,
+              cwd,
+              ...localComposerPermissionOverrides,
+            })
+          : await startTurn({
+              threadId,
+              text,
+              cwd,
+              ...localComposerPermissionOverrides,
+            });
       completeImplementPlanFlowForThread(threadId);
       setThreadConversation((current) =>
         current && current.id === threadId
@@ -4222,9 +4794,43 @@ function App() {
           : current,
       );
       setActiveTurn({ threadId, turnId });
+      clearPendingPdfCommentsForThread(threadId);
       setComposerDraft("");
     } catch (error) {
       setTurnError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const handleSubmitPdfComment = async (comment: ThreadConversationUserInputComment) => {
+    if (selectedThreadId == null) {
+      throw new Error("No active conversation is selected.");
+    }
+    if (activeTurn != null && activeTurn.threadId === selectedThreadId) {
+      throw new Error("Wait for the current turn to finish before sending a PDF annotation.");
+    }
+
+    setTurnError(null);
+    try {
+      const cwd = threadConversation?.cwd ?? openProjectPath ?? null;
+      const turnId = await startTurnWithInput({
+        threadId: selectedThreadId,
+        input: [comment],
+        cwd,
+      });
+      completeImplementPlanFlowForThread(selectedThreadId);
+      setThreadConversation((current) =>
+        current && current.id === selectedThreadId
+          ? upsertThreadConversationTurnTiming(current, turnId, {
+              status: "in_progress",
+              turnStartedAtMs: Date.now(),
+            })
+          : current,
+      );
+      setActiveTurn({ threadId: selectedThreadId, turnId });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setTurnError(message);
+      throw error instanceof Error ? error : new Error(message);
     }
   };
 
@@ -4235,6 +4841,7 @@ function App() {
     setDraft: (value: string) => void,
     setError: (value: string | null) => void,
     setConversation: (updater: (current: ThreadConversation | null) => ThreadConversation | null) => void,
+    permissionOverrides: TurnStartPermissionOverrides,
     invertFollowUpAction = false,
   ) => {
     const text = draft.trim();
@@ -4265,7 +4872,13 @@ function App() {
         const turnId = await steerTurn({
           threadId,
           turnId: activeTurn.turnId,
-          text,
+          input: [
+            {
+              type: "text",
+              text,
+              textElements: [],
+            },
+          ],
         });
         setConversation((current) =>
           current && current.id === threadId
@@ -4288,7 +4901,12 @@ function App() {
         setDraft("");
         return;
       }
-      const turnId = await startTurn({ threadId, text, cwd });
+      const turnId = await startTurn({
+        threadId,
+        text,
+        cwd,
+        ...permissionOverrides,
+      });
       completeImplementPlanFlowForThread(threadId);
       setConversation((current) =>
         current && current.id === threadId
@@ -4414,7 +5032,13 @@ function App() {
         const turnId = await steerTurn({
           threadId: request.threadId,
           turnId: activeTurn.turnId,
-          text,
+          input: [
+            {
+              type: "text",
+              text,
+              textElements: [],
+            },
+          ],
         });
         setThreadConversation((current) =>
           current && current.id === request.threadId
@@ -5241,6 +5865,11 @@ function App() {
                 </div>
               </div>
             </div>
+          <AgentExperimentalFeaturesSettings hostId={selectedSettingsHostId} />
+          <WorkspaceDependenciesSettings
+            hostId={selectedSettingsHostId}
+            onShowToast={(toast) => setAppToast(toast)}
+          />
           {configError ? (
             <div className="app-card-error rounded-[18px] px-5 py-4 text-[13px]">
               {configError}
@@ -5303,28 +5932,35 @@ function App() {
   const chatConversationMainPane = (
     <ChatConversationMainPane
       threadActionsMenuRef={threadActionsMenuRef}
+      threadHeaderStartActions={null}
       threadHeaderTrailingActions={
         isDefaultRemoteThreadPage && remoteTaskState !== null ? (
-          <RemoteConversationHeaderActions
-            diffTaskTurn={remoteTaskState.task.current_diff_task_turn ?? null}
-            onShowToast={(toast) => setAppToast(toast)}
-            selectedTurn={currentRemoteConversationBranch?.selectedAssistantTurn ?? null}
-            task={remoteTaskState.task.task}
-            taskEnvironment={remoteTaskState.task.current_assistant_turn?.environment ?? null}
-            taskId={remoteTaskState.taskId}
-            turns={currentRemoteTaskTurns}
-            workspaceRoot={openProjectPath}
-          />
+          <div className="no-drag flex items-center gap-1">
+            <RemoteConversationHeaderActions
+              diffTaskTurn={remoteTaskState.task.current_diff_task_turn ?? null}
+              onShowToast={(toast) => setAppToast(toast)}
+              selectedTurn={currentRemoteConversationBranch?.selectedAssistantTurn ?? null}
+              task={remoteTaskState.task.task}
+              taskEnvironment={remoteTaskState.task.current_assistant_turn?.environment ?? null}
+              taskId={remoteTaskState.taskId}
+              turns={currentRemoteTaskTurns}
+              workspaceRoot={openProjectPath}
+            />
+          </div>
         ) : null
       }
       composerDraft={composerDraft}
       composerEnterBehavior={composerEnterBehavior}
       composerFocusNonce={composerFocusNonce}
+      composerPermissionConfig={localComposerConfigWithStatsigFeatures}
+      composerPermissionMode={localComposerPermissionMode}
+      composerPermissionsState={localComposerPermissionsState}
       followUpQueueMode={followUpQueueMode}
       hasAttachedHeartbeatAutomation={selectedThreadAttachedHeartbeatAutomation !== null}
       isThreadActionsMenuOpen={isThreadActionsMenuOpen}
       isThreadHeartbeatAutomationActionDisabled={isThreadHeartbeatAutomationActionDisabled}
       isThreadHeartbeatAutomationActionVisible={shouldShowThreadHeartbeatAutomationAction}
+      isThreadPinned={isSelectedThreadPinned}
       isWorktreeThread={isWorktreeThread}
       showThreadHeader={!isHotkeyLocalThreadPage}
       heartbeatAutomationActionLabelKey={threadHeartbeatAutomationActionLabelKey}
@@ -5335,6 +5971,7 @@ function App() {
       currentThreadPermissionsRequestApproval={currentThreadPermissionsRequestApproval}
       currentThreadToolRequestUserInput={currentThreadToolRequestUserInput}
       currentThreadQueuedFollowUps={currentThreadQueuedFollowUps}
+      currentThreadPendingPdfCommentCount={currentThreadPendingPdfCommentCount}
       onApprovalDecision={(approval, decision) => void handleApprovalDecision(approval, decision)}
       onDismissImplementPlanRequest={dismissImplementPlanRequest}
       onImplementPlanRequestSubmit={(request, submission) =>
@@ -5352,13 +5989,18 @@ function App() {
       onCopySessionId={() => void copySessionId()}
       onCopyWorkingDirectory={() => void copyWorkingDirectory()}
       onForkSelectedThread={() => void forkSelectedThread()}
+      onForkSelectedThreadIntoWorktree={() => void forkSelectedThreadIntoWorktree()}
+      onOpenInNewWindow={() => void openSelectedThreadInNewWindow()}
+      onMarkThreadUnread={undefined}
       onOpenSideChat={() => void openSideChatForSelectedThread()}
       onOpenAttachedHeartbeatAutomation={() => openThreadHeartbeatAutomationDialog("edit")}
       onOpenThreadHeartbeatAutomationAction={openThreadHeartbeatAutomationAction}
       onOpenRemoteTask={openRemoteTaskFromCurrentShell}
       onSelectRemoteTaskAssistantTurn={selectRemoteTaskAssistantTurn}
       onOpenRenameDialog={openRenameDialog}
+      onOpenWorkspaceFileSearch={openWorkspaceFileSearch}
       onSelectThread={openThreadFromCurrentShell}
+      onTogglePinnedThread={() => void toggleSelectedThreadPinnedState()}
       onEditUserMessage={(text) => void handleEditUserMessage(text)}
       onPermissionsRequestApprovalSubmit={(request, grantMode, strictAutoReview) =>
         void handlePermissionsRequestApprovalSubmit(request, grantMode, strictAutoReview)
@@ -5367,7 +6009,14 @@ function App() {
         void handleToolRequestUserInputSubmit(request, values)
       }
       onComposerDraftChange={setComposerDraft}
+      onComposerPermissionModeChange={setSelectedLocalPermissionMode}
       onRemoveQueuedFollowUp={removeQueuedFollowUp}
+      onClearPendingPdfComments={() => {
+        if (selectedThreadId == null) {
+          return;
+        }
+        clearPendingPdfCommentsForThread(selectedThreadId);
+      }}
       onStopTurn={() => void stopTurn()}
       onSubmitTurn={(invertFollowUpAction) => void submitTurn(invertFollowUpAction)}
       onToggleThreadActionsMenu={() => setIsThreadActionsMenuOpen((value) => !value)}
@@ -5605,6 +6254,12 @@ function App() {
           openNewConversation({ focusComposerNonce: Date.now() });
         }}
         onContinueToWorkspace={() => {
+          setLoginRouteOverride("workspace");
+          setPostLoginWelcomePending(false);
+          void Promise.all([
+            setGlobalState("electron:onboarding-override", "workspace"),
+            setGlobalState("electron:onboarding-welcome-pending", false),
+          ]).catch(() => undefined);
           if (typeof window !== "undefined") {
             window.history.replaceState(window.history.state, "", SELECT_WORKSPACE_ROUTE_PATH);
           }
@@ -5628,35 +6283,45 @@ function App() {
   return (
     <main className="h-full overflow-hidden bg-[var(--app-shell-surface)] text-[13px] text-[var(--app-shell-text)]">
       <div className="flex h-full flex-col">
-        <header className="flex h-[var(--app-shell-toolbar-sm)] items-center border-b border-[var(--app-shell-border)] bg-[var(--app-shell-topbar)]">
-          <div className="flex items-center gap-1 px-2.5">
+        <header
+          className="draggable flex h-[var(--app-shell-toolbar-sm)] items-center border-b border-[var(--app-shell-border)] bg-[var(--app-shell-topbar)]"
+          onDoubleClick={() => void toggleMaximize()}
+        >
+          <div className="no-drag flex items-center gap-1 px-2.5">
             <button
               type="button"
-              aria-label={t("app.shell.appMenu")}
-              className="app-control-weak flex h-6 w-6 items-center justify-center rounded-[8px] text-[10px] shadow-[0_1px_0_rgba(0,0,0,0.03)]"
+              aria-label={t("app.shell.toggleSidebar")}
+              aria-pressed={isLeftSidebarOpen}
+              onClick={toggleLeftSidebar}
+              className="app-topbar-button flex h-6 w-6 items-center justify-center rounded-[8px] text-[10px]"
             >
-              □
+              <SidebarToggleIcon className="h-3.5 w-3.5" />
             </button>
-            <div className="ml-1 flex items-center gap-0.5">
-              {menuItems.map((item) => (
-                <button
-                  key={item}
-                  type="button"
-                  className="app-topbar-button rounded-[7px] px-2.5 py-1 text-[14px] transition"
-                >
-                  {item}
-                </button>
-              ))}
+            <button
+              type="button"
+              disabled={currentRoute === "chat"}
+              aria-label={t("app.shell.back")}
+              onClick={() => setCurrentRoute("chat")}
+              className="app-topbar-button flex h-6 w-6 items-center justify-center rounded-[8px] text-[10px]"
+            >
+              <BackNavigationIcon className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              disabled
+              aria-label={t("app.shell.forward")}
+              className="app-topbar-button flex h-6 w-6 items-center justify-center rounded-[8px] text-[10px] disabled:opacity-40"
+            >
+              <ForwardNavigationIcon className="h-3.5 w-3.5" />
+            </button>
+            <div className="ml-2 min-w-0 max-w-[240px] truncate text-[12px] font-medium text-[var(--app-shell-muted)]">
+              {currentRoute === "chat" ? "Codex" : shellHeaderTitle}
             </div>
           </div>
 
-          <div
-            className="h-full flex-1"
-            onMouseDown={handleDragMouseDown}
-            onDoubleClick={() => void toggleMaximize()}
-          />
+          <div className="flex h-full flex-1 items-center justify-center" />
 
-          <div className="flex items-center gap-3 pr-1.5">
+          <div className="no-drag flex items-center gap-3 pr-1.5">
             <div className="app-badge rounded-full px-3 py-1 text-left text-[11px] leading-4">
               <div className="tracking-[0.08em]">{formatAuthLabel(authSnapshot, t)}</div>
               <div className="truncate text-[10px] tracking-normal text-[var(--app-shell-subtle)]">
@@ -5706,6 +6371,7 @@ function App() {
           </div>
         ) : (
         <div className="flex min-h-0 flex-1">
+          {isLeftSidebarOpen ? (
           <aside className="flex min-h-0 w-[var(--app-shell-sidebar-width)] flex-col border-r border-[var(--app-shell-border)] bg-[var(--app-shell-sidebar)] px-3 pt-3 pb-3">
             {currentRoute !== "settings" ? (
               <>
@@ -5884,122 +6550,208 @@ function App() {
               </>
             )}
           </aside>
+          ) : null}
 
           <section className="min-w-0 flex-1 bg-[var(--app-shell-surface)]">
-            <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-tl-[18px] rounded-bl-[18px] border border-[var(--app-shell-border-heavy)] bg-[var(--app-shell-main-surface)] shadow-[0_2px_4px_rgba(0,0,0,0.08)]">
-              <div className="flex h-[var(--app-shell-toolbar)] items-center gap-3 border-b border-[var(--app-shell-border)] px-4">
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    aria-label={t("app.shell.back")}
-                    onClick={() => setCurrentRoute("chat")}
-                    className="app-topbar-button flex h-8 w-8 items-center justify-center rounded-[10px] text-[13px]"
-                  >
-                    <BackNavigationIcon className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={t("app.shell.forward")}
-                    className="app-topbar-button flex h-8 w-8 items-center justify-center rounded-[10px] text-[13px]"
-                  >
-                    <ForwardNavigationIcon className="h-4 w-4" />
-                  </button>
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div className="app-control flex items-center gap-2 rounded-[12px] px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)]">
-                    <span className="truncate text-[14px]">
-                      {shellHeaderTitle}
-                    </span>
-                    {currentRoute === "chat" ? (
-                      <>
-                        <span className="ml-auto shrink-0 text-[12px] text-[#21a05b]">+{totalAdditions}</span>
-                        <span className="shrink-0 text-[12px] text-[#c3564e]">-{totalDeletions}</span>
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  {currentRoute === "chat" ? (
-                    <div className="relative flex items-center gap-2">
-                      {!isRightPanelOpen ? (
-                        <RightPanelOpenTabMenu
-                          canOfferBrowserTab={canOfferBrowserRightPanelTab}
-                          canOfferReviewTab={canOfferReviewRightPanelTab}
-                          canOpenWorkspaceFileSearch={chatWorkspaceRoot !== null}
-                          onOpenBrowserTab={() => openRightPanelTab("browser")}
-                          onOpenReviewTab={() => openRightPanelTab("review")}
-                          onOpenWorkspaceFileSearch={openWorkspaceFileSearch}
-                          t={t}
-                        />
-                      ) : null}
-                      <div
-                        className={[
-                          "flex items-center gap-1 rounded-lg border border-transparent",
-                          !isRightPanelOpen && collapsedRightPanelTabs.length > 0
-                            ? "p-0.5 hover:border-[var(--app-shell-border)]"
-                            : "",
-                        ].join(" ")}
-                      >
-                        {!isRightPanelOpen && collapsedRightPanelTabs.length > 0 ? (
-                          <div className="flex items-center gap-1">
-                            {collapsedRightPanelTabs.map((tab) => (
-                              <button
-                                key={tab.id}
-                                type="button"
-                                title={getRightPanelTabLabel(tab, t)}
-                                aria-label={getRightPanelTabLabel(tab, t)}
-                                onClick={() => activateRightPanelTab(tab.id)}
-                                className="app-control-weak !h-6 !w-6 rounded-[8px]"
-                              >
-                                <span className="icon-sm flex items-center justify-center [&>*]:!h-full [&>*]:!w-full">
-                                  {renderRightPanelTabIcon(tab)}
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        ) : null}
-                        <button
-                          type="button"
-                          title={t("thread.sidePanel.toggle")}
-                          aria-label={t("thread.sidePanel.toggle")}
-                          aria-pressed={isRightPanelOpen}
-                          onClick={toggleRightPanel}
-                          className={[
-                            "flex h-8 w-8 items-center justify-center rounded-[10px]",
-                            isRightPanelOpen ? "app-control" : "app-control-weak",
-                          ].join(" ")}
-                        >
-                          <ForwardNavigationIcon
-                            className={[
-                              "h-4 w-4",
-                              isRightPanelOpen ? "rotate-180" : "",
-                            ].join(" ")}
-                          />
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-
+            <div
+              className={[
+                "flex h-full min-h-0 flex-col overflow-hidden border border-[var(--app-shell-border-heavy)] bg-[var(--app-shell-main-surface)] shadow-[0_2px_4px_rgba(0,0,0,0.08)]",
+                isLeftSidebarOpen ? "rounded-tl-[18px] rounded-bl-[18px]" : "",
+              ].join(" ")}
+            >
               {currentRoute === "chat" ? (
                 isThreadConversationLoading ? (
                   <div className="relative min-h-0 flex-1">
                     <LoadingPage fillParent debugName="LocalConversationPage" />
                   </div>
                 ) : (
-                  <div className="grid min-h-0 flex-1" style={shellColumns}>
-                    {chatConversationMainPane}
+                  <div className="flex min-h-0 flex-1 overflow-hidden">
+                    <div className="min-w-0 flex-1">{chatConversationMainPane}</div>
 
                     {isRightPanelOpen ? (
-                      <div className="min-h-0 flex flex-col">
-                        <RightPanelTabStrip
-                          activeTabId={activeRightPanelTabId}
-                          openTabs={openRightPanelTabs}
+                      <>
+                        <div
+                          role="separator"
+                          aria-orientation="vertical"
+                          aria-label={t("thread.sidePanel.toggle")}
+                          onPointerDown={handleRightPanelResizePointerDown}
+                          className={[
+                            "group relative flex w-3 shrink-0 cursor-col-resize items-center justify-center bg-transparent",
+                            isRightPanelResizing ? "app-right-panel-splitter-active" : "app-right-panel-splitter",
+                          ].join(" ")}
+                        >
+                          <div className="app-right-panel-splitter-line h-full w-px" />
+                          <div className="app-right-panel-splitter-grip pointer-events-none absolute inset-y-0 left-1/2 flex -translate-x-1/2 items-center justify-center rounded-full">
+                            <SplitterGripIcon className="h-4 w-4" />
+                          </div>
+                        </div>
+                        <aside
+                          className="app-right-panel-shell min-h-0 shrink-0 overflow-hidden rounded-l-[18px]"
+                          style={rightPanelInlineStyle}
+                        >
+                          <div className="flex h-full min-h-0 flex-col">
+                            <RightPanelTabStrip
+                              activeTabId={activeRightPanelTabId}
+                              openTabs={openRightPanelTabs}
+                              onActivateTab={activateRightPanelTab}
+                              onCloseTab={closeRightPanelTab}
+                              canOfferBrowserTab={canOfferBrowserRightPanelTab}
+                              canOfferReviewTab={canOfferReviewRightPanelTab}
+                              canOpenWorkspaceFileSearch={chatWorkspaceRoot !== null}
+                              onOpenBrowserTab={() => openRightPanelTab("browser")}
+                              onOpenReviewTab={() => openRightPanelTab("review")}
+                              onOpenWorkspaceFileSearch={openWorkspaceFileSearch}
+                              onTogglePanel={toggleRightPanel}
+                              t={t}
+                            />
+                            <ChatSidePanel
+                              activeTab={activeRightPanelTab}
+                              browserTarget={browserSidebarTarget}
+                              composerDraft={
+                                activeSideChatConversationId === null
+                                  ? ""
+                                  : (sideChatComposerDraftsById[activeSideChatConversationId] ?? "")
+                              }
+                              composerEnterBehavior={composerEnterBehavior}
+                              composerPermissionConfig={localComposerConfigWithStatsigFeatures}
+                              composerPermissionMode={localComposerPermissionMode}
+                              composerPermissionsState={localComposerPermissionsState}
+                              followUpQueueMode={followUpQueueMode}
+                              reviewDelivery={reviewDelivery}
+                              selectedAvatar={selectedAvatar}
+                              submitButtonMode={
+                                activeSideChatConversationId !== null &&
+                                activeTurn !== null &&
+                                activeTurn.threadId === activeSideChatConversationId &&
+                                (sideChatComposerDraftsById[activeSideChatConversationId] ?? "").trim().length === 0
+                                  ? "stop"
+                                  : "send"
+                              }
+                              sideChatConversation={activeSideChatConversation}
+                              sideChatApprovals={currentSideChatApprovals}
+                              sideChatImplementPlanRequests={currentSideChatImplementPlanRequests}
+                              sideChatMcpServerElicitationRequest={currentSideChatMcpServerElicitationRequest}
+                              sideChatPermissionsRequestApproval={currentSideChatPermissionsRequestApproval}
+                              sideChatToolRequestUserInput={currentSideChatToolRequestUserInput}
+                              sideChatQueuedFollowUps={currentSideChatQueuedFollowUps}
+                              sideChatTurnError={
+                                activeSideChatConversationId === null
+                                  ? null
+                                  : (sideChatTurnErrorsById[activeSideChatConversationId] ?? null)
+                              }
+                              pendingPdfComments={currentThreadPendingPdfComments}
+                              threadConversation={threadConversation}
+                              onOpenBrowserTarget={openBrowserSidebarTarget}
+                              onOpenWorkspaceFileSearch={openWorkspaceFileSearch}
+                              onOpenReviewFile={(change) => void handleReviewFileSelected(change)}
+                              onSelectWorkspaceFile={handleWorkspaceFileSelected}
+                              onSubmitPdfComment={handleSubmitPdfComment}
+                              onPendingPdfCommentsChange={(update) => {
+                                if (selectedThreadId == null) {
+                                  return;
+                                }
+                                updatePendingPdfCommentsForThread(selectedThreadId, update);
+                              }}
+                              onApprovalDecision={(approval, decision) => void handleApprovalDecision(approval, decision)}
+                              onComposerDraftChange={(value) => {
+                                if (!activeSideChatConversationId) {
+                                  return;
+                                }
+                                setSideChatComposerDraftsById((current) => ({
+                                  ...current,
+                                  [activeSideChatConversationId]: value,
+                                }));
+                              }}
+                              onComposerPermissionModeChange={setSelectedLocalPermissionMode}
+                              onDismissImplementPlanRequest={dismissImplementPlanRequest}
+                              onEditUserMessage={(text) => {
+                                if (!activeSideChatConversationId) {
+                                  return;
+                                }
+                                return handleEditUserMessageForConversation(
+                                  activeSideChatConversation,
+                                  text,
+                                  (conversation) => {
+                                    setSideChatConversationsById((current) => ({
+                                      ...current,
+                                      [activeSideChatConversationId]: conversation,
+                                    }));
+                                    loadedConversationsByIdRef.current.set(conversation.id, conversation);
+                                  },
+                                  (value) => {
+                                    setSideChatTurnErrorsById((current) => ({
+                                      ...current,
+                                      [activeSideChatConversationId]: value,
+                                    }));
+                                  },
+                                );
+                              }}
+                              onImplementPlanRequestSubmit={(request, submission) =>
+                                void handleImplementPlanRequestSubmit(request, submission)
+                              }
+                              onMcpServerElicitationRequestSubmit={(request, action, content) =>
+                                void handleMcpServerElicitationRequestSubmit(request, action, content)
+                              }
+                              onPermissionsRequestApprovalSubmit={(request, grantMode, strictAutoReview) =>
+                                void handlePermissionsRequestApprovalSubmit(request, grantMode, strictAutoReview)
+                              }
+                              onRemoveQueuedFollowUp={removeQueuedFollowUp}
+                              onSelectThread={(threadId) => void selectThread(threadId)}
+                              onStopTurn={() => void stopTurn()}
+                              onSubmitTurn={(invertFollowUpAction) => {
+                                if (!activeSideChatConversationId) {
+                                  return;
+                                }
+                                void submitTurnForExistingConversation(
+                                  activeSideChatConversationId,
+                                  activeSideChatConversation,
+                                  sideChatComposerDraftsById[activeSideChatConversationId] ?? "",
+                                  (value) => {
+                                    setSideChatComposerDraftsById((current) => ({
+                                      ...current,
+                                      [activeSideChatConversationId]: value,
+                                    }));
+                                  },
+                                  (value) => {
+                                    setSideChatTurnErrorsById((current) => ({
+                                      ...current,
+                                      [activeSideChatConversationId]: value,
+                                    }));
+                                  },
+                                  (updater) => {
+                                    setSideChatConversationsById((current) => {
+                                      const existingConversation = current[activeSideChatConversationId] ?? null;
+                                      const nextConversation = updater(existingConversation);
+                                      if (!nextConversation) {
+                                        return current;
+                                      }
+                                      loadedConversationsByIdRef.current.set(nextConversation.id, nextConversation);
+                                      return {
+                                        ...current,
+                                        [activeSideChatConversationId]: nextConversation,
+                                      };
+                                    });
+                                  },
+                                  localComposerPermissionOverrides,
+                                  invertFollowUpAction,
+                                );
+                              }}
+                              onToolRequestUserInputSubmit={(request, values) =>
+                                void handleToolRequestUserInputSubmit(request, values)
+                              }
+                              approvalActionErrors={approvalActionErrors}
+                              respondingApprovalKeys={respondingApprovalKeys}
+                              t={t}
+                              threadDiffSummary={threadDiffSummary}
+                            />
+                          </div>
+                        </aside>
+                      </>
+                    ) : shouldShowCollapsedRightPanelRail ? (
+                      <div className="overflow-hidden rounded-l-[18px]">
+                        <RightPanelCollapsedRail
+                          collapsedTabs={collapsedRightPanelTabs}
                           onActivateTab={activateRightPanelTab}
-                          onCloseTab={closeRightPanelTab}
                           canOfferBrowserTab={canOfferBrowserRightPanelTab}
                           canOfferReviewTab={canOfferReviewRightPanelTab}
                           canOpenWorkspaceFileSearch={chatWorkspaceRoot !== null}
@@ -6007,128 +6759,6 @@ function App() {
                           onOpenReviewTab={() => openRightPanelTab("review")}
                           onOpenWorkspaceFileSearch={openWorkspaceFileSearch}
                           t={t}
-                        />
-                        <ChatSidePanel
-                          activeTab={activeRightPanelTab}
-                          composerDraft={
-                            activeSideChatConversationId === null
-                              ? ""
-                              : (sideChatComposerDraftsById[activeSideChatConversationId] ?? "")
-                          }
-                          composerEnterBehavior={composerEnterBehavior}
-                          followUpQueueMode={followUpQueueMode}
-                          reviewDelivery={reviewDelivery}
-                          selectedAvatar={selectedAvatar}
-                          submitButtonMode={
-                            activeSideChatConversationId !== null &&
-                            activeTurn !== null &&
-                            activeTurn.threadId === activeSideChatConversationId &&
-                            (sideChatComposerDraftsById[activeSideChatConversationId] ?? "").trim().length === 0
-                              ? "stop"
-                              : "send"
-                          }
-                          sideChatConversation={activeSideChatConversation}
-                          sideChatApprovals={currentSideChatApprovals}
-                          sideChatImplementPlanRequests={currentSideChatImplementPlanRequests}
-                          sideChatMcpServerElicitationRequest={currentSideChatMcpServerElicitationRequest}
-                          sideChatPermissionsRequestApproval={currentSideChatPermissionsRequestApproval}
-                          sideChatToolRequestUserInput={currentSideChatToolRequestUserInput}
-                          sideChatQueuedFollowUps={currentSideChatQueuedFollowUps}
-                          sideChatTurnError={
-                            activeSideChatConversationId === null
-                              ? null
-                              : (sideChatTurnErrorsById[activeSideChatConversationId] ?? null)
-                          }
-                          onOpenReviewFile={(change) => void handleReviewFileSelected(change)}
-                          onApprovalDecision={(approval, decision) => void handleApprovalDecision(approval, decision)}
-                          onComposerDraftChange={(value) => {
-                            if (!activeSideChatConversationId) {
-                              return;
-                            }
-                            setSideChatComposerDraftsById((current) => ({
-                              ...current,
-                              [activeSideChatConversationId]: value,
-                            }));
-                          }}
-                          onDismissImplementPlanRequest={dismissImplementPlanRequest}
-                          onEditUserMessage={(text) => {
-                            if (!activeSideChatConversationId) {
-                              return;
-                            }
-                            return handleEditUserMessageForConversation(
-                              activeSideChatConversation,
-                              text,
-                              (conversation) => {
-                                setSideChatConversationsById((current) => ({
-                                  ...current,
-                                  [activeSideChatConversationId]: conversation,
-                                }));
-                                loadedConversationsByIdRef.current.set(conversation.id, conversation);
-                              },
-                              (value) => {
-                                setSideChatTurnErrorsById((current) => ({
-                                  ...current,
-                                  [activeSideChatConversationId]: value,
-                                }));
-                              },
-                            );
-                          }}
-                          onImplementPlanRequestSubmit={(request, submission) =>
-                            void handleImplementPlanRequestSubmit(request, submission)
-                          }
-                          onMcpServerElicitationRequestSubmit={(request, action, content) =>
-                            void handleMcpServerElicitationRequestSubmit(request, action, content)
-                          }
-                          onPermissionsRequestApprovalSubmit={(request, grantMode, strictAutoReview) =>
-                            void handlePermissionsRequestApprovalSubmit(request, grantMode, strictAutoReview)
-                          }
-                          onRemoveQueuedFollowUp={removeQueuedFollowUp}
-                          onSelectThread={(threadId) => void selectThread(threadId)}
-                          onStopTurn={() => void stopTurn()}
-                          onSubmitTurn={(invertFollowUpAction) => {
-                            if (!activeSideChatConversationId) {
-                              return;
-                            }
-                            void submitTurnForExistingConversation(
-                              activeSideChatConversationId,
-                              activeSideChatConversation,
-                              sideChatComposerDraftsById[activeSideChatConversationId] ?? "",
-                              (value) => {
-                                setSideChatComposerDraftsById((current) => ({
-                                  ...current,
-                                  [activeSideChatConversationId]: value,
-                                }));
-                              },
-                              (value) => {
-                                setSideChatTurnErrorsById((current) => ({
-                                  ...current,
-                                  [activeSideChatConversationId]: value,
-                                }));
-                              },
-                              (updater) => {
-                                setSideChatConversationsById((current) => {
-                                  const existingConversation = current[activeSideChatConversationId] ?? null;
-                                  const nextConversation = updater(existingConversation);
-                                  if (!nextConversation) {
-                                    return current;
-                                  }
-                                  loadedConversationsByIdRef.current.set(nextConversation.id, nextConversation);
-                                  return {
-                                    ...current,
-                                    [activeSideChatConversationId]: nextConversation,
-                                  };
-                                });
-                              },
-                              invertFollowUpAction,
-                            );
-                          }}
-                          onToolRequestUserInputSubmit={(request, values) =>
-                            void handleToolRequestUserInputSubmit(request, values)
-                          }
-                          approvalActionErrors={approvalActionErrors}
-                          respondingApprovalKeys={respondingApprovalKeys}
-                          t={t}
-                          threadDiffSummary={threadDiffSummary}
                         />
                       </div>
                     ) : null}
@@ -6342,6 +6972,58 @@ function DebugWindowPage({
   threadConversation: ThreadConversation | null;
 }) {
   return <DebugWindowPageContent conversationId={conversationId} isLoading={isLoading} threadConversation={threadConversation} onClose={onClose} />;
+}
+
+function isExplicitLoginRouteOverride(value: string | null) {
+  if (value == null) {
+    return false;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return normalized.length > 0 && normalized !== "auto";
+}
+
+function isMainShellOnboardingRoute(route: AppRoute) {
+  return (
+    route === "chat" ||
+    route === "login" ||
+    route === "welcome" ||
+    route === "select-workspace"
+  );
+}
+
+function resolveEffectiveOnboardingRouteTarget({
+  baseTarget,
+  hasExplicitOverride,
+  shouldUseWelcomeV2Onboarding,
+  workspaceOnboardingExperimentRouteArm,
+}: {
+  baseTarget: LoginOnboardingRouteTarget | null;
+  hasExplicitOverride: boolean;
+  shouldUseWelcomeV2Onboarding: boolean;
+  workspaceOnboardingExperimentRouteArm: string;
+}) {
+  if (baseTarget == null) {
+    return null;
+  }
+
+  if (
+    shouldUseWelcomeV2Onboarding &&
+    (baseTarget === "welcome" ||
+      (baseTarget === "select-workspace" && !hasExplicitOverride))
+  ) {
+    return "welcome";
+  }
+
+  if (
+    baseTarget === "select-workspace" &&
+    (!hasExplicitOverride ||
+      workspaceOnboardingExperimentRouteArm === "t2_direct_folder_picker")
+  ) {
+    return "app";
+  }
+
+  return baseTarget;
 }
 
 export default App;
