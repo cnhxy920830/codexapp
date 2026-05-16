@@ -20,6 +20,14 @@ export type HotkeyPermissionAgentMode =
 
 type StandardHotkeyPermissionAgentMode = Exclude<HotkeyPermissionAgentMode, "custom">;
 
+export type HotkeyPermissionOptionValue =
+  | "default"
+  | "guardian-approvals"
+  | "full-access"
+  | "custom";
+
+type HotkeyFullAccessDisabledReason = "global-default" | "requirements" | null;
+
 export type HotkeyPermissionsState = {
   availableAgentModes: HotkeyPermissionAgentMode[];
   canShowCustom: boolean;
@@ -27,8 +35,16 @@ export type HotkeyPermissionsState = {
   canShowFullAccess: boolean;
   canShowGuardian: boolean;
   defaultAgentMode: Extract<HotkeyPermissionAgentMode, "read-only" | "auto" | "granular">;
+  fullAccessDisabledReason: HotkeyFullAccessDisabledReason;
   initialAgentMode: HotkeyPermissionAgentMode;
   isDropdownDisabled: boolean;
+  showFullAccessOption: boolean;
+  showGuardianOption: boolean;
+};
+
+export type VisibleHotkeyPermissionOption = {
+  disabled: boolean;
+  value: HotkeyPermissionOptionValue;
 };
 
 const STANDARD_ALLOWED_AGENT_MODES: StandardHotkeyPermissionAgentMode[] = [
@@ -76,17 +92,21 @@ export function resolveHotkeyPermissionsState(params: {
     visibility: params.visibility,
   });
   const canShowDefaultPermissions = shouldShowDefaultPermissions(params.requirements);
+  const showGuardianOption =
+    params.guardianApprovalEnabledByStatsig && params.visibility["guardian-approvals"];
   const canShowGuardian =
-    params.guardianApprovalEnabledByStatsig &&
-    params.visibility["guardian-approvals"] &&
+    showGuardianOption &&
     availableAgentModes.includes("guardian-approvals");
+  const showFullAccessOption = params.visibility["full-access"];
   const canShowFullAccess =
-    params.visibility["full-access"] && availableAgentModes.includes("full-access");
+    showFullAccessOption && availableAgentModes.includes("full-access");
+  const fullAccessDisabledReason: HotkeyFullAccessDisabledReason =
+    showFullAccessOption && !canShowFullAccess ? "requirements" : null;
   const canShowCustom = availableAgentModes.includes("custom");
   const optionCount =
     (canShowDefaultPermissions ? 1 : 0) +
-    (canShowGuardian ? 1 : 0) +
-    (canShowFullAccess ? 1 : 0) +
+    (showGuardianOption ? 1 : 0) +
+    (showFullAccessOption ? 1 : 0) +
     (canShowCustom ? 1 : 0);
   const configEquivalentMode = getConfigEquivalentMode(params.config, defaultAgentMode);
   const configNonFullAccessMode = getConfigNonFullAccessMode({
@@ -104,18 +124,57 @@ export function resolveHotkeyPermissionsState(params: {
     canShowFullAccess,
     canShowGuardian,
     defaultAgentMode,
+    fullAccessDisabledReason,
     initialAgentMode: getInitialAgentMode({
       availableAgentModes,
       configEquivalentMode,
       configNonFullAccessMode,
     }),
     isDropdownDisabled: optionCount <= 1,
+    showFullAccessOption,
+    showGuardianOption,
   };
+}
+
+export function getVisibleHotkeyPermissionOptions(
+  state: HotkeyPermissionsState,
+): VisibleHotkeyPermissionOption[] {
+  const options: VisibleHotkeyPermissionOption[] = [];
+
+  if (state.canShowDefaultPermissions) {
+    options.push({
+      disabled: false,
+      value: "default",
+    });
+  }
+
+  if (state.showGuardianOption) {
+    options.push({
+      disabled: !state.canShowGuardian,
+      value: "guardian-approvals",
+    });
+  }
+
+  if (state.showFullAccessOption) {
+    options.push({
+      disabled: !state.canShowFullAccess,
+      value: "full-access",
+    });
+  }
+
+  if (state.canShowCustom) {
+    options.push({
+      disabled: false,
+      value: "custom",
+    });
+  }
+
+  return options;
 }
 
 export function getHotkeyPermissionOptionValue(
   mode: HotkeyPermissionAgentMode,
-): "default" | "guardian-approvals" | "full-access" | "custom" {
+): HotkeyPermissionOptionValue {
   if (isDefaultPermissionsMode(mode)) {
     return "default";
   }
@@ -128,7 +187,7 @@ export function isDefaultPermissionsMode(mode: HotkeyPermissionAgentMode) {
 
 export function getNextAgentModeFromOption(params: {
   defaultAgentMode: Extract<HotkeyPermissionAgentMode, "read-only" | "auto" | "granular">;
-  option: "default" | "guardian-approvals" | "full-access" | "custom";
+  option: HotkeyPermissionOptionValue;
 }): HotkeyPermissionAgentMode {
   if (params.option === "default") {
     return params.defaultAgentMode;

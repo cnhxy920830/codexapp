@@ -371,7 +371,7 @@ export function createMarkdownMediaDataUrl({
   return `data:${mimeType ?? inferMarkdownMediaMimeType(source) ?? "application/octet-stream"};base64,${contentsBase64}`;
 }
 
-function inferMarkdownMediaMimeType(source: string | null) {
+export function inferMarkdownMediaMimeType(source: string | null) {
   if (source == null) {
     return null;
   }
@@ -413,7 +413,7 @@ function isSafeMarkdownMediaUrl(url: string) {
   return !/^(javascript:|vbscript:|data:(?!(image|video)\/))/i.test(url);
 }
 
-function isLikelyLocalMarkdownMediaSource(source: string) {
+export function isLikelyLocalMarkdownMediaSource(source: string) {
   return !/^data:/i.test(source) && !hasNonFileUrlProtocol(source);
 }
 
@@ -425,7 +425,7 @@ function hasNonFileUrlProtocol(source: string) {
   return URL_PROTOCOL_PATTERN.test(source) && !source.startsWith("file://");
 }
 
-function isAbsoluteFilesystemPath(source: string) {
+export function isAbsoluteFilesystemPath(source: string) {
   return (
     WINDOWS_ABSOLUTE_PATH_PATTERN.test(source) ||
     source.startsWith("/") ||

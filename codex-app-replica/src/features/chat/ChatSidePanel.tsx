@@ -1,8 +1,17 @@
+import { useEffect, useState } from "react";
 import type { MessageKey } from "../../i18n/messages";
-import type { FileChangeSummary, ThreadConversationUserInputComment } from "../../services/history";
+import type {
+  FileChangeSummary,
+  ThreadConversation,
+  ThreadConversationItem,
+  ThreadConversationUserInputComment,
+} from "../../services/history";
 import type { WorkspaceFilePreviewTarget } from "../../services/workspaceFiles";
+import {
+  BackNavigationIcon,
+} from "../../components/AppShellIcons";
+import type { AppToast } from "../../components/AppToastRegion";
 import { ChatConversationMainPane } from "./ChatConversationMainPane";
-import type { AvatarOption } from "../../components/appearance/avatarData";
 import type {
   ComposerEnterBehavior,
   ConfigSnapshot,
@@ -18,8 +27,9 @@ import type {
 } from "./threadConversationState";
 import type { QueuedLocalFollowUp } from "./localFollowUpQueue";
 import type { PendingPdfCommentAttachment } from "./pdfCommentAttachments";
-import type { ThreadConversation } from "../../services/history";
 import type { BrowserSidebarTarget } from "../../services/browserSidebar";
+import { readGitOrigins } from "../../services/gitOrigins";
+import { listenGitStateChanged } from "../../services/gitStateEvents";
 import { isWorkspaceFileRightPanelTab, type RightPanelTab } from "./rightPanelTabs";
 import type { ThreadDiffSummary } from "./threadConversationState";
 import { BrowserSidebarPanel } from "./BrowserSidebarPanel";
@@ -31,8 +41,10 @@ import type {
 } from "../hotkeyWindow/hotkeyPermissionsMode";
 
 type ChatSidePanelProps = {
+  activeStaticTabId: "browser" | "review" | null;
   activeTab: RightPanelTab | null;
   browserTarget: BrowserSidebarTarget | null;
+  conversationHostId?: string | null;
   composerDraft: string;
   composerEnterBehavior: ComposerEnterBehavior;
   composerPermissionConfig: ConfigSnapshot | null;
@@ -40,7 +52,6 @@ type ChatSidePanelProps = {
   composerPermissionsState: HotkeyPermissionsState;
   followUpQueueMode: FollowUpQueueMode;
   reviewDelivery: ReviewDelivery;
-  selectedAvatar: AvatarOption;
   submitButtonMode: "send" | "stop";
   sideChatConversation: ThreadConversation | null;
   sideChatApprovals: PendingApproval[];
@@ -51,10 +62,12 @@ type ChatSidePanelProps = {
   sideChatQueuedFollowUps: QueuedLocalFollowUp[];
   sideChatTurnError: string | null;
   pendingPdfComments?: PendingPdfCommentAttachment[];
+  onShowToast?: (toast: AppToast) => void;
   threadConversation: ThreadConversation | null;
+  onOpenSideChat?: ((initialPrompt?: string | null) => boolean | Promise<boolean>) | null;
   onOpenBrowserTarget: (target: BrowserSidebarTarget) => void;
-  onOpenWorkspaceFileSearch?: (() => void) | null;
   onOpenReviewFile: (change: FileChangeSummary) => void;
+  onOpenWorkspaceFileSearch?: (() => void) | null;
   onSelectWorkspaceFile: (file: WorkspaceFilePreviewTarget) => void;
   onSubmitPdfComment: (comment: ThreadConversationUserInputComment) => Promise<void>;
   onPendingPdfCommentsChange?: ((
@@ -91,11 +104,14 @@ type ChatSidePanelProps = {
   respondingApprovalKeys: string[];
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
   threadDiffSummary: ThreadDiffSummary;
+  authMethod?: string | null;
 };
 
 export function ChatSidePanel({
+  activeStaticTabId,
   activeTab,
   browserTarget,
+  conversationHostId = null,
   composerDraft,
   composerEnterBehavior,
   composerPermissionConfig,
@@ -103,7 +119,6 @@ export function ChatSidePanel({
   composerPermissionsState,
   followUpQueueMode,
   reviewDelivery,
-  selectedAvatar,
   submitButtonMode,
   sideChatConversation,
   sideChatApprovals,
@@ -114,10 +129,12 @@ export function ChatSidePanel({
   sideChatQueuedFollowUps,
   sideChatTurnError,
   pendingPdfComments = [],
+  onShowToast,
   threadConversation,
+  onOpenSideChat = null,
   onOpenBrowserTarget,
-  onOpenWorkspaceFileSearch = null,
   onOpenReviewFile,
+  onOpenWorkspaceFileSearch = null,
   onSelectWorkspaceFile,
   onSubmitPdfComment,
   onPendingPdfCommentsChange,
@@ -138,10 +155,73 @@ export function ChatSidePanel({
   respondingApprovalKeys,
   t,
   threadDiffSummary,
+  authMethod = null,
 }: ChatSidePanelProps) {
+  const [reviewGitInitCwd, setReviewGitInitCwd] = useState<string | null>(null);
+  const [showReviewGitRepoRequired, setShowReviewGitRepoRequired] = useState(false);
+  const sideChatSource = resolveSideChatSource(sideChatConversation);
+  const sideChatTitle =
+    sideChatSource?.title ??
+    sideChatConversation?.title?.trim() ??
+    (activeTab?.kind === "sideChat" ? activeTab.title : t("localConversation.sideChat.title"));
+  const shouldRenderReviewPanel = activeStaticTabId === "review";
+  const shouldRenderBrowserPanel = activeStaticTabId === "browser";
+
+  useEffect(() => {
+    const cwd = threadConversation?.cwd?.trim() ?? "";
+    if (cwd.length === 0) {
+      setReviewGitInitCwd(null);
+      setShowReviewGitRepoRequired(false);
+      return;
+    }
+
+    let cancelled = false;
+    setReviewGitInitCwd(cwd);
+
+    const refreshGitRepoState = () => {
+      void readGitOrigins({ dirs: [cwd], hostId: conversationHostId })
+        .then((response) => {
+          if (cancelled) {
+            return;
+          }
+          const gitRoot = response.origins.at(0)?.root?.trim() ?? null;
+          setShowReviewGitRepoRequired(gitRoot === null);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setShowReviewGitRepoRequired(false);
+          }
+        });
+    };
+
+    refreshGitRepoState();
+    const unsubscribe = listenGitStateChanged(refreshGitRepoState);
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [conversationHostId, threadConversation?.cwd]);
+
   return (
     <aside className="app-right-panel-content flex min-h-0 min-w-0 flex-1 flex-col">
-      {activeTab && isWorkspaceFileRightPanelTab(activeTab) ? (
+      {shouldRenderReviewPanel ? (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <ReviewSidePanel
+            gitInitCwd={reviewGitInitCwd}
+            hostId={conversationHostId}
+            onShowToast={onShowToast}
+            onOpenReviewFile={onOpenReviewFile}
+            showGitRepoRequired={showReviewGitRepoRequired}
+            threadDiffSummary={threadDiffSummary}
+            t={t}
+          />
+        </div>
+      ) : shouldRenderBrowserPanel ? (
+        <div className="min-h-0 flex-1">
+          <BrowserSidebarPanel target={browserTarget} t={t} />
+        </div>
+      ) : activeTab && isWorkspaceFileRightPanelTab(activeTab) ? (
         <div className="min-h-0 flex-1 overflow-hidden">
           <WorkspaceFilePreviewPanel
             onOpenBrowserTarget={onOpenBrowserTarget}
@@ -156,90 +236,157 @@ export function ChatSidePanel({
           />
         </div>
       ) : activeTab?.kind === "sideChat" ? (
-        <div className="min-h-0 flex-1 overflow-hidden">
-          <ChatConversationMainPane
-            threadActionsMenuRef={{ current: null }}
-            composerDraft={composerDraft}
-            composerEnterBehavior={composerEnterBehavior}
-            composerPermissionConfig={composerPermissionConfig}
-            composerPermissionMode={composerPermissionMode}
-            composerPermissionsState={composerPermissionsState}
-            followUpQueueMode={followUpQueueMode}
-            hasAttachedHeartbeatAutomation={false}
-            isThreadActionsMenuOpen={false}
-            isThreadHeartbeatAutomationActionDisabled
-            isThreadHeartbeatAutomationActionVisible={false}
-            isWorktreeThread={false}
-            showThreadHeader={false}
-            heartbeatAutomationActionLabelKey="threadHeader.addAutomation"
-            heartbeatAutomationButtonTooltip=""
-            currentThreadApprovals={sideChatApprovals}
-            currentThreadImplementPlanRequests={sideChatImplementPlanRequests}
-            currentThreadMcpServerElicitationRequest={sideChatMcpServerElicitationRequest}
-            currentThreadPermissionsRequestApproval={sideChatPermissionsRequestApproval}
-            currentThreadToolRequestUserInput={sideChatToolRequestUserInput}
-            currentThreadQueuedFollowUps={sideChatQueuedFollowUps}
-            currentThreadPendingPdfCommentCount={0}
-            onApprovalDecision={onApprovalDecision}
-            onDismissImplementPlanRequest={onDismissImplementPlanRequest}
-            onImplementPlanRequestSubmit={onImplementPlanRequestSubmit}
-            onMcpServerElicitationRequestSubmit={onMcpServerElicitationRequestSubmit}
-            onPermissionsRequestApprovalSubmit={onPermissionsRequestApprovalSubmit}
-            onToolRequestUserInputSubmit={onToolRequestUserInputSubmit}
-            onComposerDraftChange={onComposerDraftChange}
-            onComposerPermissionModeChange={onComposerPermissionModeChange}
-            onOpenRemoteTask={onSelectThread}
-            onSelectRemoteTaskAssistantTurn={() => undefined}
-            onArchiveThread={() => undefined}
-            onCopyAppLink={() => undefined}
-            onCopyConversationMarkdown={() => undefined}
-            onCopySessionId={() => undefined}
-            onCopyWorkingDirectory={() => undefined}
-            onForkSelectedThread={() => undefined}
-            onForkSelectedThreadIntoWorktree={() => undefined}
-            onOpenInNewWindow={() => undefined}
-            onOpenSideChat={() => undefined}
-            onOpenAttachedHeartbeatAutomation={() => undefined}
-            onOpenThreadHeartbeatAutomationAction={() => undefined}
-            onOpenRenameDialog={() => undefined}
-            onSelectThread={onSelectThread}
-            onTogglePinnedThread={() => undefined}
-            onEditUserMessage={onEditUserMessage}
-            onRemoveQueuedFollowUp={onRemoveQueuedFollowUp}
-            onClearPendingPdfComments={undefined}
-            onStopTurn={onStopTurn}
-            onSubmitTurn={onSubmitTurn}
-            onToggleThreadActionsMenu={() => undefined}
-            approvalActionErrors={approvalActionErrors}
-            reviewDelivery={reviewDelivery}
-            respondingApprovalKeys={respondingApprovalKeys}
-            selectedAvatar={selectedAvatar}
-            submitButtonMode={submitButtonMode}
-            t={t}
-            remoteAttemptTabsByTurnId={{}}
-            remoteConversationOverridesByTurnId={{}}
-            threadConversation={sideChatConversation}
-            turnError={sideChatTurnError}
-          />
-        </div>
-      ) : activeTab?.kind === "review" ? (
-        <div className="min-h-0 flex-1 overflow-hidden">
-          <ReviewSidePanel
-            onOpenReviewFile={onOpenReviewFile}
-            onOpenWorkspaceFileSearch={onOpenWorkspaceFileSearch}
-            threadDiffSummary={threadDiffSummary}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <SideChatPanelHeader
+            sourceConversationId={sideChatSource?.id ?? null}
+            sourceConversationTitle={sideChatTitle}
+            onOpenSourceConversation={
+              sideChatSource?.id ? () => onSelectThread(sideChatSource.id) : null
+            }
             t={t}
           />
-        </div>
-      ) : activeTab?.kind === "browser" ? (
-        <div className="min-h-0 flex-1">
-          <BrowserSidebarPanel target={browserTarget} t={t} />
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <ChatConversationMainPane
+              threadActionsMenuRef={{ current: null }}
+              composerDraft={composerDraft}
+              composerEnterBehavior={composerEnterBehavior}
+              composerPermissionConfig={composerPermissionConfig}
+              composerPermissionMode={composerPermissionMode}
+              composerPermissionsState={composerPermissionsState}
+              followUpQueueMode={followUpQueueMode}
+              hasAttachedHeartbeatAutomation={false}
+              isThreadActionsMenuOpen={false}
+              isThreadHeartbeatAutomationActionDisabled
+              isThreadHeartbeatAutomationActionVisible={false}
+              isWorktreeThread={false}
+              showThreadHeader={false}
+              heartbeatAutomationActionLabelKey="threadHeader.addAutomation"
+              heartbeatAutomationButtonTooltip=""
+              currentThreadApprovals={sideChatApprovals}
+              currentThreadImplementPlanRequests={sideChatImplementPlanRequests}
+              currentThreadMcpServerElicitationRequest={sideChatMcpServerElicitationRequest}
+              currentThreadPermissionsRequestApproval={sideChatPermissionsRequestApproval}
+              currentThreadToolRequestUserInput={sideChatToolRequestUserInput}
+              currentThreadQueuedFollowUps={sideChatQueuedFollowUps}
+              currentThreadPendingPdfCommentCount={0}
+              onApprovalDecision={onApprovalDecision}
+              onDismissImplementPlanRequest={onDismissImplementPlanRequest}
+              onImplementPlanRequestSubmit={onImplementPlanRequestSubmit}
+              onMcpServerElicitationRequestSubmit={onMcpServerElicitationRequestSubmit}
+              onPermissionsRequestApprovalSubmit={onPermissionsRequestApprovalSubmit}
+              onToolRequestUserInputSubmit={onToolRequestUserInputSubmit}
+              onComposerDraftChange={onComposerDraftChange}
+              onComposerPermissionModeChange={onComposerPermissionModeChange}
+              onOpenRemoteTask={onSelectThread}
+              onSelectRemoteTaskAssistantTurn={() => undefined}
+              onArchiveThread={() => undefined}
+              onCopyAppLink={() => undefined}
+              onCopyConversationMarkdown={() => undefined}
+              onCopySessionId={() => undefined}
+              onCopyWorkingDirectory={() => undefined}
+              onForkSelectedThread={() => undefined}
+              onForkSelectedThreadIntoWorktree={() => undefined}
+              onOpenInNewWindow={() => undefined}
+              onOpenAttachedHeartbeatAutomation={() => undefined}
+              onOpenSideChat={onOpenSideChat ?? undefined}
+              onOpenThreadHeartbeatAutomationAction={() => undefined}
+              onOpenRenameDialog={() => undefined}
+              onOpenWorkspaceFileSearch={onOpenWorkspaceFileSearch ?? undefined}
+              onSelectThread={onSelectThread}
+              onTogglePinnedThread={() => undefined}
+              onEditUserMessage={onEditUserMessage}
+              onRemoveQueuedFollowUp={onRemoveQueuedFollowUp}
+              onClearPendingPdfComments={undefined}
+              onStopTurn={onStopTurn}
+              onSubmitTurn={onSubmitTurn}
+              onShowToast={onShowToast}
+              onToggleThreadActionsMenu={() => undefined}
+              approvalActionErrors={approvalActionErrors}
+              reviewDelivery={reviewDelivery}
+              respondingApprovalKeys={respondingApprovalKeys}
+              submitButtonMode={submitButtonMode}
+              t={t}
+              authMethod={authMethod}
+              remoteAttemptTabsByTurnId={{}}
+              remoteConversationOverridesByTurnId={{}}
+              composerPlacement="side"
+              threadConversation={sideChatConversation}
+              turnError={sideChatTurnError}
+              conversationHostId={conversationHostId}
+            />
+          </div>
         </div>
       ) : (
         <EmptyPanel t={t} />
       )}
     </aside>
   );
+}
+
+function SideChatPanelHeader({
+  sourceConversationId,
+  sourceConversationTitle,
+  onOpenSourceConversation,
+  t,
+}: {
+  sourceConversationId: string | null;
+  sourceConversationTitle: string;
+  onOpenSourceConversation: (() => void) | null;
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+}) {
+  return (
+    <div className="grid h-[var(--app-shell-toolbar-pane)] grid-cols-[minmax(0,1fr)] items-center gap-2 border-b border-[var(--app-shell-border)] px-2.5">
+      <div className="flex min-w-0 items-center gap-2 overflow-hidden">
+        {sourceConversationId !== null && onOpenSourceConversation !== null ? (
+          <button
+            type="button"
+            title={t("localConversation.forkedFromConversation")}
+            aria-label={t("localConversation.forkedFromConversation")}
+            onClick={onOpenSourceConversation}
+            className="app-topbar-button flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-[12px]"
+          >
+            <BackNavigationIcon className="h-4 w-4" />
+          </button>
+        ) : null}
+        <div className="min-w-0 overflow-hidden">
+          <div className="app-title truncate text-[13px] font-medium text-[var(--app-shell-text)]">
+            {sourceConversationTitle}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function resolveSideChatSource(conversation: ThreadConversation | null) {
+  if (conversation === null) {
+    return null;
+  }
+
+  const sourceItem = conversation.items.find(isForkedFromConversationItem);
+  if (!sourceItem) {
+    return null;
+  }
+
+  const sourceConversationId = sourceItem.sourceConversationId.trim();
+  if (sourceConversationId.length === 0) {
+    return null;
+  }
+
+  const sourceConversationTitle = sourceItem.sourceConversationTitle?.trim();
+  return {
+    id: sourceConversationId,
+    title:
+      sourceConversationTitle && sourceConversationTitle.length > 0
+        ? sourceConversationTitle
+        : conversation.title.trim() || sourceConversationId,
+  };
+}
+
+function isForkedFromConversationItem(
+  item: ThreadConversationItem,
+): item is Extract<ThreadConversationItem, { type: "forkedFromConversation" }> {
+  return item.type === "forkedFromConversation";
 }
 
 function EmptyPanel({

@@ -22,6 +22,15 @@ test("remote conversation footer snapshot", async (t) => {
       showRemoteApplyFooter: false,
       showRemoteFailedFooter: false,
     }),
+    localComposerWithLatestTurnAndScrollButton: renderFooter({
+      composer: <div className="composer-marker">app.chat.composePlaceholder</div>,
+      latestTurnPreview: <div className="latest-turn-marker">Latest turn preview</div>,
+      onScrollToBottom: () => undefined,
+      showComposerFooter: true,
+      showRemoteApplyFooter: false,
+      showRemoteFailedFooter: false,
+      showScrollToBottomButton: true,
+    }),
     remoteApplyFooter: renderFooter({
       composer: <div className="composer-marker">app.chat.composePlaceholder</div>,
       remoteApplyDiff: "diff --git a/file.txt b/file.txt\n@@ -1 +1 @@\n-old\n+new\n",
@@ -61,6 +70,13 @@ test("remote conversation footer snapshot", async (t) => {
     assert.match(actual, /app\.chat\.composePlaceholder/);
   });
 
+  await t.test("local footer shows latest-turn preview and scroll button when requested", () => {
+    const actual = actualSnapshots.localComposerWithLatestTurnAndScrollButton;
+    assert.equal(actual, expectedSnapshots.localComposerWithLatestTurnAndScrollButton);
+    assert.match(actual, /Latest turn preview/);
+    assert.match(actual, /Scroll to bottom/);
+  });
+
   await t.test("remote failed turn shows failed footer without composer", () => {
     const actual = actualSnapshots.remoteFailedFooter;
     assert.equal(actual, expectedSnapshots.remoteFailedFooter);
@@ -72,6 +88,7 @@ test("remote conversation footer snapshot", async (t) => {
 
 type SnapshotMap = {
   localComposer: string;
+  localComposerWithLatestTurnAndScrollButton: string;
   remoteApplyFooter: string;
   remoteFailedFooter: string;
 };
@@ -90,6 +107,7 @@ function renderFooter(
         showComposerFooter={false}
         showRemoteApplyFooter={false}
         showRemoteFailedFooter={false}
+        showScrollToBottomButton={false}
         t={translate}
         workspaceRoot={null}
         {...props}
@@ -126,6 +144,8 @@ function translate(key: string, values?: Record<string, number | string>) {
       return "An error occurred during this task";
     case "codex.remoteConversation.openInWeb":
       return "Open in web";
+    case "localConversation.scrollToBottomButton":
+      return "Scroll to bottom";
     default:
       return key;
   }

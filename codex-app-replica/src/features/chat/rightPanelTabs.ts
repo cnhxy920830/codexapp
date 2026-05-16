@@ -2,11 +2,6 @@ import type { WorkspaceFilePreviewTarget } from "../../services/workspaceFiles";
 
 export type StaticRightPanelTabId = "review" | "browser";
 
-type StaticRightPanelTab = {
-  kind: StaticRightPanelTabId;
-  id: StaticRightPanelTabId;
-};
-
 export type WorkspaceFileRightPanelTab = {
   kind: "workspaceFile";
   file: WorkspaceFilePreviewTarget;
@@ -21,11 +16,7 @@ export type SideChatRightPanelTab = {
   title: string;
 };
 
-export type RightPanelTab = StaticRightPanelTab | WorkspaceFileRightPanelTab | SideChatRightPanelTab;
-
-export function createStaticRightPanelTab(id: StaticRightPanelTabId): StaticRightPanelTab {
-  return { kind: id, id };
-}
+export type RightPanelTab = WorkspaceFileRightPanelTab | SideChatRightPanelTab;
 
 export function createWorkspaceFileRightPanelTab(file: WorkspaceFilePreviewTarget): WorkspaceFileRightPanelTab {
   const relativePath = normalizeWorkspaceFileRelativePath(file.relativePath);
@@ -66,10 +57,6 @@ export function createSideChatRightPanelTab(params: {
   };
 }
 
-export function isStaticRightPanelTab(tab: RightPanelTab): tab is StaticRightPanelTab {
-  return tab.kind === "review" || tab.kind === "browser";
-}
-
 export function isWorkspaceFileRightPanelTab(tab: RightPanelTab): tab is WorkspaceFileRightPanelTab {
   return tab.kind === "workspaceFile";
 }
@@ -84,6 +71,23 @@ export function isWorkspaceFileRightPanelTabId(tabId: string | null) {
 
 export function isSideChatRightPanelTabId(tabId: string | null) {
   return tabId?.startsWith("sidechat:") ?? false;
+}
+
+export function reorderRightPanelTabs(
+  tabs: RightPanelTab[],
+  activeTabId: string,
+  overTabId: string,
+) {
+  const activeIndex = tabs.findIndex((tab) => tab.id === activeTabId);
+  const overIndex = tabs.findIndex((tab) => tab.id === overTabId);
+
+  if (activeIndex === -1 || overIndex === -1 || activeIndex === overIndex) {
+    return tabs;
+  }
+
+  const nextTabs = tabs.slice();
+  nextTabs.splice(overIndex, 0, nextTabs.splice(activeIndex, 1)[0]);
+  return nextTabs;
 }
 
 function normalizeWorkspaceFileRelativePath(relativePath: string) {

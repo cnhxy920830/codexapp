@@ -188,12 +188,11 @@ import {
 } from "./features/hotkeyWindow/hotkeyPermissionsMode";
 import {
   createSideChatRightPanelTab,
-  createStaticRightPanelTab,
   createWorkspaceFileRightPanelTab,
   isSideChatRightPanelTab,
-  isStaticRightPanelTab,
   isWorkspaceFileRightPanelTab,
   isWorkspaceFileRightPanelTabId,
+  reorderRightPanelTabs,
   type RightPanelTab,
   type StaticRightPanelTabId,
 } from "./features/chat/rightPanelTabs";
@@ -339,6 +338,7 @@ const TOGGLE_DIFF_PANEL_EVENT = "toggle-diff-panel";
 const WELCOME_V2_ONBOARDING_QUERY_PARAM = "welcomeV2Onboarding";
 const HOTKEY_HOME_ROUTE_PATH = "/hotkey-window";
 const RIGHT_PANEL_WIDTH_STORAGE_KEY = "codex-app-replica:right-panel-width";
+const RIGHT_PANEL_WIDTH_MODE_STORAGE_KEY = "codex-app-replica:right-panel-width-mode";
 const LEFT_SIDEBAR_OPEN_STORAGE_KEY = "codex-app-replica:left-sidebar-open";
 const RIGHT_PANEL_WIDTH_DEFAULT = 392;
 const RIGHT_PANEL_WIDTH_MIN = 320;
@@ -776,6 +776,20 @@ function readInitialRightPanelWidth() {
   }
 }
 
+function readInitialRightPanelWidthMode(): "full" | "regular" {
+  if (typeof window === "undefined") {
+    return "regular";
+  }
+
+  try {
+    return window.localStorage.getItem(RIGHT_PANEL_WIDTH_MODE_STORAGE_KEY) === "full"
+      ? "full"
+      : "regular";
+  } catch {
+    return "regular";
+  }
+}
+
 function readInitialLeftSidebarOpen() {
   if (typeof window === "undefined") {
     return true;
@@ -1084,6 +1098,8 @@ function App() {
     Record<string, ThreadConversationItem[]>
   >({});
   const [composerDraft, setComposerDraft] = useState("");
+  const [pendingThreadGoalObjective, setPendingThreadGoalObjective] = useState<string | null>(null);
+  const [isThreadGoalEditorOpen, setIsThreadGoalEditorOpen] = useState(false);
   const [composerEnterBehavior, setComposerEnterBehavior] = useState<ComposerEnterBehavior>("enter");
   const [followUpQueueMode, setFollowUpQueueMode] = useState<FollowUpQueueMode>("queue");
   const [reviewDelivery, setReviewDelivery] = useState<ReviewDelivery>("inline");
@@ -1118,8 +1134,12 @@ function App() {
   const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(readInitialLeftSidebarOpen);
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
   const [rightPanelWidth, setRightPanelWidth] = useState<number>(readInitialRightPanelWidth);
+  const [rightPanelWidthMode, setRightPanelWidthMode] = useState<"full" | "regular">(
+    readInitialRightPanelWidthMode,
+  );
   const [isRightPanelResizing, setIsRightPanelResizing] = useState(false);
   const [openRightPanelTabs, setOpenRightPanelTabs] = useState<RightPanelTab[]>([]);
+  const [activeRightPanelStaticTabId, setActiveRightPanelStaticTabId] = useState<StaticRightPanelTabId | null>(null);
   const [activeRightPanelTabId, setActiveRightPanelTabId] = useState<string | null>(null);
   const [pinnedThreadIds, setPinnedThreadIds] = useState<string[]>([]);
   const [browserSidebarTarget, setBrowserSidebarTarget] = useState<BrowserSidebarTarget | null>(null);
@@ -1224,6 +1244,7 @@ function App() {
   const drainingQueuedThreadIdsRef = useRef(new Set<string>());
   const threadActionsMenuRef = useRef<HTMLDivElement | null>(null);
   const openRightPanelTabsRef = useRef<RightPanelTab[]>([]);
+  const activeRightPanelStaticTabIdRef = useRef<StaticRightPanelTabId | null>(null);
   const activeRightPanelTabIdRef = useRef<string | null>(null);
   const sideChatConversationsByIdRef = useRef<Record<string, ThreadConversation>>({});
   const selectedThreadIdRef = useRef<string | null>(null);
@@ -1480,11 +1501,15 @@ function App() {
       localComposerPermissionMode,
     ],
   );
-  const activeRightPanelTab = openRightPanelTabs.find((tab) => tab.id === activeRightPanelTabId) ?? null;
+  const activeRightPanelDynamicTab = openRightPanelTabs.find((tab) => tab.id === activeRightPanelTabId) ?? null;
   const isSelectedThreadPinned =
     selectedThreadId !== null && pinnedThreadIds.includes(selectedThreadId);
   const activeSideChatConversationId =
-    activeRightPanelTab && isSideChatRightPanelTab(activeRightPanelTab) ? activeRightPanelTab.conversationId : null;
+    activeRightPanelStaticTabId === null &&
+    activeRightPanelDynamicTab &&
+    isSideChatRightPanelTab(activeRightPanelDynamicTab)
+      ? activeRightPanelDynamicTab.conversationId
+      : null;
   const activeSideChatConversation =
     activeSideChatConversationId === null ? null : (sideChatConversationsById[activeSideChatConversationId] ?? null);
   const currentSideChatApprovals = pendingApprovals.filter((approval) => approval.threadId === activeSideChatConversationId);
@@ -1707,6 +1732,18 @@ function App() {
       // Ignore local persistence failures and keep the in-memory width.
     }
   }, [rightPanelWidth]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(RIGHT_PANEL_WIDTH_MODE_STORAGE_KEY, rightPanelWidthMode);
+    } catch {
+      // Ignore storage write failures.
+    }
+  }, [rightPanelWidthMode]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -2252,8 +2289,9 @@ function App() {
 
   useEffect(() => {
     openRightPanelTabsRef.current = openRightPanelTabs;
+    activeRightPanelStaticTabIdRef.current = activeRightPanelStaticTabId;
     activeRightPanelTabIdRef.current = activeRightPanelTabId;
-  }, [activeRightPanelTabId, openRightPanelTabs]);
+  }, [activeRightPanelStaticTabId, activeRightPanelTabId, openRightPanelTabs]);
 
   useEffect(() => {
     sideChatConversationsByIdRef.current = sideChatConversationsById;
@@ -2262,7 +2300,6 @@ function App() {
   useEffect(() => {
     const previousThreadId = previousSelectedThreadIdRef.current;
     const currentOpenRightPanelTabs = openRightPanelTabsRef.current;
-    const currentStaticTabs = currentOpenRightPanelTabs.filter(isStaticRightPanelTab);
     const currentActiveRightPanelTabId = activeRightPanelTabIdRef.current;
 
     if (previousThreadId !== null) {
@@ -2288,9 +2325,9 @@ function App() {
     const restoredActiveWorkspaceFileTabId =
       selectedThreadId === null ? null : (activeWorkspaceFileTabIdByThreadIdRef.current.get(selectedThreadId) ?? null);
 
-    setOpenRightPanelTabs([...currentStaticTabs, ...restoredWorkspaceFileTabs]);
+    setOpenRightPanelTabs(restoredWorkspaceFileTabs);
     setActiveRightPanelTabId((current) => {
-      if (!isWorkspaceFileRightPanelTabId(current) && current !== null) {
+      if (current !== null && !isWorkspaceFileRightPanelTabId(current)) {
         return current;
       }
       if (
@@ -2303,10 +2340,11 @@ function App() {
         return restoredWorkspaceFileTabs[0].id;
       }
       if (isWorkspaceFileRightPanelTabId(current)) {
-        return currentStaticTabs[0]?.id ?? null;
+        return null;
       }
       return current;
     });
+    setActiveRightPanelStaticTabId((current) => current);
     setWorkspaceFileCommandMenuMode(null);
     previousSelectedThreadIdRef.current = selectedThreadId;
   }, [selectedThreadId]);
@@ -3116,6 +3154,90 @@ function App() {
         }
         return;
       }
+      if (event.type === "threadTokenUsageUpdated") {
+        setThreadConversation((current) => {
+          if (!current || current.id !== event.threadId) {
+            return current;
+          }
+          const nextConversation = {
+            ...current,
+            latestTokenUsageInfo: event.tokenUsage,
+          };
+          loadedConversationsByIdRef.current.set(nextConversation.id, nextConversation);
+          return nextConversation;
+        });
+        if (event.threadId in sideChatConversationsByIdRef.current) {
+          updateSideChatConversation(event.threadId, (conversation) => ({
+            ...conversation,
+            latestTokenUsageInfo: event.tokenUsage,
+          }));
+        } else {
+          const loadedConversation = loadedConversationsByIdRef.current.get(event.threadId);
+          if (loadedConversation) {
+            loadedConversationsByIdRef.current.set(event.threadId, {
+              ...loadedConversation,
+              latestTokenUsageInfo: event.tokenUsage,
+            });
+          }
+        }
+        return;
+      }
+      if (event.type === "threadGoalUpdated") {
+        setThreadConversation((current) => {
+          if (!current || current.id !== event.threadId) {
+            return current;
+          }
+          const nextConversation = {
+            ...current,
+            threadGoal: event.goal,
+          };
+          loadedConversationsByIdRef.current.set(nextConversation.id, nextConversation);
+          return nextConversation;
+        });
+        if (event.threadId in sideChatConversationsByIdRef.current) {
+          updateSideChatConversation(event.threadId, (conversation) => ({
+            ...conversation,
+            threadGoal: event.goal,
+          }));
+        } else {
+          const loadedConversation = loadedConversationsByIdRef.current.get(event.threadId);
+          if (loadedConversation) {
+            loadedConversationsByIdRef.current.set(event.threadId, {
+              ...loadedConversation,
+              threadGoal: event.goal,
+            });
+          }
+        }
+        return;
+      }
+      if (event.type === "threadGoalCleared") {
+        setThreadConversation((current) => {
+          if (!current || current.id !== event.threadId) {
+            return current;
+          }
+          const nextConversation = {
+            ...current,
+            threadGoal: null,
+          };
+          loadedConversationsByIdRef.current.set(nextConversation.id, nextConversation);
+          return nextConversation;
+        });
+        if (event.threadId in sideChatConversationsByIdRef.current) {
+          updateSideChatConversation(event.threadId, (conversation) => ({
+            ...conversation,
+            threadGoal: null,
+          }));
+        } else {
+          const loadedConversation = loadedConversationsByIdRef.current.get(event.threadId);
+          if (loadedConversation) {
+            loadedConversationsByIdRef.current.set(event.threadId, {
+              ...loadedConversation,
+              threadGoal: null,
+            });
+          }
+        }
+        return;
+      }
       if (event.type === "threadItemUpdated") {
         const isSelectedThread = event.threadId === selectedThreadIdRef.current;
         const isLoadedSideChat = event.threadId in sideChatConversationsByIdRef.current;
@@ -3390,35 +3512,33 @@ function App() {
   const closeWindow = async () => {
     await appWindow.close();
   };
+  const activeRightPanelTab = activeRightPanelStaticTabId === null ? activeRightPanelDynamicTab : null;
   const collapsedRightPanelTabs = !isRightPanelOpen ? openRightPanelTabs.slice(0, 3) : [];
-  const canOfferReviewRightPanelTab = !openRightPanelTabs.some((tab) => tab.kind === "review");
-  const canOfferBrowserRightPanelTab = !openRightPanelTabs.some((tab) => tab.kind === "browser");
   const shouldShowCollapsedRightPanelRail =
     currentRoute === "chat" &&
     !isRightPanelOpen &&
-    (collapsedRightPanelTabs.length > 0 ||
-      chatWorkspaceRoot !== null ||
-      canOfferReviewRightPanelTab ||
-      canOfferBrowserRightPanelTab);
+    (collapsedRightPanelTabs.length > 0 || chatWorkspaceRoot !== null || activeRightPanelStaticTabId !== null);
   const rightPanelInlineStyle = {
-    width: `${rightPanelWidth}px`,
+    width: rightPanelWidthMode === "full" ? "100%" : `${rightPanelWidth}px`,
   } as const;
-  const openRightPanelTab = (tabId: StaticRightPanelTabId) => {
-    setOpenRightPanelTabs((current) =>
-      current.some((tab) => tab.id === tabId) ? current : [...current, createStaticRightPanelTab(tabId)],
-    );
-    setActiveRightPanelTabId(tabId);
+  const openRightPanelStaticTab = (tabId: StaticRightPanelTabId) => {
+    setActiveRightPanelStaticTabId(tabId);
     setIsRightPanelOpen(true);
   };
 
   const openBrowserSidebarTarget = (target: BrowserSidebarTarget) => {
     setBrowserSidebarTarget(target);
-    openRightPanelTab("browser");
+    openRightPanelStaticTab("browser");
   };
 
   const activateRightPanelTab = (tabId: string) => {
+    setActiveRightPanelStaticTabId(null);
     setActiveRightPanelTabId(tabId);
     setIsRightPanelOpen(true);
+  };
+
+  const reorderOpenRightPanelTabs = (activeTabId: string, overTabId: string) => {
+    setOpenRightPanelTabs((current) => reorderRightPanelTabs(current, activeTabId, overTabId));
   };
 
   const closeRightPanelTab = (tabId: string) => {
@@ -3439,6 +3559,7 @@ function App() {
 
       return nextTabs;
     });
+    setActiveRightPanelStaticTabId((current) => current);
 
     if (closingTab?.kind === "sideChat") {
       const conversationId = closingTab.conversationId;
@@ -3474,12 +3595,16 @@ function App() {
     setIsRightPanelOpen((current) => !current);
   };
 
+  const toggleRightPanelFullWidth = () => {
+    setRightPanelWidthMode((current) => (current === "full" ? "regular" : "full"));
+  };
+
   const toggleLeftSidebar = () => {
     setIsLeftSidebarOpen((current) => !current);
   };
 
   const handleRightPanelResizePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!isRightPanelOpen || event.button !== 0) {
+    if (!isRightPanelOpen || rightPanelWidthMode === "full" || event.button !== 0) {
       return;
     }
 
@@ -3550,8 +3675,8 @@ function App() {
 
     if (matchingCommandId === "closeTabOrWindow") {
       event.preventDefault();
-      if (activeRightPanelTab !== null) {
-        closeRightPanelTab(activeRightPanelTab.id);
+      if (isRightPanelOpen && (activeRightPanelStaticTabId !== null || activeRightPanelDynamicTab !== null)) {
+        closeActiveRightPanelView();
         return;
       }
 
@@ -3601,6 +3726,7 @@ function App() {
       nextTabs[existingTabIndex] = workspaceFileTab;
       return nextTabs;
     });
+    setActiveRightPanelStaticTabId(null);
     setActiveRightPanelTabId(workspaceFileTab.id);
     setIsRightPanelOpen(true);
     setWorkspaceFileCommandMenuMode(null);
@@ -3663,6 +3789,8 @@ function App() {
     threadLoadRequestIdRef.current = requestId;
     setIsThreadConversationLoading(true);
     setRemoteTaskState(null);
+    setPendingThreadGoalObjective(null);
+    setIsThreadGoalEditorOpen(false);
     setThreadConversation(null);
     try {
       const thread = await readThread(threadId);
@@ -3950,6 +4078,8 @@ function App() {
     setSelectedThreadId(threadId);
     setTurnError(null);
     setCurrentRoute("chat");
+    setPendingThreadGoalObjective(null);
+    setIsThreadGoalEditorOpen(false);
     try {
       await loadThreadConversation(threadId);
     } catch {
@@ -3966,6 +4096,8 @@ function App() {
     setThreadConversation(null);
     setIsThreadConversationLoading(false);
     setTurnError(null);
+    setPendingThreadGoalObjective(null);
+    setIsThreadGoalEditorOpen(false);
     if (state?.cwd !== undefined) {
       setLaunchContext({
         openProjectPath: state.cwd ?? null,
@@ -3975,6 +4107,10 @@ function App() {
     setComposerFocusNonce(state?.focusComposerNonce ?? Date.now());
     setCurrentRoute("chat");
   });
+
+  const focusMainComposer = () => {
+    setComposerFocusNonce(Date.now());
+  };
 
   const handleNavigateToRoute = useEffectEvent(async (path: string, state?: NavigateToRouteState | null) => {
     if (typeof window !== "undefined" && window.location.pathname !== path) {
@@ -4128,18 +4264,16 @@ function App() {
 
   const handleToggleDiffPanel = useEffectEvent((open: boolean) => {
     if (open) {
-      openRightPanelTab("review");
+      openRightPanelStaticTab("review");
       return;
     }
 
-    const hasReviewTab = openRightPanelTabsRef.current.some((tab) => tab.kind === "review");
-    if (!hasReviewTab) {
+    if (activeRightPanelStaticTabIdRef.current !== "review") {
       return;
     }
 
-    const nextTabs = openRightPanelTabsRef.current.filter((tab) => tab.kind !== "review");
-    closeRightPanelTab("review");
-    if (nextTabs.length === 0) {
+    setActiveRightPanelStaticTabId(null);
+    if (openRightPanelTabsRef.current.length === 0) {
       setIsRightPanelOpen(false);
     }
   });
@@ -4403,6 +4537,20 @@ function App() {
     }
   };
 
+  const closeActiveRightPanelView = () => {
+    if (activeRightPanelStaticTabId !== null) {
+      setActiveRightPanelStaticTabId(null);
+      if (openRightPanelTabsRef.current.length === 0) {
+        setIsRightPanelOpen(false);
+      }
+      return;
+    }
+
+    if (activeRightPanelDynamicTab !== null) {
+      closeRightPanelTab(activeRightPanelDynamicTab.id);
+    }
+  };
+
   const openSelectedThreadInNewWindow = async () => {
     if (!selectedThreadId) {
       return;
@@ -4522,15 +4670,19 @@ function App() {
     }
   };
 
-  const openSideChatForSelectedThread = async () => {
-    if (!selectedThreadId || isTurnInProgress) {
-      return;
-    }
-
+  const openSideChatForConversation = async ({
+    conversationId,
+    conversation,
+    initialPrompt = null,
+  }: {
+    conversationId: string;
+    conversation: ThreadConversation | null;
+    initialPrompt?: string | null;
+  }) => {
     try {
       const forkedThreadId = await forkConversationFromLatest({
-        conversationId: selectedThreadId,
-        cwd: threadConversation?.cwd ?? openProjectPath ?? null,
+        conversationId,
+        cwd: conversation?.cwd ?? openProjectPath ?? null,
         developerInstructions:
           "You are in a side conversation. Treat inherited history as reference only. Do not modify files, git state, permissions, configuration, or workspace state unless the user explicitly asks for that mutation in this side conversation.",
       });
@@ -4541,21 +4693,71 @@ function App() {
         title: t("localConversation.sideChat.title"),
         numberedTitle: t("localConversation.sideChat.numberedTitle", { index: sideChatCount }),
       });
-      await loadSideChatConversation(forkedThreadId);
+      const sideChatConversation = await loadSideChatConversation(forkedThreadId);
       setOpenRightPanelTabs((current) =>
         current.some((existingTab) => existingTab.id === tab.id) ? current : [...current, tab],
       );
+      setActiveRightPanelStaticTabId(null);
       setActiveRightPanelTabId(tab.id);
       setIsRightPanelOpen(true);
       setIsThreadActionsMenuOpen(false);
       setThreadActionFeedback(null);
+      const normalizedInitialPrompt = initialPrompt?.trim() ?? "";
+      if (normalizedInitialPrompt.length > 0) {
+        await submitTurnForExistingConversation(
+          forkedThreadId,
+          sideChatConversation,
+          normalizedInitialPrompt,
+          (value) => {
+            setSideChatComposerDraftsById((current) => ({
+              ...current,
+              [forkedThreadId]: value,
+            }));
+          },
+          (value) => {
+            setSideChatTurnErrorsById((current) => ({
+              ...current,
+              [forkedThreadId]: value,
+            }));
+          },
+          (updater) => {
+            setSideChatConversationsById((current) => {
+              const existingConversation = current[forkedThreadId] ?? null;
+              const nextConversation = updater(existingConversation);
+              if (nextConversation == null) {
+                return current;
+              }
+              loadedConversationsByIdRef.current.set(nextConversation.id, nextConversation);
+              return {
+                ...current,
+                [forkedThreadId]: nextConversation,
+              };
+            });
+          },
+          localComposerPermissionOverrides,
+        );
+      }
+      return true;
     } catch {
       setIsThreadActionsMenuOpen(false);
       setAppToast({
         tone: "error",
         message: t("threadHeader.openSideChatError"),
       });
+      return false;
     }
+  };
+
+  const openSideChatForSelectedThread = async (initialPrompt: string | null = null) => {
+    if (!selectedThreadId) {
+      return false;
+    }
+
+    return openSideChatForConversation({
+      conversationId: selectedThreadId,
+      conversation: threadConversation,
+      initialPrompt,
+    });
   };
 
   const archiveSelectedThread = async () => {
@@ -4785,6 +4987,8 @@ function App() {
               ...localComposerPermissionOverrides,
             });
       completeImplementPlanFlowForThread(threadId);
+      setPendingThreadGoalObjective(null);
+      setIsThreadGoalEditorOpen(false);
       setThreadConversation((current) =>
         current && current.id === threadId
           ? upsertThreadConversationTurnTiming(current, turnId, {
@@ -5991,16 +6195,22 @@ function App() {
       onForkSelectedThread={() => void forkSelectedThread()}
       onForkSelectedThreadIntoWorktree={() => void forkSelectedThreadIntoWorktree()}
       onOpenInNewWindow={() => void openSelectedThreadInNewWindow()}
-      onMarkThreadUnread={undefined}
-      onOpenSideChat={() => void openSideChatForSelectedThread()}
       onOpenAttachedHeartbeatAutomation={() => openThreadHeartbeatAutomationDialog("edit")}
+      onOpenSideChat={
+        remoteTaskState === null
+          ? (initialPrompt) => openSideChatForSelectedThread(initialPrompt)
+          : undefined
+      }
       onOpenThreadHeartbeatAutomationAction={openThreadHeartbeatAutomationAction}
       onOpenRemoteTask={openRemoteTaskFromCurrentShell}
       onSelectRemoteTaskAssistantTurn={selectRemoteTaskAssistantTurn}
       onOpenRenameDialog={openRenameDialog}
       onOpenWorkspaceFileSearch={openWorkspaceFileSearch}
+      onFocusComposerRequest={focusMainComposer}
       onSelectThread={openThreadFromCurrentShell}
       onTogglePinnedThread={() => void toggleSelectedThreadPinnedState()}
+      onThreadGoalEditorOpenChange={setIsThreadGoalEditorOpen}
+      onPendingThreadGoalObjectiveChange={setPendingThreadGoalObjective}
       onEditUserMessage={(text) => void handleEditUserMessage(text)}
       onPermissionsRequestApprovalSubmit={(request, grantMode, strictAutoReview) =>
         void handlePermissionsRequestApprovalSubmit(request, grantMode, strictAutoReview)
@@ -6024,9 +6234,9 @@ function App() {
       approvalActionErrors={approvalActionErrors}
       reviewDelivery={reviewDelivery}
       respondingApprovalKeys={respondingApprovalKeys}
-      selectedAvatar={selectedAvatar}
       submitButtonMode={submitButtonMode}
       t={t}
+      authMethod={authSnapshot.authState.authMethod}
       threadConversation={currentRemoteConversationBranch?.conversation ?? threadConversation}
       remoteAttemptTabsByTurnId={currentRemoteConversationBranch?.attemptTabsByTurnId ?? {}}
       remoteConversationOverridesByTurnId={currentRemoteConversationOverridesByTurnId}
@@ -6040,8 +6250,11 @@ function App() {
           ? remoteTaskState?.task.current_assistant_turn?.turn_status === "completed"
           : undefined
       }
+      isThreadGoalEditorOpen={isThreadGoalEditorOpen}
+      pendingThreadGoalObjective={pendingThreadGoalObjective}
       turnError={turnError}
       workspaceRoot={openProjectPath}
+      conversationHostId={(currentRemoteConversationBranch?.conversation ?? threadConversation)?.hostId ?? null}
     />
   );
 
@@ -6566,47 +6779,62 @@ function App() {
                   </div>
                 ) : (
                   <div className="flex min-h-0 flex-1 overflow-hidden">
-                    <div className="min-w-0 flex-1">{chatConversationMainPane}</div>
+                    <div
+                      className={
+                        rightPanelWidthMode === "full"
+                          ? "w-0 flex-none overflow-hidden"
+                          : "min-w-0 flex-1"
+                      }
+                    >
+                      {chatConversationMainPane}
+                    </div>
 
                     {isRightPanelOpen ? (
                       <>
-                        <div
-                          role="separator"
-                          aria-orientation="vertical"
-                          aria-label={t("thread.sidePanel.toggle")}
-                          onPointerDown={handleRightPanelResizePointerDown}
-                          className={[
-                            "group relative flex w-3 shrink-0 cursor-col-resize items-center justify-center bg-transparent",
-                            isRightPanelResizing ? "app-right-panel-splitter-active" : "app-right-panel-splitter",
-                          ].join(" ")}
-                        >
-                          <div className="app-right-panel-splitter-line h-full w-px" />
-                          <div className="app-right-panel-splitter-grip pointer-events-none absolute inset-y-0 left-1/2 flex -translate-x-1/2 items-center justify-center rounded-full">
-                            <SplitterGripIcon className="h-4 w-4" />
+                        {rightPanelWidthMode === "regular" ? (
+                          <div
+                            role="separator"
+                            aria-orientation="vertical"
+                            aria-label={t("thread.sidePanel.toggle")}
+                            onPointerDown={handleRightPanelResizePointerDown}
+                            className={[
+                              "group relative flex w-3 shrink-0 cursor-col-resize items-center justify-center bg-transparent",
+                              isRightPanelResizing ? "app-right-panel-splitter-active" : "app-right-panel-splitter",
+                            ].join(" ")}
+                          >
+                            <div className="app-right-panel-splitter-line h-full w-px" />
+                            <div className="app-right-panel-splitter-grip pointer-events-none absolute inset-y-0 left-1/2 flex -translate-x-1/2 items-center justify-center rounded-full">
+                              <SplitterGripIcon className="h-4 w-4" />
+                            </div>
                           </div>
-                        </div>
+                        ) : null}
                         <aside
-                          className="app-right-panel-shell min-h-0 shrink-0 overflow-hidden rounded-l-[18px]"
+                          className={[
+                            "app-right-panel-shell min-h-0 overflow-hidden",
+                            rightPanelWidthMode === "full" ? "flex-1 rounded-none" : "shrink-0 rounded-l-[18px]",
+                          ].join(" ")}
                           style={rightPanelInlineStyle}
                         >
                           <div className="flex h-full min-h-0 flex-col">
                             <RightPanelTabStrip
                               activeTabId={activeRightPanelTabId}
+                              activeStaticTabId={activeRightPanelStaticTabId}
                               openTabs={openRightPanelTabs}
                               onActivateTab={activateRightPanelTab}
                               onCloseTab={closeRightPanelTab}
-                              canOfferBrowserTab={canOfferBrowserRightPanelTab}
-                              canOfferReviewTab={canOfferReviewRightPanelTab}
-                              canOpenWorkspaceFileSearch={chatWorkspaceRoot !== null}
-                              onOpenBrowserTab={() => openRightPanelTab("browser")}
-                              onOpenReviewTab={() => openRightPanelTab("review")}
-                              onOpenWorkspaceFileSearch={openWorkspaceFileSearch}
+                              onReorderTabs={reorderOpenRightPanelTabs}
+                              onOpenBrowserTab={() => openRightPanelStaticTab("browser")}
+                              onOpenReviewTab={() => openRightPanelStaticTab("review")}
+                              onToggleFullWidth={toggleRightPanelFullWidth}
                               onTogglePanel={toggleRightPanel}
                               t={t}
+                              rightPanelWidthMode={rightPanelWidthMode}
                             />
                             <ChatSidePanel
+                              activeStaticTabId={activeRightPanelStaticTabId}
                               activeTab={activeRightPanelTab}
                               browserTarget={browserSidebarTarget}
+                              conversationHostId={threadConversation?.hostId ?? null}
                               composerDraft={
                                 activeSideChatConversationId === null
                                   ? ""
@@ -6618,7 +6846,6 @@ function App() {
                               composerPermissionsState={localComposerPermissionsState}
                               followUpQueueMode={followUpQueueMode}
                               reviewDelivery={reviewDelivery}
-                              selectedAvatar={selectedAvatar}
                               submitButtonMode={
                                 activeSideChatConversationId !== null &&
                                 activeTurn !== null &&
@@ -6640,10 +6867,28 @@ function App() {
                                   : (sideChatTurnErrorsById[activeSideChatConversationId] ?? null)
                               }
                               pendingPdfComments={currentThreadPendingPdfComments}
+                              onShowToast={(toast) => setAppToast(toast)}
                               threadConversation={threadConversation}
+                              onOpenSideChat={
+                                activeSideChatConversationId === null
+                                  ? null
+                                  : (initialPrompt) => {
+                                      const sourceConversation =
+                                        activeSideChatConversation ?? sideChatConversationsByIdRef.current[activeSideChatConversationId] ?? null;
+                                      if (sourceConversation === null) {
+                                        return false;
+                                      }
+
+                                      return openSideChatForConversation({
+                                        conversationId: activeSideChatConversationId,
+                                        conversation: sourceConversation,
+                                        initialPrompt: initialPrompt ?? null,
+                                      });
+                                    }
+                              }
                               onOpenBrowserTarget={openBrowserSidebarTarget}
-                              onOpenWorkspaceFileSearch={openWorkspaceFileSearch}
                               onOpenReviewFile={(change) => void handleReviewFileSelected(change)}
+                              onOpenWorkspaceFileSearch={openWorkspaceFileSearch}
                               onSelectWorkspaceFile={handleWorkspaceFileSelected}
                               onSubmitPdfComment={handleSubmitPdfComment}
                               onPendingPdfCommentsChange={(update) => {
@@ -6743,6 +6988,7 @@ function App() {
                               respondingApprovalKeys={respondingApprovalKeys}
                               t={t}
                               threadDiffSummary={threadDiffSummary}
+                              authMethod={authSnapshot.authState.authMethod}
                             />
                           </div>
                         </aside>
@@ -6750,14 +6996,11 @@ function App() {
                     ) : shouldShowCollapsedRightPanelRail ? (
                       <div className="overflow-hidden rounded-l-[18px]">
                         <RightPanelCollapsedRail
+                          activeStaticTabId={activeRightPanelStaticTabId}
                           collapsedTabs={collapsedRightPanelTabs}
                           onActivateTab={activateRightPanelTab}
-                          canOfferBrowserTab={canOfferBrowserRightPanelTab}
-                          canOfferReviewTab={canOfferReviewRightPanelTab}
-                          canOpenWorkspaceFileSearch={chatWorkspaceRoot !== null}
-                          onOpenBrowserTab={() => openRightPanelTab("browser")}
-                          onOpenReviewTab={() => openRightPanelTab("review")}
-                          onOpenWorkspaceFileSearch={openWorkspaceFileSearch}
+                          onOpenBrowserTab={() => openRightPanelStaticTab("browser")}
+                          onOpenReviewTab={() => openRightPanelStaticTab("review")}
                           t={t}
                         />
                       </div>

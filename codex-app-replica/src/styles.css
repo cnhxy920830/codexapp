@@ -741,8 +741,8 @@ body[data-hotkey-window-home-composer-menu-open] .hotkey-window-home-underlay {
 }
 
 .app-thread-composer {
-  background: color-mix(in srgb, var(--app-shell-main-surface) 94%, transparent);
-  backdrop-filter: blur(16px);
+  background: color-mix(in srgb, var(--app-shell-main-surface) 96%, transparent);
+  backdrop-filter: blur(18px);
 }
 
 .app-thread-composer-pill,
@@ -752,14 +752,27 @@ body[data-hotkey-window-home-composer-menu-open] .hotkey-window-home-underlay {
   outline: none;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 28px;
+  gap: 5px;
+  min-height: 26px;
   border-radius: 999px;
-  padding: 0 12px;
-  background: color-mix(in srgb, var(--app-shell-control-bg) 88%, transparent);
+  padding: 0 10px;
+  background: color-mix(in srgb, var(--app-shell-control-bg) 90%, transparent);
   color: var(--app-shell-control-text-muted);
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1;
+}
+
+.app-thread-composer-footer-icon-button {
+  display: inline-flex;
+  height: 28px;
+  width: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--app-shell-control-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--app-shell-control-bg) 90%, transparent);
+  color: var(--app-shell-control-text-muted);
 }
 
 .app-thread-composer-pill {
@@ -784,6 +797,7 @@ body[data-hotkey-window-home-composer-menu-open] .hotkey-window-home-underlay {
 .app-thread-composer-pill-active {
   background: var(--app-shell-control-bg);
   color: var(--app-shell-control-text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .app-thread-composer-action-button {
@@ -791,14 +805,19 @@ body[data-hotkey-window-home-composer-menu-open] .hotkey-window-home-underlay {
   background: color-mix(in srgb, var(--app-shell-control-bg) 90%, transparent);
   color: var(--app-shell-control-text-muted);
   display: inline-flex;
-  height: 36px;
-  width: 36px;
+  height: 30px;
+  width: 30px;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: 10px;
 }
 
 .app-thread-composer-action-button:hover {
+  background: var(--app-shell-control-hover);
+  color: var(--app-shell-control-text);
+}
+
+.app-thread-composer-footer-icon-button:hover {
   background: var(--app-shell-control-hover);
   color: var(--app-shell-control-text);
 }
@@ -822,17 +841,109 @@ body[data-hotkey-window-home-composer-menu-open] .hotkey-window-home-underlay {
 }
 
 .app-user-message {
-  border: 1px solid color-mix(in srgb, var(--app-shell-border) 92%, transparent);
-  background: color-mix(in srgb, var(--app-shell-card-bg-muted) 84%, var(--app-shell-control-bg));
-  color: var(--app-shell-control-text);
-  box-shadow: var(--app-shell-card-shadow);
+  border: 1px solid color-mix(in srgb, var(--app-shell-border) 48%, transparent);
+  background: color-mix(in srgb, var(--app-shell-card-bg) 72%, var(--app-shell-control-bg));
+  color: var(--app-shell-text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .app-user-message-chip {
-  background: color-mix(in srgb, var(--app-shell-card-bg-muted) 92%, transparent);
   color: var(--app-shell-muted);
-  border: 1px solid color-mix(in srgb, var(--app-shell-border) 78%, transparent);
-  letter-spacing: 0;
+}
+
+.app-user-message-attachment-pill {
+  display: inline-flex;
+  max-width: 320px;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid color-mix(in srgb, var(--app-shell-border) 70%, transparent);
+  border-radius: 999px;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--app-shell-main-surface) 94%, transparent);
+  color: var(--app-shell-text);
+  text-align: left;
+  transition:
+    background-color 120ms ease-out,
+    border-color 120ms ease-out;
+}
+
+.app-user-message-attachment-pill:hover {
+  background: color-mix(in srgb, var(--app-shell-card-bg-weak) 92%, transparent);
+  border-color: color-mix(in srgb, var(--app-shell-border) 86%, transparent);
+}
+
+.app-user-message-attachment-pill-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--app-shell-subtle);
+}
+
+.app-user-message-attachment-pill-content {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  gap: 4px;
+}
+
+.app-user-message-attachment-pill-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.app-user-message-attachment-pill-line {
+  flex-shrink: 0;
+  color: var(--app-shell-subtle);
+  line-height: 1.2;
+}
+
+.app-user-message-owner-badge {
+  display: inline-flex;
+  max-width: 320px;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid color-mix(in srgb, var(--app-shell-border) 62%, transparent);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--app-shell-main-surface) 92%, transparent);
+  color: var(--app-shell-muted);
+}
+
+.app-user-message-owner-badge-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  color: var(--app-shell-muted);
+}
+
+.app-user-message-owner-badge-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-user-message-parent-context {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-end;
+  border: 1px solid color-mix(in srgb, var(--app-shell-border) 56%, transparent);
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: color-mix(in srgb, var(--app-shell-card-bg) 78%, transparent);
+  color: var(--app-shell-muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .app-message-markdown {

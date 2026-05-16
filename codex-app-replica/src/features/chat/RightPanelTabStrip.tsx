@@ -3,8 +3,9 @@ import {
   BrowserTabIcon,
   ChevronDownIcon,
   CloseTabIcon,
+  ExpandPanelIcon,
   ForkedConversationIcon,
-  PlusIcon,
+  RestorePanelWidthIcon,
   ReviewTabIcon,
   WorkspaceFileIcon,
 } from "../../components/AppShellIcons";
@@ -13,24 +14,25 @@ import type { RightPanelTab } from "./rightPanelTabs";
 
 type Translate = (key: MessageKey, values?: Record<string, number | string>) => string;
 
-type RightPanelOpenTabMenuProps = {
-  canOfferBrowserTab: boolean;
-  canOfferReviewTab: boolean;
+type RightPanelQuickOpenActionsProps = {
+  activeStaticTabId: "browser" | "review" | null;
   onOpenBrowserTab: () => void;
   onOpenReviewTab: () => void;
   t: Translate;
-  triggerClassName?: string;
 };
 
-type RightPanelTabStripProps = RightPanelOpenTabMenuProps & {
+type RightPanelTabStripProps = RightPanelQuickOpenActionsProps & {
   activeTabId: string | null;
   onActivateTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
+  onReorderTabs: (activeTabId: string, overTabId: string) => void;
+  onToggleFullWidth: () => void;
   onTogglePanel: () => void;
   openTabs: RightPanelTab[];
+  rightPanelWidthMode: "full" | "regular";
 };
 
-type RightPanelCollapsedRailProps = RightPanelOpenTabMenuProps & {
+type RightPanelCollapsedRailProps = RightPanelQuickOpenActionsProps & {
   collapsedTabs: RightPanelTab[];
   onActivateTab: (tabId: string) => void;
 };
@@ -41,106 +43,26 @@ type RightPanelTabContextMenuState = {
   y: number;
 };
 
-export function RightPanelOpenTabMenu({
-  canOfferBrowserTab,
-  canOfferReviewTab,
-  onOpenBrowserTab,
-  onOpenReviewTab,
-  t,
-  triggerClassName = "app-topbar-button no-drag flex h-8 w-8 items-center justify-center rounded-md text-[12px]",
-}: RightPanelOpenTabMenuProps) {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  const canOpenAnotherTab = canOfferReviewTab || canOfferBrowserTab;
-
-  useEffect(() => {
-    if (!isMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (menuRef.current?.contains(event.target as Node)) {
-        return;
-      }
-      setIsMenuOpen(false);
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-    };
-  }, [isMenuOpen]);
-
-  if (!canOpenAnotherTab) {
-    return null;
-  }
-
-  return (
-    <div className="relative" ref={menuRef}>
-      <button
-        type="button"
-        title={t("thread.sidePanel.openTab")}
-        aria-label={t("thread.sidePanel.openTab")}
-        aria-expanded={isMenuOpen}
-        onClick={() => setIsMenuOpen((value) => !value)}
-        className={triggerClassName}
-      >
-        <PlusIcon className="h-4 w-4" />
-      </button>
-      {isMenuOpen ? (
-        <div className="app-card absolute top-9 right-0 z-10 min-w-[168px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
-          {canOfferReviewTab ? (
-            <button
-              type="button"
-              onClick={() => {
-                setIsMenuOpen(false);
-                onOpenReviewTab();
-              }}
-              className="app-nav-item-idle flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
-            >
-              <ReviewTabIcon className="h-4 w-4 shrink-0" />
-              <span>{t("thread.sidePanel.openReviewTab")}</span>
-            </button>
-          ) : null}
-          {canOfferBrowserTab ? (
-            <button
-              type="button"
-              onClick={() => {
-                setIsMenuOpen(false);
-                onOpenBrowserTab();
-              }}
-              className={[
-                "app-nav-item-idle flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]",
-                canOfferReviewTab ? "mt-1" : "",
-              ].join(" ")}
-            >
-              <BrowserTabIcon className="h-4 w-4 shrink-0" />
-              <span>{t("thread.sidePanel.openBrowserTab")}</span>
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 export function RightPanelCollapsedRail({
-  canOfferBrowserTab,
-  canOfferReviewTab,
+  activeStaticTabId,
   collapsedTabs,
   onActivateTab,
   onOpenBrowserTab,
   onOpenReviewTab,
   t,
 }: RightPanelCollapsedRailProps) {
-  const hasQuickActions = canOfferReviewTab || canOfferBrowserTab;
-
-  if (collapsedTabs.length === 0 && !hasQuickActions) {
-    return null;
-  }
-
   return (
     <aside className="app-right-panel-collapsed-rail flex w-[54px] shrink-0 flex-col items-center gap-2 px-2 py-3">
+      <RightPanelQuickOpenActions
+        activeStaticTabId={activeStaticTabId}
+        onOpenBrowserTab={onOpenBrowserTab}
+        onOpenReviewTab={onOpenReviewTab}
+        t={t}
+        buttonClassName="app-topbar-button flex h-8 w-8 items-center justify-center rounded-[10px]"
+      />
+      {collapsedTabs.length > 0 ? (
+        <div className="h-px w-6 bg-[var(--app-shell-border)]" />
+      ) : null}
       {collapsedTabs.map((tab) => {
         const title = getRightPanelTabTitle(tab, t);
         const tooltip = getRightPanelTabTooltip(tab, t);
@@ -156,44 +78,26 @@ export function RightPanelCollapsedRail({
           </IconActionButton>
         );
       })}
-      {collapsedTabs.length > 0 && hasQuickActions ? (
-        <div className="my-1 h-px w-6 bg-[var(--app-shell-border)]" />
-      ) : null}
-      <RightPanelQuickOpenActions
-        canOfferBrowserTab={canOfferBrowserTab}
-        canOfferReviewTab={canOfferReviewTab}
-        onOpenBrowserTab={onOpenBrowserTab}
-        onOpenReviewTab={onOpenReviewTab}
-        t={t}
-        buttonClassName="app-topbar-button flex h-8 w-8 items-center justify-center rounded-[10px]"
-      />
-      {hasQuickActions ? (
-        <RightPanelOpenTabMenu
-          canOfferBrowserTab={canOfferBrowserTab}
-          canOfferReviewTab={canOfferReviewTab}
-          onOpenBrowserTab={onOpenBrowserTab}
-          onOpenReviewTab={onOpenReviewTab}
-          t={t}
-          triggerClassName="app-topbar-button flex h-8 w-8 items-center justify-center rounded-[10px]"
-        />
-      ) : null}
     </aside>
   );
 }
 
 export function RightPanelTabStrip({
   activeTabId,
-  canOfferBrowserTab,
-  canOfferReviewTab,
+  activeStaticTabId,
   onActivateTab,
   onCloseTab,
+  onReorderTabs,
+  onToggleFullWidth,
   onTogglePanel,
   onOpenBrowserTab,
   onOpenReviewTab,
   openTabs,
+  rightPanelWidthMode,
   t,
 }: RightPanelTabStripProps) {
   const [contextMenuState, setContextMenuState] = useState<RightPanelTabContextMenuState | null>(null);
+  const [draggedTabId, setDraggedTabId] = useState<string | null>(null);
   const contextMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -225,16 +129,55 @@ export function RightPanelTabStrip({
 
   return (
     <div className="app-right-panel-tab-strip flex h-[var(--app-shell-toolbar-pane)] shrink-0 items-center gap-2 border-b border-[var(--app-shell-border)] px-2.5">
-      <div className="hide-scrollbar flex min-w-0 flex-1 items-center overflow-x-auto py-1">
+      <div
+        className="hide-scrollbar flex min-w-0 flex-1 items-center overflow-x-auto py-1"
+        onDragOver={(event) => {
+          if (draggedTabId === null) {
+            return;
+          }
+          event.preventDefault();
+        }}
+        onDrop={() => {
+          setDraggedTabId(null);
+        }}
+      >
         {openTabs.map((tab) => {
           const title = getRightPanelTabTitle(tab, t);
           const tooltip = getRightPanelTabTooltip(tab, t);
           const isActive = tab.id === activeTabId;
           const icon = renderRightPanelTabIcon(tab);
+          const isDragged = draggedTabId === tab.id;
 
           return (
             <div
               key={tab.id}
+              draggable={true}
+              role="tab"
+              aria-selected={isActive}
+              data-tab-id={tab.id}
+              onDragStart={(event) => {
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", tab.id);
+                setDraggedTabId(tab.id);
+              }}
+              onDragEnd={() => {
+                setDraggedTabId(null);
+              }}
+              onDragOver={(event) => {
+                if (draggedTabId === null || draggedTabId === tab.id) {
+                  return;
+                }
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+              }}
+              onDrop={(event) => {
+                if (draggedTabId === null || draggedTabId === tab.id) {
+                  return;
+                }
+                event.preventDefault();
+                onReorderTabs(draggedTabId, tab.id);
+                setDraggedTabId(null);
+              }}
               onContextMenu={(event) => {
                 event.preventDefault();
                 setContextMenuState({
@@ -244,16 +187,16 @@ export function RightPanelTabStrip({
                 });
               }}
               className={[
-                "group mr-1 flex h-7 max-w-40 shrink-0 items-center gap-1 rounded-[10px] px-1.5",
+                "group mr-1 flex h-7 max-w-40 shrink-0 items-center gap-1 rounded-[10px] px-1.5 transition-opacity",
                 isActive
                   ? "bg-[var(--app-shell-main-surface)] text-[var(--app-shell-text)] shadow-[var(--app-shell-card-shadow)]"
                   : "text-[var(--app-shell-muted)] hover:bg-[var(--app-shell-control-hover)]",
+                isDragged ? "opacity-50" : "opacity-100",
               ].join(" ")}
             >
               <button
                 type="button"
                 title={tooltip}
-                aria-pressed={isActive}
                 onMouseDown={(event) => {
                   if (event.button !== 1) {
                     return;
@@ -288,14 +231,35 @@ export function RightPanelTabStrip({
         })}
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        <RightPanelOpenTabMenu
-          canOfferBrowserTab={canOfferBrowserTab}
-          canOfferReviewTab={canOfferReviewTab}
+        <RightPanelQuickOpenActions
+          activeStaticTabId={activeStaticTabId}
           onOpenBrowserTab={onOpenBrowserTab}
           onOpenReviewTab={onOpenReviewTab}
           t={t}
-          triggerClassName="app-topbar-button no-drag flex h-7 w-7 items-center justify-center rounded-[8px] text-[12px]"
+          buttonClassName="app-topbar-button no-drag flex h-7 w-7 items-center justify-center rounded-[8px] text-[12px]"
         />
+        <button
+          type="button"
+          title={
+            rightPanelWidthMode === "full"
+              ? t("codex.rightPanel.restoreWidth")
+              : t("codex.rightPanel.expandFullWidth")
+          }
+          aria-label={
+            rightPanelWidthMode === "full"
+              ? t("codex.rightPanel.restoreWidth")
+              : t("codex.rightPanel.expandFullWidth")
+          }
+          aria-pressed={rightPanelWidthMode === "full"}
+          onClick={onToggleFullWidth}
+          className="app-topbar-button no-drag flex h-7 w-7 items-center justify-center rounded-[8px] text-[12px]"
+        >
+          {rightPanelWidthMode === "full" ? (
+            <RestorePanelWidthIcon className="h-4 w-4" />
+          ) : (
+            <ExpandPanelIcon className="h-4 w-4" />
+          )}
+        </button>
         <button
           type="button"
           title={t("thread.sidePanel.toggle")}
@@ -332,35 +296,40 @@ export function RightPanelTabStrip({
 }
 
 function RightPanelQuickOpenActions({
-  canOfferBrowserTab,
-  canOfferReviewTab,
+  activeStaticTabId,
   onOpenBrowserTab,
   onOpenReviewTab,
   t,
   buttonClassName,
-}: RightPanelOpenTabMenuProps & {
+}: RightPanelQuickOpenActionsProps & {
   buttonClassName: string;
 }) {
   return (
     <>
-      {canOfferReviewTab ? (
-        <IconActionButton
-          className={buttonClassName}
-          label={t("thread.sidePanel.openReviewTab")}
-          onClick={onOpenReviewTab}
-        >
-          <ReviewTabIcon className="h-4 w-4" />
-        </IconActionButton>
-      ) : null}
-      {canOfferBrowserTab ? (
-        <IconActionButton
-          className={buttonClassName}
-          label={t("thread.sidePanel.openBrowserTab")}
-          onClick={onOpenBrowserTab}
-        >
-          <BrowserTabIcon className="h-4 w-4" />
-        </IconActionButton>
-      ) : null}
+      <IconActionButton
+        className={joinClassNames(
+          buttonClassName,
+          activeStaticTabId === "review"
+            ? "bg-[var(--app-shell-control-hover)] text-[var(--app-shell-text)]"
+            : null,
+        )}
+        label={t("thread.sidePanel.openReviewTab")}
+        onClick={onOpenReviewTab}
+      >
+        <ReviewTabIcon className="h-4 w-4" />
+      </IconActionButton>
+      <IconActionButton
+        className={joinClassNames(
+          buttonClassName,
+          activeStaticTabId === "browser"
+            ? "bg-[var(--app-shell-control-hover)] text-[var(--app-shell-text)]"
+            : null,
+        )}
+        label={t("thread.sidePanel.openBrowserTab")}
+        onClick={onOpenBrowserTab}
+      >
+        <BrowserTabIcon className="h-4 w-4" />
+      </IconActionButton>
     </>
   );
 }
@@ -393,10 +362,6 @@ function IconActionButton({
 
 function getRightPanelTabTitle(tab: RightPanelTab, t: Translate) {
   switch (tab.kind) {
-    case "review":
-      return t("thread.sidePanel.diffTab");
-    case "browser":
-      return t("thread.sidePanel.browserTab");
     case "sideChat":
       return tab.title;
     case "workspaceFile":
@@ -412,12 +377,6 @@ function getRightPanelTabTooltip(tab: RightPanelTab, t: Translate) {
 }
 
 function renderRightPanelTabIcon(tab: RightPanelTab) {
-  if (tab.kind === "review") {
-    return <ReviewTabIcon className="h-4 w-4 shrink-0" />;
-  }
-  if (tab.kind === "browser") {
-    return <BrowserTabIcon className="h-4 w-4 shrink-0" />;
-  }
   if (tab.kind === "sideChat") {
     return <ForkedConversationIcon className="h-4 w-4 shrink-0" />;
   }
@@ -448,4 +407,8 @@ function getRightPanelContextMenuTop(clientY: number) {
     viewportPadding,
     Math.min(clientY, window.innerHeight - contextMenuHeight - viewportPadding),
   );
+}
+
+function joinClassNames(...values: Array<string | null>) {
+  return values.filter((value): value is string => value !== null && value.length > 0).join(" ");
 }

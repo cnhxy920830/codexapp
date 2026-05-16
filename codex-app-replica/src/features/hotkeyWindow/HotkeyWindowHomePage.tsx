@@ -30,11 +30,13 @@ import { HotkeyBranchSwitcherControl } from "./HotkeyBranchSwitcherControl";
 import { HotkeyWorktreeBranchControl } from "./HotkeyWorktreeBranchControl";
 import {
   buildTurnStartPermissionOverrides,
+  getVisibleHotkeyPermissionOptions,
   getHotkeyPermissionOptionValue,
   getNextAgentModeFromOption,
   isDefaultPermissionsMode,
   resolveHotkeyPermissionsState,
   type HotkeyPermissionAgentMode,
+  type HotkeyPermissionOptionValue,
 } from "./hotkeyPermissionsMode";
 import { useReplicaStatsigDefaultFeatures } from "../statsig/replicaStatsig";
 
@@ -43,12 +45,6 @@ const HOTKEY_WINDOW_HOME_MENU_BODY_ATTRIBUTE = "data-hotkey-window-home-composer
 const HOTKEY_WINDOW_PROJECTLESS_VALUE = "~";
 
 type HotkeyWindowHomeMode = "local" | "cloud" | "worktree";
-type HotkeyPermissionOptionValue =
-  | "default"
-  | "guardian-approvals"
-  | "full-access"
-  | "custom";
-
 export function HotkeyWindowHomePage({
   codexHome,
   composerEnterBehavior,
@@ -577,33 +573,52 @@ export function HotkeyWindowHomePage({
 
   const permissionOptions = useMemo(() => {
     const options: Array<{
+      disabled?: boolean;
       label: string;
+      title?: string;
       value: HotkeyPermissionOptionValue;
     }> = [];
 
-    if (permissionsState.canShowDefaultPermissions) {
-      options.push({
-        label: t("composer.permissionsDropdown.default.optionLabel"),
-        value: "default",
-      });
-    }
-    if (permissionsState.canShowGuardian) {
-      options.push({
-        label: t("composer.mode.agentMode.guardianApprovals"),
-        value: "guardian-approvals",
-      });
-    }
-    if (permissionsState.canShowFullAccess) {
-      options.push({
-        label: t("composer.permissionsDropdown.fullAccess.optionLabel"),
-        value: "full-access",
-      });
-    }
-    if (permissionsState.canShowCustom) {
-      options.push({
-        label: t("composer.permissionsDropdown.custom.optionLabel"),
-        value: "custom",
-      });
+    for (const option of getVisibleHotkeyPermissionOptions(permissionsState)) {
+      switch (option.value) {
+        case "default":
+          options.push({
+            disabled: option.disabled,
+            label: t("composer.permissionsDropdown.default.optionLabel"),
+            value: option.value,
+          });
+          break;
+        case "guardian-approvals":
+          options.push({
+            disabled: option.disabled,
+            label: t("composer.mode.agentMode.guardianApprovals"),
+            title: option.disabled
+              ? t("composer.permissionsDropdown.guardianApproval.disabled")
+              : t("composer.permissionsDropdown.guardianApproval.tooltip"),
+            value: option.value,
+          });
+          break;
+        case "full-access":
+          options.push({
+            disabled: option.disabled,
+            label: t("composer.permissionsDropdown.fullAccess.optionLabel"),
+            title: option.disabled
+              ? permissionsState.fullAccessDisabledReason === "global-default"
+                ? t("composer.permissionsDropdown.fullAccess.disabledGlobalDefault")
+                : t("composer.permissionsDropdown.fullAccess.disabled")
+              : t("composer.permissionsDropdown.agentMode.tooltip.fullAccess"),
+            value: option.value,
+          });
+          break;
+        case "custom":
+          options.push({
+            disabled: option.disabled,
+            label: t("composer.permissionsDropdown.custom.optionLabel"),
+            title: t("composer.permissionsDropdown.agentMode.tooltip.custom"),
+            value: option.value,
+          });
+          break;
+      }
     }
 
     return options;

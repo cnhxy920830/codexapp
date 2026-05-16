@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { MarkdownPreview } from "../../components/MarkdownPreview";
 import { ChevronDownIcon } from "../../components/AppShellIcons";
 import type { MessageKey } from "../../i18n/messages";
-import { renderMessageContent } from "./messageContent";
 
 const DEFAULT_COLLAPSED_LINE_COUNT = 20;
 const CLAMP_STYLE = {
@@ -14,12 +14,16 @@ type CollapseState = "collapsed" | "expanded" | "uncollapsible";
 
 type UserMessageCollapsibleContentProps = {
   text: string;
+  cwd?: string | null;
+  hostId?: string | null;
   collapsedLineCount?: number;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
 };
 
 export function UserMessageCollapsibleContent({
   text,
+  cwd = null,
+  hostId = null,
   collapsedLineCount = DEFAULT_COLLAPSED_LINE_COUNT,
   t,
 }: UserMessageCollapsibleContentProps) {
@@ -39,7 +43,14 @@ export function UserMessageCollapsibleContent({
   return (
     <div className="flex flex-col items-end gap-1">
       <div ref={setTextContentMeasurementRef} className="relative w-full min-w-0 text-[14px] leading-6">
-        <div style={clampStyle}>{renderMessageContent(text)}</div>
+        <MarkdownPreview
+          className="app-message-markdown"
+          cwd={cwd}
+          hostId={hostId}
+          style={clampStyle}
+          text={text}
+          variant="appShell"
+        />
       </div>
       {collapseState === "uncollapsible" ? null : (
         <button

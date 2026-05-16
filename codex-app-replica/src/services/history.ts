@@ -113,9 +113,14 @@ export type ThreadConversationMessage = {
   attachments?: Array<{
     label: string;
     path: string;
+    fsPath?: string | null;
+    startLine?: number | null;
+    endLine?: number | null;
   }>;
   comments?: ThreadConversationUserComment[];
+  goal?: boolean;
   referencesPriorConversation?: boolean;
+  pullRequestMergeTaskNumber?: number | null;
   reviewMode?: boolean;
   pullRequestFixMode?: boolean;
   autoResolveSync?: boolean;
@@ -309,9 +314,43 @@ export type ThreadConversation = {
   id: string;
   title: string;
   cwd: string;
+  hostId?: string | null;
+  latestTokenUsageInfo?: ThreadConversationTokenUsageInfo | null;
+  threadGoal?: ThreadConversationGoal | null;
   turns: ThreadConversationTurn[];
   turnTimings: ThreadConversationTurnTiming[];
   items: ThreadConversationItem[];
+};
+
+export type ThreadConversationGoalStatus =
+  | "active"
+  | "paused"
+  | "budgetLimited"
+  | "complete";
+
+export type ThreadConversationGoal = {
+  threadId: string;
+  objective: string;
+  status: ThreadConversationGoalStatus;
+  tokenBudget: number | null;
+  tokensUsed: number;
+  timeUsedSeconds: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ThreadConversationTokenUsageBreakdown = {
+  totalTokens: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+};
+
+export type ThreadConversationTokenUsageInfo = {
+  total: ThreadConversationTokenUsageBreakdown;
+  last: ThreadConversationTokenUsageBreakdown;
+  modelContextWindow: number | null;
 };
 
 export type ThreadConversationTurn = {
@@ -812,6 +851,21 @@ export type ThreadEvent =
       error: string | null;
     }
   | {
+      type: "threadTokenUsageUpdated";
+      threadId: string;
+      turnId: string;
+      tokenUsage: ThreadConversationTokenUsageInfo;
+    }
+  | {
+      type: "threadGoalUpdated";
+      threadId: string;
+      goal: ThreadConversationGoal;
+    }
+  | {
+      type: "threadGoalCleared";
+      threadId: string;
+    }
+  | {
       type: "commandApprovalRequested";
       requestId: JsonRpcId;
       threadId: string;
@@ -1070,11 +1124,42 @@ export async function setThreadName(params: { threadId: string; name: string | n
   return invoke<void>("set_thread_name", params);
 }
 
-export async function setThreadGoal(params: { threadId: string; objective: string }) {
+export async function setThreadGoal(params: {
+  threadId: string;
+  objective: string;
+  hostId?: string | null;
+}) {
   return invoke<void>("set-thread-goal", {
     params: {
+      hostId: params.hostId ?? null,
       threadId: params.threadId,
       objective: params.objective,
+    },
+  });
+}
+
+export async function setThreadGoalStatus(params: {
+  threadId: string;
+  status: ThreadConversationGoalStatus;
+  hostId?: string | null;
+}) {
+  return invoke<void>("set-thread-goal-status", {
+    params: {
+      hostId: params.hostId ?? null,
+      threadId: params.threadId,
+      status: params.status,
+    },
+  });
+}
+
+export async function clearThreadGoal(params: {
+  threadId: string;
+  hostId?: string | null;
+}) {
+  return invoke<void>("clear-thread-goal", {
+    params: {
+      hostId: params.hostId ?? null,
+      threadId: params.threadId,
     },
   });
 }
@@ -1235,6 +1320,8 @@ export function normalizeThreadConversation(thread: ThreadConversation): ThreadC
 
   return {
     ...thread,
+    latestTokenUsageInfo: normalizeThreadConversationTokenUsageInfo(thread.latestTokenUsageInfo),
+    threadGoal: normalizeThreadConversationGoal(thread.threadGoal),
     turns: Array.isArray(thread.turns)
       ? thread.turns.map((turn) => ({
           ...turn,
@@ -1695,6 +1782,30 @@ function parseFirstCommentLineNumber(lineRange: string | null) {
 }
 
 export function normalizeThreadEvent(event: ThreadEvent): ThreadEvent | null {
+  if (event.type === "threadGoalUpdated") {
+    const goal = normalizeThreadConversationGoal(event.goal);
+    if (goal === null) {
+      return null;
+    }
+
+    return {
+      ...event,
+      goal,
+    };
+  }
+
+  if (event.type === "threadTokenUsageUpdated") {
+    const tokenUsage = normalizeThreadConversationTokenUsageInfo(event.tokenUsage);
+    if (tokenUsage === null) {
+      return null;
+    }
+
+    return {
+      ...event,
+      tokenUsage,
+    };
+  }
+
   if (event.type !== "threadItemUpdated") {
     return event;
   }
@@ -1707,6 +1818,124 @@ export function normalizeThreadEvent(event: ThreadEvent): ThreadEvent | null {
   return {
     ...event,
     item: normalizedItem,
+  };
+}
+
+function normalizeThreadConversationGoal(
+  goal: ThreadConversationGoal | null | undefined,
+): ThreadConversationGoal | null {
+  if (!goal || typeof goal !== "object") {
+    return null;
+  }
+
+  const threadId = typeof goal.threadId === "string" ? goal.threadId.trim() : "";
+  const objective = typeof goal.objective === "string" ? goal.objective.trim() : "";
+  if (threadId.length === 0 || objective.length === 0) {
+    return null;
+  }
+
+  if (
+    goal.status !== "active" &&
+    goal.status !== "paused" &&
+    goal.status !== "budgetLimited" &&
+    goal.status !== "complete"
+  ) {
+    return null;
+  }
+
+  const tokensUsed =
+    typeof goal.tokensUsed === "number" && Number.isFinite(goal.tokensUsed)
+      ? goal.tokensUsed
+      : null;
+  const timeUsedSeconds =
+    typeof goal.timeUsedSeconds === "number" && Number.isFinite(goal.timeUsedSeconds)
+      ? goal.timeUsedSeconds
+      : null;
+  const createdAt =
+    typeof goal.createdAt === "number" && Number.isFinite(goal.createdAt)
+      ? goal.createdAt
+      : null;
+  const updatedAt =
+    typeof goal.updatedAt === "number" && Number.isFinite(goal.updatedAt)
+      ? goal.updatedAt
+      : null;
+
+  if (
+    tokensUsed === null ||
+    timeUsedSeconds === null ||
+    createdAt === null ||
+    updatedAt === null
+  ) {
+    return null;
+  }
+
+  return {
+    threadId,
+    objective,
+    status: goal.status,
+    tokenBudget:
+      typeof goal.tokenBudget === "number" && Number.isFinite(goal.tokenBudget)
+        ? goal.tokenBudget
+        : null,
+    tokensUsed,
+    timeUsedSeconds,
+    createdAt,
+    updatedAt,
+  };
+}
+
+function normalizeThreadConversationTokenUsageInfo(
+  info: ThreadConversationTokenUsageInfo | null | undefined,
+): ThreadConversationTokenUsageInfo | null {
+  if (!info || typeof info !== "object") {
+    return null;
+  }
+
+  const total = normalizeThreadConversationTokenUsageBreakdown(info.total);
+  const last = normalizeThreadConversationTokenUsageBreakdown(info.last);
+  if (total === null || last === null) {
+    return null;
+  }
+
+  return {
+    total,
+    last,
+    modelContextWindow:
+      typeof info.modelContextWindow === "number" && Number.isFinite(info.modelContextWindow)
+        ? info.modelContextWindow
+        : null,
+  };
+}
+
+function normalizeThreadConversationTokenUsageBreakdown(
+  breakdown: ThreadConversationTokenUsageBreakdown | null | undefined,
+): ThreadConversationTokenUsageBreakdown | null {
+  if (!breakdown || typeof breakdown !== "object") {
+    return null;
+  }
+
+  const { totalTokens, inputTokens, cachedInputTokens, outputTokens, reasoningOutputTokens } = breakdown;
+  if (
+    typeof totalTokens !== "number" ||
+    !Number.isFinite(totalTokens) ||
+    typeof inputTokens !== "number" ||
+    !Number.isFinite(inputTokens) ||
+    typeof cachedInputTokens !== "number" ||
+    !Number.isFinite(cachedInputTokens) ||
+    typeof outputTokens !== "number" ||
+    !Number.isFinite(outputTokens) ||
+    typeof reasoningOutputTokens !== "number" ||
+    !Number.isFinite(reasoningOutputTokens)
+  ) {
+    return null;
+  }
+
+  return {
+    totalTokens,
+    inputTokens,
+    cachedInputTokens,
+    outputTokens,
+    reasoningOutputTokens,
   };
 }
 

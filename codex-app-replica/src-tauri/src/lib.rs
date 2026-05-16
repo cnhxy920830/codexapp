@@ -139,12 +139,14 @@ use auth_bridge::respond_to_tool_request_user_input;
 use auth_bridge::rollback_thread;
 use auth_bridge::save_plugin_share;
 use auth_bridge::save_plugin_share_command;
+use auth_bridge::clear_thread_goal;
 use auth_bridge::send_add_credits_nudge_email;
 use auth_bridge::send_follow_up_message;
 use auth_bridge::set_experimental_feature_enablement;
 use auth_bridge::set_local_app_server_feature_enablement;
 use auth_bridge::set_personality;
 use auth_bridge::set_thread_goal;
+use auth_bridge::set_thread_goal_status;
 use auth_bridge::set_thread_name;
 use auth_bridge::shared_state;
 use auth_bridge::start_conversation;
@@ -651,6 +653,8 @@ pub fn run() {
             unarchive_conversation_command,
             set_thread_name,
             set_thread_goal,
+            set_thread_goal_status,
+            clear_thread_goal,
             start_turn,
             start_turn_with_input,
             send_follow_up_message,

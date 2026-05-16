@@ -5,6 +5,9 @@ import {
   createMarkdownMediaDataUrl,
   getMarkdownMediaKind,
   getMarkdownMediaReadTarget,
+  inferMarkdownMediaMimeType,
+  isAbsoluteFilesystemPath,
+  isLikelyLocalMarkdownMediaSource,
   normalizeMarkdownMediaSource,
 } from "./markdownPreviewMedia";
 
@@ -45,6 +48,24 @@ test("createMarkdownMediaDataUrl uses mimeType from the host response when provi
     }),
     "data:image/png;base64,YWJj",
   );
+});
+
+test("inferMarkdownMediaMimeType resolves local image path extensions", () => {
+  assert.equal(
+    inferMarkdownMediaMimeType("D:\\workspace\\images\\preview.webp"),
+    "image/webp",
+  );
+});
+
+test("isLikelyLocalMarkdownMediaSource accepts filesystem paths and rejects remote urls", () => {
+  assert.equal(isLikelyLocalMarkdownMediaSource("D:\\workspace\\images\\preview.png"), true);
+  assert.equal(isLikelyLocalMarkdownMediaSource("./images/preview.png"), true);
+  assert.equal(isLikelyLocalMarkdownMediaSource("https://example.com/preview.png"), false);
+});
+
+test("isAbsoluteFilesystemPath detects windows paths", () => {
+  assert.equal(isAbsoluteFilesystemPath("D:\\workspace\\images\\preview.png"), true);
+  assert.equal(isAbsoluteFilesystemPath("./images/preview.png"), false);
 });
 
 test("collectMarkdownImagePreviewGallery uses trigger order from the rendered markdown root", () => {

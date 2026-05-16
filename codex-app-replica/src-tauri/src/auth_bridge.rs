@@ -36,7 +36,10 @@ use crate::thread_history::replace_file_change_changes;
 use crate::thread_history::thread_item_id;
 use crate::thread_history::FileChangeSummary;
 use crate::thread_history::ThreadConversation;
+use crate::thread_history::ThreadConversationGoal;
 use crate::thread_history::ThreadConversationItem;
+use crate::thread_history::ThreadConversationTokenUsageBreakdown;
+use crate::thread_history::ThreadConversationTokenUsageInfo;
 use crate::thread_history::ThreadConversationTurn;
 use crate::thread_history::ThreadConversationTurnTiming;
 
@@ -390,6 +393,12 @@ struct ThreadListItem {
 #[serde(rename_all = "camelCase")]
 struct ThreadReadResponse {
     thread: ThreadReadThread,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadGoalGetResponse {
+    goal: Option<ThreadGoalPayload>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1184,6 +1193,19 @@ struct ThreadReadThread {
     turns: Vec<ThreadReadTurn>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadGoalPayload {
+    thread_id: String,
+    objective: String,
+    status: String,
+    token_budget: Option<i64>,
+    tokens_used: i64,
+    time_used_seconds: i64,
+    created_at: i64,
+    updated_at: i64,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ThreadReadTurn {
@@ -1263,6 +1285,8 @@ pub struct AuthBridgeState {
     observed_turn_completion_notify: Notify,
     turn_errors: Mutex<HashMap<String, Vec<TurnErrorCacheEntry>>>,
     forked_from_conversations: Mutex<HashMap<String, ForkedFromConversationCacheEntry>>,
+    latest_thread_token_usage: Mutex<HashMap<String, ThreadConversationTokenUsageInfo>>,
+    thread_goals: Mutex<HashMap<String, ThreadConversationGoal>>,
     external_agent_import_completed_generation: Mutex<u64>,
     external_agent_import_completed_notify: Notify,
 }
@@ -1273,6 +1297,19 @@ impl AuthBridgeState {
             .lock()
             .expect("current personality mutex poisoned")
             .clone()
+    }
+}
+
+fn map_thread_goal(goal: ThreadGoalPayload) -> ThreadConversationGoal {
+    ThreadConversationGoal {
+        thread_id: goal.thread_id,
+        objective: goal.objective,
+        status: goal.status,
+        token_budget: goal.token_budget,
+        tokens_used: goal.tokens_used,
+        time_used_seconds: goal.time_used_seconds,
+        created_at: goal.created_at,
+        updated_at: goal.updated_at,
     }
 }
 
@@ -1373,6 +1410,18 @@ pub enum ThreadEventPayload {
         turn_id: String,
         status: String,
         error: Option<String>,
+    },
+    ThreadTokenUsageUpdated {
+        thread_id: String,
+        turn_id: String,
+        token_usage: ThreadConversationTokenUsageInfo,
+    },
+    ThreadGoalUpdated {
+        thread_id: String,
+        goal: ThreadConversationGoal,
+    },
+    ThreadGoalCleared {
+        thread_id: String,
     },
     CommandApprovalRequested {
         request_id: JsonRpcId,
@@ -1545,10 +1594,38 @@ impl Default for AuthBridgeState {
             observed_turn_completion_notify: Notify::new(),
             turn_errors: Mutex::new(HashMap::new()),
             forked_from_conversations: Mutex::new(HashMap::new()),
+            latest_thread_token_usage: Mutex::new(HashMap::new()),
+            thread_goals: Mutex::new(HashMap::new()),
             external_agent_import_completed_generation: Mutex::new(0),
             external_agent_import_completed_notify: Notify::new(),
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadTokenUsageUpdatedNotification {
+    thread_id: String,
+    turn_id: String,
+    token_usage: ThreadTokenUsagePayload,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadTokenUsagePayload {
+    total: ThreadTokenUsageBreakdownPayload,
+    last: ThreadTokenUsageBreakdownPayload,
+    model_context_window: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadTokenUsageBreakdownPayload {
+    total_tokens: i64,
+    input_tokens: i64,
+    cached_input_tokens: i64,
+    output_tokens: i64,
+    reasoning_output_tokens: i64,
 }
 
 fn normalize_runtime_personality(personality: Option<&str>) -> Result<Option<String>, String> {
@@ -1725,6 +1802,8 @@ pub(crate) enum AppServerRequestKind {
     ThreadUnarchive,
     ThreadNameSet,
     ThreadGoalSet,
+    ThreadGoalGet,
+    ThreadGoalClear,
     ThreadRead,
     ThreadRollback,
     ReviewStart,
@@ -1737,8 +1816,24 @@ pub(crate) enum AppServerRequestKind {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SetThreadGoalParams {
+    pub host_id: Option<String>,
     pub thread_id: String,
     pub objective: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SetThreadGoalStatusParams {
+    pub host_id: Option<String>,
+    pub thread_id: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearThreadGoalParams {
+    pub host_id: Option<String>,
+    pub thread_id: String,
 }
 
 struct AppServerRequest {
@@ -3687,15 +3782,57 @@ pub async fn set_thread_name(
 
 #[tauri::command(rename = "set-thread-goal")]
 pub async fn set_thread_goal(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: SetThreadGoalParams,
 ) -> Result<(), String> {
-    send_request(
+    send_request_for_host(
+        &app,
         state.inner(),
+        params.host_id.as_deref(),
         AppServerRequestKind::ThreadGoalSet,
         serde_json::json!({
             "threadId": params.thread_id,
             "objective": params.objective,
+        }),
+    )
+    .await
+    .map(|_| ())
+}
+
+#[tauri::command(rename = "set-thread-goal-status")]
+pub async fn set_thread_goal_status(
+    app: AppHandle,
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: SetThreadGoalStatusParams,
+) -> Result<(), String> {
+    send_request_for_host(
+        &app,
+        state.inner(),
+        params.host_id.as_deref(),
+        AppServerRequestKind::ThreadGoalSet,
+        serde_json::json!({
+            "threadId": params.thread_id,
+            "status": params.status,
+        }),
+    )
+    .await
+    .map(|_| ())
+}
+
+#[tauri::command(rename = "clear-thread-goal")]
+pub async fn clear_thread_goal(
+    app: AppHandle,
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: ClearThreadGoalParams,
+) -> Result<(), String> {
+    send_request_for_host(
+        &app,
+        state.inner(),
+        params.host_id.as_deref(),
+        AppServerRequestKind::ThreadGoalClear,
+        serde_json::json!({
+            "threadId": params.thread_id,
         }),
     )
     .await
@@ -3952,7 +4089,8 @@ pub async fn read_thread(
     state: State<'_, Arc<AuthBridgeState>>,
     thread_id: String,
 ) -> Result<ThreadConversation, String> {
-    let value = send_request(
+    let thread_id_for_goal = thread_id.clone();
+    let thread_value = send_request(
         state.inner(),
         AppServerRequestKind::ThreadRead,
         serde_json::json!({
@@ -3961,10 +4099,27 @@ pub async fn read_thread(
         }),
     )
     .await?;
-    let response = serde_json::from_value::<ThreadReadResponse>(value)
+    let goal_value = send_request(
+        state.inner(),
+        AppServerRequestKind::ThreadGoalGet,
+        serde_json::json!({
+            "threadId": thread_id_for_goal,
+        }),
+    )
+    .await?;
+    let response = serde_json::from_value::<ThreadReadResponse>(thread_value)
         .map_err(|err| format!("failed to decode thread read response: {err}"))?;
+    let goal_response = serde_json::from_value::<ThreadGoalGetResponse>(goal_value)
+        .map_err(|err| format!("failed to decode thread goal response: {err}"))?;
     if let Some(latest_turn_id) = response.thread.turns.last().map(|turn| turn.id.clone()) {
         remember_latest_turn_id(state.inner(), &response.thread.id, &latest_turn_id);
+    }
+    if let Some(goal) = goal_response.goal.clone().map(map_thread_goal) {
+        if let Ok(mut thread_goals) = state.thread_goals.lock() {
+            thread_goals.insert(response.thread.id.clone(), goal);
+        }
+    } else if let Ok(mut thread_goals) = state.thread_goals.lock() {
+        thread_goals.remove(&response.thread.id);
     }
     map_thread_conversation(state.inner(), response.thread)
 }
@@ -3985,6 +4140,7 @@ pub async fn maybe_resume_conversation(
         .map(str::trim)
         .find(|value| !value.is_empty())
         .map(ToOwned::to_owned);
+    let thread_id_for_goal = params.conversation_id.clone();
     let value = send_request_for_host(
         &app,
         state.inner(),
@@ -3999,8 +4155,25 @@ pub async fn maybe_resume_conversation(
     .await?;
     let response = serde_json::from_value::<ThreadResumeResponse>(value)
         .map_err(|err| format!("failed to decode thread resume response: {err}"))?;
+    let goal_value = send_request(
+        state.inner(),
+        AppServerRequestKind::ThreadGoalGet,
+        serde_json::json!({
+            "threadId": thread_id_for_goal,
+        }),
+    )
+    .await?;
+    let goal_response = serde_json::from_value::<ThreadGoalGetResponse>(goal_value)
+        .map_err(|err| format!("failed to decode thread goal response: {err}"))?;
     if let Some(latest_turn_id) = response.thread.turns.last().map(|turn| turn.id.clone()) {
         remember_latest_turn_id(state.inner(), &response.thread.id, &latest_turn_id);
+    }
+    if let Some(goal) = goal_response.goal.clone().map(map_thread_goal) {
+        if let Ok(mut thread_goals) = state.thread_goals.lock() {
+            thread_goals.insert(response.thread.id.clone(), goal);
+        }
+    } else if let Ok(mut thread_goals) = state.thread_goals.lock() {
+        thread_goals.remove(&response.thread.id);
     }
     map_thread_conversation(state.inner(), response.thread)
 }
@@ -4059,6 +4232,18 @@ fn map_thread_conversation(
         .forked_from_conversations
         .lock()
         .map_err(|_| "failed to lock forked conversation cache".to_string())?;
+    let latest_token_usage_info = state
+        .latest_thread_token_usage
+        .lock()
+        .map_err(|_| "failed to lock thread token usage cache".to_string())?
+        .get(&thread.id)
+        .cloned();
+    let thread_goal = state
+        .thread_goals
+        .lock()
+        .map_err(|_| "failed to lock thread goal cache".to_string())?
+        .get(&thread.id)
+        .cloned();
     for turn in thread.turns.iter() {
         let status = turn
             .status
@@ -4225,6 +4410,8 @@ fn map_thread_conversation(
         id,
         title,
         cwd,
+        latest_token_usage_info,
+        thread_goal,
         turns,
         turn_timings,
         items,
@@ -4911,6 +5098,15 @@ async fn run_client(
                                 remember_latest_turn_from_notification(&state, &params);
                                 handle_turn_completed(&app, &state, params);
                             }
+                            "thread/tokenUsage/updated" => {
+                                handle_thread_token_usage_updated(&app, &state, params);
+                            }
+                            "thread/goal/updated" => {
+                                handle_thread_goal_updated(&app, &state, params);
+                            }
+                            "thread/goal/cleared" => {
+                                handle_thread_goal_cleared(&app, &state, params);
+                            }
                             "item/autoApprovalReview/started"
                             | "item/autoApprovalReview/completed" => {
                                 remember_latest_turn_from_notification(&state, &params);
@@ -5067,6 +5263,8 @@ fn request_method(kind: &AppServerRequestKind) -> &'static str {
         AppServerRequestKind::ThreadUnarchive => "thread/unarchive",
         AppServerRequestKind::ThreadNameSet => "thread/name/set",
         AppServerRequestKind::ThreadGoalSet => "thread/goal/set",
+        AppServerRequestKind::ThreadGoalGet => "thread/goal/get",
+        AppServerRequestKind::ThreadGoalClear => "thread/goal/clear",
         AppServerRequestKind::ThreadRead => "thread/read",
         AppServerRequestKind::ThreadRollback => "thread/rollback",
         AppServerRequestKind::ReviewStart => "review/start",
@@ -5463,6 +5661,94 @@ fn handle_turn_completed(app: &AppHandle, state: &Arc<AuthBridgeState>, params: 
             turn_id: turn_id.to_string(),
             status: status.to_string(),
             error,
+        },
+    );
+}
+
+fn map_thread_token_usage_breakdown(
+    payload: ThreadTokenUsageBreakdownPayload,
+) -> ThreadConversationTokenUsageBreakdown {
+    ThreadConversationTokenUsageBreakdown {
+        total_tokens: payload.total_tokens,
+        input_tokens: payload.input_tokens,
+        cached_input_tokens: payload.cached_input_tokens,
+        output_tokens: payload.output_tokens,
+        reasoning_output_tokens: payload.reasoning_output_tokens,
+    }
+}
+
+fn map_thread_token_usage_info(payload: ThreadTokenUsagePayload) -> ThreadConversationTokenUsageInfo {
+    ThreadConversationTokenUsageInfo {
+        total: map_thread_token_usage_breakdown(payload.total),
+        last: map_thread_token_usage_breakdown(payload.last),
+        model_context_window: payload.model_context_window,
+    }
+}
+
+fn handle_thread_token_usage_updated(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    params: serde_json::Value,
+) {
+    let Ok(notification) = serde_json::from_value::<ThreadTokenUsageUpdatedNotification>(params) else {
+        return;
+    };
+    let token_usage = map_thread_token_usage_info(notification.token_usage);
+    if let Ok(mut latest_thread_token_usage) = state.latest_thread_token_usage.lock() {
+        latest_thread_token_usage.insert(notification.thread_id.clone(), token_usage.clone());
+    }
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ThreadTokenUsageUpdated {
+            thread_id: notification.thread_id,
+            turn_id: notification.turn_id,
+            token_usage,
+        },
+    );
+}
+
+fn handle_thread_goal_updated(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    params: serde_json::Value,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let Some(goal_value) = params.get("goal").cloned() else {
+        return;
+    };
+    let Ok(goal_payload) = serde_json::from_value::<ThreadGoalPayload>(goal_value) else {
+        return;
+    };
+    let goal = map_thread_goal(goal_payload);
+    if let Ok(mut thread_goals) = state.thread_goals.lock() {
+        thread_goals.insert(thread_id.to_string(), goal.clone());
+    }
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ThreadGoalUpdated {
+            thread_id: thread_id.to_string(),
+            goal,
+        },
+    );
+}
+
+fn handle_thread_goal_cleared(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    params: serde_json::Value,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    if let Ok(mut thread_goals) = state.thread_goals.lock() {
+        thread_goals.remove(thread_id);
+    }
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ThreadGoalCleared {
+            thread_id: thread_id.to_string(),
         },
     );
 }

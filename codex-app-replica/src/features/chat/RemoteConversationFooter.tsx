@@ -5,10 +5,13 @@ import type { MessageKey } from "../../i18n/messages";
 import { openInBrowser } from "../../services/hostFiles";
 import type { RemoteTaskEnvironment } from "../../services/remoteTasks";
 import { RemoteDiffApplyControl } from "./RemoteDiffApplyControl";
+import { ScrollToBottomButton } from "./ScrollToBottomButton";
 
 type RemoteConversationFooterProps = {
+  aboveComposerContent?: ReactNode;
   composer: ReactNode;
   latestTurnPreview?: ReactNode;
+  onScrollToBottom?: (() => void) | null;
   onShowToast?: (toast: AppToast) => void;
   remoteApplyDiff: string | null;
   remoteApplyTurnId: string | null;
@@ -17,14 +20,17 @@ type RemoteConversationFooterProps = {
   showComposerFooter: boolean;
   showRemoteApplyFooter: boolean;
   showRemoteFailedFooter: boolean;
+  showScrollToBottomButton?: boolean;
   workspaceRoot: string | null;
   footerPendingRequest?: ReactNode;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
 };
 
 export function RemoteConversationFooter({
+  aboveComposerContent = null,
   composer,
   latestTurnPreview = null,
+  onScrollToBottom = null,
   onShowToast,
   remoteApplyDiff,
   remoteApplyTurnId,
@@ -33,39 +39,53 @@ export function RemoteConversationFooter({
   showComposerFooter,
   showRemoteApplyFooter,
   showRemoteFailedFooter,
+  showScrollToBottomButton = false,
   workspaceRoot,
   footerPendingRequest = null,
   t,
 }: RemoteConversationFooterProps) {
+  const scrollToBottomLabel = t("localConversation.scrollToBottomButton");
+
   return (
     <div className="px-5 pb-4 pt-2">
       <div className="mx-auto w-full max-w-[var(--thread-composer-max-width)]">
-        {latestTurnPreview ? <div className="mb-2">{latestTurnPreview}</div> : null}
-        {showRemoteApplyFooter ? (
-          <div className="mb-2">
-            <RemoteDiffApplyControl
-              variant="footer"
-              diff={remoteApplyDiff}
-              onShowToast={onShowToast}
-              taskEnvironment={remoteTaskEnvironment}
-              turnId={remoteApplyTurnId}
-              workspaceRoot={workspaceRoot}
+        <div className="flex flex-col gap-2" data-thread-find-composer="true">
+          <div className="relative h-0">
+            <ScrollToBottomButton
+              className="bottom-[calc(100%+24px)]"
+              label={scrollToBottomLabel}
+              onClick={() => onScrollToBottom?.()}
+              show={showScrollToBottomButton}
             />
           </div>
-        ) : null}
-        {showRemoteFailedFooter ? (
-          <div className="mb-2">
-            <RemoteFailedTurnBanner
-              onOpenTaskInBrowser={
-                remoteTaskId
-                  ? () => void openInBrowser(`https://chatgpt.com/codex/tasks/${encodeURIComponent(remoteTaskId)}`)
-                  : null
-              }
-              t={t}
-            />
-          </div>
-        ) : null}
-        {footerPendingRequest ? footerPendingRequest : showComposerFooter ? composer : null}
+          {latestTurnPreview ? <div>{latestTurnPreview}</div> : null}
+          {showRemoteApplyFooter ? (
+            <div>
+              <RemoteDiffApplyControl
+                variant="footer"
+                diff={remoteApplyDiff}
+                onShowToast={onShowToast}
+                taskEnvironment={remoteTaskEnvironment}
+                turnId={remoteApplyTurnId}
+                workspaceRoot={workspaceRoot}
+              />
+            </div>
+          ) : null}
+          {showRemoteFailedFooter ? (
+            <div>
+              <RemoteFailedTurnBanner
+                onOpenTaskInBrowser={
+                  remoteTaskId
+                    ? () => void openInBrowser(`https://chatgpt.com/codex/tasks/${encodeURIComponent(remoteTaskId)}`)
+                    : null
+                }
+                t={t}
+              />
+            </div>
+          ) : null}
+          {aboveComposerContent ? <div>{aboveComposerContent}</div> : null}
+          {footerPendingRequest ? footerPendingRequest : showComposerFooter ? composer : null}
+        </div>
       </div>
     </div>
   );

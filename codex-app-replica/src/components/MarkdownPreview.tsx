@@ -31,6 +31,7 @@ type MarkdownPreviewProps = {
   className?: string;
   cwd?: string | null;
   hostId?: string | null;
+  style?: CSSProperties;
   onExternalLinkOpenInBrowser?: MarkdownBrowserLinkHandlers["onExternalLinkOpenInBrowser"];
   onFileLinkOpen?: ((fileReference: MarkdownFileLinkReference) => void) | null;
   onFileLinkOpenInBrowser?: MarkdownBrowserLinkHandlers["onFileLinkOpenInBrowser"];
@@ -329,6 +330,7 @@ export function MarkdownPreview({
   className,
   cwd = null,
   hostId = null,
+  style,
   onExternalLinkOpenInBrowser = null,
   onFileLinkOpen = null,
   onFileLinkOpenInBrowser = null,
@@ -362,7 +364,7 @@ export function MarkdownPreview({
   );
 
   return (
-    <div ref={rootRef} className={[variantClasses.root, className ?? ""].join(" ").trim()}>
+    <div ref={rootRef} className={[variantClasses.root, className ?? ""].join(" ").trim()} style={style}>
       {renderBlocks(blocks, {
         allowBasicHtml,
         apps,

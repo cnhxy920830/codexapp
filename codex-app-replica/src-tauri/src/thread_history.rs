@@ -8,9 +8,42 @@ pub struct ThreadConversation {
     pub id: String,
     pub title: String,
     pub cwd: String,
+    pub latest_token_usage_info: Option<ThreadConversationTokenUsageInfo>,
+    pub thread_goal: Option<ThreadConversationGoal>,
     pub turns: Vec<ThreadConversationTurn>,
     pub turn_timings: Vec<ThreadConversationTurnTiming>,
     pub items: Vec<ThreadConversationItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadConversationGoal {
+    pub thread_id: String,
+    pub objective: String,
+    pub status: String,
+    pub token_budget: Option<i64>,
+    pub tokens_used: i64,
+    pub time_used_seconds: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadConversationTokenUsageBreakdown {
+    pub total_tokens: i64,
+    pub input_tokens: i64,
+    pub cached_input_tokens: i64,
+    pub output_tokens: i64,
+    pub reasoning_output_tokens: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadConversationTokenUsageInfo {
+    pub total: ThreadConversationTokenUsageBreakdown,
+    pub last: ThreadConversationTokenUsageBreakdown,
+    pub model_context_window: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -50,7 +83,9 @@ pub enum ThreadConversationItem {
         images: Vec<String>,
         attachments: Vec<ThreadConversationUserAttachment>,
         comments: Vec<ThreadConversationUserComment>,
+        goal: bool,
         references_prior_conversation: bool,
+        pull_request_merge_task_number: Option<u32>,
         review_mode: bool,
         pull_request_fix_mode: bool,
         auto_resolve_sync: bool,
@@ -376,6 +411,9 @@ pub struct ThreadConversationQuestionAndAnswer {
 pub struct ThreadConversationUserAttachment {
     pub label: String,
     pub path: String,
+    pub fs_path: Option<String>,
+    pub start_line: Option<i64>,
+    pub end_line: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -502,6 +540,7 @@ pub fn map_thread_item(
             let images = extract_user_images(content.as_slice());
             let attachments = extract_user_attachments(value.get("attachments"));
             let comments = extract_user_comments(value.get("commentAttachments"), &raw_text);
+            let goal = extract_bool(value.get("goal")).unwrap_or(false);
             let review_mode = has_user_message_heading(&raw_text, USER_MESSAGE_REVIEW_MODE_HEADING);
             let pull_request_fix_mode =
                 has_user_message_heading(&raw_text, USER_MESSAGE_PULL_REQUEST_FIX_HEADING);
@@ -510,6 +549,9 @@ pub fn map_thread_item(
             let references_prior_conversation = !review_mode
                 && !pull_request_fix_mode
                 && raw_text.contains(USER_MESSAGE_PRIOR_CONVERSATION_HEADING);
+            let pull_request_merge_task_number =
+                extract_u32(value.get("pullRequestMergeTaskNumber"))
+                    .or_else(|| extract_u32(value.get("pullRequestNumber")));
             let pull_request_check_count = extract_pull_request_check_count(&raw_text);
             if text.is_empty() && images.is_empty() && attachments.is_empty() && comments.is_empty()
             {
@@ -524,7 +566,9 @@ pub fn map_thread_item(
                 images,
                 attachments,
                 comments,
+                goal,
                 references_prior_conversation,
+                pull_request_merge_task_number,
                 review_mode,
                 pull_request_fix_mode,
                 auto_resolve_sync,
@@ -1612,14 +1656,26 @@ fn extract_user_attachments(
                         .map(str::trim)
                         .filter(|value| !value.is_empty())
                         .map(str::to_string)?;
-                    let path = item
+                    let fs_path = item
                         .get("fsPath")
-                        .or_else(|| item.get("path"))
                         .and_then(serde_json::Value::as_str)
                         .map(str::trim)
                         .filter(|value| !value.is_empty())
-                        .map(str::to_string)?;
-                    Some(ThreadConversationUserAttachment { label, path })
+                        .map(str::to_string);
+                    let path = fs_path.clone().or_else(|| {
+                        item.get("path")
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .map(str::to_string)
+                    })?;
+                    Some(ThreadConversationUserAttachment {
+                        label,
+                        path,
+                        fs_path,
+                        start_line: extract_integer(item.get("startLine")),
+                        end_line: extract_integer(item.get("endLine")),
+                    })
                 })
                 .collect::<Vec<_>>()
         })
@@ -2204,6 +2260,15 @@ fn extract_integer(value: Option<&serde_json::Value>) -> Option<i64> {
         .or_else(|| value.as_f64().map(|number| number.round() as i64))
 }
 
+fn extract_u32(value: Option<&serde_json::Value>) -> Option<u32> {
+    extract_integer(value)
+        .and_then(|number| u32::try_from(number).ok())
+}
+
+fn extract_bool(value: Option<&serde_json::Value>) -> Option<bool> {
+    value.and_then(serde_json::Value::as_bool)
+}
+
 fn extract_string_array(value: Option<&serde_json::Value>) -> Vec<String> {
     value
         .and_then(serde_json::Value::as_array)
@@ -2370,5 +2435,64 @@ fn normalize_todo_list_status(status: Option<&str>) -> String {
         Some("pending") => "pending".to_string(),
         Some(value) if !value.is_empty() => value.to_string(),
         _ => "pending".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{map_thread_item, ThreadConversationItem, ThreadConversationUserAttachment};
+
+    #[test]
+    fn maps_user_message_goal_merge_task_and_attachments() {
+        let value = serde_json::json!({
+            "type": "userMessage",
+            "id": "user-1",
+            "goal": true,
+            "pullRequestMergeTaskNumber": 123,
+            "content": [
+                {
+                    "type": "text",
+                    "text": "## My request for Codex:\nShip this fix."
+                }
+            ],
+            "attachments": [
+                {
+                    "label": "ThreadPageHeader.tsx (42-44)",
+                    "path": "src/features/chat/ThreadPageHeader.tsx",
+                    "fsPath": "D:\\workspace\\project\\src\\features\\chat\\ThreadPageHeader.tsx",
+                    "startLine": 42,
+                    "endLine": 44
+                }
+            ]
+        });
+
+        let item = map_thread_item("turn-1", &value, Some(true));
+
+        let Some(ThreadConversationItem::UserMessage {
+            goal,
+            pull_request_merge_task_number,
+            attachments,
+            text,
+            ..
+        }) = item
+        else {
+            panic!("expected user message item");
+        };
+
+        assert_eq!(goal, true);
+        assert_eq!(pull_request_merge_task_number, Some(123));
+        assert_eq!(text, "Ship this fix.");
+        assert_eq!(
+            attachments,
+            vec![ThreadConversationUserAttachment {
+                label: "ThreadPageHeader.tsx (42-44)".to_string(),
+                path: "D:\\workspace\\project\\src\\features\\chat\\ThreadPageHeader.tsx".to_string(),
+                fs_path: Some(
+                    "D:\\workspace\\project\\src\\features\\chat\\ThreadPageHeader.tsx".to_string()
+                ),
+                start_line: Some(42),
+                end_line: Some(44),
+            }]
+        );
     }
 }

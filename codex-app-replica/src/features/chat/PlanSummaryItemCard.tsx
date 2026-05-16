@@ -13,6 +13,8 @@ type Translate = (key: MessageKey, values?: Record<string, number | string>) => 
 
 type PlanSummaryItemCardProps = {
   conversationId: string;
+  conversationCwd?: string | null;
+  conversationHostId?: string | null;
   defaultCollapsed?: boolean;
   item: ThreadConversationPlan | PlanSummaryAssistantMessageItem;
   isWriting?: boolean;
@@ -30,6 +32,8 @@ const PLAN_DOWNLOAD_NAME = "PLAN.md";
 
 export function PlanSummaryItemCard({
   conversationId,
+  conversationCwd = null,
+  conversationHostId = null,
   defaultCollapsed,
   item,
   isWriting = false,
@@ -151,7 +155,12 @@ export function PlanSummaryItemCard({
       </div>
 
       <div className={isCollapsed ? "relative max-h-[320px] overflow-hidden" : undefined}>
-        <div className="px-4 pb-4">{renderMessageContent(summaryText)}</div>
+        <div className="px-4 pb-4">
+          {renderMessageContent(summaryText, {
+            cwd: conversationCwd,
+            hostId: conversationHostId,
+          })}
+        </div>
         {isCollapsed ? (
           <>
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[var(--app-shell-card-bg)] to-transparent" />

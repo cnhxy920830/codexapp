@@ -365,12 +365,21 @@ export type MessageKey =
   | "hotkeyWindow.home.taskMenu.permissions"
   | "composer.permissionsDropdown.default.label"
   | "composer.permissionsDropdown.default.optionLabel"
+  | "composer.permissionsDropdown.default.tooltip"
   | "composer.permissionsDropdown.guardianApproval.shortLabel"
+  | "composer.permissionsDropdown.guardianApproval.tooltip"
+  | "composer.permissionsDropdown.guardianApproval.disabled"
   | "composer.mode.agentMode.guardianApprovals"
   | "composer.permissionsDropdown.fullAccess.label"
   | "composer.permissionsDropdown.fullAccess.optionLabel"
+  | "composer.permissionsDropdown.agentMode.tooltip.fullAccess"
+  | "composer.permissionsDropdown.fullAccess.disabled"
+  | "composer.permissionsDropdown.fullAccess.disabledGlobalDefault"
   | "composer.permissionsDropdown.custom.label"
   | "composer.permissionsDropdown.custom.optionLabel"
+  | "composer.permissionsDropdown.agentMode.tooltip.custom"
+  | "composer.permissionsDropdown.disabled.requirements"
+  | "composer.permissionsDropdown.trigger.tooltip"
   | "composer.mode.agentMode.fullAccessConfirm.title"
   | "composer.mode.agentMode.fullAccessConfirm.description"
   | "composer.mode.agentMode.fullAccessConfirm.caution"
@@ -412,6 +421,47 @@ export type MessageKey =
   | "composer.footer.branchSwitch.commitDialog.messagePlaceholder"
   | "composer.footer.branchSwitch.commitDialog.cancel"
   | "composer.footer.branchSwitch.commitDialog.commit"
+  | "composer.contextWindowUsageLabel"
+  | "composer.contextWindowUsageStatusFull"
+  | "composer.contextWindowUsageStatusLeft"
+  | "composer.contextWindowUsageTooltip"
+  | "composer.contextWindow.usagePercent"
+  | "composer.contextWindow.autoCompactionTooltipLine1"
+  | "composer.pendingThreadGoal.summary"
+  | "composer.pendingThreadGoal.editTooltip"
+  | "composer.pendingThreadGoal.edit"
+  | "composer.pendingThreadGoal.clearTooltip"
+  | "composer.pendingThreadGoal.clear"
+  | "composer.threadGoalEditor.editTitle"
+  | "composer.threadGoalEditor.createTitle"
+  | "composer.threadGoalEditor.objectiveAriaLabel"
+  | "composer.threadGoalEditor.objectivePlaceholder"
+  | "composer.threadGoalEditor.useDraft"
+  | "composer.threadGoalEditor.cancel"
+  | "composer.threadGoalEditor.save"
+  | "composer.threadGoalEditor.set"
+  | "composer.threadGoal.editTooltip"
+  | "composer.threadGoal.edit"
+  | "composer.threadGoal.pauseTooltip"
+  | "composer.threadGoal.pause"
+  | "composer.threadGoal.resumeTooltip"
+  | "composer.threadGoal.resume"
+  | "composer.threadGoal.clearTooltip"
+  | "composer.threadGoal.clear"
+  | "composer.threadGoal.expand"
+  | "composer.threadGoal.collapse"
+  | "composer.threadGoal.summary.active"
+  | "composer.threadGoal.summary.paused"
+  | "composer.threadGoal.summary.budgetLimited"
+  | "composer.threadGoal.summary.complete"
+  | "composer.threadGoal.status.active"
+  | "composer.threadGoal.status.paused"
+  | "composer.threadGoal.status.budgetLimited"
+  | "composer.threadGoal.status.complete"
+  | "composer.threadGoal.tokenUsage"
+  | "composer.threadGoal.setError"
+  | "composer.threadGoal.statusUpdateError"
+  | "composer.threadGoal.clearError"
   | "localConversation.sync.modal.noChanges"
   | "review.commit.form.title"
   | "review.commit.form.commitTo"
@@ -487,12 +537,14 @@ export type MessageKey =
   | "app.chat.userMessage.editPlaceholder"
   | "app.chat.userMessage.cancelEditMessage"
   | "app.chat.userMessage.sendEditedMessage"
+  | "app.chat.userMessage.goal"
   | "app.chat.userMessage.showLess"
   | "app.chat.userMessage.showMore"
   | "app.chat.userMessage.implementPlan"
   | "app.chat.userMessage.noContent"
   | "app.chat.userMessage.pullRequestCheckCount"
   | "app.chat.userMessage.pullRequestFixMode"
+  | "app.chat.userMessage.pullRequestMergeTask"
   | "app.chat.userMessage.referencesPriorConversation"
   | "app.chat.userMessage.reviewMode"
   | "app.chat.latestTurnPreview.items"
@@ -556,6 +608,8 @@ export type MessageKey =
   | "codex.remoteConversation.userImageAttachment"
   | "codex.remoteConversation.closeImagePreview"
   | "codex.remoteConversation.loadingImage"
+  | "codex.localConversation.userImageAttachment"
+  | "codex.localConversation.closeImagePreview"
   | "imagePreviewDialog.label"
   | "imagePreviewDialog.close"
   | "imagePreviewDialog.download"
@@ -678,6 +732,7 @@ export type MessageKey =
   | "localConversation.autoReviewInterruptionWarning.nextSteps"
   | "localConversation.header.heartbeatAutomationNextRun"
   | "localConversation.header.openHeartbeatAutomation"
+  | "localConversation.scrollToBottomButton"
   | "composer.latestTurn"
   | "composer.latestTurn.working"
   | "localConversation.automaticApprovalReview.summary.inProgress"
@@ -693,12 +748,20 @@ export type MessageKey =
   | "localConversation.modelChanged"
   | "localConversation.modelChanged.warning.line1"
   | "localConversation.modelChanged.warning.line2"
+  | "localConversation.parentThread"
   | "localConversation.forkedFromConversation"
   | "localConversation.modelRerouted"
   | "localConversation.modelRerouted.warning.line1"
   | "localConversation.modelRerouted.warning.line2"
   | "codex.review.noDiff"
   | "codex.review.noDiff.baseDescription"
+  | "codex.review.noDiff.orNoLongerAvailable"
+  | "codex.review.noDiff.gitRepoRequired.title"
+  | "codex.review.noDiff.gitRepoRequired.description"
+  | "codex.review.noDiff.gitInit.success"
+  | "codex.review.noDiff.gitInit.createRepository"
+  | "codex.review.noDiff.gitInit.creating"
+  | "codex.review.noDiff.gitInit.error"
   | "codex.review.header.moreOptions"
   | "codex.review.wrap.enable"
   | "codex.review.wrap.disable"
@@ -740,6 +803,8 @@ export type MessageKey =
   | "thread.sidePanel.openReviewTab"
   | "thread.sidePanel.openTab"
   | "thread.sidePanel.toggle"
+  | "codex.rightPanel.expandFullWidth"
+  | "codex.rightPanel.restoreWidth"
   | "codex.tabs.closeNamed"
   | "codex.tabs.contextMenu.close"
   | "thread.fileCommandMenu.filesGroup"
@@ -2673,12 +2738,28 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "hotkeyWindow.home.taskMenu.permissions": "Permissions",
     "composer.permissionsDropdown.default.label": "Default permissions",
     "composer.permissionsDropdown.default.optionLabel": "Default permissions",
+    "composer.permissionsDropdown.default.tooltip": "Codex automatically runs commands in a sandbox",
     "composer.permissionsDropdown.guardianApproval.shortLabel": "Auto-review",
+    "composer.permissionsDropdown.guardianApproval.tooltip":
+      "Codex run commands in a sandbox and uses Auto-review for elevated requests. <link>Learn more</link>",
+    "composer.permissionsDropdown.guardianApproval.disabled":
+      "Auto-review requires default sandboxed permissions to be available in this workspace",
     "composer.mode.agentMode.guardianApprovals": "Auto-review",
     "composer.permissionsDropdown.fullAccess.label": "Full access",
     "composer.permissionsDropdown.fullAccess.optionLabel": "Full access",
+    "composer.permissionsDropdown.agentMode.tooltip.fullAccess":
+      "Codex has full access over your computer (elevated risk)",
+    "composer.permissionsDropdown.fullAccess.disabled":
+      "Full access is disabled by requirements.toml",
+    "composer.permissionsDropdown.fullAccess.disabledGlobalDefault":
+      "Full access cannot be used as the global default",
     "composer.permissionsDropdown.custom.label": "Custom",
     "composer.permissionsDropdown.custom.optionLabel": "Custom (config.toml)",
+    "composer.permissionsDropdown.agentMode.tooltip.custom":
+      "Codex uses the permission defined in config.toml",
+    "composer.permissionsDropdown.disabled.requirements":
+      "Permissions are locked by requirements.toml",
+    "composer.permissionsDropdown.trigger.tooltip": "Change permissions",
     "composer.mode.agentMode.fullAccessConfirm.title": "Enable full access?",
     "composer.mode.agentMode.fullAccessConfirm.description":
       "When Codex runs with full access, it can edit any file on your computer and run commands with network, without your approval",
@@ -2729,6 +2810,47 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "composer.footer.branchSwitch.commitDialog.messagePlaceholder": "Describe the current changes",
     "composer.footer.branchSwitch.commitDialog.cancel": "Cancel",
     "composer.footer.branchSwitch.commitDialog.commit": "Commit changes",
+    "composer.contextWindowUsageLabel": "Context window:",
+    "composer.contextWindowUsageStatusFull": "{usage}% full",
+    "composer.contextWindowUsageStatusLeft": "{usage}% used ({remaining}% left)",
+    "composer.contextWindowUsageTooltip": "{usedTokens}k / {contextWindow}k tokens used",
+    "composer.contextWindow.usagePercent": "{usage}%",
+    "composer.contextWindow.autoCompactionTooltipLine1": "Codex automatically compacts its context",
+    "composer.pendingThreadGoal.summary": "Goal",
+    "composer.pendingThreadGoal.editTooltip": "Edit goal",
+    "composer.pendingThreadGoal.edit": "Edit goal",
+    "composer.pendingThreadGoal.clearTooltip": "Clear goal",
+    "composer.pendingThreadGoal.clear": "Clear goal",
+    "composer.threadGoalEditor.editTitle": "Edit goal",
+    "composer.threadGoalEditor.createTitle": "Set goal",
+    "composer.threadGoalEditor.objectiveAriaLabel": "Goal objective",
+    "composer.threadGoalEditor.objectivePlaceholder": "What should Codex keep working toward?",
+    "composer.threadGoalEditor.useDraft": "Use draft",
+    "composer.threadGoalEditor.cancel": "Cancel",
+    "composer.threadGoalEditor.save": "Save goal",
+    "composer.threadGoalEditor.set": "Set goal",
+    "composer.threadGoal.editTooltip": "Edit goal",
+    "composer.threadGoal.edit": "Edit goal",
+    "composer.threadGoal.pauseTooltip": "Pause goal",
+    "composer.threadGoal.pause": "Pause goal",
+    "composer.threadGoal.resumeTooltip": "Resume goal",
+    "composer.threadGoal.resume": "Resume goal",
+    "composer.threadGoal.clearTooltip": "Clear goal",
+    "composer.threadGoal.clear": "Clear goal",
+    "composer.threadGoal.expand": "Expand goal details",
+    "composer.threadGoal.collapse": "Collapse goal details",
+    "composer.threadGoal.summary.active": "Goal",
+    "composer.threadGoal.summary.paused": "Goal paused",
+    "composer.threadGoal.summary.budgetLimited": "Goal limited",
+    "composer.threadGoal.summary.complete": "Goal complete",
+    "composer.threadGoal.status.active": "Active",
+    "composer.threadGoal.status.paused": "Paused",
+    "composer.threadGoal.status.budgetLimited": "Limited by budget",
+    "composer.threadGoal.status.complete": "Complete",
+    "composer.threadGoal.tokenUsage": "{used} / {budget} tokens",
+    "composer.threadGoal.setError": "Failed to set goal",
+    "composer.threadGoal.statusUpdateError": "Failed to update goal",
+    "composer.threadGoal.clearError": "Failed to clear goal",
     "localConversation.sync.modal.noChanges": "No changes",
     "review.commit.form.title": "Commit your changes",
     "review.commit.form.commitTo": "Branch",
@@ -2804,12 +2926,14 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.userMessage.editPlaceholder": "Edit message",
     "app.chat.userMessage.cancelEditMessage": "Cancel",
     "app.chat.userMessage.sendEditedMessage": "Send",
+    "app.chat.userMessage.goal": "Goal",
     "app.chat.userMessage.showLess": "Show less",
     "app.chat.userMessage.showMore": "Show more",
     "app.chat.userMessage.implementPlan": "Implement plan",
     "app.chat.userMessage.noContent": "(No content)",
     "app.chat.userMessage.pullRequestCheckCount": "{count, plural, one {# CI test} other {# CI tests}}",
     "app.chat.userMessage.pullRequestFixMode": "PR fix",
+    "app.chat.userMessage.pullRequestMergeTask": "PR #{number}",
     "app.chat.userMessage.referencesPriorConversation": "References prior conversation",
     "app.chat.userMessage.reviewMode": "Review mode",
     "app.chat.latestTurnPreview.items": "{count, plural, one {# item} other {# items}}",
@@ -2833,6 +2957,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.mcpElicitation.required": "Required",
     "app.chat.mcpElicitation.booleanEnabled": "Enable this option",
     "app.chat.mcpElicitation.unsupportedField": "This field type is not fully supported yet. The raw schema is shown for review.",
+    "localConversation.scrollToBottomButton": "Scroll to bottom",
     "composer.latestTurn": "Latest turn",
     "composer.latestTurn.working": "Working",
     "composer.reviewMode.title": "Code review",
@@ -2875,6 +3000,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.remoteConversation.userImageAttachment": "User attachment",
     "codex.remoteConversation.closeImagePreview": "Close image preview",
     "codex.remoteConversation.loadingImage": "Loading image",
+    "codex.localConversation.userImageAttachment": "User attachment",
+    "codex.localConversation.closeImagePreview": "Close image preview",
     "imagePreviewDialog.label": "Image preview",
     "imagePreviewDialog.close": "Close image preview",
     "imagePreviewDialog.download": "Download image",
@@ -3020,6 +3147,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "localConversation.modelChanged.warning.line1":
       "Changing models mid-conversation will degrade performance.",
     "localConversation.modelChanged.warning.line2": "Context may automatically compact.",
+    "localConversation.parentThread": "Parent chat",
     "localConversation.forkedFromConversation": "Forked from conversation",
     "localConversation.modelRerouted": "Your request was routed to {toModel}.",
     "localConversation.modelRerouted.warning.line1":
@@ -3028,6 +3156,13 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
       "Think this is a mistake? Request a review at <link>chatgpt.com/cyber</link> or report via /feedback",
     "codex.review.noDiff": "No file changes yet",
     "codex.review.noDiff.baseDescription": "Changes in this project will appear here.",
+    "codex.review.noDiff.orNoLongerAvailable": "The latest diffs are no longer available.",
+    "codex.review.noDiff.gitRepoRequired.title": "Create a Git repository",
+    "codex.review.noDiff.gitRepoRequired.description": "Track, review, and undo changes in this project.",
+    "codex.review.noDiff.gitInit.success": "Git repository created",
+    "codex.review.noDiff.gitInit.createRepository": "Create git repository",
+    "codex.review.noDiff.gitInit.creating": "Creating…",
+    "codex.review.noDiff.gitInit.error": "Git init failed: {message}",
     "codex.review.header.moreOptions": "Review options",
     "codex.review.wrap.enable": "Enable word wrap",
     "codex.review.wrap.disable": "Disable word wrap",
@@ -3069,6 +3204,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "thread.sidePanel.openReviewTab": "Review",
     "thread.sidePanel.openTab": "Open side panel tab",
     "thread.sidePanel.toggle": "Toggle side panel",
+    "codex.rightPanel.expandFullWidth": "Expand panel",
+    "codex.rightPanel.restoreWidth": "Restore panel width",
     "codex.tabs.closeNamed": "Close {title} tab",
     "codex.tabs.contextMenu.close": "Close tab",
     "thread.fileCommandMenu.filesGroup": "Files",
@@ -3230,7 +3367,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "threadHeader.openInNewWindow": "Open in new window",
     "threadHeader.openSideChat": "Open side chat",
     "threadHeader.openSideChatError": "Failed to open side chat",
-    "threadHeader.moreActions": "Thread actions",
+    "threadHeader.moreActions": "Chat actions",
     "sidebarElectron.markThreadUnread": "Mark as unread",
     "sidebarElectron.pinThread": "Pin chat",
     "sidebarElectron.unpinThread": "Unpin chat",
@@ -5063,12 +5200,28 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "hotkeyWindow.home.taskMenu.permissions": "权限",
     "composer.permissionsDropdown.default.label": "默认权限",
     "composer.permissionsDropdown.default.optionLabel": "默认权限",
+    "composer.permissionsDropdown.default.tooltip": "Codex 在沙盒中自动运行命令",
     "composer.permissionsDropdown.guardianApproval.shortLabel": "自动审核",
+    "composer.permissionsDropdown.guardianApproval.tooltip":
+      "Codex 将在沙盒中运行命令，并对需升级处理的请求进行自动审查。<link>了解更多</link>",
+    "composer.permissionsDropdown.guardianApproval.disabled":
+      "要使用自动审查，此工作空间必须提供默认沙盒权限",
     "composer.mode.agentMode.guardianApprovals": "自动审核",
     "composer.permissionsDropdown.fullAccess.label": "完全访问权限",
     "composer.permissionsDropdown.fullAccess.optionLabel": "完全访问权限",
+    "composer.permissionsDropdown.agentMode.tooltip.fullAccess":
+      "Codex 对你的计算机拥有完全访问权限（风险升高）",
+    "composer.permissionsDropdown.fullAccess.disabled":
+      "完整访问权限已被 requirements.toml 禁用",
+    "composer.permissionsDropdown.fullAccess.disabledGlobalDefault":
+      "完全访问权限不能设为全局默认权限",
     "composer.permissionsDropdown.custom.label": "自定义",
     "composer.permissionsDropdown.custom.optionLabel": "自定义（config.toml）",
+    "composer.permissionsDropdown.agentMode.tooltip.custom":
+      "Codex 使用 config.toml 中定义的权限",
+    "composer.permissionsDropdown.disabled.requirements":
+      "权限被 requirements.toml 锁定",
+    "composer.permissionsDropdown.trigger.tooltip": "更改权限",
     "composer.mode.agentMode.fullAccessConfirm.title": "启用完全访问权限？",
     "composer.mode.agentMode.fullAccessConfirm.description":
       "当 Codex 以完全访问权限运行时，无需你批准，即可编辑你的电脑上的任何文件并运行联网命令",
@@ -5119,6 +5272,47 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "composer.footer.branchSwitch.commitDialog.messagePlaceholder": "描述当前更改",
     "composer.footer.branchSwitch.commitDialog.cancel": "取消",
     "composer.footer.branchSwitch.commitDialog.commit": "提交更改",
+    "composer.contextWindowUsageLabel": "上下文窗口：",
+    "composer.contextWindowUsageStatusFull": "已占满 {usage}%",
+    "composer.contextWindowUsageStatusLeft": "已使用 {usage}%（剩余 {remaining}%）",
+    "composer.contextWindowUsageTooltip": "已使用 {usedTokens}k / {contextWindow}k tokens",
+    "composer.contextWindow.usagePercent": "{usage}%",
+    "composer.contextWindow.autoCompactionTooltipLine1": "Codex 会在上下文接近满载时自动压缩上下文",
+    "composer.pendingThreadGoal.summary": "目标",
+    "composer.pendingThreadGoal.editTooltip": "编辑目标",
+    "composer.pendingThreadGoal.edit": "编辑目标",
+    "composer.pendingThreadGoal.clearTooltip": "清除目标",
+    "composer.pendingThreadGoal.clear": "清除目标",
+    "composer.threadGoalEditor.editTitle": "编辑目标",
+    "composer.threadGoalEditor.createTitle": "设置目标",
+    "composer.threadGoalEditor.objectiveAriaLabel": "目标内容",
+    "composer.threadGoalEditor.objectivePlaceholder": "Codex 应持续朝什么目标推进？",
+    "composer.threadGoalEditor.useDraft": "使用当前草稿",
+    "composer.threadGoalEditor.cancel": "取消",
+    "composer.threadGoalEditor.save": "保存目标",
+    "composer.threadGoalEditor.set": "设置目标",
+    "composer.threadGoal.editTooltip": "编辑目标",
+    "composer.threadGoal.edit": "编辑目标",
+    "composer.threadGoal.pauseTooltip": "暂停目标",
+    "composer.threadGoal.pause": "暂停目标",
+    "composer.threadGoal.resumeTooltip": "恢复目标",
+    "composer.threadGoal.resume": "恢复目标",
+    "composer.threadGoal.clearTooltip": "清除目标",
+    "composer.threadGoal.clear": "清除目标",
+    "composer.threadGoal.expand": "展开目标详情",
+    "composer.threadGoal.collapse": "收起目标详情",
+    "composer.threadGoal.summary.active": "目标",
+    "composer.threadGoal.summary.paused": "目标已暂停",
+    "composer.threadGoal.summary.budgetLimited": "目标受预算限制",
+    "composer.threadGoal.summary.complete": "目标已完成",
+    "composer.threadGoal.status.active": "进行中",
+    "composer.threadGoal.status.paused": "已暂停",
+    "composer.threadGoal.status.budgetLimited": "受预算限制",
+    "composer.threadGoal.status.complete": "已完成",
+    "composer.threadGoal.tokenUsage": "{used} / {budget} tokens",
+    "composer.threadGoal.setError": "设置目标失败",
+    "composer.threadGoal.statusUpdateError": "更新目标失败",
+    "composer.threadGoal.clearError": "清除目标失败",
     "localConversation.sync.modal.noChanges": "没有更改",
     "review.commit.form.title": "提交你的更改",
     "review.commit.form.commitTo": "分支",
@@ -5194,12 +5388,14 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.userMessage.editPlaceholder": "编辑消息",
     "app.chat.userMessage.cancelEditMessage": "取消",
     "app.chat.userMessage.sendEditedMessage": "发送",
+    "app.chat.userMessage.goal": "目标",
     "app.chat.userMessage.showLess": "收起",
     "app.chat.userMessage.showMore": "显示更多",
     "app.chat.userMessage.implementPlan": "实现计划",
     "app.chat.userMessage.noContent": "（无内容）",
     "app.chat.userMessage.pullRequestCheckCount": "{count, plural, one {# 个 CI 测试} other {# 个 CI 测试}}",
     "app.chat.userMessage.pullRequestFixMode": "PR 修复",
+    "app.chat.userMessage.pullRequestMergeTask": "PR #{number}",
     "app.chat.userMessage.referencesPriorConversation": "参考历史对话",
     "app.chat.userMessage.reviewMode": "审查模式",
     "app.chat.latestTurnPreview.items": "{count, plural, one {# 个项目} other {# 个项目}}",
@@ -5223,6 +5419,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.mcpElicitation.required": "必填",
     "app.chat.mcpElicitation.booleanEnabled": "启用此选项",
     "app.chat.mcpElicitation.unsupportedField": "该字段类型尚未完整支持，当前展示原始 schema 供审查。",
+    "localConversation.scrollToBottomButton": "滚动到底部",
     "composer.latestTurn": "最新一轮",
     "composer.latestTurn.working": "处理中",
     "composer.reviewMode.title": "代码审查",
@@ -5265,6 +5462,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.remoteConversation.userImageAttachment": "用户附件",
     "codex.remoteConversation.closeImagePreview": "关闭图片预览",
     "codex.remoteConversation.loadingImage": "正在加载图片",
+    "codex.localConversation.userImageAttachment": "用户附件",
+    "codex.localConversation.closeImagePreview": "关闭图片预览",
     "imagePreviewDialog.label": "图片预览",
     "imagePreviewDialog.close": "关闭图片预览",
     "imagePreviewDialog.download": "下载图片",
@@ -5409,6 +5608,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "localConversation.modelChanged": "模型已从 {fromModel} 更改为 {toModel}。",
     "localConversation.modelChanged.warning.line1": "在对话中途切换模型会降低性能表现。",
     "localConversation.modelChanged.warning.line2": "背景信息可能会自动压缩。",
+    "localConversation.parentThread": "父聊天",
     "localConversation.forkedFromConversation": "从对话中派生",
     "localConversation.modelRerouted": "你的请求已转发至 {toModel}。",
     "localConversation.modelRerouted.warning.line1": "请注意，你的请求已被转发，以降低网络滥用风险。",
@@ -5416,6 +5616,13 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
       "认为这是误操作？可通过 <link>chatgpt.com/cyber 申请复核</link>或通过 /feedback 报告",
     "codex.review.noDiff": "尚无文件更改",
     "codex.review.noDiff.baseDescription": "此项目中的更改将显示在此处。",
+    "codex.review.noDiff.orNoLongerAvailable": "最新差异已不可用。",
+    "codex.review.noDiff.gitRepoRequired.title": "创建 Git 仓库",
+    "codex.review.noDiff.gitRepoRequired.description": "在此项目中跟踪、审查并撤销更改。",
+    "codex.review.noDiff.gitInit.success": "Git 仓库已创建",
+    "codex.review.noDiff.gitInit.createRepository": "创建 git 仓库",
+    "codex.review.noDiff.gitInit.creating": "正在创建…",
+    "codex.review.noDiff.gitInit.error": "Git 初始化失败：{message}",
     "codex.review.header.moreOptions": "查看选项",
     "codex.review.wrap.enable": "启用自动换行",
     "codex.review.wrap.disable": "禁用自动换行",
@@ -5457,6 +5664,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "thread.sidePanel.openReviewTab": "审查",
     "thread.sidePanel.openTab": "打开侧边面板标签页",
     "thread.sidePanel.toggle": "显示/隐藏侧边栏",
+    "codex.rightPanel.expandFullWidth": "展开面板",
+    "codex.rightPanel.restoreWidth": "恢复面板宽度",
     "codex.tabs.closeNamed": "关闭 {title} 标签页",
     "codex.tabs.contextMenu.close": "关闭标签页",
     "thread.fileCommandMenu.filesGroup": "文件",

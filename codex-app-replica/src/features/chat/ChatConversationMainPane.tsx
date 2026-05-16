@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import type { RefObject } from "react";
 import {
   CheckIcon,
+  CheckCircleFilledIcon,
   CloudTaskIcon,
   CubeIcon,
   CopyPathIcon,
@@ -9,9 +10,10 @@ import {
   InfoIcon,
   PencilIcon,
   PersonalityChangedIcon,
+  ReviewTabIcon,
+  WorkspaceFileIcon,
 } from "../../components/AppShellIcons";
 import type { AppToast } from "../../components/AppToastRegion";
-import type { AvatarOption } from "../../components/appearance/avatarData";
 import { useI18n } from "../../i18n/i18n";
 import type { MessageKey } from "../../i18n/messages";
 import type {
@@ -34,6 +36,11 @@ import type { ToolRequestUserInputQuestion } from "../../services/history";
 import type { ComposerEnterBehavior, FollowUpQueueMode, ReviewDelivery } from "../../services/settings";
 import type { ConfigSnapshot } from "../../services/settings";
 import { updateDiffIfOpen } from "../../services/windowNavigation";
+import { openFile } from "../../services/hostFiles";
+import { readGitBranches } from "../../services/gitBranches";
+import { readGitOrigins } from "../../services/gitOrigins";
+import { listenGitStateChanged } from "../../services/gitStateEvents";
+import { OpenPullRequestIcon } from "../pullRequests/PullRequestIcons";
 import type { QueuedLocalFollowUp } from "./localFollowUpQueue";
 import {
   approvalRequestKey,
@@ -46,11 +53,13 @@ import {
 } from "./threadConversationState";
 import { renderMessageContent } from "./messageContent";
 import { LatestTurnPreview } from "./LatestTurnPreview";
+import { LocalUserImageAttachment } from "./LocalUserImageAttachment";
 import { MultiAgentGroupSummary } from "./MultiAgentGroupSummary";
 import { PlanSummaryItemCard } from "./PlanSummaryItemCard";
 import { RemoteEnvironmentSetupCard } from "./RemoteEnvironmentSetupCard";
 import { RemoteConversationFooter } from "./RemoteConversationFooter";
 import { RemoteUserImageAttachment } from "./RemoteUserImageAttachment";
+import { ThreadGoalOwner } from "./ThreadGoalOwner";
 import { TurnDiffCard } from "./TurnDiffCard";
 import { UserMessageCollapsibleContent } from "./UserMessageCollapsibleContent";
 import {
@@ -69,7 +78,12 @@ import {
   resolveCollapsedToolActivitySummaryText,
 } from "./renderableConversationItems";
 import { isMultiAgentInProgressStatus, toSingleMultiAgentGroupItem } from "./multiAgentAction";
-import { ThreadPageHeader } from "./ThreadPageHeader";
+import {
+  ThreadHeaderActionMenu,
+  ThreadHeaderHeartbeatButton,
+  ThreadHeaderOverflowMenu,
+  ThreadPageHeader,
+} from "./ThreadPageHeader";
 import { ThreadComposer } from "./ThreadComposer";
 import { CodexMobileOnboarding } from "./CodexMobileOnboarding";
 import type {
@@ -172,14 +186,16 @@ type ChatConversationMainPaneProps = {
   onForkSelectedThread: () => void;
   onForkSelectedThreadIntoWorktree: () => void;
   onOpenInNewWindow: () => void;
-  onMarkThreadUnread?: () => void;
-  onOpenSideChat: () => void;
   onOpenAttachedHeartbeatAutomation: () => void;
+  onOpenSideChat?: (initialPrompt?: string | null) => boolean | Promise<boolean>;
   onOpenThreadHeartbeatAutomationAction: () => void;
   onOpenRenameDialog: () => void;
   onOpenWorkspaceFileSearch?: () => void;
+  onFocusComposerRequest?: () => void;
   onSelectThread: (threadId: string) => void;
   onTogglePinnedThread: () => void;
+  onThreadGoalEditorOpenChange?: (open: boolean) => void;
+  onPendingThreadGoalObjectiveChange?: (value: string | null) => void;
   onEditUserMessage: (text: string) => void | Promise<void>;
   onRemoveQueuedFollowUp: (queuedFollowUpId: string) => void;
   onClearPendingPdfComments?: () => void;
@@ -190,7 +206,6 @@ type ChatConversationMainPaneProps = {
   approvalActionErrors: Record<string, string>;
   reviewDelivery: ReviewDelivery;
   respondingApprovalKeys: string[];
-  selectedAvatar: AvatarOption;
   submitButtonMode: "send" | "stop";
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
   remoteAttemptTabsByTurnId: Record<
@@ -207,10 +222,15 @@ type ChatConversationMainPaneProps = {
   remoteSelectedAssistantTurn?: RemoteTaskTurn | null;
   remoteTaskEnvironment?: RemoteTaskEnvironment | null;
   remoteTaskId?: string | null;
+  composerPlacement?: "main" | "side";
   showComposerFooter?: boolean;
+  isThreadGoalEditorOpen?: boolean;
+  pendingThreadGoalObjective?: string | null;
   threadConversation: ThreadConversation | null;
   turnError: string | null;
   workspaceRoot?: string | null;
+  conversationHostId?: string | null;
+  authMethod?: string | null;
 };
 
 export function ChatConversationMainPane({
@@ -258,14 +278,16 @@ export function ChatConversationMainPane({
   onForkSelectedThread,
   onForkSelectedThreadIntoWorktree,
   onOpenInNewWindow,
-  onMarkThreadUnread,
-  onOpenSideChat,
   onOpenAttachedHeartbeatAutomation,
+  onOpenSideChat,
   onOpenThreadHeartbeatAutomationAction,
   onOpenRenameDialog,
   onOpenWorkspaceFileSearch,
+  onFocusComposerRequest = () => undefined,
   onSelectThread,
   onTogglePinnedThread,
+  onThreadGoalEditorOpenChange = () => undefined,
+  onPendingThreadGoalObjectiveChange = () => undefined,
   onEditUserMessage,
   onRemoveQueuedFollowUp,
   onClearPendingPdfComments,
@@ -276,7 +298,6 @@ export function ChatConversationMainPane({
   approvalActionErrors,
   reviewDelivery,
   respondingApprovalKeys,
-  selectedAvatar,
   submitButtonMode,
   t,
   remoteAttemptTabsByTurnId,
@@ -286,11 +307,20 @@ export function ChatConversationMainPane({
   remoteSelectedAssistantTurn = null,
   remoteTaskEnvironment = null,
   remoteTaskId = null,
+  composerPlacement = "main",
   showComposerFooter = true,
+  isThreadGoalEditorOpen = false,
+  pendingThreadGoalObjective = null,
   threadConversation,
   turnError,
   workspaceRoot = null,
+  conversationHostId = null,
+  authMethod = null,
 }: ChatConversationMainPaneProps) {
+  const conversationScrollRef = useRef<HTMLDivElement | null>(null);
+  const [showScrollToBottomButton, setShowScrollToBottomButton] = useState(false);
+  const [threadBranchLabel, setThreadBranchLabel] = useState<string | null>(null);
+  const [threadGitRoot, setThreadGitRoot] = useState<string | null>(null);
   const userMessageSentAtMsByTurnId = useMemo(
     () =>
       new Map(
@@ -324,6 +354,97 @@ export function ChatConversationMainPane({
   const latestConversationGroup = conversationGroups.at(-1) ?? null;
   const latestConversationGroupTurnId = conversationGroups.at(-1)?.turnId ?? null;
   const conversationId = threadConversation?.id ?? null;
+  const threadTitle =
+    threadConversation?.title.trim().length ? threadConversation.title.trim() : t("app.nav.newChat");
+  const threadProjectLabel =
+    (threadConversation?.cwd ?? workspaceRoot ?? "")
+      .split(/[\\/]/u)
+      .filter((segment) => segment.length > 0)
+      .at(-1) ?? null;
+  const threadHeaderEnvironmentType =
+    remoteTaskId !== null ? "cloud" : isWorktreeThread ? "worktree" : threadConversation ? "local" : null;
+  const threadHeaderSecondaryText =
+    threadProjectLabel !== null && threadProjectLabel !== threadTitle ? threadProjectLabel : null;
+  const isLocalConversationHeader = showThreadHeader && remoteTaskId === null;
+  const canCopyWorkingDirectory = (threadConversation?.cwd ?? "").trim().length > 0;
+  const threadHeaderTrailing = threadHeaderTrailingActions ? (
+    <div className="no-drag flex items-center gap-1">{threadHeaderTrailingActions}</div>
+  ) : null;
+  const threadHeaderMenuActions = threadConversation ? (
+    <ThreadHeaderActionMenu
+      actionsMenuRef={threadActionsMenuRef}
+      canCopyWorkingDirectory={canCopyWorkingDirectory}
+      hasAttachedHeartbeatAutomation={hasAttachedHeartbeatAutomation}
+      heartbeatAutomationActionLabelKey={heartbeatAutomationActionLabelKey}
+      heartbeatAutomationButtonTooltip={heartbeatAutomationButtonTooltip}
+      isThreadActionsMenuOpen={isThreadActionsMenuOpen}
+      isThreadHeartbeatAutomationActionDisabled={isThreadHeartbeatAutomationActionDisabled}
+      isThreadHeartbeatAutomationActionVisible={isThreadHeartbeatAutomationActionVisible}
+      isThreadPinned={isThreadPinned}
+      isTurnInProgress={submitButtonMode === "stop"}
+      isWorktreeThread={isWorktreeThread}
+      variant={isLocalConversationHeader ? "localConversation" : "default"}
+      onArchive={onArchiveThread}
+      onCopyAppLink={onCopyAppLink}
+      onCopyConversationMarkdown={onCopyConversationMarkdown}
+      onCopySessionId={onCopySessionId}
+      onCopyWorkingDirectory={onCopyWorkingDirectory}
+      onForkThread={onForkSelectedThread}
+      onForkThreadIntoWorktree={onForkSelectedThreadIntoWorktree}
+      onOpenAttachedHeartbeatAutomation={onOpenAttachedHeartbeatAutomation}
+      onOpenInNewWindow={onOpenInNewWindow}
+      onOpenSideChat={onOpenSideChat}
+      onOpenThreadHeartbeatAutomationAction={onOpenThreadHeartbeatAutomationAction}
+      onOpenRenameDialog={onOpenRenameDialog}
+      onTogglePinThread={onTogglePinnedThread}
+      onToggleThreadActionsMenu={onToggleThreadActionsMenu}
+      t={t}
+    />
+  ) : null;
+  const localConversationHeaderHeartbeat = threadConversation ? (
+    <ThreadHeaderHeartbeatButton
+      hasAttachedHeartbeatAutomation={hasAttachedHeartbeatAutomation}
+      heartbeatAutomationButtonTooltip={heartbeatAutomationButtonTooltip}
+      onOpenAttachedHeartbeatAutomation={onOpenAttachedHeartbeatAutomation}
+      t={t}
+      variant="localConversation"
+    />
+  ) : null;
+  const localConversationHeaderActions = (
+    <div className="no-drag flex shrink-0 items-center gap-2">
+      {threadHeaderTrailingActions ? (
+        <div className="no-drag flex shrink-0 items-center gap-1">{threadHeaderTrailingActions}</div>
+      ) : null}
+      {threadConversation ? (
+        <ThreadHeaderOverflowMenu
+          actionsMenuRef={threadActionsMenuRef}
+          canCopyWorkingDirectory={canCopyWorkingDirectory}
+          heartbeatAutomationActionLabelKey={heartbeatAutomationActionLabelKey}
+          isThreadActionsMenuOpen={isThreadActionsMenuOpen}
+          isThreadHeartbeatAutomationActionDisabled={isThreadHeartbeatAutomationActionDisabled}
+          isThreadHeartbeatAutomationActionVisible={isThreadHeartbeatAutomationActionVisible}
+          isThreadPinned={isThreadPinned}
+          isTurnInProgress={submitButtonMode === "stop"}
+          isWorktreeThread={isWorktreeThread}
+          variant="localConversation"
+          onArchive={onArchiveThread}
+          onCopyAppLink={onCopyAppLink}
+          onCopyConversationMarkdown={onCopyConversationMarkdown}
+          onCopySessionId={onCopySessionId}
+          onCopyWorkingDirectory={onCopyWorkingDirectory}
+          onForkThread={onForkSelectedThread}
+          onForkThreadIntoWorktree={onForkSelectedThreadIntoWorktree}
+          onOpenInNewWindow={onOpenInNewWindow}
+          onOpenSideChat={onOpenSideChat}
+          onOpenThreadHeartbeatAutomationAction={onOpenThreadHeartbeatAutomationAction}
+          onOpenRenameDialog={onOpenRenameDialog}
+          onTogglePinThread={onTogglePinnedThread}
+          onToggleThreadActionsMenu={onToggleThreadActionsMenu}
+          t={t}
+        />
+      ) : null}
+    </div>
+  );
   const latestUnifiedDiff = latestConversationGroup?.unifiedDiffItem?.unifiedDiff ?? "";
   const remoteApplyTurnId = remoteSelectedAssistantTurn?.id ?? null;
   const remoteApplyDiff = getRemoteTaskApplyDiff({
@@ -348,6 +469,109 @@ export function ChatConversationMainPane({
     groupedConversation.unmatchedApprovalItems.length > 0 ||
     currentThreadQueuedFollowUps.length > 0;
   const showBlankConversationBody = !hasTurnContent && !hasUnmatchedBodyContent;
+  const showThreadGoalOwner =
+    composerPlacement === "main" &&
+    (threadConversation?.hostId ?? null) === null &&
+    (threadConversation?.threadGoal != null || pendingThreadGoalObjective != null || isThreadGoalEditorOpen);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolveThreadBranchLabel = async () => {
+      const workspaceForBranch = threadConversation?.cwd ?? workspaceRoot ?? null;
+      if (!workspaceForBranch || remoteTaskId !== null) {
+        setThreadBranchLabel(null);
+        setThreadGitRoot(null);
+        return;
+      }
+
+      try {
+        const origins = await readGitOrigins({ dirs: [workspaceForBranch] });
+        const gitRoot = origins.origins.at(0)?.root?.trim() ?? null;
+        if (!gitRoot) {
+          if (!cancelled) {
+            setThreadBranchLabel(null);
+            setThreadGitRoot(null);
+          }
+          return;
+        }
+
+        const branches = await readGitBranches({ gitRoot, hostId: conversationHostId });
+        if (!cancelled) {
+          setThreadGitRoot(gitRoot);
+          setThreadBranchLabel(branches.currentBranch ?? branches.defaultBranch ?? null);
+        }
+      } catch {
+        if (!cancelled) {
+          setThreadBranchLabel(null);
+          setThreadGitRoot(null);
+        }
+      }
+    };
+
+    void resolveThreadBranchLabel();
+    const unsubscribe = listenGitStateChanged(() => {
+      void resolveThreadBranchLabel();
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [conversationHostId, remoteTaskId, threadConversation?.cwd, workspaceRoot]);
+
+  useEffect(() => {
+    const scrollContainer = conversationScrollRef.current;
+    if (scrollContainer === null) {
+      setShowScrollToBottomButton(false);
+      return;
+    }
+
+    const updateScrollToBottomButton = () => {
+      const distanceFromBottom =
+        scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight;
+      setShowScrollToBottomButton(distanceFromBottom > 160);
+    };
+
+    updateScrollToBottomButton();
+    scrollContainer.addEventListener("scroll", updateScrollToBottomButton, { passive: true });
+    return () => {
+      scrollContainer.removeEventListener("scroll", updateScrollToBottomButton);
+    };
+  }, [conversationGroups.length, showBlankConversationBody]);
+
+  useEffect(() => {
+    if (submitButtonMode !== "stop") {
+      return;
+    }
+
+    const scrollContainer = conversationScrollRef.current;
+    if (scrollContainer === null) {
+      return;
+    }
+
+    const distanceFromBottom =
+      scrollContainer.scrollHeight - scrollContainer.scrollTop - scrollContainer.clientHeight;
+    if (distanceFromBottom <= 160) {
+      scrollContainer.scrollTo({
+        top: scrollContainer.scrollHeight,
+        behavior: "smooth",
+      });
+    }
+  }, [submitButtonMode, threadConversation?.items.length]);
+
+  const handleScrollToBottom = () => {
+    const scrollContainer = conversationScrollRef.current;
+    if (scrollContainer === null) {
+      return;
+    }
+
+    scrollContainer.scrollTo({
+      top: scrollContainer.scrollHeight,
+      behavior: "smooth",
+    });
+  };
+
   useEffect(() => {
     if (!conversationId || latestUnifiedDiff.trim().length === 0) {
       return;
@@ -362,6 +586,7 @@ export function ChatConversationMainPane({
     latestConversationGroup !== null && conversationId !== null ? (
       <ConversationGroupContent
         conversationId={conversationId}
+        conversationHostId={conversationHostId}
         group={latestConversationGroup}
         approvalActionErrors={approvalActionErrors}
         onApprovalDecision={onApprovalDecision}
@@ -385,37 +610,23 @@ export function ChatConversationMainPane({
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col bg-[var(--app-shell-main-surface)]">
       {showThreadHeader ? (
-        <ThreadPageHeader
-          actionsMenuRef={threadActionsMenuRef}
-          hasAttachedHeartbeatAutomation={hasAttachedHeartbeatAutomation}
-          heartbeatAutomationActionLabelKey={heartbeatAutomationActionLabelKey}
-          heartbeatAutomationButtonTooltip={heartbeatAutomationButtonTooltip}
-          startActions={threadHeaderStartActions}
-          isThreadActionsMenuOpen={isThreadActionsMenuOpen}
-          isThreadHeartbeatAutomationActionDisabled={isThreadHeartbeatAutomationActionDisabled}
-          isThreadHeartbeatAutomationActionVisible={isThreadHeartbeatAutomationActionVisible}
-          isThreadPinned={isThreadPinned}
-          isTurnInProgress={submitButtonMode === "stop"}
-          isWorktreeThread={isWorktreeThread}
-          onArchive={onArchiveThread}
-          onCopyAppLink={onCopyAppLink}
-          onCopyConversationMarkdown={onCopyConversationMarkdown}
-          onCopySessionId={onCopySessionId}
-          onCopyWorkingDirectory={onCopyWorkingDirectory}
-          onForkThread={onForkSelectedThread}
-          onForkThreadIntoWorktree={onForkSelectedThreadIntoWorktree}
-          onOpenInNewWindow={onOpenInNewWindow}
-          onOpenMarkUnread={onMarkThreadUnread}
-          onOpenSideChat={onOpenSideChat}
-          onOpenAttachedHeartbeatAutomation={onOpenAttachedHeartbeatAutomation}
-          onOpenThreadHeartbeatAutomationAction={onOpenThreadHeartbeatAutomationAction}
-          onOpenRenameDialog={onOpenRenameDialog}
-          onTogglePinThread={onTogglePinnedThread}
-          onToggleThreadActionsMenu={onToggleThreadActionsMenu}
-          t={t}
-          trailingActions={threadHeaderTrailingActions}
-          threadConversation={threadConversation}
-        />
+        isLocalConversationHeader ? (
+          <LocalConversationPageHeader
+            title={threadTitle}
+            heartbeatAction={localConversationHeaderHeartbeat}
+            trailingActions={localConversationHeaderActions}
+          />
+        ) : (
+          <ThreadPageHeader
+            environmentType={threadHeaderEnvironmentType}
+            secondaryText={threadHeaderSecondaryText}
+            variant="default"
+            start={threadTitle}
+            startActions={threadHeaderStartActions}
+            trailing={threadHeaderTrailing}
+            trailingActions={threadHeaderMenuActions}
+          />
+        )
       ) : null}
 
       {showBlankConversationBody ? (
@@ -428,6 +639,7 @@ export function ChatConversationMainPane({
         </div>
       ) : (
         <div
+          ref={conversationScrollRef}
           className="thread-edge-scroll min-h-0 flex-1 overflow-y-auto px-5 pb-4 pt-3"
           role="main"
           aria-label={t("homePage.mainContent")}
@@ -439,6 +651,7 @@ export function ChatConversationMainPane({
                     key={group.id}
                     conversationId={conversationId ?? ""}
                     conversationCwd={threadConversation?.cwd ?? null}
+                    conversationHostId={conversationHostId}
                     group={group}
                     approvalActionErrors={approvalActionErrors}
                     onApprovalDecision={onApprovalDecision}
@@ -501,6 +714,23 @@ export function ChatConversationMainPane({
       )}
 
       <RemoteConversationFooter
+        aboveComposerContent={
+          showThreadGoalOwner ? (
+            <ThreadGoalOwner
+              conversationId={conversationId}
+              draftObjective={composerDraft}
+              goal={threadConversation?.threadGoal ?? null}
+              hostId={conversationHostId}
+              isEditorOpen={isThreadGoalEditorOpen}
+              pendingObjective={pendingThreadGoalObjective}
+              onEditorOpenChange={onThreadGoalEditorOpenChange}
+              onFocusComposer={onFocusComposerRequest}
+              onPendingObjectiveChange={onPendingThreadGoalObjectiveChange}
+              onShowToast={onShowToast}
+              t={t}
+            />
+          ) : null
+        }
         composer={
           <ThreadComposer
             composerDraft={composerDraft}
@@ -518,13 +748,24 @@ export function ChatConversationMainPane({
             onStopTurn={onStopTurn}
             onSubmitTurn={onSubmitTurn}
             pendingPdfCommentCount={currentThreadPendingPdfCommentCount}
+            placement={composerPlacement}
             queuedFollowUpCount={currentThreadQueuedFollowUps.length}
             reviewDelivery={reviewDelivery}
-            selectedAvatar={selectedAvatar}
             submitButtonMode={submitButtonMode}
             t={t}
+            authMethod={authMethod}
+            latestTokenUsageInfo={threadConversation?.latestTokenUsageInfo ?? null}
+            threadBranchLabel={threadBranchLabel}
+            threadGitRoot={threadGitRoot}
+            threadHostId={conversationHostId}
             threadCwd={threadConversation?.cwd ?? null}
             turnError={turnError}
+            onShowToast={onShowToast}
+            onOpenSideChat={
+              onOpenSideChat
+                ? (initialPrompt) => Promise.resolve(onOpenSideChat(initialPrompt)).then(() => true)
+                : null
+            }
           />
         }
         footerPendingRequest={
@@ -554,6 +795,7 @@ export function ChatConversationMainPane({
             />
           ) : null
         }
+        onScrollToBottom={handleScrollToBottom}
         onShowToast={onShowToast}
         remoteApplyDiff={remoteApplyDiff}
         remoteApplyTurnId={remoteApplyTurnId}
@@ -562,10 +804,35 @@ export function ChatConversationMainPane({
         showComposerFooter={showComposerFooter}
         showRemoteApplyFooter={showRemoteApplyFooter}
         showRemoteFailedFooter={showRemoteFailedFooter}
+        showScrollToBottomButton={showScrollToBottomButton}
         t={t}
         workspaceRoot={workspaceRoot}
       />
     </section>
+  );
+}
+
+function LocalConversationPageHeader({
+  title,
+  heartbeatAction,
+  trailingActions,
+}: {
+  title: string;
+  heartbeatAction?: ReactNode;
+  trailingActions?: ReactNode;
+}) {
+  return (
+    <header className="border-b border-[var(--app-shell-border)] px-4">
+      <div className="draggable grid min-h-[var(--app-shell-toolbar)] w-full min-w-0 grid-cols-[minmax(0,1fr)] items-center gap-x-4 py-1.5">
+        <div className="flex min-w-0 items-center gap-2 truncate text-base electron:font-medium">
+          <div className="no-drag pointer-events-auto max-w-[320px] min-w-[2ch] cursor-default truncate text-[15px] font-medium text-[var(--app-shell-text)]">
+            <span className="block w-fit truncate">{title}</span>
+          </div>
+          {heartbeatAction}
+          {trailingActions}
+        </div>
+      </div>
+    </header>
   );
 }
 
@@ -1041,6 +1308,7 @@ function ApprovalRequestCard({
 function ConversationGroupContent({
   conversationId,
   conversationCwd = null,
+  conversationHostId = null,
   group,
   approvalActionErrors,
   onApprovalDecision,
@@ -1060,6 +1328,7 @@ function ConversationGroupContent({
 }: {
   conversationId: string;
   conversationCwd?: string | null;
+  conversationHostId?: string | null;
   group: RenderableConversationGroup;
   approvalActionErrors: Record<string, string>;
   onApprovalDecision: (approval: PendingApproval, decision: ApprovalDecision) => void;
@@ -1096,11 +1365,12 @@ function ConversationGroupContent({
     ? resolveRemoteTaskEnvironmentSetupState(remoteConversationOverride.assistantTurn)
     : null;
   const showRemoteEnvironmentSetup = remoteEnvironmentSetupState !== null;
+  const userMessageParentContextItem = group.forkedFromConversationItems[0] ?? null;
 
   return (
     <div className="flex flex-col gap-3">
-      <ConversationItemList conversationId={conversationId} items={group.preUserItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      <ConversationItemList conversationId={conversationId} items={group.modelChangedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationCwd={conversationCwd} conversationHostId={conversationHostId} conversationId={conversationId} items={group.preUserItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationCwd={conversationCwd} conversationHostId={conversationHostId} conversationId={conversationId} items={group.modelChangedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       {remoteConversationOverride && remoteConversationOverride.userImageAttachments.length > 0 ? (
         <div className="flex flex-wrap gap-2 self-end">
           {remoteConversationOverride.userImageAttachments.map((attachment, index) => (
@@ -1111,8 +1381,8 @@ function ConversationGroupContent({
           ))}
         </div>
       ) : null}
-      <ConversationItemList conversationId={conversationId} items={group.userItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      <ConversationItemList conversationId={conversationId} items={group.modelReroutedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationCwd={conversationCwd} conversationHostId={conversationHostId} conversationId={conversationId} items={group.userItems} parentContextItem={userMessageParentContextItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationCwd={conversationCwd} conversationHostId={conversationHostId} conversationId={conversationId} items={group.modelReroutedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       {remoteAttemptTabs && remoteAttemptTabs.expectedCount > 1 ? (
         <RemoteAttemptTabs
           expectedCount={remoteAttemptTabs.expectedCount}
@@ -1129,11 +1399,13 @@ function ConversationGroupContent({
         />
       ) : (
         <>
-          <ConversationItemList conversationId={conversationId} items={group.activityItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+          <ConversationItemList conversationCwd={conversationCwd} conversationHostId={conversationHostId} conversationId={conversationId} items={group.activityItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
           {group.assistantMessage ? (
-            <ConversationItemCard conversationId={conversationId} item={group.assistantMessage} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+            <ConversationItemCard conversationCwd={conversationCwd} conversationHostId={conversationHostId} conversationId={conversationId} item={group.assistantMessage} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
           ) : null}
           <ConversationItemList
+            conversationCwd={conversationCwd}
+            conversationHostId={conversationHostId}
             conversationId={conversationId}
             items={group.assistantAutomationUpdateItems}
             onEditUserMessage={onEditUserMessage}
@@ -1142,16 +1414,17 @@ function ConversationGroupContent({
             t={t}
             userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId}
           />
-          <ConversationItemList conversationId={conversationId} items={group.automationUpdateItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-          <ConversationItemList conversationId={conversationId} items={group.toolOutputItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-          <ConversationItemList conversationId={conversationId} items={group.postAssistantItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+          <ConversationItemList conversationCwd={conversationCwd} conversationHostId={conversationHostId} conversationId={conversationId} items={group.automationUpdateItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+          <ConversationItemList conversationCwd={conversationCwd} conversationHostId={conversationHostId} conversationId={conversationId} items={group.toolOutputItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+          <ConversationItemList conversationCwd={conversationCwd} conversationHostId={conversationHostId} conversationId={conversationId} items={group.postAssistantItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
           {group.systemEventItem ? (
-            <ConversationItemCard conversationId={conversationId} item={group.systemEventItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+            <ConversationItemCard conversationCwd={conversationCwd} conversationHostId={conversationHostId} conversationId={conversationId} item={group.systemEventItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
           ) : null}
           {group.unifiedDiffItem ? (
             <ConversationItemCard
               conversationId={conversationId}
               conversationCwd={conversationCwd}
+              conversationHostId={conversationHostId}
               item={group.unifiedDiffItem}
               onEditUserMessage={onEditUserMessage}
               onOpenRemoteTask={onOpenRemoteTask}
@@ -1162,15 +1435,16 @@ function ConversationGroupContent({
           ) : null}
         </>
       )}
-      <ConversationItemList conversationId={conversationId} items={group.remoteTaskCreatedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      <ConversationItemList conversationId={conversationId} items={group.personalityChangedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      <ConversationItemList conversationId={conversationId} items={group.forkedFromConversationItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationCwd={conversationCwd} conversationHostId={conversationHostId} conversationId={conversationId} items={group.remoteTaskCreatedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationCwd={conversationCwd} conversationHostId={conversationHostId} conversationId={conversationId} items={group.personalityChangedItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       {group.todoListItem ? (
-        <ConversationItemCard conversationId={conversationId} item={group.todoListItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+        <ConversationItemCard conversationCwd={conversationCwd} conversationHostId={conversationHostId} conversationId={conversationId} item={group.todoListItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       ) : null}
       {group.proposedPlanItem ? (
         <ConversationItemCard
           conversationId={conversationId}
+          conversationCwd={conversationCwd}
+          conversationHostId={conversationHostId}
           item={group.proposedPlanItem}
           planSummaryIsWriting={planSummaryIsWriting}
           onEditUserMessage={onEditUserMessage}
@@ -1181,8 +1455,8 @@ function ConversationGroupContent({
         />
       ) : null}
       <ConversationTurnPlanImplementationItems items={group.planImplementationItem ? [group.planImplementationItem] : []} t={t} />
-      <ConversationItemList conversationId={conversationId} items={group.mcpServerElicitationItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
-      <ConversationItemList conversationId={conversationId} items={group.permissionRequestItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationCwd={conversationCwd} conversationHostId={conversationHostId} conversationId={conversationId} items={group.mcpServerElicitationItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+      <ConversationItemList conversationCwd={conversationCwd} conversationHostId={conversationHostId} conversationId={conversationId} items={group.permissionRequestItems} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       <ConversationTurnApprovalRequests
         approvals={group.approvalItem ? [group.approvalItem] : []}
         approvalActionErrors={approvalActionErrors}
@@ -1191,23 +1465,29 @@ function ConversationGroupContent({
         t={t}
       />
       {group.userInputItem ? (
-        <ConversationItemCard conversationId={conversationId} item={group.userInputItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+        <ConversationItemCard conversationCwd={conversationCwd} conversationHostId={conversationHostId} conversationId={conversationId} item={group.userInputItem} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
       ) : null}
     </div>
   );
 }
 
 function ConversationItemList({
+  conversationCwd = null,
+  conversationHostId = null,
   conversationId,
   items,
+  parentContextItem = null,
   onEditUserMessage,
   onOpenRemoteTask,
   onSelectThread,
   t,
   userMessageSentAtMsByTurnId,
 }: {
+  conversationCwd?: string | null;
+  conversationHostId?: string | null;
   conversationId: string;
   items: RenderableConversationItem[];
+  parentContextItem?: Extract<ThreadConversationItem, { type: "forkedFromConversation" }> | null;
   onEditUserMessage: (text: string) => void | Promise<void>;
   onOpenRemoteTask: (taskId: string) => void;
   onSelectThread: (threadId: string) => void;
@@ -1221,7 +1501,7 @@ function ConversationItemList({
   return (
       <div className="space-y-3">
         {items.map((item) => (
-          <ConversationItemCard key={item.id} conversationId={conversationId} item={item} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
+          <ConversationItemCard key={item.id} conversationCwd={conversationCwd} conversationHostId={conversationHostId} conversationId={conversationId} item={item} parentContextItem={item.type === "userMessage" ? parentContextItem : null} onEditUserMessage={onEditUserMessage} onOpenRemoteTask={onOpenRemoteTask} onSelectThread={onSelectThread} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />
         ))}
     </div>
   );
@@ -1284,7 +1564,9 @@ function RemoteAttemptTabs({
 function ConversationItemCard({
   conversationId,
   conversationCwd = null,
+  conversationHostId = null,
   item,
+  parentContextItem = null,
   planSummaryIsWriting = false,
   onEditUserMessage,
   onOpenRemoteTask,
@@ -1294,7 +1576,9 @@ function ConversationItemCard({
 }: {
   conversationId: string;
   conversationCwd?: string | null;
+  conversationHostId?: string | null;
   item: RenderableConversationItem;
+  parentContextItem?: Extract<ThreadConversationItem, { type: "forkedFromConversation" }> | null;
   planSummaryIsWriting?: boolean;
   onEditUserMessage: (text: string) => void | Promise<void>;
   onOpenRemoteTask: (taskId: string) => void;
@@ -1304,13 +1588,16 @@ function ConversationItemCard({
 }) {
   if (item.type === "userMessage" || item.type === "agentMessage") {
     if (item.type === "userMessage") {
-      return <UserConversationMessageCard item={item} onEditMessage={onEditUserMessage} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />;
+      return <UserConversationMessageCard conversationCwd={conversationCwd} conversationHostId={conversationHostId} item={item} onEditMessage={onEditUserMessage} onSelectThread={onSelectThread} parentContextItem={parentContextItem} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />;
     }
 
     return (
       <div className="flex w-full justify-start pr-6">
-        <div className="app-assistant-message max-w-[min(780px,100%)] px-0.5 py-1">
-          {renderMessageContent(item.text)}
+        <div className="app-assistant-message max-w-[min(780px,100%)] px-0.5 py-1.5">
+          {renderMessageContent(item.text, {
+            cwd: conversationCwd,
+            hostId: conversationHostId,
+          })}
         </div>
       </div>
     );
@@ -1333,7 +1620,7 @@ function ConversationItemCard({
   }
 
   if (item.type === "plan") {
-    return <PlanSummaryItemCard conversationId={conversationId} item={item} isWriting={planSummaryIsWriting} t={t} />;
+    return <PlanSummaryItemCard conversationCwd={conversationCwd} conversationHostId={conversationHostId} conversationId={conversationId} item={item} isWriting={planSummaryIsWriting} t={t} />;
   }
 
   if (item.type === "todoList") {
@@ -1481,7 +1768,10 @@ function ConversationItemCard({
   if (item.type === "imageView") {
     return (
       <div className="app-card rounded-[18px] px-4 py-4">
-        {renderMessageContent(`![Image](${item.path})`)}
+        {renderMessageContent(`![Image](${item.path})`, {
+          cwd: conversationCwd,
+          hostId: conversationHostId,
+        })}
       </div>
     );
   }
@@ -1645,13 +1935,21 @@ function ConversationItemCard({
 }
 
 function UserConversationMessageCard({
+  conversationCwd = null,
+  conversationHostId = null,
   item,
   onEditMessage,
+  onSelectThread,
+  parentContextItem = null,
   t,
   userMessageSentAtMsByTurnId,
 }: {
+  conversationCwd?: string | null;
+  conversationHostId?: string | null;
   item: ThreadConversationMessage;
   onEditMessage: (text: string) => void | Promise<void>;
+  onSelectThread: (threadId: string) => void;
+  parentContextItem?: Extract<ThreadConversationItem, { type: "forkedFromConversation" }> | null;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
   userMessageSentAtMsByTurnId: Map<string, number | null>;
 }) {
@@ -1661,11 +1959,22 @@ function UserConversationMessageCard({
   const [draft, setDraft] = useState(item.text);
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
   const normalizedText = item.text.trim();
-  const commentCount = Array.isArray(item.comments) ? item.comments.length : 0;
+  const comments = Array.isArray(item.comments) ? item.comments : [];
+  const annotationComments = comments.filter(
+    (comment) => comment.origin === "pdf" || comment.localPdfContext !== null,
+  );
+  const regularComments = comments.filter(
+    (comment) => comment.origin !== "pdf" && comment.localPdfContext === null,
+  );
+  const commentCount = comments.length;
   const pullRequestCheckCount =
     typeof item.pullRequestCheckCount === "number" && Number.isFinite(item.pullRequestCheckCount)
       ? item.pullRequestCheckCount
       : 0;
+  const pullRequestMergeTaskNumber =
+    typeof item.pullRequestMergeTaskNumber === "number" && Number.isFinite(item.pullRequestMergeTaskNumber)
+      ? item.pullRequestMergeTaskNumber
+      : null;
   const hasVisibleText = normalizedText.length > 0;
   const visibleText = normalizedText.startsWith("PLEASE IMPLEMENT THIS PLAN:")
     ? t("app.chat.userMessage.implementPlan")
@@ -1678,7 +1987,7 @@ function UserConversationMessageCard({
     item.reviewMode ? { key: "reviewMode", label: t("app.chat.userMessage.reviewMode") } : null,
     item.pullRequestFixMode ? { key: "pullRequestFixMode", label: t("app.chat.userMessage.pullRequestFixMode") } : null,
     item.autoResolveSync ? { key: "autoResolveSync", label: t("app.chat.userMessage.autoResolveSync") } : null,
-    commentCount > 0
+    regularComments.length === 0 && commentCount > 0
       ? {
           key: "commentCount",
           label: t("app.chat.userMessage.commentCount", { count: commentCount }),
@@ -1701,6 +2010,18 @@ function UserConversationMessageCard({
   const messageStatusLabel = resolveUserMessageStatusLabel(item, t);
   const canEdit = !normalizedText.startsWith("PLEASE IMPLEMENT THIS PLAN:");
   const shouldRenderMetaRow = chips.length > 0 || (hasVisibleMessageText && !isEditing);
+  const annotationBadge = annotationComments.length > 0 ? (
+    <UserMessageHeaderBadge
+      icon={<ReviewTabIcon className="h-3.5 w-3.5 shrink-0" />}
+      label={t("commentAttachments.numAnnotations", { count: annotationComments.length })}
+    />
+  ) : null;
+  const commentBadge = regularComments.length > 0 ? (
+    <UserMessageHeaderBadge
+      icon={<InfoIcon className="h-3.5 w-3.5 shrink-0" />}
+      label={t("app.chat.userMessage.commentCount", { count: regularComments.length })}
+    />
+  ) : null;
 
   const handleCopy = async () => {
     if (!hasVisibleText) {
@@ -1731,11 +2052,69 @@ function UserConversationMessageCard({
   };
 
   const shouldRenderBubble = hasVisibleText || chips.length === 0;
+  const hasAttachments = Array.isArray(item.attachments) && item.attachments.length > 0;
+  const hasImages = Array.isArray(item.images) && item.images.length > 0;
+  const parentContextId = parentContextItem?.sourceConversationId.trim() ?? "";
+  const shouldRenderParentContext = parentContextId.length > 0;
+  const shouldRenderAttachmentRow = shouldRenderParentContext || hasAttachments || hasImages;
 
   return (
-    <div className="group flex w-full flex-col items-end justify-end gap-1.5">
+    <div className="group flex w-full flex-col items-end justify-end gap-1">
+      {shouldRenderAttachmentRow ? (
+        <div className="flex max-w-[77%] flex-wrap items-end justify-end gap-2 self-end">
+          {shouldRenderParentContext ? (
+            <ParentChatAttachmentChip
+              sourceConversationId={parentContextId}
+              onSelectThread={onSelectThread}
+              t={t}
+            />
+          ) : null}
+          {item.attachments?.map((attachment, index) => (
+            <UserMessageAttachmentChip
+              key={`${item.id}:attachment:${attachment.path}:${index}`}
+              attachment={attachment}
+              conversationCwd={conversationCwd}
+              conversationHostId={conversationHostId}
+            />
+          ))}
+          {item.images?.map((src, index) => (
+            <LocalUserImageAttachment
+              key={`${item.id}:image:${src}:${index}`}
+              conversationCwd={conversationCwd}
+              conversationHostId={conversationHostId}
+              src={src}
+            />
+          ))}
+        </div>
+      ) : null}
+      {pullRequestMergeTaskNumber !== null ? (
+        <div className="flex max-w-[77%] justify-end self-end">
+          <UserMessageHeaderBadge
+            icon={<OpenPullRequestIcon className="h-3.5 w-3.5 shrink-0" />}
+            label={t("app.chat.userMessage.pullRequestMergeTask", { number: pullRequestMergeTaskNumber })}
+          />
+        </div>
+      ) : null}
+      {item.goal ? (
+        <div className="flex max-w-[77%] justify-end self-end">
+          <UserMessageHeaderBadge
+            icon={<CheckCircleFilledIcon className="h-3.5 w-3.5 shrink-0" />}
+            label={t("app.chat.userMessage.goal")}
+          />
+        </div>
+      ) : null}
+      {annotationBadge ? (
+        <div className="flex max-w-[77%] justify-end self-end">
+          {annotationBadge}
+        </div>
+      ) : null}
+      {commentBadge ? (
+        <div className="flex max-w-[77%] justify-end self-end">
+          {commentBadge}
+        </div>
+      ) : null}
       {shouldRenderBubble && messageStatusLabel !== null ? (
-        <div className="app-text-muted mr-1 flex items-center gap-2">
+        <div className="ms-1 mr-1 flex items-center gap-1.5 text-[var(--app-shell-muted)]">
           <UserMessageStatusIcon className="h-[13px] w-[13px] shrink-0" />
           <span className="text-[12px]">{messageStatusLabel}</span>
         </div>
@@ -1744,7 +2123,7 @@ function UserConversationMessageCard({
         <div className="flex justify-end">
           {isEditing ? (
             <form
-              className="app-card w-full max-w-[77%] rounded-[24px] p-1"
+              className="app-card w-full max-w-[77%] rounded-[24px] p-px"
               onSubmit={(event) => {
                 event.preventDefault();
                 void handleEditSubmit();
@@ -1756,9 +2135,9 @@ function UserConversationMessageCard({
                 onChange={(event) => setDraft(event.target.value)}
                 placeholder={t("app.chat.userMessage.editPlaceholder")}
                 rows={4}
-                className="app-text-input min-h-[104px] w-full resize-none rounded-[20px] border-0 bg-transparent px-3 py-3 text-[14px] leading-6 outline-none"
+                className="app-text-input min-h-[104px] w-full resize-none rounded-[22px] border-0 bg-transparent px-3 pt-3 pb-2 text-[14px] leading-6 outline-none"
               />
-              <div className="flex justify-end gap-1.5 px-2 pb-2">
+              <div className="flex justify-end gap-1.5 px-3 pb-3">
                 <button
                   type="button"
                   disabled={isSubmittingEdit}
@@ -1780,9 +2159,14 @@ function UserConversationMessageCard({
               </div>
             </form>
           ) : (
-            <div className="app-user-message max-w-[77%] break-words rounded-[22px] px-3.5 py-2.5 [&_.contain-inline-size]:[contain:initial]">
+            <div className="app-user-message max-w-[77%] break-words rounded-2xl px-3 py-2 [&_.contain-inline-size]:[contain:initial]">
               {hasVisibleText ? (
-                <UserMessageCollapsibleContent text={visibleText} t={t} />
+                <UserMessageCollapsibleContent
+                  cwd={conversationCwd}
+                  hostId={conversationHostId}
+                  text={visibleText}
+                  t={t}
+                />
               ) : (
                 <div className="app-text-subtle mb-px text-[13px] leading-6">
                   {t("app.chat.userMessage.noContent")}
@@ -1792,38 +2176,47 @@ function UserConversationMessageCard({
           )}
         </div>
       ) : null}
-      <div className={["flex flex-row-reverse items-center gap-1.5", shouldRenderMetaRow ? "" : "hidden"].join(" ")}>
+      <div
+        className={[
+          "flex flex-row-reverse items-center gap-1 text-[12px] leading-4 text-[var(--app-shell-muted)]",
+          shouldRenderMetaRow ? "" : "hidden",
+        ].join(" ")}
+      >
         {chips.map((chip) => (
           <UserMessageChip key={`${item.id}:${chip.key}`} label={chip.label} />
         ))}
         {hasVisibleMessageText && !isEditing ? (
-          <div className="mr-1 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <div className="ms-1 mr-1 flex items-center gap-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
             {sentAtLabel ? (
-              <span className="app-text-muted text-[12px]">{sentAtLabel}</span>
+              <span className="app-text-muted text-[12px]">
+                {sentAtLabel}
+              </span>
             ) : null}
-            <button
-              type="button"
-              aria-label={copied ? t("app.chat.userMessage.copyCopiedAriaLabel") : t("app.chat.userMessage.copyAriaLabel")}
-              onClick={() => void handleCopy()}
-              className="app-topbar-button inline-flex h-6 w-6 items-center justify-center rounded-full px-0 py-0"
-              title={copied ? t("app.chat.userMessage.copyCopiedTooltip") : t("app.chat.userMessage.copyTooltip")}
-            >
-              {copied ? <CheckIcon className="h-[14px] w-[14px]" /> : <CopyPathIcon className="h-[14px] w-[14px]" />}
-            </button>
-            {canEdit ? (
+            <div className="flex items-center gap-1">
               <button
                 type="button"
-                aria-label={t("app.chat.userMessage.editAriaLabel")}
-                onClick={() => {
-                  setDraft(item.text);
-                  setIsEditing(true);
-                }}
+                aria-label={copied ? t("app.chat.userMessage.copyCopiedAriaLabel") : t("app.chat.userMessage.copyAriaLabel")}
+                onClick={() => void handleCopy()}
                 className="app-topbar-button inline-flex h-6 w-6 items-center justify-center rounded-full px-0 py-0"
-                title={t("app.chat.userMessage.editTooltip")}
+                title={copied ? t("app.chat.userMessage.copyCopiedTooltip") : t("app.chat.userMessage.copyTooltip")}
               >
-                <PencilIcon className="h-[14px] w-[14px]" />
+                {copied ? <CheckIcon className="h-[14px] w-[14px]" /> : <CopyPathIcon className="h-[14px] w-[14px]" />}
               </button>
-            ) : null}
+              {canEdit ? (
+                <button
+                  type="button"
+                  aria-label={t("app.chat.userMessage.editAriaLabel")}
+                  onClick={() => {
+                    setDraft(item.text);
+                    setIsEditing(true);
+                  }}
+                  className="app-topbar-button inline-flex h-6 w-6 items-center justify-center rounded-full px-0 py-0"
+                  title={t("app.chat.userMessage.editTooltip")}
+                >
+                  <PencilIcon className="h-[14px] w-[14px]" />
+                </button>
+              ) : null}
+            </div>
           </div>
         ) : null}
       </div>
@@ -1833,9 +2226,105 @@ function UserConversationMessageCard({
 
 function UserMessageChip({ label }: { label: string }) {
   return (
-    <span className="app-user-message-chip rounded-full px-2.5 py-0.5 text-[11px] leading-5">
+    <span className="app-user-message-chip text-[12px] leading-4">
       {label}
     </span>
+  );
+}
+
+function UserMessageHeaderBadge({
+  icon,
+  label,
+}: {
+  icon: ReactNode;
+  label: string;
+}) {
+  return (
+    <span className="app-user-message-owner-badge text-[12px] leading-4">
+      <span className="app-user-message-owner-badge-icon">{icon}</span>
+      <span className="app-user-message-owner-badge-label">{label}</span>
+    </span>
+  );
+}
+
+function UserMessageAttachmentChip({
+  attachment,
+  conversationCwd,
+  conversationHostId,
+}: {
+  attachment: NonNullable<ThreadConversationMessage["attachments"]>[number];
+  conversationCwd: string | null;
+  conversationHostId: string | null;
+}) {
+  const lineInfo =
+    typeof attachment.startLine === "number" && Number.isFinite(attachment.startLine)
+      ? typeof attachment.endLine === "number" &&
+        Number.isFinite(attachment.endLine) &&
+        attachment.endLine !== attachment.startLine
+        ? `${attachment.startLine}-${attachment.endLine}`
+        : `${attachment.startLine}`
+      : null;
+  const displayLabel =
+    lineInfo === null
+      ? attachment.label
+      : attachment.label.replace(/(?:\s+\(\s*\d+(?:-\d+)?\s*\)|\s+\d+(?:-\d+)?)(\s*)$/u, "$1");
+  const openPath = attachment.fsPath ?? attachment.path;
+  const openLine =
+    typeof attachment.startLine === "number" && Number.isFinite(attachment.startLine) ? attachment.startLine : null;
+
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        void openFile({
+          cwd: conversationCwd,
+          hostId: conversationHostId,
+          path: openPath,
+          line: openLine,
+          column: openLine === null ? null : 1,
+        })
+      }
+      className="app-user-message-attachment-pill cursor-interaction"
+      title={openPath}
+    >
+      <span className="app-user-message-attachment-pill-icon" aria-hidden="true">
+        <WorkspaceFileIcon className="icon-2xs" />
+      </span>
+      <span className="app-user-message-attachment-pill-content">
+        <span className="app-user-message-attachment-pill-label">{displayLabel}</span>
+        {lineInfo !== null ? (
+          <span className="app-user-message-attachment-pill-line text-[11px] font-normal">
+            {lineInfo}
+          </span>
+        ) : null}
+      </span>
+    </button>
+  );
+}
+
+function ParentChatAttachmentChip({
+  sourceConversationId,
+  onSelectThread,
+  t,
+}: {
+  sourceConversationId: string;
+  onSelectThread: (threadId: string) => void;
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelectThread(sourceConversationId)}
+      className="app-user-message-attachment-pill cursor-interaction"
+      title={t("localConversation.parentThread")}
+    >
+      <span className="app-user-message-attachment-pill-icon" aria-hidden="true">
+        <ForkedConversationIcon className="icon-2xs" />
+      </span>
+      <span className="app-user-message-attachment-pill-content">
+        <span className="app-user-message-attachment-pill-label">{t("localConversation.parentThread")}</span>
+      </span>
+    </button>
   );
 }
 
@@ -2348,19 +2837,19 @@ function ForkedConversationInlineStatus({
   }
 
   return (
-    <div className="my-2 flex items-center gap-2 text-[13px] text-[var(--app-shell-muted)]">
-      <div className="h-px flex-1 border-t border-current/20" />
-      <div className="flex max-w-[70%] min-w-0 items-center gap-1 whitespace-nowrap">
+    <div className="flex justify-end">
+      <div className="app-user-message-parent-context max-w-[77%]">
         <ForkedConversationIcon className="h-[14px] w-[14px] shrink-0" />
+        <span className="shrink-0">{t("localConversation.parentThread")}</span>
         <button
           type="button"
-          className="cursor-interaction max-w-64 min-w-0 truncate text-left align-bottom text-[var(--app-shell-accent)] hover:underline"
+          className="cursor-interaction min-w-0 truncate text-left text-[var(--app-shell-accent)] hover:underline"
           onClick={() => onSelectThread(sourceConversationId)}
+          title={t("localConversation.parentThread")}
         >
-          {t("localConversation.forkedFromConversation")}
+          {t("localConversation.parentThread")}
         </button>
       </div>
-      <div className="h-px flex-1 border-t border-current/20" />
     </div>
   );
 }
