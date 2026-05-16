@@ -28,6 +28,9 @@ export type ThreadHistoryActiveFlag = "waitingOnApproval" | "waitingOnUserInput"
 
 export type ThreadHistoryEntrySource = {
   parentThreadId: string | null;
+  depth?: number | null;
+  agentNickname?: string | null;
+  agentRole?: string | null;
 };
 
 export type HistoryThreadView = {
@@ -49,6 +52,7 @@ export type ThreadConversationUserCommentContent = {
 };
 
 export type ThreadConversationUserCommentPosition = {
+  side?: string | null;
   path: string;
   line: number;
 };
@@ -315,6 +319,7 @@ export type ThreadConversation = {
   title: string;
   cwd: string;
   hostId?: string | null;
+  source?: ThreadHistoryEntrySource | null;
   latestTokenUsageInfo?: ThreadConversationTokenUsageInfo | null;
   threadGoal?: ThreadConversationGoal | null;
   turns: ThreadConversationTurn[];
@@ -1320,6 +1325,7 @@ export function normalizeThreadConversation(thread: ThreadConversation): ThreadC
 
   return {
     ...thread,
+    source: normalizeThreadHistorySource(thread.source),
     latestTokenUsageInfo: normalizeThreadConversationTokenUsageInfo(thread.latestTokenUsageInfo),
     threadGoal: normalizeThreadConversationGoal(thread.threadGoal),
     turns: Array.isArray(thread.turns)
@@ -1334,6 +1340,40 @@ export function normalizeThreadConversation(thread: ThreadConversation): ThreadC
       : [],
     turnTimings: Array.isArray(thread.turnTimings) ? thread.turnTimings : [],
     items,
+  };
+}
+
+function normalizeThreadHistorySource(
+  source: ThreadHistoryEntrySource | null | undefined,
+): ThreadHistoryEntrySource | null {
+  if (!source || typeof source !== "object") {
+    return null;
+  }
+
+  const parentThreadId =
+    typeof source.parentThreadId === "string" && source.parentThreadId.trim().length > 0
+      ? source.parentThreadId.trim()
+      : null;
+  const depth =
+    typeof source.depth === "number" && Number.isFinite(source.depth) ? source.depth : null;
+  const agentNickname =
+    typeof source.agentNickname === "string" && source.agentNickname.trim().length > 0
+      ? source.agentNickname.trim()
+      : null;
+  const agentRole =
+    typeof source.agentRole === "string" && source.agentRole.trim().length > 0
+      ? source.agentRole.trim()
+      : null;
+
+  if (parentThreadId === null && depth === null && agentNickname === null && agentRole === null) {
+    return null;
+  }
+
+  return {
+    parentThreadId,
+    depth,
+    agentNickname,
+    agentRole,
   };
 }
 
@@ -1599,6 +1639,7 @@ function normalizeThreadConversationUserCommentPosition(
   }
 
   return {
+    side: typeof position?.side === "string" ? position.side : null,
     path,
     line,
   };

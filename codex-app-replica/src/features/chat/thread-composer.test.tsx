@@ -457,9 +457,50 @@ test("ThreadComposer renders context window usage footer control from latest tok
   assert.ok(markup.includes("Context window: 72% full"));
   assert.ok(markup.includes("92k / 128k tokens used"));
   assert.ok(markup.includes("Codex automatically compacts its context"));
-  assert.ok(markup.includes("app-thread-composer-footer-icon-button"));
+  assert.ok(markup.includes("app-thread-composer-footer-meter-button"));
+  assert.ok(markup.includes("flex w-38 flex-col gap-0.5 text-center"));
   assert.ok(!markup.includes('title="Context window: 72% full'));
   assert.ok(!markup.includes(">72%<"));
+});
+
+test("ThreadComposer uses compact submit button shell and keeps the visible permissions trigger label branch without extra aria text", () => {
+  const markup = renderComposer(0);
+
+  assert.ok(markup.includes("app-thread-composer-submit-button"));
+  assert.ok(!markup.includes('aria-label="Change permissions"'));
+});
+
+test("ThreadComposer keeps official follow-up submit tooltip options when a response is still in progress", () => {
+  const markup = renderToStaticMarkup(
+    <ThreadComposer
+      composerDraft="Follow up on the failing test"
+      composerEnterBehavior="enter"
+      composerPermissionConfig={null}
+      composerPermissionMode="auto"
+      composerPermissionsState={permissionsState}
+      followUpQueueMode="queue"
+      isResponseInProgress
+      isWorktreeThread={false}
+      onClearPendingPdfComments={() => undefined}
+      onComposerDraftChange={() => undefined}
+      onComposerPermissionModeChange={() => undefined}
+      onStopTurn={() => undefined}
+      onSubmitTurn={() => undefined}
+      pendingPdfCommentCount={0}
+      queuedFollowUpCount={0}
+      reviewDelivery="inline"
+      submitButtonMode="send"
+      t={translate}
+      threadBranchLabel={null}
+      threadCwd="D:\\workspace"
+      turnError={null}
+    />,
+  );
+
+  assert.ok(markup.includes("Queue"));
+  assert.ok(markup.includes("Interrupt"));
+  assert.ok(markup.includes('aria-label="Send"'));
+  assert.ok(!markup.includes('title="Send"'));
 });
 
 test("parseSideChatCommandDraft parses official side-chat slash command shape", () => {

@@ -313,6 +313,7 @@ export type MessageKey =
   | "app.chat.stop"
   | "app.chat.queuedFollowUps"
   | "commentAttachments.numAnnotations"
+  | "commentAttachments.numComments"
   | "app.chat.removeQueuedFollowUp"
   | "app.chat.commandExecution"
   | "app.chat.fileChange"
@@ -487,6 +488,26 @@ export type MessageKey =
   | "localConversation.syncSetup.noBranches"
   | "composer.reviewMode.branches.error"
   | "composer.reviewMode.branches.retry"
+  | "review.commit.buttonLabel"
+  | "localConversation.gitActions.createBranch"
+  | "localConversationPage.gitActions"
+  | "localConversation.pullRequest.actions.viewPr"
+  | "localConversation.pullRequest.actions.statusTitle"
+  | "review.gitActions.prStatus.loading"
+  | "review.gitActions.prStatus.notInstalled"
+  | "review.gitActions.prStatus.notAuthenticated"
+  | "review.gitActions.prStatus.notAuthenticatedHint"
+  | "review.gitActions.prStatus.noBranch"
+  | "review.gitActions.prStatus.loadError"
+  | "review.gitActions.prStatus.available"
+  | "review.gitActions.prStatus.none"
+  | "review.gitActions.prState.draft"
+  | "review.gitActions.prState.merged"
+  | "review.gitActions.prState.checksFailing"
+  | "review.gitActions.prState.checksInProgress"
+  | "review.gitActions.prState.changesRequested"
+  | "review.gitActions.prState.approved"
+  | "review.gitActions.prState.ready"
   | "app.chat.exitCode"
   | "app.chat.durationMs"
   | "app.chat.movedTo"
@@ -750,6 +771,11 @@ export type MessageKey =
   | "localConversation.modelChanged.warning.line2"
   | "localConversation.parentThread"
   | "localConversation.forkedFromConversation"
+  | "codex.localConversation.comment.screenshotAttached"
+  | "codex.localConversation.pdfComment.annotationAttached"
+  | "codex.localConversation.browserComment.selectedElement"
+  | "codex.localConversation.diffCommentLeftSide"
+  | "codex.localConversation.diffCommentRightSide"
   | "localConversation.modelRerouted"
   | "localConversation.modelRerouted.warning.line1"
   | "localConversation.modelRerouted.warning.line2"
@@ -2679,6 +2705,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.stop": "Stop",
     "app.chat.queuedFollowUps": "Queued follow-ups ({count})",
     "commentAttachments.numAnnotations": "{count, plural, one {# annotation} other {# annotations}}",
+    "commentAttachments.numComments": "{count, plural, one {# comment} other {# comments}}",
     "app.chat.removeQueuedFollowUp": "Remove",
     "app.chat.commandExecution": "Command",
     "app.chat.fileChange": "File change",
@@ -2876,6 +2903,26 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "localConversation.syncSetup.noBranches": "No branches found",
     "composer.reviewMode.branches.error": "Unable to load branches",
     "composer.reviewMode.branches.retry": "Retry",
+    "review.commit.buttonLabel": "Commit",
+    "localConversation.gitActions.createBranch": "Create branch",
+    "localConversationPage.gitActions": "Git actions",
+    "localConversation.pullRequest.actions.viewPr": "View PR",
+    "localConversation.pullRequest.actions.statusTitle": "PR status",
+    "review.gitActions.prStatus.loading": "Loading PR status…",
+    "review.gitActions.prStatus.notInstalled": "GitHub CLI not installed",
+    "review.gitActions.prStatus.notAuthenticated": "GitHub CLI not authenticated",
+    "review.gitActions.prStatus.notAuthenticatedHint": "Check your GitHub CLI auth and try again",
+    "review.gitActions.prStatus.noBranch": "No branch selected",
+    "review.gitActions.prStatus.loadError": "Couldn’t load pull request",
+    "review.gitActions.prStatus.available": "Pull request available",
+    "review.gitActions.prStatus.none": "No open PR for this branch",
+    "review.gitActions.prState.draft": "Draft pull request",
+    "review.gitActions.prState.merged": "Merged",
+    "review.gitActions.prState.checksFailing": "Checks failing",
+    "review.gitActions.prState.checksInProgress": "Checks in progress",
+    "review.gitActions.prState.changesRequested": "Changes requested",
+    "review.gitActions.prState.approved": "Approved",
+    "review.gitActions.prState.ready": "Ready",
     "app.chat.exitCode": "Exit code",
     "app.chat.durationMs": "Duration (ms)",
     "app.chat.movedTo": "Moved to",
@@ -3149,6 +3196,11 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "localConversation.modelChanged.warning.line2": "Context may automatically compact.",
     "localConversation.parentThread": "Parent chat",
     "localConversation.forkedFromConversation": "Forked from conversation",
+    "codex.localConversation.comment.screenshotAttached": "Screenshot attached",
+    "codex.localConversation.pdfComment.annotationAttached": "PDF annotation attached",
+    "codex.localConversation.browserComment.selectedElement": "Selected page element",
+    "codex.localConversation.diffCommentLeftSide": "L",
+    "codex.localConversation.diffCommentRightSide": "R",
     "localConversation.modelRerouted": "Your request was routed to {toModel}.",
     "localConversation.modelRerouted.warning.line1":
       "Heads up, your request was re-routed to reduce cyber-abuse risk.",
@@ -5142,6 +5194,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.stop": "停止",
     "app.chat.queuedFollowUps": "排队中的跟进（{count}）",
     "commentAttachments.numAnnotations": "{count, plural, one {# 条批注} other {# 条批注}}",
+    "commentAttachments.numComments": "{count, plural, other {# 个评论}}",
     "app.chat.removeQueuedFollowUp": "移除",
     "app.chat.commandExecution": "命令",
     "app.chat.fileChange": "文件修改",
@@ -5338,6 +5391,26 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "localConversation.syncSetup.noBranches": "未找到分支",
     "composer.reviewMode.branches.error": "无法加载分支",
     "composer.reviewMode.branches.retry": "重试",
+    "review.commit.buttonLabel": "提交",
+    "localConversation.gitActions.createBranch": "创建分支",
+    "localConversationPage.gitActions": "Git 操作",
+    "localConversation.pullRequest.actions.viewPr": "查看 PR",
+    "localConversation.pullRequest.actions.statusTitle": "PR 状态",
+    "review.gitActions.prStatus.loading": "正在加载 PR 状态…",
+    "review.gitActions.prStatus.notInstalled": "未安装 GitHub CLI",
+    "review.gitActions.prStatus.notAuthenticated": "GitHub CLI 未认证",
+    "review.gitActions.prStatus.notAuthenticatedHint": "请检查 GitHub CLI 认证后重试",
+    "review.gitActions.prStatus.noBranch": "未选择分支",
+    "review.gitActions.prStatus.loadError": "无法加载拉取请求",
+    "review.gitActions.prStatus.available": "已有拉取请求",
+    "review.gitActions.prStatus.none": "此分支没有打开的 PR",
+    "review.gitActions.prState.draft": "草稿拉取请求",
+    "review.gitActions.prState.merged": "已合并",
+    "review.gitActions.prState.checksFailing": "检查失败",
+    "review.gitActions.prState.checksInProgress": "检查进行中",
+    "review.gitActions.prState.changesRequested": "请求修改",
+    "review.gitActions.prState.approved": "已批准",
+    "review.gitActions.prState.ready": "可合并",
     "app.chat.exitCode": "退出码",
     "app.chat.durationMs": "耗时（毫秒）",
     "app.chat.movedTo": "移动到",
@@ -5610,6 +5683,11 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "localConversation.modelChanged.warning.line2": "背景信息可能会自动压缩。",
     "localConversation.parentThread": "父聊天",
     "localConversation.forkedFromConversation": "从对话中派生",
+    "codex.localConversation.comment.screenshotAttached": "已附加截图",
+    "codex.localConversation.pdfComment.annotationAttached": "已附加 PDF 批注",
+    "codex.localConversation.browserComment.selectedElement": "已选中页面元素",
+    "codex.localConversation.diffCommentLeftSide": "左",
+    "codex.localConversation.diffCommentRightSide": "右",
     "localConversation.modelRerouted": "你的请求已转发至 {toModel}。",
     "localConversation.modelRerouted.warning.line1": "请注意，你的请求已被转发，以降低网络滥用风险。",
     "localConversation.modelRerouted.warning.line2":

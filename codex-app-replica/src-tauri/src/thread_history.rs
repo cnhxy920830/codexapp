@@ -4,10 +4,20 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct ThreadHistorySource {
+    pub parent_thread_id: Option<String>,
+    pub depth: Option<i64>,
+    pub agent_nickname: Option<String>,
+    pub agent_role: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct ThreadConversation {
     pub id: String,
     pub title: String,
     pub cwd: String,
+    pub source: Option<ThreadHistorySource>,
     pub latest_token_usage_info: Option<ThreadConversationTokenUsageInfo>,
     pub thread_goal: Option<ThreadConversationGoal>,
     pub turns: Vec<ThreadConversationTurn>,

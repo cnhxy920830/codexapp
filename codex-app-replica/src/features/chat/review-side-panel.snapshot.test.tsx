@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { ReviewGitActions } from "./ReviewGitActions";
 import { ReviewSidePanel } from "./ReviewSidePanel";
 import { RightPanelCollapsedRail, RightPanelTabStrip } from "./RightPanelTabStrip";
 import {
@@ -23,6 +24,7 @@ test("review side panel snapshots", async (t) => {
         <div className="h-[900px] w-[1280px]">
           <ReviewSidePanel
             gitInitCwd="D:\\workspace"
+            gitRoot="D:\\workspace"
             hostId={null}
             onOpenReviewFile={() => undefined}
             showGitRepoRequired={false}
@@ -37,12 +39,20 @@ test("review side panel snapshots", async (t) => {
         <div className="h-[900px] w-[1280px]">
           <ReviewSidePanel
             gitInitCwd="D:\\workspace"
+            gitRoot="D:\\workspace"
             hostId={null}
             onOpenReviewFile={() => undefined}
             showGitRepoRequired={true}
             t={translate}
             threadDiffSummary={EMPTY_THREAD_DIFF_SUMMARY}
           />
+        </div>,
+      ),
+    ),
+    reviewGitActionsMenuOpen: normalizeMarkup(
+      renderToStaticMarkup(
+        <div className="p-6">
+          <ReviewGitActions defaultMenuOpen gitRoot="D:\\workspace" hostId={null} t={translate} />
         </div>,
       ),
     ),
@@ -141,6 +151,15 @@ test("review side panel snapshots", async (t) => {
     ),
   };
 
+  assert.ok(!actualSnapshots.reviewWithChanges.includes('title="Review options"'));
+  assert.ok(!actualSnapshots.reviewWithChanges.includes('title="Refresh"'));
+  assert.ok(!actualSnapshots.reviewWithChanges.includes('title="src/features/chat/ThreadComposer.tsx"'));
+  assert.ok(!actualSnapshots.reviewWithChanges.includes('title="src/features/chat/ReviewPane.tsx"'));
+  assert.ok(!actualSnapshots.tabStripWithDynamicTabs.includes('title="Open review tab"'));
+  assert.ok(!actualSnapshots.tabStripWithDynamicTabs.includes('title="Open browser tab"'));
+  assert.ok(!actualSnapshots.tabStripWithDynamicTabs.includes('title="Expand panel"'));
+  assert.ok(!actualSnapshots.tabStripWithDynamicTabs.includes('title="Toggle side panel"'));
+
   if (UPDATE_SNAPSHOTS) {
     await mkdir(path.dirname(SNAPSHOT_PATH), { recursive: true });
     await writeFile(SNAPSHOT_PATH, `${JSON.stringify(actualSnapshots, null, 2)}\n`);
@@ -159,6 +178,7 @@ test("review side panel snapshots", async (t) => {
 type SnapshotMap = {
   reviewWithChanges: string;
   reviewEmpty: string;
+  reviewGitActionsMenuOpen: string;
   collapsedRailQuickOpenOnly: string;
   collapsedRailWithTabs: string;
   tabStripWithDynamicTabs: string;
@@ -257,13 +277,37 @@ const MESSAGE_MAP: Record<string, string> = {
   "thread.sidePanel.openBrowserTab": "Open browser tab",
   "thread.sidePanel.openFile": "Open file",
   "thread.sidePanel.openReviewTab": "Open review tab",
+  "thread.sidePanel.toggle": "Toggle side panel",
   "codex.rightPanel.expandFullWidth": "Expand panel",
   "codex.rightPanel.restoreWidth": "Restore panel width",
+  "review.commit.buttonLabel": "Commit",
+  "localConversation.gitActions.createBranch": "Create branch",
+  "localConversationPage.gitActions": "Git actions",
+  "localConversation.pullRequest.actions.viewPr": "View PR",
+  "localConversation.pullRequest.actions.statusTitle": "PR status",
+  "review.gitActions.prStatus.loading": "Loading PR status…",
+  "review.gitActions.prStatus.notInstalled": "GitHub CLI not installed",
+  "review.gitActions.prStatus.notAuthenticated": "GitHub CLI not authenticated",
+  "review.gitActions.prStatus.notAuthenticatedHint": "Check your GitHub CLI auth and try again",
+  "review.gitActions.prStatus.noBranch": "No branch selected",
+  "review.gitActions.prStatus.loadError": "Couldn’t load pull request",
+  "review.gitActions.prStatus.available": "Pull request available",
+  "review.gitActions.prStatus.none": "No open PR for this branch",
+  "review.gitActions.prState.draft": "Draft pull request",
+  "review.gitActions.prState.merged": "Merged",
+  "review.gitActions.prState.checksFailing": "Checks failing",
+  "review.gitActions.prState.checksInProgress": "Checks in progress",
+  "review.gitActions.prState.changesRequested": "Changes requested",
+  "review.gitActions.prState.approved": "Approved",
+  "review.gitActions.prState.ready": "Ready",
 };
 
 function translate(key: string, values?: Record<string, number | string>) {
   if (key === "app.chat.filesChanged") {
     return `${values?.fileCount ?? 0} files changed`;
+  }
+  if (key === "codex.tabs.closeNamed") {
+    return `Close ${values?.title ?? ""} tab`;
   }
   return MESSAGE_MAP[key] ?? key;
 }

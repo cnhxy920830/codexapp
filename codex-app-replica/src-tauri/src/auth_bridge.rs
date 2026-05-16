@@ -38,6 +38,7 @@ use crate::thread_history::FileChangeSummary;
 use crate::thread_history::ThreadConversation;
 use crate::thread_history::ThreadConversationGoal;
 use crate::thread_history::ThreadConversationItem;
+pub use crate::thread_history::ThreadHistorySource;
 use crate::thread_history::ThreadConversationTokenUsageBreakdown;
 use crate::thread_history::ThreadConversationTokenUsageInfo;
 use crate::thread_history::ThreadConversationTurn;
@@ -130,12 +131,6 @@ pub struct ThreadHistoryEntry {
     pub path: Option<String>,
     pub name: Option<String>,
     pub source: Option<ThreadHistorySource>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct ThreadHistorySource {
-    pub parent_thread_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1190,6 +1185,7 @@ struct ThreadReadThread {
     preview: String,
     cwd: String,
     name: Option<String>,
+    source: Option<serde_json::Value>,
     turns: Vec<ThreadReadTurn>,
 }
 
@@ -3424,9 +3420,31 @@ fn thread_history_source_from_value(
         .and_then(|source| source.pointer("/subAgent/thread_spawn/parent_thread_id"))
         .and_then(serde_json::Value::as_str)
         .map(ToOwned::to_owned);
+    let depth = value
+        .and_then(|source| source.pointer("/subAgent/thread_spawn/depth"))
+        .and_then(serde_json::Value::as_i64);
+    let agent_nickname = value
+        .and_then(|source| source.pointer("/subAgent/thread_spawn/agent_nickname"))
+        .and_then(serde_json::Value::as_str)
+        .map(ToOwned::to_owned);
+    let agent_role = value
+        .and_then(|source| source.pointer("/subAgent/thread_spawn/agent_role"))
+        .and_then(serde_json::Value::as_str)
+        .map(ToOwned::to_owned);
 
-    parent_thread_id.map(|parent_thread_id| ThreadHistorySource {
-        parent_thread_id: Some(parent_thread_id),
+    if parent_thread_id.is_none()
+        && depth.is_none()
+        && agent_nickname.is_none()
+        && agent_role.is_none()
+    {
+        return None;
+    }
+
+    Some(ThreadHistorySource {
+        parent_thread_id,
+        depth,
+        agent_nickname,
+        agent_role,
     })
 }
 
@@ -4406,10 +4424,12 @@ fn map_thread_conversation(
     let title = resolved_thread_title(&thread);
     let id = thread.id;
     let cwd = thread.cwd;
+    let source = thread_history_source_from_value(thread.source.as_ref());
     Ok(ThreadConversation {
         id,
         title,
         cwd,
+        source,
         latest_token_usage_info,
         thread_goal,
         turns,
@@ -7070,7 +7090,9 @@ mod tests {
                         "subAgent": {
                             "thread_spawn": {
                                 "parent_thread_id": "parent-thread-1",
-                                "depth": 1
+                                "depth": 1,
+                                "agent_nickname": "@Planner",
+                                "agent_role": "reviewer"
                             }
                         }
                     }
@@ -7094,6 +7116,9 @@ mod tests {
                 name: Some("Demo".to_string()),
                 source: Some(ThreadHistorySource {
                     parent_thread_id: Some("parent-thread-1".to_string()),
+                    depth: Some(1),
+                    agent_nickname: Some("@Planner".to_string()),
+                    agent_role: Some("reviewer".to_string()),
                 }),
             }]
         );

@@ -10,7 +10,6 @@ import {
   InfoIcon,
   PencilIcon,
   PersonalityChangedIcon,
-  ReviewTabIcon,
   WorkspaceFileIcon,
 } from "../../components/AppShellIcons";
 import type { AppToast } from "../../components/AppToastRegion";
@@ -53,6 +52,7 @@ import {
 } from "./threadConversationState";
 import { renderMessageContent } from "./messageContent";
 import { LatestTurnPreview } from "./LatestTurnPreview";
+import { LocalConversationPageHeader } from "./LocalConversationPageHeader";
 import { LocalUserImageAttachment } from "./LocalUserImageAttachment";
 import { MultiAgentGroupSummary } from "./MultiAgentGroupSummary";
 import { PlanSummaryItemCard } from "./PlanSummaryItemCard";
@@ -61,6 +61,7 @@ import { RemoteConversationFooter } from "./RemoteConversationFooter";
 import { RemoteUserImageAttachment } from "./RemoteUserImageAttachment";
 import { ThreadGoalOwner } from "./ThreadGoalOwner";
 import { TurnDiffCard } from "./TurnDiffCard";
+import { UserMessageEditComposer } from "./UserMessageEditComposer";
 import { UserMessageCollapsibleContent } from "./UserMessageCollapsibleContent";
 import {
   attachTurnScopedItemsToRenderableConversationGroups,
@@ -139,6 +140,7 @@ type ChatConversationMainPaneProps = {
   composerPermissionsState: HotkeyPermissionsState;
   followUpQueueMode: FollowUpQueueMode;
   hasAttachedHeartbeatAutomation: boolean;
+  isResponseInProgress?: boolean;
   isThreadActionsMenuOpen: boolean;
   isThreadHeartbeatAutomationActionDisabled: boolean;
   isThreadHeartbeatAutomationActionVisible: boolean;
@@ -245,6 +247,7 @@ export function ChatConversationMainPane({
   composerPermissionsState,
   followUpQueueMode,
   hasAttachedHeartbeatAutomation,
+  isResponseInProgress = false,
   isThreadActionsMenuOpen,
   isThreadHeartbeatAutomationActionDisabled,
   isThreadHeartbeatAutomationActionVisible,
@@ -366,6 +369,8 @@ export function ChatConversationMainPane({
   const threadHeaderSecondaryText =
     threadProjectLabel !== null && threadProjectLabel !== threadTitle ? threadProjectLabel : null;
   const isLocalConversationHeader = showThreadHeader && remoteTaskId === null;
+  const localConversationHeaderSource = threadConversation?.source ?? null;
+  const canPinLocalConversationThread = localConversationHeaderSource?.parentThreadId == null;
   const canCopyWorkingDirectory = (threadConversation?.cwd ?? "").trim().length > 0;
   const threadHeaderTrailing = threadHeaderTrailingActions ? (
     <div className="no-drag flex items-center gap-1">{threadHeaderTrailingActions}</div>
@@ -373,6 +378,7 @@ export function ChatConversationMainPane({
   const threadHeaderMenuActions = threadConversation ? (
     <ThreadHeaderActionMenu
       actionsMenuRef={threadActionsMenuRef}
+      canPinThread={isLocalConversationHeader ? canPinLocalConversationThread : true}
       canCopyWorkingDirectory={canCopyWorkingDirectory}
       hasAttachedHeartbeatAutomation={hasAttachedHeartbeatAutomation}
       heartbeatAutomationActionLabelKey={heartbeatAutomationActionLabelKey}
@@ -381,7 +387,7 @@ export function ChatConversationMainPane({
       isThreadHeartbeatAutomationActionDisabled={isThreadHeartbeatAutomationActionDisabled}
       isThreadHeartbeatAutomationActionVisible={isThreadHeartbeatAutomationActionVisible}
       isThreadPinned={isThreadPinned}
-      isTurnInProgress={submitButtonMode === "stop"}
+      isTurnInProgress={isResponseInProgress}
       isWorktreeThread={isWorktreeThread}
       variant={isLocalConversationHeader ? "localConversation" : "default"}
       onArchive={onArchiveThread}
@@ -418,13 +424,14 @@ export function ChatConversationMainPane({
       {threadConversation ? (
         <ThreadHeaderOverflowMenu
           actionsMenuRef={threadActionsMenuRef}
+          canPinThread={canPinLocalConversationThread}
           canCopyWorkingDirectory={canCopyWorkingDirectory}
           heartbeatAutomationActionLabelKey={heartbeatAutomationActionLabelKey}
           isThreadActionsMenuOpen={isThreadActionsMenuOpen}
           isThreadHeartbeatAutomationActionDisabled={isThreadHeartbeatAutomationActionDisabled}
           isThreadHeartbeatAutomationActionVisible={isThreadHeartbeatAutomationActionVisible}
           isThreadPinned={isThreadPinned}
-          isTurnInProgress={submitButtonMode === "stop"}
+          isTurnInProgress={isResponseInProgress}
           isWorktreeThread={isWorktreeThread}
           variant="localConversation"
           onArchive={onArchiveThread}
@@ -541,7 +548,7 @@ export function ChatConversationMainPane({
   }, [conversationGroups.length, showBlankConversationBody]);
 
   useEffect(() => {
-    if (submitButtonMode !== "stop") {
+    if (!isResponseInProgress) {
       return;
     }
 
@@ -558,7 +565,7 @@ export function ChatConversationMainPane({
         behavior: "smooth",
       });
     }
-  }, [submitButtonMode, threadConversation?.items.length]);
+  }, [isResponseInProgress, threadConversation?.items.length]);
 
   const handleScrollToBottom = () => {
     const scrollContainer = conversationScrollRef.current;
@@ -597,7 +604,7 @@ export function ChatConversationMainPane({
         onSelectThread={onSelectThread}
         onToolRequestUserInputSubmit={onToolRequestUserInputSubmit}
         conversationCwd={threadConversation?.cwd ?? null}
-        planSummaryIsWriting={submitButtonMode === "stop" && latestConversationGroup.assistantMessage === null}
+        planSummaryIsWriting={isResponseInProgress && latestConversationGroup.assistantMessage === null}
         remoteAttemptTabs={remoteAttemptTabsByTurnId[latestConversationGroup.turnId] ?? null}
         remoteConversationOverride={remoteConversationOverridesByTurnId[latestConversationGroup.turnId] ?? null}
         onSelectRemoteTaskAssistantTurn={onSelectRemoteTaskAssistantTurn}
@@ -612,6 +619,12 @@ export function ChatConversationMainPane({
       {showThreadHeader ? (
         isLocalConversationHeader ? (
           <LocalConversationPageHeader
+            conversationId={conversationId}
+            cwd={threadConversation?.cwd ?? workspaceRoot ?? null}
+            heartbeatSummary={hasAttachedHeartbeatAutomation ? heartbeatAutomationButtonTooltip : null}
+            projectLabel={threadProjectLabel}
+            source={localConversationHeaderSource}
+            threadGitRoot={threadGitRoot}
             title={threadTitle}
             heartbeatAction={localConversationHeaderHeartbeat}
             trailingActions={localConversationHeaderActions}
@@ -665,7 +678,7 @@ export function ChatConversationMainPane({
                     remoteConversationOverride={remoteConversationOverridesByTurnId[group.turnId] ?? null}
                     onToolRequestUserInputSubmit={onToolRequestUserInputSubmit}
                     planSummaryIsWriting={
-                      submitButtonMode === "stop" &&
+                      isResponseInProgress &&
                       latestConversationGroupTurnId === group.turnId &&
                       group.assistantMessage === null
                     }
@@ -740,6 +753,7 @@ export function ChatConversationMainPane({
             composerPermissionMode={composerPermissionMode}
             composerPermissionsState={composerPermissionsState}
             followUpQueueMode={followUpQueueMode}
+            isResponseInProgress={isResponseInProgress}
             isWorktreeThread={isWorktreeThread}
             onComposerDraftChange={onComposerDraftChange}
             onComposerPermissionModeChange={onComposerPermissionModeChange}
@@ -789,7 +803,7 @@ export function ChatConversationMainPane({
           latestConversationGroup ? (
             <LatestTurnPreview
               group={latestConversationGroup}
-              isTurnInProgress={submitButtonMode === "stop"}
+              isTurnInProgress={isResponseInProgress}
               previewContent={latestTurnPreviewContent}
               t={t}
             />
@@ -809,30 +823,6 @@ export function ChatConversationMainPane({
         workspaceRoot={workspaceRoot}
       />
     </section>
-  );
-}
-
-function LocalConversationPageHeader({
-  title,
-  heartbeatAction,
-  trailingActions,
-}: {
-  title: string;
-  heartbeatAction?: ReactNode;
-  trailingActions?: ReactNode;
-}) {
-  return (
-    <header className="border-b border-[var(--app-shell-border)] px-4">
-      <div className="draggable grid min-h-[var(--app-shell-toolbar)] w-full min-w-0 grid-cols-[minmax(0,1fr)] items-center gap-x-4 py-1.5">
-        <div className="flex min-w-0 items-center gap-2 truncate text-base electron:font-medium">
-          <div className="no-drag pointer-events-auto max-w-[320px] min-w-[2ch] cursor-default truncate text-[15px] font-medium text-[var(--app-shell-text)]">
-            <span className="block w-fit truncate">{title}</span>
-          </div>
-          {heartbeatAction}
-          {trailingActions}
-        </div>
-      </div>
-    </header>
   );
 }
 
@@ -1960,12 +1950,6 @@ function UserConversationMessageCard({
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
   const normalizedText = item.text.trim();
   const comments = Array.isArray(item.comments) ? item.comments : [];
-  const annotationComments = comments.filter(
-    (comment) => comment.origin === "pdf" || comment.localPdfContext !== null,
-  );
-  const regularComments = comments.filter(
-    (comment) => comment.origin !== "pdf" && comment.localPdfContext === null,
-  );
   const commentCount = comments.length;
   const pullRequestCheckCount =
     typeof item.pullRequestCheckCount === "number" && Number.isFinite(item.pullRequestCheckCount)
@@ -1987,7 +1971,7 @@ function UserConversationMessageCard({
     item.reviewMode ? { key: "reviewMode", label: t("app.chat.userMessage.reviewMode") } : null,
     item.pullRequestFixMode ? { key: "pullRequestFixMode", label: t("app.chat.userMessage.pullRequestFixMode") } : null,
     item.autoResolveSync ? { key: "autoResolveSync", label: t("app.chat.userMessage.autoResolveSync") } : null,
-    regularComments.length === 0 && commentCount > 0
+    commentCount > 0
       ? {
           key: "commentCount",
           label: t("app.chat.userMessage.commentCount", { count: commentCount }),
@@ -2010,18 +1994,6 @@ function UserConversationMessageCard({
   const messageStatusLabel = resolveUserMessageStatusLabel(item, t);
   const canEdit = !normalizedText.startsWith("PLEASE IMPLEMENT THIS PLAN:");
   const shouldRenderMetaRow = chips.length > 0 || (hasVisibleMessageText && !isEditing);
-  const annotationBadge = annotationComments.length > 0 ? (
-    <UserMessageHeaderBadge
-      icon={<ReviewTabIcon className="h-3.5 w-3.5 shrink-0" />}
-      label={t("commentAttachments.numAnnotations", { count: annotationComments.length })}
-    />
-  ) : null;
-  const commentBadge = regularComments.length > 0 ? (
-    <UserMessageHeaderBadge
-      icon={<InfoIcon className="h-3.5 w-3.5 shrink-0" />}
-      label={t("app.chat.userMessage.commentCount", { count: regularComments.length })}
-    />
-  ) : null;
 
   const handleCopy = async () => {
     if (!hasVisibleText) {
@@ -2037,8 +2009,8 @@ function UserConversationMessageCard({
     }
   };
 
-  const handleEditSubmit = async () => {
-    const nextText = draft.trim();
+  const handleEditSubmitWithText = async (value: string) => {
+    const nextText = value.trim();
     if (nextText.length === 0 || isSubmittingEdit) {
       return;
     }
@@ -2059,9 +2031,9 @@ function UserConversationMessageCard({
   const shouldRenderAttachmentRow = shouldRenderParentContext || hasAttachments || hasImages;
 
   return (
-    <div className="group flex w-full flex-col items-end justify-end gap-1">
+    <div className="flex w-full flex-col gap-2">
       {shouldRenderAttachmentRow ? (
-        <div className="flex max-w-[77%] flex-wrap items-end justify-end gap-2 self-end">
+        <div className="flex flex-wrap items-end justify-end gap-2 self-end">
           {shouldRenderParentContext ? (
             <ParentChatAttachmentChip
               sourceConversationId={parentContextId}
@@ -2088,137 +2060,117 @@ function UserConversationMessageCard({
         </div>
       ) : null}
       {pullRequestMergeTaskNumber !== null ? (
-        <div className="flex max-w-[77%] justify-end self-end">
-          <UserMessageHeaderBadge
-            icon={<OpenPullRequestIcon className="h-3.5 w-3.5 shrink-0" />}
-            label={t("app.chat.userMessage.pullRequestMergeTask", { number: pullRequestMergeTaskNumber })}
-          />
-        </div>
+        <UserMessageHeaderBadge
+          icon={<OpenPullRequestIcon className="h-3.5 w-3.5 shrink-0" />}
+          label={t("app.chat.userMessage.pullRequestMergeTask", { number: pullRequestMergeTaskNumber })}
+        />
       ) : null}
       {item.goal ? (
-        <div className="flex max-w-[77%] justify-end self-end">
-          <UserMessageHeaderBadge
-            icon={<CheckCircleFilledIcon className="h-3.5 w-3.5 shrink-0" />}
-            label={t("app.chat.userMessage.goal")}
-          />
-        </div>
+        <UserMessageHeaderBadge
+          icon={<CheckCircleFilledIcon className="h-3.5 w-3.5 shrink-0" />}
+          label={t("app.chat.userMessage.goal")}
+        />
       ) : null}
-      {annotationBadge ? (
-        <div className="flex max-w-[77%] justify-end self-end">
-          {annotationBadge}
-        </div>
-      ) : null}
-      {commentBadge ? (
-        <div className="flex max-w-[77%] justify-end self-end">
-          {commentBadge}
-        </div>
-      ) : null}
-      {shouldRenderBubble && messageStatusLabel !== null ? (
-        <div className="ms-1 mr-1 flex items-center gap-1.5 text-[var(--app-shell-muted)]">
-          <UserMessageStatusIcon className="h-[13px] w-[13px] shrink-0" />
-          <span className="text-[12px]">{messageStatusLabel}</span>
-        </div>
-      ) : null}
-      {shouldRenderBubble ? (
-        <div className="flex justify-end">
-          {isEditing ? (
-            <form
-              className="app-card w-full max-w-[77%] rounded-[24px] p-px"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void handleEditSubmit();
-              }}
-            >
-              <textarea
-                aria-label={t("app.chat.userMessage.editTextareaAriaLabel")}
+      <div className="group flex w-full flex-col items-end justify-end gap-1">
+        {shouldRenderBubble ? (
+          isEditing ? (
+            <div className="w-full p-px">
+              <UserMessageEditComposer
+                cwd={conversationCwd}
+                hostId={conversationHostId}
+                isSubmitting={isSubmittingEdit}
+                onCancel={() => {
+                  setDraft(item.text);
+                  setIsEditing(false);
+                }}
+                onDraftChange={setDraft}
+                onSubmit={async (text) => {
+                  setDraft(text);
+                  await handleEditSubmitWithText(text);
+                }}
+                t={t}
                 value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                placeholder={t("app.chat.userMessage.editPlaceholder")}
-                rows={4}
-                className="app-text-input min-h-[104px] w-full resize-none rounded-[22px] border-0 bg-transparent px-3 pt-3 pb-2 text-[14px] leading-6 outline-none"
               />
-              <div className="flex justify-end gap-1.5 px-3 pb-3">
-                <button
-                  type="button"
-                  disabled={isSubmittingEdit}
-                  onClick={() => {
-                    setDraft(item.text);
-                    setIsEditing(false);
-                  }}
-                  className="app-control-weak rounded-full px-3 py-1.5 text-[13px]"
-                >
-                  {t("app.chat.userMessage.cancelEditMessage")}
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmittingEdit || draft.trim().length === 0}
-                  className="app-button-primary rounded-full px-4 py-1.5 text-[13px]"
-                >
-                  {t("app.chat.userMessage.sendEditedMessage")}
-                </button>
-              </div>
-            </form>
+            </div>
           ) : (
-            <div className="app-user-message max-w-[77%] break-words rounded-2xl px-3 py-2 [&_.contain-inline-size]:[contain:initial]">
-              {hasVisibleText ? (
-                <UserMessageCollapsibleContent
-                  cwd={conversationCwd}
-                  hostId={conversationHostId}
-                  text={visibleText}
-                  t={t}
-                />
-              ) : (
-                <div className="app-text-subtle mb-px text-[13px] leading-6">
-                  {t("app.chat.userMessage.noContent")}
+            <>
+              {messageStatusLabel !== null ? (
+                <div className="ms-1 mr-1 flex items-center gap-2 text-[var(--app-shell-muted)]">
+                  <UserMessageStatusIcon className="h-[13px] w-[13px] shrink-0" />
+                  <span className="text-[12px]">{messageStatusLabel}</span>
                 </div>
-              )}
-            </div>
-          )}
-        </div>
-      ) : null}
-      <div
-        className={[
-          "flex flex-row-reverse items-center gap-1 text-[12px] leading-4 text-[var(--app-shell-muted)]",
-          shouldRenderMetaRow ? "" : "hidden",
-        ].join(" ")}
-      >
-        {chips.map((chip) => (
-          <UserMessageChip key={`${item.id}:${chip.key}`} label={chip.label} />
-        ))}
-        {hasVisibleMessageText && !isEditing ? (
-          <div className="ms-1 mr-1 flex items-center gap-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
-            {sentAtLabel ? (
-              <span className="app-text-muted text-[12px]">
-                {sentAtLabel}
-              </span>
-            ) : null}
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                aria-label={copied ? t("app.chat.userMessage.copyCopiedAriaLabel") : t("app.chat.userMessage.copyAriaLabel")}
-                onClick={() => void handleCopy()}
-                className="app-topbar-button inline-flex h-6 w-6 items-center justify-center rounded-full px-0 py-0"
-                title={copied ? t("app.chat.userMessage.copyCopiedTooltip") : t("app.chat.userMessage.copyTooltip")}
-              >
-                {copied ? <CheckIcon className="h-[14px] w-[14px]" /> : <CopyPathIcon className="h-[14px] w-[14px]" />}
-              </button>
-              {canEdit ? (
-                <button
-                  type="button"
-                  aria-label={t("app.chat.userMessage.editAriaLabel")}
-                  onClick={() => {
-                    setDraft(item.text);
-                    setIsEditing(true);
-                  }}
-                  className="app-topbar-button inline-flex h-6 w-6 items-center justify-center rounded-full px-0 py-0"
-                  title={t("app.chat.userMessage.editTooltip")}
-                >
-                  <PencilIcon className="h-[14px] w-[14px]" />
-                </button>
               ) : null}
-            </div>
-          </div>
+              <div className="flex justify-end">
+                <div
+                  className={[
+                    "app-user-message max-w-[77%] break-words rounded-2xl px-3 py-2 [&_.contain-inline-size]:[contain:initial]",
+                    hasVisibleText ? "" : "leading-none",
+                  ].join(" ")}
+                >
+                  {hasVisibleText ? (
+                    <UserMessageCollapsibleContent
+                      cwd={conversationCwd}
+                      hostId={conversationHostId}
+                      text={visibleText}
+                      t={t}
+                    />
+                  ) : (
+                    <div className="app-text-subtle mb-px text-[13px] leading-6">
+                      {t("app.chat.userMessage.noContent")}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )
         ) : null}
+        <div
+          className={[
+            "flex flex-row-reverse items-center gap-1 text-[12px] leading-4 text-[var(--app-shell-muted)]",
+            shouldRenderMetaRow ? "" : "hidden",
+          ].join(" ")}
+        >
+          {chips.map((chip) => (
+            <UserMessageChip key={`${item.id}:${chip.key}`} label={chip.label} />
+          ))}
+          {hasVisibleMessageText && !isEditing ? (
+            <div className="ms-1 mr-1 flex items-center gap-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
+              {sentAtLabel ? (
+                <span className="app-text-muted text-[12px] opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
+                  {sentAtLabel}
+                </span>
+              ) : null}
+              <div className="flex items-center gap-1">
+                <UserMessageActionTooltip content={copied ? t("app.chat.userMessage.copyCopiedTooltip") : t("app.chat.userMessage.copyTooltip")}>
+                  <button
+                    type="button"
+                    aria-label={copied ? t("app.chat.userMessage.copyCopiedAriaLabel") : t("app.chat.userMessage.copyAriaLabel")}
+                    disabled={copied}
+                    onClick={() => void handleCopy()}
+                    className="app-topbar-button inline-flex h-6 w-6 items-center justify-center rounded-full px-0 py-0 disabled:cursor-default"
+                  >
+                    {copied ? <CheckIcon className="h-[14px] w-[14px]" /> : <CopyPathIcon className="h-[14px] w-[14px]" />}
+                  </button>
+                </UserMessageActionTooltip>
+                {canEdit ? (
+                  <UserMessageActionTooltip content={t("app.chat.userMessage.editTooltip")}>
+                    <button
+                      type="button"
+                      aria-label={t("app.chat.userMessage.editAriaLabel")}
+                      onClick={() => {
+                        setDraft(item.text);
+                        setIsEditing(true);
+                      }}
+                      className="app-topbar-button inline-flex h-6 w-6 items-center justify-center rounded-full px-0 py-0"
+                    >
+                      <PencilIcon className="h-[14px] w-[14px]" />
+                    </button>
+                  </UserMessageActionTooltip>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );
@@ -2240,10 +2192,26 @@ function UserMessageHeaderBadge({
   label: string;
 }) {
   return (
-    <span className="app-user-message-owner-badge text-[12px] leading-4">
-      <span className="app-user-message-owner-badge-icon">{icon}</span>
-      <span className="app-user-message-owner-badge-label">{label}</span>
+    <span className="app-user-message-pill text-left">
+      <UserMessageOwnerPillContent icon={icon} label={label} />
     </span>
+  );
+}
+
+function UserMessageOwnerPillContent({
+  icon,
+  label,
+}: {
+  icon: ReactNode;
+  label: string;
+}) {
+  return (
+    <>
+      <span className="app-user-message-pill-icon">{icon}</span>
+      <span className="app-user-message-pill-content">
+        <span className="app-user-message-pill-label">{label}</span>
+      </span>
+    </>
   );
 }
 
@@ -2284,16 +2252,15 @@ function UserMessageAttachmentChip({
           column: openLine === null ? null : 1,
         })
       }
-      className="app-user-message-attachment-pill cursor-interaction"
-      title={openPath}
+      className="app-user-message-pill cursor-interaction"
     >
-      <span className="app-user-message-attachment-pill-icon" aria-hidden="true">
+      <span className="app-user-message-pill-icon" aria-hidden="true">
         <WorkspaceFileIcon className="icon-2xs" />
       </span>
-      <span className="app-user-message-attachment-pill-content">
-        <span className="app-user-message-attachment-pill-label">{displayLabel}</span>
+      <span className="app-user-message-pill-content">
+        <span className="app-user-message-pill-label">{displayLabel}</span>
         {lineInfo !== null ? (
-          <span className="app-user-message-attachment-pill-line text-[11px] font-normal">
+          <span className="app-user-message-pill-line">
             {lineInfo}
           </span>
         ) : null}
@@ -2311,18 +2278,19 @@ function ParentChatAttachmentChip({
   onSelectThread: (threadId: string) => void;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
 }) {
+  const displayTitle = t("localConversation.parentThread");
+
   return (
     <button
       type="button"
       onClick={() => onSelectThread(sourceConversationId)}
-      className="app-user-message-attachment-pill cursor-interaction"
-      title={t("localConversation.parentThread")}
+      className="app-user-message-pill cursor-interaction"
     >
-      <span className="app-user-message-attachment-pill-icon" aria-hidden="true">
+      <span className="app-user-message-pill-icon" aria-hidden="true">
         <ForkedConversationIcon className="icon-2xs" />
       </span>
-      <span className="app-user-message-attachment-pill-content">
-        <span className="app-user-message-attachment-pill-label">{t("localConversation.parentThread")}</span>
+      <span className="app-user-message-pill-content">
+        <span className="app-user-message-pill-label">{displayTitle}</span>
       </span>
     </button>
   );
@@ -2355,6 +2323,23 @@ function UserMessageStatusIcon({ className }: { className?: string }) {
         fill="currentColor"
       />
     </svg>
+  );
+}
+
+function UserMessageActionTooltip({
+  children,
+  content,
+}: {
+  children: ReactElement;
+  content: ReactNode;
+}) {
+  return (
+    <div className="group relative flex shrink-0 items-center">
+      {children}
+      <div className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden -translate-x-1/2 rounded-[12px] border border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)] px-3 py-2 text-[12px] leading-5 whitespace-pre-line text-[var(--app-shell-text)] shadow-[0_12px_30px_rgba(0,0,0,0.18)] group-hover:block group-focus-within:block">
+        {content}
+      </div>
+    </div>
   );
 }
 
@@ -2837,19 +2822,19 @@ function ForkedConversationInlineStatus({
   }
 
   return (
-    <div className="flex justify-end">
-      <div className="app-user-message-parent-context max-w-[77%]">
+    <div className="app-text-muted my-2 flex items-center gap-2 text-[13px]">
+      <div className="min-w-0 flex-1 border-t border-current/20" />
+      <div className="flex max-w-[70%] min-w-0 items-center gap-1 whitespace-nowrap">
         <ForkedConversationIcon className="h-[14px] w-[14px] shrink-0" />
-        <span className="shrink-0">{t("localConversation.parentThread")}</span>
         <button
           type="button"
-          className="cursor-interaction min-w-0 truncate text-left text-[var(--app-shell-accent)] hover:underline"
+          className="min-w-0 max-w-64 truncate text-left text-[var(--app-shell-accent)] hover:underline"
           onClick={() => onSelectThread(sourceConversationId)}
-          title={t("localConversation.parentThread")}
         >
-          {t("localConversation.parentThread")}
+          {t("localConversation.forkedFromConversation")}
         </button>
       </div>
+      <div className="min-w-0 flex-1 border-t border-current/20" />
     </div>
   );
 }

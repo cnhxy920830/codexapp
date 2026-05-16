@@ -32,6 +32,7 @@ type ThreadPageHeaderProps = {
 
 type ThreadHeaderActionMenuProps = {
   actionsMenuRef: RefObject<HTMLDivElement | null>;
+  canPinThread?: boolean;
   canCopyWorkingDirectory: boolean;
   hasAttachedHeartbeatAutomation: boolean;
   heartbeatAutomationActionLabelKey: MessageKey;
@@ -152,6 +153,7 @@ export function ThreadPageHeader({
 
 export function ThreadHeaderActionMenu({
   actionsMenuRef,
+  canPinThread = true,
   canCopyWorkingDirectory,
   hasAttachedHeartbeatAutomation,
   heartbeatAutomationActionLabelKey,
@@ -191,6 +193,7 @@ export function ThreadHeaderActionMenu({
       />
       <ThreadHeaderOverflowMenu
         actionsMenuRef={actionsMenuRef}
+        canPinThread={canPinThread}
         canCopyWorkingDirectory={canCopyWorkingDirectory}
         heartbeatAutomationActionLabelKey={heartbeatAutomationActionLabelKey}
         isOpenInNewWindowDisabled={isOpenInNewWindowDisabled}
@@ -237,20 +240,22 @@ export function ThreadHeaderHeartbeatButton({
   }
 
   return (
-    <button
-      type="button"
-      title={heartbeatAutomationButtonTooltip}
-      aria-label={t("localConversation.header.openHeartbeatAutomation")}
-      onClick={onOpenAttachedHeartbeatAutomation}
-      className={heartbeatButtonClassName}
-    >
-      <ClockIcon className="h-4 w-4" />
-    </button>
+    <ThreadHeaderTooltip content={heartbeatAutomationButtonTooltip}>
+      <button
+        type="button"
+        aria-label={t("localConversation.header.openHeartbeatAutomation")}
+        onClick={onOpenAttachedHeartbeatAutomation}
+        className={heartbeatButtonClassName}
+      >
+        <ClockIcon className="h-4 w-4" />
+      </button>
+    </ThreadHeaderTooltip>
   );
 }
 
 export function ThreadHeaderOverflowMenu({
   actionsMenuRef,
+  canPinThread = true,
   canCopyWorkingDirectory,
   heartbeatAutomationActionLabelKey,
   isOpenInNewWindowDisabled = false,
@@ -289,7 +294,6 @@ export function ThreadHeaderOverflowMenu({
       <div className="relative no-drag" ref={actionsMenuRef}>
         <button
           type="button"
-          title={t("threadHeader.moreActions")}
           aria-label={t("threadHeader.moreActions")}
           aria-expanded={isThreadActionsMenuOpen}
           onClick={onToggleThreadActionsMenu}
@@ -300,22 +304,27 @@ export function ThreadHeaderOverflowMenu({
 
         {isThreadActionsMenuOpen ? (
           <div className="app-card absolute top-[calc(100%+8px)] right-0 z-10 min-w-[236px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
-            <button
-              type="button"
-              onClick={onTogglePinThread}
-              className="app-nav-item-idle flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
-            >
-              {isThreadPinned ? (
-                <UnpinIcon className="h-4 w-4 shrink-0" />
-              ) : (
-                <PinIcon className="h-4 w-4 shrink-0" />
-              )}
-              {isThreadPinned ? t("sidebarElectron.unpinThread") : t("sidebarElectron.pinThread")}
-            </button>
+            {canPinThread ? (
+              <button
+                type="button"
+                onClick={onTogglePinThread}
+                className="app-nav-item-idle flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
+              >
+                {isThreadPinned ? (
+                  <UnpinIcon className="h-4 w-4 shrink-0" />
+                ) : (
+                  <PinIcon className="h-4 w-4 shrink-0" />
+                )}
+                {isThreadPinned ? t("sidebarElectron.unpinThread") : t("sidebarElectron.pinThread")}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={onOpenRenameDialog}
-              className="app-nav-item-idle flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
+              className={[
+                "app-nav-item-idle flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]",
+                canPinThread ? "" : "mt-0",
+              ].join(" ")}
             >
               <PencilIcon className="h-4 w-4 shrink-0" />
               {t("sidebarElectron.renameThread")}
@@ -428,6 +437,23 @@ export function ThreadHeaderOverflowMenu({
         ) : null}
       </div>
     </>
+  );
+}
+
+function ThreadHeaderTooltip({
+  children,
+  content,
+}: {
+  children: ReactNode;
+  content: ReactNode;
+}) {
+  return (
+    <div className="group relative flex shrink-0 items-center">
+      {children}
+      <div className="pointer-events-none absolute top-full left-1/2 z-20 mt-2 hidden max-w-[min(32rem,calc(100vw-16px))] -translate-x-1/2 rounded-[12px] border border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)] px-3 py-2 text-[12px] leading-5 whitespace-pre-line text-[var(--app-shell-text)] shadow-[0_12px_30px_rgba(0,0,0,0.18)] group-hover:block group-focus-within:block">
+        {content}
+      </div>
+    </div>
   );
 }
 

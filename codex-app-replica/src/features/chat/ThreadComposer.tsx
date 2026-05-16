@@ -44,6 +44,7 @@ type ThreadComposerProps = {
   composerPermissionsState: HotkeyPermissionsState;
   focusComposerNonce?: number | null;
   followUpQueueMode: FollowUpQueueMode;
+  isResponseInProgress?: boolean;
   isWorktreeThread: boolean;
   authMethod?: string | null;
   latestTokenUsageInfo?: ThreadConversationTokenUsageInfo | null;
@@ -142,18 +143,16 @@ export function parseSideChatCommandDraft(draft: string) {
 export function ThreadComposer({
   composerDraft,
   composerEnterBehavior,
-  composerPermissionConfig,
   composerPermissionMode,
   composerPermissionsState,
   focusComposerNonce,
   followUpQueueMode,
-  isWorktreeThread,
+  isResponseInProgress = false,
   authMethod = null,
   latestTokenUsageInfo = null,
   pendingPdfCommentCount = 0,
   placement = "main",
   queuedFollowUpCount,
-  reviewDelivery,
   threadBranchLabel = null,
   onShowToast,
   onComposerDraftChange,
@@ -207,19 +206,7 @@ export function ThreadComposer({
     composerPermissionsState.isDropdownDisabled
       ? disabledPermissionsTooltip
       : permissionTriggerTooltip;
-  const environmentLabel = isWorktreeThread
-    ? t("settings.automations.executionEnvironment.worktree")
-    : t("settings.automations.executionEnvironment.local");
-  const footerStatusTitle = [
-    threadCwd,
-    threadBranchLabel,
-    composerPermissionConfig?.sandboxMode,
-    followUpQueueMode,
-    reviewDelivery,
-  ]
-    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-    .join(" · ");
-  const helperOrStatusText = turnError ?? helperText ?? environmentLabel;
+  const helperOrStatusText = turnError ?? (helperText.length > 0 ? helperText : null);
   const normalizedThreadBranchLabel =
     threadBranchLabel !== null && threadBranchLabel.trim().length > 0 ? threadBranchLabel.trim() : null;
   const canCreateGitRepository =
@@ -249,6 +236,26 @@ export function ThreadComposer({
           ? SettingsCogIcon
           : DefaultPermissionsIcon;
   const PermissionTriggerIcon = permissionTriggerIcon;
+  const submitButtonTooltipContent = useMemo(
+    () =>
+      getSubmitButtonTooltipContent({
+        composerEnterBehavior,
+        composerModifierLabel,
+        followUpQueueMode,
+        isResponseInProgress,
+        submitButtonMode,
+        t,
+      }),
+    [
+      composerEnterBehavior,
+      composerModifierLabel,
+      followUpQueueMode,
+      submitButtonMode,
+      t,
+    ],
+  );
+  const submitButtonAriaLabel =
+    submitButtonMode === "stop" ? t("app.chat.stop") : t("app.chat.send");
 
   const handleInsertMention = () => {
     const suffix = composerDraft.length > 0 && !/\s$/u.test(composerDraft) ? " @" : "@";
@@ -436,7 +443,7 @@ export function ThreadComposer({
             ].join(" ")}
           />
 
-          <div className="mt-3 flex items-center justify-between gap-3 border-t border-[var(--app-shell-border)] pt-2.5">
+          <div className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-2 border-t border-[var(--app-shell-border)] pt-2.5">
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
               <div className="relative" ref={permissionMenuRef}>
                 <ComposerTooltip
@@ -452,7 +459,6 @@ export function ThreadComposer({
                       "app-thread-composer-pill",
                       isPermissionMenuOpen ? "app-thread-composer-pill-active" : "",
                     ].join(" ")}
-                    aria-label={permissionMenuTooltip}
                   >
                     <span className="flex h-4 w-4 shrink-0 items-center justify-center">
                       {permissionTriggerIcon === FullAccessPermissionsIcon ? (
@@ -520,122 +526,127 @@ export function ThreadComposer({
                 ) : null}
               </div>
               {canOpenWorkspaceFileSearch ? (
-                <button
-                  type="button"
-                  onClick={() => onOpenWorkspaceFileSearch?.()}
-                  className="app-thread-composer-action-button"
-                  aria-label={t("thread.sidePanel.openFile")}
-                  title={t("thread.sidePanel.openFile")}
-                >
-                  <WorkspaceFileIcon className="h-4 w-4" />
-                </button>
+                <ComposerTooltip content={t("thread.sidePanel.openFile")}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenWorkspaceFileSearch?.()}
+                    className="app-thread-composer-action-button"
+                    aria-label={t("thread.sidePanel.openFile")}
+                  >
+                    <WorkspaceFileIcon className="h-4 w-4" />
+                  </button>
+                </ComposerTooltip>
               ) : null}
               {canOpenSideChat ? (
-                <button
-                  type="button"
-                  onClick={() => void onOpenSideChat?.(null)}
-                  className="app-thread-composer-action-button"
-                  aria-label={t("threadHeader.openSideChat")}
-                  title={t("threadHeader.openSideChat")}
-                >
-                  <ForkedConversationIcon className="h-4 w-4" />
-                </button>
+                <ComposerTooltip content={t("threadHeader.openSideChat")}>
+                  <button
+                    type="button"
+                    onClick={() => void onOpenSideChat?.(null)}
+                    className="app-thread-composer-action-button"
+                    aria-label={t("threadHeader.openSideChat")}
+                  >
+                    <ForkedConversationIcon className="h-4 w-4" />
+                  </button>
+                </ComposerTooltip>
               ) : null}
-              <button
-                type="button"
-                onClick={handleInsertMention}
-                className="app-thread-composer-action-button"
-                aria-label="@"
-                title="@"
-              >
-                <span className="text-[15px] font-medium leading-none">@</span>
-              </button>
-            </div>
-            <button
-              type="button"
-              disabled={isSubmitDisabled}
-              onClick={() => {
-                if (submitButtonMode === "stop") {
-                  onStopTurn();
-                  return;
-                }
-                void handleOpenSideChat().then((didOpenSideChat) => {
-                  if (!didOpenSideChat) {
-                    onSubmitTurn();
-                  }
-                });
-              }}
-              className="app-button-primary inline-flex h-9 min-w-9 shrink-0 items-center justify-center rounded-full px-3 text-[12px] font-medium shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]"
-              aria-label={submitButtonMode === "stop" ? t("app.chat.stop") : t("app.chat.send")}
-              title={submitButtonMode === "stop" ? t("app.chat.stop") : t("app.chat.send")}
-            >
-              {submitButtonMode === "stop" ? "■" : "↑"}
-            </button>
-          </div>
-        </div>
-
-        <div className="border-t border-[var(--app-shell-border)] px-4 py-2.5">
-          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
-            {placement === "main" && threadGitRoot !== null ? (
-              <ThreadComposerBranchSwitcher
-                fallbackBranchLabel={normalizedThreadBranchLabel}
-                gitRoot={threadGitRoot}
-                hostId={threadHostId}
-                t={t}
-              />
-            ) : canCreateGitRepository ? (
-              <button
-                type="button"
-                disabled={isCreatingGitRepository}
-                onClick={() => void handleCreateGitRepository()}
-                className="app-thread-composer-footer-pill inline-flex max-w-[220px] items-center gap-1.5 disabled:opacity-60"
-                title={t("codex.review.noDiff.gitInit.createRepository")}
-              >
-                <PlusIcon className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">
-                  {isCreatingGitRepository
-                    ? t("codex.review.noDiff.gitInit.creating")
-                    : t("codex.review.noDiff.gitInit.createRepository")}
-                </span>
-              </button>
-            ) : normalizedThreadBranchLabel ? (
-              <div className="app-thread-composer-footer-pill max-w-[220px]" title={normalizedThreadBranchLabel}>
-                <span className="truncate">{t("composer.remote.currentBranch", { branch: normalizedThreadBranchLabel })}</span>
-              </div>
-            ) : null}
-            {contextWindowTooltipContent === null || contextWindowUsage === null ? null : (
-              <ComposerTooltip
-                contentClassName="w-[220px] text-left"
-                content={
-                  <div className="flex flex-col gap-1">
-                    <div>{contextWindowTooltipContent.label}</div>
-                    <div>{contextWindowTooltipContent.status}</div>
-                    <div>{contextWindowTooltipContent.usage}</div>
-                    {contextWindowTooltipContent.autoCompactionHint === null ? null : (
-                      <div>{contextWindowTooltipContent.autoCompactionHint}</div>
-                    )}
-                  </div>
-                }
-              >
+              <ComposerTooltip content="@">
                 <button
                   type="button"
-                  className="app-thread-composer-footer-icon-button"
-                  aria-label={contextWindowTooltipContent.ariaLabel}
+                  onClick={handleInsertMention}
+                  className="app-thread-composer-action-button"
+                  aria-label="@"
                 >
-                  <ContextWindowUsageMeter percent={contextWindowUsage.percent} />
+                  <span className="text-[15px] font-medium leading-none">@</span>
                 </button>
               </ComposerTooltip>
-            )}
-            <div
-              className={[
-                turnError ? "app-text-error" : "app-text-subtle",
-                isSidePlacement
-                  ? "min-h-[20px] flex-1 text-[12px] leading-5"
-                  : "min-h-[20px] min-w-[12ch] flex-1 text-[12px] leading-5",
-              ].join(" ")}
-              title={footerStatusTitle || undefined}
-            >
-              {helperOrStatusText}
+              {placement === "main" && threadGitRoot !== null ? (
+                <ThreadComposerBranchSwitcher
+                  fallbackBranchLabel={normalizedThreadBranchLabel}
+                  gitRoot={threadGitRoot}
+                  hostId={threadHostId}
+                  t={t}
+                />
+              ) : canCreateGitRepository ? (
+                <button
+                  type="button"
+                  disabled={isCreatingGitRepository}
+                  onClick={() => void handleCreateGitRepository()}
+                  className="app-thread-composer-footer-pill inline-flex max-w-[220px] items-center gap-1.5 disabled:opacity-60"
+                >
+                  <PlusIcon className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">
+                    {isCreatingGitRepository
+                      ? t("codex.review.noDiff.gitInit.creating")
+                      : t("codex.review.noDiff.gitInit.createRepository")}
+                  </span>
+                </button>
+              ) : normalizedThreadBranchLabel ? (
+                <div className="app-thread-composer-footer-pill max-w-[220px]">
+                  <span className="truncate">
+                    {t("composer.remote.currentBranch", { branch: normalizedThreadBranchLabel })}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+            <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2">
+              <div
+                className={[
+                  turnError ? "app-text-error" : "app-text-subtle",
+                  isSidePlacement
+                    ? "min-h-[20px] min-w-0 flex-1 text-[12px] leading-5 text-right"
+                    : "min-h-[20px] min-w-0 flex-1 text-[12px] leading-5 text-right",
+                ].join(" ")}
+              >
+                {helperOrStatusText}
+              </div>
+              {contextWindowTooltipContent === null || contextWindowUsage === null ? null : (
+                <ComposerTooltip
+                  contentClassName="flex w-38 flex-col gap-0.5 text-center"
+                  content={
+                    <div className="flex flex-col gap-0.5 text-center">
+                      <div>{contextWindowTooltipContent.label}</div>
+                      <div>{contextWindowTooltipContent.status}</div>
+                      <div>{contextWindowTooltipContent.usage}</div>
+                      {contextWindowTooltipContent.autoCompactionHint === null ? null : (
+                        <div>{contextWindowTooltipContent.autoCompactionHint}</div>
+                      )}
+                    </div>
+                  }
+                >
+                  <button
+                    type="button"
+                    className="app-thread-composer-footer-icon-button app-thread-composer-footer-meter-button"
+                    aria-label={contextWindowTooltipContent.ariaLabel}
+                  >
+                    <ContextWindowUsageMeter percent={contextWindowUsage.percent} />
+                  </button>
+                </ComposerTooltip>
+              )}
+              <ComposerTooltip
+                align="end"
+                contentClassName="min-w-[84px] text-center"
+                content={submitButtonTooltipContent}
+              >
+                <button
+                  type="button"
+                  disabled={isSubmitDisabled}
+                  onClick={() => {
+                    if (submitButtonMode === "stop") {
+                      onStopTurn();
+                      return;
+                    }
+                    void handleOpenSideChat().then((didOpenSideChat) => {
+                      if (!didOpenSideChat) {
+                        onSubmitTurn();
+                      }
+                    });
+                  }}
+                  className="app-thread-composer-submit-button"
+                  aria-label={submitButtonAriaLabel}
+                >
+                  {submitButtonMode === "stop" ? "■" : "↑"}
+                </button>
+              </ComposerTooltip>
             </div>
           </div>
         </div>
@@ -692,6 +703,56 @@ type ContextWindowTooltipContent = {
   status: string;
   usage: string;
 };
+
+function getSubmitButtonTooltipContent({
+  composerEnterBehavior,
+  composerModifierLabel,
+  followUpQueueMode,
+  isResponseInProgress,
+  submitButtonMode,
+  t,
+}: {
+  composerEnterBehavior: ComposerEnterBehavior;
+  composerModifierLabel: string;
+  followUpQueueMode: FollowUpQueueMode;
+  isResponseInProgress: boolean;
+  submitButtonMode: "send" | "stop";
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+}) {
+  if (submitButtonMode === "stop") {
+    return t("app.chat.stop");
+  }
+
+  if (!isResponseInProgress) {
+    return t("app.chat.send");
+  }
+
+  const primaryLabel =
+    followUpQueueMode === "queue"
+      ? t("settings.general.followUpQueueMode.queue")
+      : t("settings.general.followUpQueueMode.interrupt");
+  const secondaryLabel =
+    followUpQueueMode === "queue"
+      ? t("settings.general.followUpQueueMode.interrupt")
+      : t("settings.general.followUpQueueMode.queue");
+  const primaryShortcut =
+    composerEnterBehavior === "cmdIfMultiline"
+      ? `${composerModifierLabel}+Enter`
+      : "Enter";
+  const secondaryShortcut =
+    composerEnterBehavior === "cmdIfMultiline"
+      ? "Enter"
+      : `${composerModifierLabel}+Enter`;
+
+  return (
+    <div className="grid grid-cols-[auto_auto] items-center gap-x-2 gap-y-1">
+      <span>{primaryLabel}</span>
+      <span className="justify-self-end text-[var(--app-shell-subtle)]">{primaryShortcut}</span>
+      <span>{secondaryLabel}</span>
+      <span className="justify-self-end text-[var(--app-shell-subtle)]">{secondaryShortcut}</span>
+    </div>
+  );
+}
 
 function getContextWindowUsageInfo(
   tokenUsageInfo: ThreadConversationTokenUsageInfo | null,

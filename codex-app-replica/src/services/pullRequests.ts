@@ -4,6 +4,10 @@ export type PullRequestFilterView = "authored" | "review";
 export type PullRequestBoardColumnKey = "unmet_checks" | "draft" | "ready" | "merged";
 export type PullRequestBoardState = "draft" | "failing" | "in_progress" | "merged" | "ready";
 export type PullRequestUpdateAction = "mark-draft" | "mark-ready" | "toggle-auto-merge";
+export type GhCliStatusResponse = {
+  isInstalled: boolean;
+  isAuthenticated: boolean;
+};
 
 export type ErrorEnvelope = {
   status: "error";
@@ -219,6 +223,16 @@ export type ParsedOriginRepo = {
 export async function readPullRequestBoard(params: PullRequestBoardParams) {
   return invoke<PullRequestBoardResponse>("gh-pr-board", {
     params: normalizeBoardParams(params),
+  });
+}
+
+export async function readGhCliStatus(params: {
+  hostId?: string | null;
+}) {
+  return invoke<GhCliStatusResponse>("gh-cli-status", {
+    params: {
+      hostId: normalizeHostId(params.hostId),
+    },
   });
 }
 

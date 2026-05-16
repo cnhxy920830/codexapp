@@ -11,6 +11,7 @@ import {
   RefreshIcon,
   RichPreviewDisabledIcon,
   RichPreviewEnabledIcon,
+  SplitterGripIcon,
   WrapDisabledIcon,
   WrapEnabledIcon,
   WordDiffsDisabledIcon,
@@ -20,11 +21,14 @@ import {
 import type { AppToast } from "../../components/AppToastRegion";
 import type { MessageKey } from "../../i18n/messages";
 import type { FileChangeSummary } from "../../services/history";
+import { ReviewGitActions } from "./ReviewGitActions";
 import { countFileChangeDiffLines, type ThreadDiffSummary } from "./threadConversationState";
+import { ReviewChangedFilesTreePane } from "./ReviewChangedFilesTreePane";
 import { ReviewEmptyState } from "./ReviewEmptyState";
 
 type ReviewSidePanelProps = {
   gitInitCwd?: string | null;
+  gitRoot?: string | null;
   hostId?: string | null;
   onShowToast?: (toast: AppToast) => void;
   showGitRepoRequired?: boolean;
@@ -35,8 +39,13 @@ type ReviewSidePanelProps = {
 
 type ReviewDiffMode = "split" | "unified";
 
+const REVIEW_CHANGED_FILES_PANE_MIN_WIDTH = 200;
+const REVIEW_CHANGED_FILES_PANE_DEFAULT_WIDTH = 220;
+const REVIEW_CHANGED_FILES_PANE_MAX_WIDTH_RATIO = 0.6;
+
 export function ReviewSidePanel({
   gitInitCwd = null,
+  gitRoot = null,
   hostId = null,
   onShowToast,
   showGitRepoRequired = false,
@@ -54,7 +63,17 @@ export function ReviewSidePanel({
   const [copiedApplyCommand, setCopiedApplyCommand] = useState(false);
   const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState(false);
   const [isChangedFilesPaneOpen, setIsChangedFilesPaneOpen] = useState(true);
+  const [changedFilesPaneWidth, setChangedFilesPaneWidth] = useState(
+    REVIEW_CHANGED_FILES_PANE_DEFAULT_WIDTH,
+  );
+  const [isChangedFilesPaneResizing, setIsChangedFilesPaneResizing] = useState(false);
+  const [activeReviewPath, setActiveReviewPath] = useState<string | null>(
+    threadDiffSummary.files[0]?.path ?? null,
+  );
   const optionsMenuRef = useRef<HTMLDivElement | null>(null);
+  const fileCardRefs = useRef(new Map<string, HTMLDivElement>());
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const changedFilesPaneRef = useRef<HTMLDivElement | null>(null);
   const fileKeys = useMemo(
     () => threadDiffSummary.files.map((file, index) => buildReviewFileKey(file, index)),
     [threadDiffSummary.files],
@@ -65,6 +84,15 @@ export function ReviewSidePanel({
   useEffect(() => {
     setExpandedFileKeys(new Set(fileKeys));
   }, [fileKeys]);
+
+  useEffect(() => {
+    setActiveReviewPath((current) => {
+      if (current != null && threadDiffSummary.files.some((file) => file.path === current)) {
+        return current;
+      }
+      return threadDiffSummary.files[0]?.path ?? null;
+    });
+  }, [threadDiffSummary.files]);
 
   useEffect(() => {
     if (!isOptionsMenuOpen) {
@@ -97,11 +125,130 @@ export function ReviewSidePanel({
     window.setTimeout(() => setIsRefreshing(false), 500);
   };
 
+  const registerFileCardRef = (path: string) => (node: HTMLDivElement | null) => {
+    if (node == null) {
+      fileCardRefs.current.delete(path);
+      return;
+    }
+
+    fileCardRefs.current.set(path, node);
+  };
+
+  const scrollToReviewPath = (path: string) => {
+    if (!threadDiffSummary.files.some((file) => file.path === path)) {
+      return;
+    }
+
+    setActiveReviewPath(path);
+    requestAnimationFrame(() => {
+      fileCardRefs.current.get(path)?.scrollIntoView({
+        behavior: "auto",
+        block: "start",
+      });
+    });
+  };
+
+  const clampChangedFilesPaneWidth = (width: number) => {
+    const parentWidth =
+      changedFilesPaneRef.current?.parentElement?.getBoundingClientRect().width ?? window.innerWidth;
+    const maxWidth = Math.max(
+      REVIEW_CHANGED_FILES_PANE_MIN_WIDTH,
+      parentWidth * REVIEW_CHANGED_FILES_PANE_MAX_WIDTH_RATIO,
+    );
+    return Math.min(Math.max(width, REVIEW_CHANGED_FILES_PANE_MIN_WIDTH), maxWidth);
+  };
+
+  const handleChangedFilesPaneResizePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isChangedFilesPaneOpen || event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    const pointerId = event.pointerId;
+    const nextTarget = event.currentTarget;
+    nextTarget.setPointerCapture(pointerId);
+    setIsChangedFilesPaneResizing(true);
+
+    const updateWidth = (clientX: number) => {
+      const rightEdge =
+        changedFilesPaneRef.current?.getBoundingClientRect().right ?? window.innerWidth;
+      const nextWidth = rightEdge - clientX;
+      if (nextWidth < REVIEW_CHANGED_FILES_PANE_MIN_WIDTH) {
+        setIsChangedFilesPaneOpen(false);
+        return;
+      }
+
+      setChangedFilesPaneWidth(clampChangedFilesPaneWidth(nextWidth));
+    };
+
+    updateWidth(event.clientX);
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      updateWidth(moveEvent.clientX);
+    };
+
+    const handlePointerUp = () => {
+      setIsChangedFilesPaneResizing(false);
+      nextTarget.releasePointerCapture(pointerId);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+  };
+
+  useEffect(() => {
+    const root = scrollContainerRef.current;
+    if (root == null || threadDiffSummary.files.length === 0) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visibleEntries = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((left, right) => {
+            if (right.intersectionRatio !== left.intersectionRatio) {
+              return right.intersectionRatio - left.intersectionRatio;
+            }
+
+            return Math.abs(left.boundingClientRect.top - root.getBoundingClientRect().top)
+              - Math.abs(right.boundingClientRect.top - root.getBoundingClientRect().top);
+          });
+        const nextPath = visibleEntries[0]?.target.getAttribute("data-review-path");
+        if (nextPath == null) {
+          return;
+        }
+
+        setActiveReviewPath((current) => (current === nextPath ? current : nextPath));
+      },
+      {
+        root,
+        rootMargin: "-18% 0px -55% 0px",
+        threshold: [0.15, 0.35, 0.6, 0.85],
+      },
+    );
+
+    for (const card of fileCardRefs.current.values()) {
+      observer.observe(card);
+    }
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [threadDiffSummary.files]);
+
   if (!threadDiffSummary.hasChanges) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <ReviewHeaderToolbar
           diffMode={diffMode}
+          gitActions={
+            gitRoot ? <ReviewGitActions gitRoot={gitRoot} hostId={hostId} t={t} /> : null
+          }
           handleCopyGitApplyCommand={null}
           hideWhitespace={hideWhitespace}
           isAllExpanded={false}
@@ -168,6 +315,9 @@ export function ReviewSidePanel({
     <div className="flex min-h-0 flex-1 flex-col">
       <ReviewHeaderToolbar
         diffMode={diffMode}
+        gitActions={
+          gitRoot ? <ReviewGitActions gitRoot={gitRoot} hostId={hostId} t={t} /> : null
+        }
         handleCopyGitApplyCommand={() => void handleCopyGitApplyCommand()}
         hideWhitespace={hideWhitespace}
         isAllExpanded={isAllExpanded}
@@ -217,7 +367,10 @@ export function ReviewSidePanel({
       ) : null}
 
       <div className="flex min-h-0 flex-1">
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto px-3 py-3">
+        <div
+          ref={scrollContainerRef}
+          className="min-h-0 min-w-0 flex-1 overflow-y-auto px-3 py-3"
+        >
           <div className="space-y-2">
             {threadDiffSummary.files.map((file, index) => {
               const fileKey = buildReviewFileKey(file, index);
@@ -228,9 +381,11 @@ export function ReviewSidePanel({
                   diffMode={diffMode}
                   fileKey={fileKey}
                   hideWhitespace={hideWhitespace}
+                  isActive={activeReviewPath === file.path}
                   isExpanded={expandedFileKeys.has(fileKey)}
                   loadFullFilesEnabled={loadFullFilesEnabled}
                   onOpenReviewFile={onOpenReviewFile}
+                  onSelectReviewPath={setActiveReviewPath}
                   onToggleExpanded={() =>
                     setExpandedFileKeys((current) => {
                       const next = new Set(current);
@@ -243,6 +398,7 @@ export function ReviewSidePanel({
                     })
                   }
                   richPreviewEnabled={richPreviewEnabled}
+                  reviewCardRef={registerFileCardRef(file.path)}
                   t={t}
                   wordDiffsEnabled={wordDiffsEnabled}
                   wrap={wrap}
@@ -252,13 +408,39 @@ export function ReviewSidePanel({
           </div>
         </div>
         {isChangedFilesPaneOpen ? (
-          <ReviewChangedFilesPane
-            isOpen={isChangedFilesPaneOpen}
-            files={threadDiffSummary.files}
-            onOpenReviewFile={onOpenReviewFile}
-            onToggleOpen={() => setIsChangedFilesPaneOpen(false)}
-            t={t}
-          />
+          <div
+            ref={changedFilesPaneRef}
+            className="relative flex h-full shrink-0 border-l border-[var(--app-shell-border)]"
+            style={{
+              width: `${changedFilesPaneWidth}px`,
+              maxWidth: `${REVIEW_CHANGED_FILES_PANE_MAX_WIDTH_RATIO * 100}%`,
+            }}
+          >
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              onPointerDown={handleChangedFilesPaneResizePointerDown}
+              className={[
+                "group relative flex w-3 shrink-0 cursor-col-resize items-center justify-center bg-transparent",
+                isChangedFilesPaneResizing
+                  ? "app-right-panel-splitter-active"
+                  : "app-right-panel-splitter",
+              ].join(" ")}
+            >
+              <div className="app-right-panel-splitter-line h-full w-px" />
+              <div className="app-right-panel-splitter-grip pointer-events-none absolute inset-y-0 left-1/2 flex -translate-x-1/2 items-center justify-center rounded-full">
+                <SplitterGripIcon className="h-4 w-4" />
+              </div>
+            </div>
+            <aside className="flex min-w-0 flex-1 flex-col bg-[color:var(--app-shell-right)]">
+              <ReviewChangedFilesTreePane
+                activePath={activeReviewPath}
+                files={threadDiffSummary.files}
+                onSelectPath={scrollToReviewPath}
+                t={t}
+              />
+            </aside>
+          </div>
         ) : null}
       </div>
     </div>
@@ -267,6 +449,7 @@ export function ReviewSidePanel({
 
 function ReviewHeaderToolbar({
   diffMode,
+  gitActions,
   handleCopyGitApplyCommand,
   hideWhitespace,
   isAllExpanded,
@@ -292,6 +475,7 @@ function ReviewHeaderToolbar({
   wrap,
 }: {
   diffMode: ReviewDiffMode;
+  gitActions?: ReactNode;
   handleCopyGitApplyCommand: (() => void) | null;
   hideWhitespace: boolean;
   isAllExpanded: boolean;
@@ -319,7 +503,7 @@ function ReviewHeaderToolbar({
   return (
     <div className="grid h-[var(--app-shell-toolbar-pane)] grid-cols-[minmax(0,1fr)_auto] items-center gap-1 border-b border-[var(--app-shell-border)] px-2 text-[var(--app-shell-muted)]">
       {summary}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-px">
         <div className="flex items-center gap-px">
           <div className="relative" ref={optionsMenuRef}>
             <ToolbarButton
@@ -439,7 +623,7 @@ function ReviewHeaderToolbar({
             )}
           </ToolbarButton>
         </div>
-        <div className="ml-1 h-4 w-px bg-[var(--app-shell-border)]" />
+        {gitActions ?? null}
         <ToolbarButton
           label={t("thread.sidePanel.openFile")}
           onClick={onToggleChangedFilesPane}
@@ -457,11 +641,14 @@ function ReviewFileCard({
   diffMode,
   fileKey,
   hideWhitespace,
+  isActive,
   isExpanded,
   loadFullFilesEnabled,
   onOpenReviewFile,
+  onSelectReviewPath,
   onToggleExpanded,
   richPreviewEnabled,
+  reviewCardRef,
   t,
   wordDiffsEnabled,
   wrap,
@@ -470,11 +657,14 @@ function ReviewFileCard({
   diffMode: ReviewDiffMode;
   fileKey: string;
   hideWhitespace: boolean;
+  isActive: boolean;
   isExpanded: boolean;
   loadFullFilesEnabled: boolean;
   onOpenReviewFile: (change: FileChangeSummary) => void;
+  onSelectReviewPath: (path: string) => void;
   onToggleExpanded: () => void;
   richPreviewEnabled: boolean;
+  reviewCardRef: (node: HTMLDivElement | null) => void;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
   wordDiffsEnabled: boolean;
   wrap: boolean;
@@ -491,7 +681,17 @@ function ReviewFileCard({
   );
 
   return (
-    <div className="app-card-muted overflow-hidden rounded-[14px]">
+    <div
+      ref={reviewCardRef}
+      data-review-path={change.path}
+      className={[
+        "overflow-hidden rounded-[14px] border transition-colors",
+        isActive
+          ? "app-card border-[var(--app-shell-border-heavy)]"
+          : "app-card-muted border-[var(--app-shell-border)]",
+      ].join(" ")}
+      onClick={() => onSelectReviewPath(change.path)}
+    >
       <div className="flex items-start gap-3 px-4 py-3">
         <button
           type="button"
@@ -519,9 +719,12 @@ function ReviewFileCard({
             <button
               type="button"
               disabled={!isPreviewable}
-              onClick={() => onOpenReviewFile(change)}
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpenReviewFile(change);
+              }}
               className="app-title min-w-0 truncate text-left text-[13px] leading-5 disabled:opacity-70"
-              title={change.path}
+              aria-label={change.path}
             >
               {change.path}
             </button>
@@ -540,7 +743,10 @@ function ReviewFileCard({
         {isPreviewable ? (
           <button
             type="button"
-            onClick={() => onOpenReviewFile(change)}
+            onClick={(event) => {
+              event.stopPropagation();
+              onOpenReviewFile(change);
+            }}
             className="app-control-weak shrink-0 rounded-full px-3 py-1 text-[11px]"
           >
             {t("localConversation.planSummary.openInNewWindow")}
@@ -580,76 +786,37 @@ function ToolbarButton({
   pressed?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      aria-pressed={pressed}
-      onClick={onClick}
-      className={[
-        "app-topbar-button flex h-8 w-8 items-center justify-center rounded-[10px]",
-        pressed ? "bg-[var(--app-shell-control-hover)] text-[var(--app-shell-text)]" : "",
-      ].join(" ")}
-    >
-      {children}
-    </button>
+    <ReviewToolbarTooltip content={label}>
+      <button
+        type="button"
+        aria-label={label}
+        aria-pressed={pressed}
+        onClick={onClick}
+        className={[
+          "app-topbar-button flex h-8 w-8 items-center justify-center rounded-[10px]",
+          pressed ? "bg-[var(--app-shell-control-hover)] text-[var(--app-shell-text)]" : "",
+        ].join(" ")}
+      >
+        {children}
+      </button>
+    </ReviewToolbarTooltip>
   );
 }
 
-function ReviewChangedFilesPane({
-  files,
-  isOpen,
-  onOpenReviewFile,
-  onToggleOpen,
-  t,
+function ReviewToolbarTooltip({
+  children,
+  content,
 }: {
-  files: FileChangeSummary[];
-  isOpen: boolean;
-  onOpenReviewFile: (change: FileChangeSummary) => void;
-  onToggleOpen: () => void;
-  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+  children: ReactNode;
+  content: ReactNode;
 }) {
   return (
-    <aside className="flex w-[220px] shrink-0 flex-col border-l border-[var(--app-shell-border)] bg-[color:var(--app-shell-right)]">
-      <div className="flex items-center justify-between gap-2 border-b border-[var(--app-shell-border)] px-3 py-2">
-        <div className="app-title text-[12px] font-medium tracking-[0.04em]">
-          {t("app.chat.filesChanged", { fileCount: files.length })}
-        </div>
-        <ToolbarButton
-          label={t("thread.sidePanel.openFile")}
-          onClick={onToggleOpen}
-          pressed={isOpen}
-        >
-          <OpenFilesIcon className="h-4 w-4" />
-        </ToolbarButton>
+    <div className="group relative flex shrink-0 items-center">
+      {children}
+      <div className="pointer-events-none absolute top-full left-1/2 z-20 mt-2 hidden max-w-[min(32rem,calc(100vw-16px))] -translate-x-1/2 rounded-[12px] border border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)] px-3 py-2 text-[12px] leading-5 whitespace-pre-line text-[var(--app-shell-text)] shadow-[0_12px_30px_rgba(0,0,0,0.18)] group-hover:block group-focus-within:block">
+        {content}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
-        <div className="space-y-1">
-          {files.map((file, index) => {
-            const key = buildReviewFileKey(file, index);
-            const { linesAdded, linesDeleted } = countFileChangeDiffLines(file.diff);
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => onOpenReviewFile(file)}
-                className="app-nav-item-idle flex w-full items-start gap-2 rounded-[10px] px-2.5 py-2 text-left"
-              >
-                <OpenFilesIcon className="mt-0.5 h-4 w-4 shrink-0 text-[var(--app-shell-muted)]" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[12px] text-[var(--app-shell-text)]">{file.path}</div>
-                  <div className="mt-1 flex items-center gap-2 text-[11px] text-[var(--app-shell-muted)]">
-                    <span>{file.kind}</span>
-                    <span className="text-[#21a05b]">+{linesAdded}</span>
-                    <span className="text-[#c3564e]">-{linesDeleted}</span>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </aside>
+    </div>
   );
 }
 

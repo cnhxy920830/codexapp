@@ -11,6 +11,7 @@ import { ChatSidePanel } from "./ChatSidePanel";
 import { createSideChatRightPanelTab } from "./rightPanelTabs";
 import type {
   ThreadConversation,
+  ThreadConversationMessage,
   ThreadConversationUserInput,
 } from "../../services/history";
 import type { HotkeyPermissionsState } from "../hotkeyWindow/hotkeyPermissionsMode";
@@ -37,6 +38,8 @@ const permissionsState: HotkeyPermissionsState = {
 
 test("local conversation page snapshots", async (t) => {
   const threadConversation = buildLocalConversationFixture();
+  const annotationOnlyThreadConversation = buildAnnotationOnlyLocalConversationFixture();
+  const editingThreadConversation = buildEditingLocalConversationFixture();
   const sideChatConversation = buildSideChatConversationFixture();
 
   const actualSnapshots = {
@@ -200,6 +203,166 @@ test("local conversation page snapshots", async (t) => {
         </I18N_CONTEXT.Provider>,
       ),
     ),
+    annotationOnlyThread: normalizeMarkup(
+      renderToStaticMarkup(
+        <I18N_CONTEXT.Provider value={{ locale: "en-US", setLocale: () => undefined, t: translate }}>
+          <div className="h-[1080px] w-[1440px]">
+            <ChatConversationMainPane
+              threadActionsMenuRef={{ current: null }}
+              composerDraft=""
+              composerEnterBehavior="enter"
+              composerPermissionConfig={null}
+              composerPermissionMode="auto"
+              composerPermissionsState={permissionsState}
+              followUpQueueMode="queue"
+              hasAttachedHeartbeatAutomation={true}
+              isThreadActionsMenuOpen={false}
+              isThreadHeartbeatAutomationActionDisabled={false}
+              isThreadHeartbeatAutomationActionVisible={true}
+              isThreadPinned={true}
+              isWorktreeThread={false}
+              heartbeatAutomationActionLabelKey="threadHeader.editAutomation"
+              heartbeatAutomationButtonTooltip="Next run: Tomorrow at 9:00 AM"
+              currentThreadApprovals={[]}
+              currentThreadImplementPlanRequests={[]}
+              currentThreadMcpServerElicitationRequest={[]}
+              currentThreadPermissionsRequestApproval={[]}
+              currentThreadToolRequestUserInput={[]}
+              currentThreadQueuedFollowUps={[]}
+              currentThreadPendingPdfCommentCount={0}
+              onApprovalDecision={() => undefined}
+              onDismissImplementPlanRequest={() => undefined}
+              onImplementPlanRequestSubmit={() => undefined}
+              onMcpServerElicitationRequestSubmit={() => undefined}
+              onPermissionsRequestApprovalSubmit={() => undefined}
+              onToolRequestUserInputSubmit={() => undefined}
+              onComposerDraftChange={() => undefined}
+              onComposerPermissionModeChange={() => undefined}
+              onOpenRemoteTask={() => undefined}
+              onSelectRemoteTaskAssistantTurn={() => undefined}
+              onArchiveThread={() => undefined}
+              onCopyAppLink={() => undefined}
+              onCopyConversationMarkdown={() => undefined}
+              onCopySessionId={() => undefined}
+              onCopyWorkingDirectory={() => undefined}
+              onForkSelectedThread={() => undefined}
+              onForkSelectedThreadIntoWorktree={() => undefined}
+              onOpenInNewWindow={() => undefined}
+              onOpenAttachedHeartbeatAutomation={() => undefined}
+              onOpenSideChat={() => true}
+              onOpenThreadHeartbeatAutomationAction={() => undefined}
+              onOpenRenameDialog={() => undefined}
+              onOpenWorkspaceFileSearch={() => undefined}
+              onFocusComposerRequest={() => undefined}
+              onSelectThread={() => undefined}
+              onTogglePinnedThread={() => undefined}
+              onThreadGoalEditorOpenChange={() => undefined}
+              onPendingThreadGoalObjectiveChange={() => undefined}
+              onEditUserMessage={() => undefined}
+              onRemoveQueuedFollowUp={() => undefined}
+              onStopTurn={() => undefined}
+              onSubmitTurn={() => undefined}
+              onToggleThreadActionsMenu={() => undefined}
+              approvalActionErrors={{}}
+              reviewDelivery="inline"
+              respondingApprovalKeys={[]}
+              submitButtonMode="send"
+              t={translate}
+              remoteAttemptTabsByTurnId={{}}
+              remoteConversationOverridesByTurnId={{}}
+              composerPlacement="main"
+              isThreadGoalEditorOpen={false}
+              pendingThreadGoalObjective={null}
+              threadConversation={annotationOnlyThreadConversation}
+              turnError={null}
+              workspaceRoot="D:\\workspace\\project"
+              conversationHostId={null}
+              authMethod="chatgpt"
+            />
+          </div>
+        </I18N_CONTEXT.Provider>,
+      ),
+    ),
+    editingUserMessage: normalizeMarkup(
+      renderToStaticMarkup(
+        <I18N_CONTEXT.Provider value={{ locale: "en-US", setLocale: () => undefined, t: translate }}>
+          <div className="h-[1080px] w-[1440px]">
+            <ChatConversationMainPane
+              threadActionsMenuRef={{ current: null }}
+              composerDraft=""
+              composerEnterBehavior="enter"
+              composerPermissionConfig={null}
+              composerPermissionMode="auto"
+              composerPermissionsState={permissionsState}
+              followUpQueueMode="queue"
+              hasAttachedHeartbeatAutomation={true}
+              isThreadActionsMenuOpen={false}
+              isThreadHeartbeatAutomationActionDisabled={false}
+              isThreadHeartbeatAutomationActionVisible={true}
+              isThreadPinned={true}
+              isWorktreeThread={false}
+              heartbeatAutomationActionLabelKey="threadHeader.editAutomation"
+              heartbeatAutomationButtonTooltip="Next run: Tomorrow at 9:00 AM"
+              currentThreadApprovals={[]}
+              currentThreadImplementPlanRequests={[]}
+              currentThreadMcpServerElicitationRequest={[]}
+              currentThreadPermissionsRequestApproval={[]}
+              currentThreadToolRequestUserInput={[]}
+              currentThreadQueuedFollowUps={[]}
+              currentThreadPendingPdfCommentCount={0}
+              onApprovalDecision={() => undefined}
+              onDismissImplementPlanRequest={() => undefined}
+              onImplementPlanRequestSubmit={() => undefined}
+              onMcpServerElicitationRequestSubmit={() => undefined}
+              onPermissionsRequestApprovalSubmit={() => undefined}
+              onToolRequestUserInputSubmit={() => undefined}
+              onComposerDraftChange={() => undefined}
+              onComposerPermissionModeChange={() => undefined}
+              onOpenRemoteTask={() => undefined}
+              onSelectRemoteTaskAssistantTurn={() => undefined}
+              onArchiveThread={() => undefined}
+              onCopyAppLink={() => undefined}
+              onCopyConversationMarkdown={() => undefined}
+              onCopySessionId={() => undefined}
+              onCopyWorkingDirectory={() => undefined}
+              onForkSelectedThread={() => undefined}
+              onForkSelectedThreadIntoWorktree={() => undefined}
+              onOpenInNewWindow={() => undefined}
+              onOpenAttachedHeartbeatAutomation={() => undefined}
+              onOpenSideChat={() => true}
+              onOpenThreadHeartbeatAutomationAction={() => undefined}
+              onOpenRenameDialog={() => undefined}
+              onOpenWorkspaceFileSearch={() => undefined}
+              onFocusComposerRequest={() => undefined}
+              onSelectThread={() => undefined}
+              onTogglePinnedThread={() => undefined}
+              onThreadGoalEditorOpenChange={() => undefined}
+              onPendingThreadGoalObjectiveChange={() => undefined}
+              onEditUserMessage={() => undefined}
+              onRemoveQueuedFollowUp={() => undefined}
+              onStopTurn={() => undefined}
+              onSubmitTurn={() => undefined}
+              onToggleThreadActionsMenu={() => undefined}
+              approvalActionErrors={{}}
+              reviewDelivery="inline"
+              respondingApprovalKeys={[]}
+              submitButtonMode="send"
+              t={translate}
+              remoteAttemptTabsByTurnId={{}}
+              remoteConversationOverridesByTurnId={{}}
+              composerPlacement="main"
+              isThreadGoalEditorOpen={false}
+              pendingThreadGoalObjective={null}
+              threadConversation={editingThreadConversation}
+              turnError={null}
+              workspaceRoot="D:\\workspace\\project"
+              conversationHostId={null}
+              authMethod="chatgpt"
+            />
+          </div>
+        </I18N_CONTEXT.Provider>,
+      ),
+    ),
     sideChat: normalizeMarkup(
       renderToStaticMarkup(
         <I18N_CONTEXT.Provider value={{ locale: "en-US", setLocale: () => undefined, t: translate }}>
@@ -209,8 +372,8 @@ test("local conversation page snapshots", async (t) => {
               activeTab={createSideChatRightPanelTab({
                 conversationId: "side-thread-1",
                 index: 1,
-                title: "Side chat",
-                numberedTitle: "Side chat 1",
+                title: "Follow up in side chat.",
+                numberedTitle: "Follow up in side chat. 1",
               })}
               browserTarget={null}
               conversationHostId={null}
@@ -270,6 +433,12 @@ test("local conversation page snapshots", async (t) => {
     ),
   };
 
+  assert.ok(!actualSnapshots.mainThread.includes('title="Next run: Tomorrow at 9:00 AM"'));
+  assert.ok(!actualSnapshots.mainThread.includes('title="More actions"'));
+  assert.ok(!actualSnapshots.mainThreadMenuOpen.includes('title="More actions"'));
+  assert.ok(actualSnapshots.mainThread.includes("app-user-message-pill"));
+  assert.ok(!actualSnapshots.mainThread.includes("app-user-message-owner-badge"));
+
   if (UPDATE_SNAPSHOTS) {
     await mkdir(path.dirname(SNAPSHOT_PATH), { recursive: true });
     await writeFile(SNAPSHOT_PATH, `${JSON.stringify(actualSnapshots, null, 2)}\n`);
@@ -288,6 +457,8 @@ test("local conversation page snapshots", async (t) => {
 type SnapshotMap = {
   mainThread: string;
   mainThreadMenuOpen: string;
+  annotationOnlyThread: string;
+  editingUserMessage: string;
   sideChat: string;
 };
 
@@ -304,6 +475,12 @@ function buildLocalConversationFixture(): ThreadConversation {
     title: "Fix local chat parity",
     cwd: "D:\\workspace\\project",
     hostId: null,
+    source: {
+      parentThreadId: "thread-source-9",
+      depth: 1,
+      agentNickname: "@Planner",
+      agentRole: "reviewer",
+    },
     latestTokenUsageInfo: {
       total: {
         totalTokens: 92000,
@@ -381,12 +558,35 @@ function buildLocalConversationFixture(): ThreadConversation {
               path: "D:\\workspace\\project\\docs\\spec.pdf",
               title: "Spec",
             },
+            localPdfScreenshot: {
+              commentId: "pdf-comment-1",
+              dataUrl: "data:image/png;base64,AAAA",
+              width: 96,
+              height: 72,
+              pageNumber: 3,
+            },
+          },
+          {
+            path: "https://example.com/review",
+            body: "Keep the browser-selection badge in the tooltip owner.",
+            content: [],
+            origin: "browser",
           },
           {
             path: "src/App.tsx",
             body: "Align the local header with source owner.",
             content: [],
-            position: { path: "src/App.tsx", line: 42 },
+            position: { path: "src/App.tsx", line: 42, side: "left" },
+          },
+          {
+            path: "src/features/chat/ThreadComposer.tsx",
+            body: "Keep the composer footer control ordering source-backed.",
+            content: [],
+            position: {
+              path: "src/features/chat/ThreadComposer.tsx",
+              line: 128,
+              side: "right",
+            },
           },
         ],
         attachments: [
@@ -418,6 +618,12 @@ function buildSideChatConversationFixture(): ThreadConversation {
     title: "Side chat 1",
     cwd: "D:\\workspace\\project",
     hostId: null,
+    source: {
+      parentThreadId: "thread-local-1",
+      depth: 2,
+      agentNickname: "@Reviewer",
+      agentRole: "default",
+    },
     latestTokenUsageInfo: null,
     turns: [
       {
@@ -460,6 +666,58 @@ function buildSideChatConversationFixture(): ThreadConversation {
         completed: true,
       },
     ],
+  };
+}
+
+function buildAnnotationOnlyLocalConversationFixture(): ThreadConversation {
+  const threadConversation = buildLocalConversationFixture();
+  const annotationOnlyUserMessage = threadConversation.items.find(
+    (item): item is ThreadConversationMessage => item.type === "userMessage",
+  );
+
+  if (annotationOnlyUserMessage === undefined) {
+    return threadConversation;
+  }
+
+  return {
+    ...threadConversation,
+    items: threadConversation.items.map((item) =>
+      item.type !== "userMessage" || item.id !== annotationOnlyUserMessage.id
+        ? item
+        : {
+            ...item,
+            comments: item.comments?.filter(
+              (comment) =>
+                comment.origin === "pdf" ||
+                comment.localPdfContext != null ||
+                comment.localPdfScreenshot != null,
+            ),
+          },
+    ),
+  };
+}
+
+function buildEditingLocalConversationFixture(): ThreadConversation {
+  const threadConversation = buildLocalConversationFixture();
+  const userMessage = threadConversation.items.find(
+    (item): item is ThreadConversationMessage => item.type === "userMessage",
+  );
+
+  if (userMessage === undefined) {
+    return threadConversation;
+  }
+
+  return {
+    ...threadConversation,
+    items: threadConversation.items.map((item) =>
+      item.type !== "userMessage" || item.id !== userMessage.id
+        ? item
+        : {
+            ...item,
+            comments: [],
+            text: "/side Draft a tighter parity checklist with @browser-use and $code-review",
+          },
+    ),
   };
 }
 
@@ -534,10 +792,22 @@ function translate(key: string, values?: Record<string, number | string>) {
       return "Review mode";
     case "commentAttachments.numAnnotations":
       return `${values?.count ?? 0} annotations`;
+    case "commentAttachments.numComments":
+      return `${values?.count ?? 0} comments`;
     case "codex.review.noDiff.gitInit.createRepository":
       return "Create git repository";
     case "codex.review.noDiff.gitInit.creating":
       return "Creating…";
+    case "codex.localConversation.comment.screenshotAttached":
+      return "Screenshot attached";
+    case "codex.localConversation.pdfComment.annotationAttached":
+      return "PDF annotation attached";
+    case "codex.localConversation.browserComment.selectedElement":
+      return "Selected page element";
+    case "codex.localConversation.diffCommentLeftSide":
+      return "L";
+    case "codex.localConversation.diffCommentRightSide":
+      return "R";
     case "composer.contextWindow.autoCompactionTooltipLine1":
       return "Codex automatically compacts its context";
     case "composer.pendingThreadGoal.summary":
@@ -626,20 +896,40 @@ function translate(key: string, values?: Record<string, number | string>) {
       return "Enable full access?";
     case "composer.mode.agentMode.guardianApprovals":
       return "Auto-review";
+    case "composer.permissionsDropdown.default.tooltip":
+      return "Codex automatically runs commands in a sandbox";
+    case "composer.permissionsDropdown.guardianApproval.tooltip":
+      return "Auto-review tooltip";
+    case "composer.permissionsDropdown.guardianApproval.disabled":
+      return "Auto-review disabled";
     case "composer.permissionsDropdown.custom.label":
       return "Custom";
     case "composer.permissionsDropdown.custom.optionLabel":
       return "Custom (config.toml)";
+    case "composer.permissionsDropdown.agentMode.tooltip.custom":
+      return "Custom permissions tooltip";
     case "composer.permissionsDropdown.default.label":
       return "Default permissions";
     case "composer.permissionsDropdown.default.optionLabel":
       return "Default permissions";
+    case "composer.permissionsDropdown.disabled.requirements":
+      return "Permissions locked";
+    case "composer.permissionsDropdown.trigger.tooltip":
+      return "Change permissions";
+    case "composer.permissionsDropdown.agentMode.tooltip.fullAccess":
+      return "Full access tooltip";
+    case "composer.permissionsDropdown.fullAccess.disabled":
+      return "Full access disabled";
+    case "composer.permissionsDropdown.fullAccess.disabledGlobalDefault":
+      return "Full access disabled globally";
     case "composer.permissionsDropdown.fullAccess.label":
       return "Full access";
     case "composer.permissionsDropdown.fullAccess.optionLabel":
       return "Full access";
     case "composer.permissionsDropdown.guardianApproval.shortLabel":
       return "Auto-review";
+    case "composer.remote.currentBranch":
+      return `${values?.branch ?? ""} (current)`;
     case "general.enterBehaviorDescription":
       return `Use ${values?.modifierSymbol ?? "Cmd"}+Enter`;
     case "localConversation.parentThread":
@@ -658,6 +948,8 @@ function translate(key: string, values?: Record<string, number | string>) {
       return "Nothing open";
     case "thread.sidePanel.openFile":
       return "Open file";
+    case "thread.sidePanel.toggle":
+      return "Toggle side panel";
     case "threadHeader.addAutomation":
       return "Add automation";
     case "threadHeader.copyAppLink":
@@ -682,6 +974,8 @@ function translate(key: string, values?: Record<string, number | string>) {
       return "Open in new window";
     case "threadHeader.openSideChat":
       return "Open side chat";
+    case "codex.tabs.closeNamed":
+      return `Close ${values?.title ?? ""} tab`;
     case "sidebarElectron.archiveThread":
       return "Archive thread";
     case "sidebarElectron.pinThread":
