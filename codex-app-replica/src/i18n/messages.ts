@@ -314,6 +314,7 @@ export type MessageKey =
   | "app.chat.queuedFollowUps"
   | "commentAttachments.numAnnotations"
   | "commentAttachments.numComments"
+  | "commentAttachments.removeAnnotationsAriaLabel"
   | "app.chat.removeQueuedFollowUp"
   | "app.chat.commandExecution"
   | "app.chat.fileChange"
@@ -428,6 +429,14 @@ export type MessageKey =
   | "composer.contextWindowUsageTooltip"
   | "composer.contextWindow.usagePercent"
   | "composer.contextWindow.autoCompactionTooltipLine1"
+  | "composer.planModeIndicator"
+  | "composer.planModeIndicator.tooltipText"
+  | "composer.planModeIndicator.tooltipShortcut"
+  | "composer.planModeIndicator.tooltipToggle"
+  | "composer.aboveSuggestion.plan.title"
+  | "composer.aboveSuggestion.plan.shortcut"
+  | "composer.aboveSuggestion.plan.action"
+  | "composer.aboveSuggestion.dismiss"
   | "composer.pendingThreadGoal.summary"
   | "composer.pendingThreadGoal.editTooltip"
   | "composer.pendingThreadGoal.edit"
@@ -2706,6 +2715,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.queuedFollowUps": "Queued follow-ups ({count})",
     "commentAttachments.numAnnotations": "{count, plural, one {# annotation} other {# annotations}}",
     "commentAttachments.numComments": "{count, plural, one {# comment} other {# comments}}",
+    "commentAttachments.removeAnnotationsAriaLabel": "Remove annotations attachment",
     "app.chat.removeQueuedFollowUp": "Remove",
     "app.chat.commandExecution": "Command",
     "app.chat.fileChange": "File change",
@@ -2843,6 +2853,14 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "composer.contextWindowUsageTooltip": "{usedTokens}k / {contextWindow}k tokens used",
     "composer.contextWindow.usagePercent": "{usage}%",
     "composer.contextWindow.autoCompactionTooltipLine1": "Codex automatically compacts its context",
+    "composer.planModeIndicator": "Plan",
+    "composer.planModeIndicator.tooltipText": "Create a plan",
+    "composer.planModeIndicator.tooltipShortcut": "Shift + Tab",
+    "composer.planModeIndicator.tooltipToggle": "to toggle",
+    "composer.aboveSuggestion.plan.title": "Create a plan",
+    "composer.aboveSuggestion.plan.shortcut": "Shift + Tab",
+    "composer.aboveSuggestion.plan.action": "Use plan mode",
+    "composer.aboveSuggestion.dismiss": "Dismiss suggestion",
     "composer.pendingThreadGoal.summary": "Goal",
     "composer.pendingThreadGoal.editTooltip": "Edit goal",
     "composer.pendingThreadGoal.edit": "Edit goal",
@@ -5195,6 +5213,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.chat.queuedFollowUps": "排队中的跟进（{count}）",
     "commentAttachments.numAnnotations": "{count, plural, one {# 条批注} other {# 条批注}}",
     "commentAttachments.numComments": "{count, plural, other {# 个评论}}",
+    "commentAttachments.removeAnnotationsAriaLabel": "移除批注附件",
     "app.chat.removeQueuedFollowUp": "移除",
     "app.chat.commandExecution": "命令",
     "app.chat.fileChange": "文件修改",
@@ -5331,6 +5350,14 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "composer.contextWindowUsageTooltip": "已使用 {usedTokens}k / {contextWindow}k tokens",
     "composer.contextWindow.usagePercent": "{usage}%",
     "composer.contextWindow.autoCompactionTooltipLine1": "Codex 会在上下文接近满载时自动压缩上下文",
+    "composer.planModeIndicator": "计划",
+    "composer.planModeIndicator.tooltipText": "创建计划",
+    "composer.planModeIndicator.tooltipShortcut": "Shift + Tab",
+    "composer.planModeIndicator.tooltipToggle": "即可切换",
+    "composer.aboveSuggestion.plan.title": "创建计划",
+    "composer.aboveSuggestion.plan.shortcut": "Shift + Tab",
+    "composer.aboveSuggestion.plan.action": "使用计划模式",
+    "composer.aboveSuggestion.dismiss": "关闭建议",
     "composer.pendingThreadGoal.summary": "目标",
     "composer.pendingThreadGoal.editTooltip": "编辑目标",
     "composer.pendingThreadGoal.edit": "编辑目标",

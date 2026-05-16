@@ -1,4 +1,7 @@
-import type { ThreadConversationUserInput } from "../../services/history";
+import type {
+  CollaborationModeKind,
+  ThreadConversationUserInput,
+} from "../../services/history";
 
 export type QueuedLocalFollowUp = {
   id: string;
@@ -6,6 +9,7 @@ export type QueuedLocalFollowUp = {
   cwd: string | null;
   input?: ThreadConversationUserInput[] | null;
   text: string;
+  collaborationModeKind?: CollaborationModeKind | null;
 };
 
 export function enqueueQueuedLocalFollowUp(

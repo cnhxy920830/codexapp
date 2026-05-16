@@ -16,6 +16,7 @@ import {
 } from "./services/auth";
 import {
   archiveThread,
+  buildCollaborationModePayload,
   discardConversationFromCache,
   forkConversationFromLatest,
   respondToApprovalRequest,
@@ -32,6 +33,9 @@ import {
   type ThreadConversationUserInputComment,
   getRecentThreads,
   interruptTurn,
+  markConversationAsRead,
+  markConversationAsUnread,
+  onThreadReadStateChanged,
   onThreadEvent,
   readThread,
   startReview,
@@ -40,6 +44,8 @@ import {
   steerTurn,
   startTurn,
   startTurnWithInput,
+  type CollaborationModeKind,
+  type HistoryThreadIndicatorStatus,
   type TurnStartPermissionOverrides,
   type HistoryProjectGroup,
   type ThreadHistoryEntry,
@@ -128,6 +134,7 @@ import { WorkspaceDependenciesSettings } from "./components/WorkspaceDependencie
 import { SettingsChoiceMenu } from "./components/SettingsChoiceMenu";
 import { ToggleSwitch } from "./components/ToggleSwitch";
 import { ChatConversationMainPane } from "./features/chat/ChatConversationMainPane";
+import { ChatRouteHeader } from "./features/chat/ChatRouteHeader";
 import { ChatSidePanel } from "./features/chat/ChatSidePanel";
 import { FilePreviewPage } from "./features/chat/FilePreviewPage";
 import { PlanSummaryPage } from "./features/chat/PlanSummaryPage";
@@ -1026,6 +1033,51 @@ function mergeSyntheticRequestItemsIntoConversation(
   };
 }
 
+function setThreadConversationUnreadState(
+  conversation: ThreadConversation,
+  hasUnreadTurn: boolean,
+) {
+  if (conversation.hasUnreadTurn === hasUnreadTurn) {
+    return conversation;
+  }
+
+  return {
+    ...conversation,
+    hasUnreadTurn,
+  };
+}
+
+function setThreadHistoryEntryUnreadState(
+  thread: ThreadHistoryEntry,
+  hasUnreadTurn: boolean,
+) {
+  if (thread.hasUnreadTurn === hasUnreadTurn) {
+    return thread;
+  }
+
+  return {
+    ...thread,
+    hasUnreadTurn,
+  };
+}
+
+function renderHistoryThreadStatusIndicator(status: HistoryThreadIndicatorStatus | undefined) {
+  switch (status) {
+    case "running":
+      return (
+        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current/30 border-t-current" />
+      );
+    case "unread":
+      return (
+        <span className="relative block h-3.5 w-3.5 scale-50">
+          <span className="absolute inset-0 rounded-full bg-[var(--app-shell-accent)]" />
+        </span>
+      );
+    default:
+      return null;
+  }
+}
+
 function updateSyntheticRequestItemsForThread(
   current: Record<string, ThreadConversationItem[]>,
   threadId: string,
@@ -1205,6 +1257,9 @@ function App() {
   const [sideChatConversationsById, setSideChatConversationsById] = useState<Record<string, ThreadConversation>>({});
   const [sideChatComposerDraftsById, setSideChatComposerDraftsById] = useState<Record<string, string>>({});
   const [sideChatTurnErrorsById, setSideChatTurnErrorsById] = useState<Record<string, string | null>>({});
+  const [selectedCollaborationModeByThreadId, setSelectedCollaborationModeByThreadId] = useState<
+    Record<string, CollaborationModeKind | null>
+  >({});
   const [workspaceFileCommandMenuMode, setWorkspaceFileCommandMenuMode] =
     useState<WorkspaceFileCommandMenuMode | null>(null);
   const [threadShellVariant, setThreadShellVariant] = useState<ThreadShellVariant>("default");
@@ -2565,6 +2620,84 @@ function App() {
     void notifyDebugWindowOriginConversationChanged(selectedThreadId).catch(() => undefined);
   }, [currentRoute, selectedThreadId]);
 
+  const applyThreadReadStateChanged = useEffectEvent(
+    ({ conversationId, hasUnreadTurn }: { conversationId: string; hasUnreadTurn: boolean }) => {
+      const loadedConversation = loadedConversationsByIdRef.current.get(conversationId);
+      if (loadedConversation !== undefined) {
+        loadedConversationsByIdRef.current.set(
+          conversationId,
+          setThreadConversationUnreadState(loadedConversation, hasUnreadTurn),
+        );
+      }
+
+      const currentConversation = threadConversationRef.current;
+      if (currentConversation?.id === conversationId) {
+        const nextConversation = setThreadConversationUnreadState(currentConversation, hasUnreadTurn);
+        if (nextConversation !== currentConversation) {
+          threadConversationRef.current = nextConversation;
+          loadedConversationsByIdRef.current.set(conversationId, nextConversation);
+          setThreadConversation(nextConversation);
+        }
+      }
+
+      const currentSideConversation = sideChatConversationsByIdRef.current[conversationId] ?? null;
+      if (currentSideConversation !== null) {
+        const nextConversation = setThreadConversationUnreadState(
+          currentSideConversation,
+          hasUnreadTurn,
+        );
+        if (nextConversation !== currentSideConversation) {
+          const nextSideConversations = {
+            ...sideChatConversationsByIdRef.current,
+            [conversationId]: nextConversation,
+          };
+          sideChatConversationsByIdRef.current = nextSideConversations;
+          loadedConversationsByIdRef.current.set(conversationId, nextConversation);
+          setSideChatConversationsById(nextSideConversations);
+        }
+      }
+
+      let didUpdateRecentThreads = false;
+      const nextRecentThreads = recentThreadsRef.current.map((thread) => {
+        if (thread.id !== conversationId) {
+          return thread;
+        }
+
+        const nextThread = setThreadHistoryEntryUnreadState(thread, hasUnreadTurn);
+        didUpdateRecentThreads ||= nextThread !== thread;
+        return nextThread;
+      });
+
+      if (!didUpdateRecentThreads) {
+        return;
+      }
+
+      recentThreadsRef.current = nextRecentThreads;
+      setRecentThreads(nextRecentThreads);
+      setProjectGroups(
+        buildProjectGroups(nextRecentThreads, {
+          activeThreadId: selectedThreadIdRef.current,
+          locale,
+          noMessageLabel: t("history.noMessageYet"),
+        }),
+      );
+    },
+  );
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    void onThreadReadStateChanged((event) => {
+      applyThreadReadStateChanged(event);
+    }).then((dispose) => {
+      unlisten = dispose;
+    });
+
+    return () => {
+      unlisten?.();
+    };
+  }, [applyThreadReadStateChanged]);
+
   const handleAppStateSnapshotRequest = useEffectEvent(
     async ({ reason, requestId }: { reason: string; requestId: string }) => {
       const nowMs = Date.now();
@@ -2982,17 +3115,24 @@ function App() {
         setTurnError(null);
       }
       try {
+        const queuedCollaborationMode = buildCollaborationModePayload(
+          nextQueuedFollowUp.followUp.collaborationModeKind ?? null,
+        );
         const turnId =
           nextQueuedFollowUp.followUp.input != null && nextQueuedFollowUp.followUp.input.length > 0
             ? await startTurnWithInput({
                 threadId,
                 input: nextQueuedFollowUp.followUp.input,
                 cwd: nextQueuedFollowUp.followUp.cwd,
+                collaborationMode:
+                  queuedCollaborationMode ?? buildSelectedCollaborationModePayloadForThread(threadId),
               })
             : await startTurn({
                 threadId,
                 text: nextQueuedFollowUp.followUp.text,
                 cwd: nextQueuedFollowUp.followUp.cwd,
+                collaborationMode:
+                  queuedCollaborationMode ?? buildSelectedCollaborationModePayloadForThread(threadId),
               });
         completeImplementPlanFlowForThread(threadId);
         setActiveTurn({ threadId, turnId });
@@ -3190,6 +3330,9 @@ function App() {
               event.threadId,
               event.turnId,
             );
+            if (cleared.restoredQueuedFollowUps.length > 0) {
+              mutateQueuedFollowUps((queued) => [...cleared.restoredQueuedFollowUps, ...queued]);
+            }
             return {
               ...current,
               [event.threadId]: {
@@ -3244,6 +3387,42 @@ function App() {
             loadedConversationsByIdRef.current.set(event.threadId, {
               ...loadedConversation,
               latestTokenUsageInfo: event.tokenUsage,
+            });
+          }
+        }
+        return;
+      }
+      if (event.type === "threadCollaborationModeUpdated") {
+        setSelectedCollaborationModeForThread(
+          event.threadId,
+          event.collaborationMode === "plan"
+            ? "plan"
+            : event.collaborationMode === "default"
+              ? "default"
+              : null,
+        );
+        setThreadConversation((current) => {
+          if (!current || current.id !== event.threadId) {
+            return current;
+          }
+          const nextConversation = {
+            ...current,
+            latestCollaborationMode: event.collaborationMode,
+          };
+          loadedConversationsByIdRef.current.set(nextConversation.id, nextConversation);
+          return nextConversation;
+        });
+        if (event.threadId in sideChatConversationsByIdRef.current) {
+          updateSideChatConversation(event.threadId, (conversation) => ({
+            ...conversation,
+            latestCollaborationMode: event.collaborationMode,
+          }));
+        } else {
+          const loadedConversation = loadedConversationsByIdRef.current.get(event.threadId);
+          if (loadedConversation) {
+            loadedConversationsByIdRef.current.set(event.threadId, {
+              ...loadedConversation,
+              latestCollaborationMode: event.collaborationMode,
             });
           }
         }
@@ -3473,7 +3652,15 @@ function App() {
             } else {
               const thread = await readThread(activeThreadId);
               if (!cancelled && threadLoadRequestIdRef.current === requestId) {
-                setThreadConversation(mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId));
+                const mergedThread = mergeSyntheticRequestItemsIntoConversation(
+                  thread,
+                  syntheticRequestItemsByThreadId,
+                );
+                syncSelectedCollaborationModeFromConversation(thread);
+                threadConversationRef.current = mergedThread;
+                loadedConversationsByIdRef.current.set(mergedThread.id, mergedThread);
+                setThreadConversation(mergedThread);
+                markConversationReadIfUnread(thread);
               }
             }
           } catch {
@@ -3839,7 +4026,17 @@ function App() {
     setThreadActionFeedback(null);
   };
 
+  const markConversationReadIfUnread = (conversation: ThreadConversation | null) => {
+    if (conversation?.hasUnreadTurn !== true) {
+      return;
+    }
+
+    void markConversationAsRead(conversation.id).catch(() => undefined);
+  };
+
   const syncProjectGroups = (activeThreadId: string | null, threads: Awaited<ReturnType<typeof getRecentThreads>>) => {
+    recentThreadsRef.current = threads;
+    selectedThreadIdRef.current = activeThreadId;
     setRecentThreads(threads);
     setSelectedThreadId(activeThreadId);
     setProjectGroups(
@@ -3861,9 +4058,13 @@ function App() {
     setThreadConversation(null);
     try {
       const thread = await readThread(threadId);
-      loadedConversationsByIdRef.current.set(thread.id, thread);
+      const mergedThread = mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId);
+      loadedConversationsByIdRef.current.set(thread.id, mergedThread);
+      syncSelectedCollaborationModeFromConversation(thread);
       if (threadLoadRequestIdRef.current === requestId) {
-        setThreadConversation(mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId));
+        threadConversationRef.current = mergedThread;
+        setThreadConversation(mergedThread);
+        markConversationReadIfUnread(thread);
       }
       return thread;
     } finally {
@@ -3875,11 +4076,18 @@ function App() {
 
   const loadSideChatConversation = async (threadId: string) => {
     const thread = await readThread(threadId);
-    loadedConversationsByIdRef.current.set(thread.id, thread);
+    const mergedThread = mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId);
+    loadedConversationsByIdRef.current.set(thread.id, mergedThread);
+    syncSelectedCollaborationModeFromConversation(thread);
+    sideChatConversationsByIdRef.current = {
+      ...sideChatConversationsByIdRef.current,
+      [thread.id]: mergedThread,
+    };
     setSideChatConversationsById((current) => ({
       ...current,
-      [thread.id]: mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId),
+      [thread.id]: mergedThread,
     }));
+    markConversationReadIfUnread(thread);
     return thread;
   };
 
@@ -3921,6 +4129,7 @@ function App() {
       }
       const nextConversation = updater(existingConversation);
       loadedConversationsByIdRef.current.set(nextConversation.id, nextConversation);
+      syncSelectedCollaborationModeFromConversation(nextConversation);
       updateSideChatTabTitle(
         threadId,
         deriveSideChatTabTitleFromConversation(nextConversation) ??
@@ -4029,6 +4238,33 @@ function App() {
     setTurnError(null);
   };
 
+  const getSelectedCollaborationModeForThread = (threadId: string) =>
+    selectedCollaborationModeByThreadId[threadId] ?? null;
+
+  const setSelectedCollaborationModeForThread = (
+    threadId: string,
+    mode: CollaborationModeKind | null,
+  ) => {
+    setSelectedCollaborationModeByThreadId((current) => ({
+      ...current,
+      [threadId]: mode,
+    }));
+  };
+
+  const syncSelectedCollaborationModeFromConversation = (conversation: ThreadConversation | null) => {
+    if (conversation == null) {
+      return;
+    }
+
+    const nextMode =
+      conversation.latestCollaborationMode === "plan"
+        ? "plan"
+        : conversation.latestCollaborationMode === "default"
+          ? "default"
+          : null;
+    setSelectedCollaborationModeForThread(conversation.id, nextMode);
+  };
+
   const setConversationTurnError = (threadId: string, message: string) => {
     if (threadId in sideChatConversationsByIdRef.current) {
       setSideChatTurnErrorsById((current) => ({
@@ -4039,6 +4275,9 @@ function App() {
     }
     setTurnError(message);
   };
+
+  const buildSelectedCollaborationModePayloadForThread = (threadId: string) =>
+    buildCollaborationModePayload(getSelectedCollaborationModeForThread(threadId));
 
   const completeImplementPlanFlowForThread = (threadId: string) => {
     setPendingImplementPlanRequests((current) => clearPendingImplementPlanRequestsForThread(current, threadId));
@@ -4452,6 +4691,7 @@ function App() {
       threadId,
       text,
       cwd,
+      collaborationMode: buildSelectedCollaborationModePayloadForThread(threadId),
       ...params.permissionOverrides,
     });
     const threads = await getRecentThreads();
@@ -4476,6 +4716,7 @@ function App() {
       text,
       cwd: params.workspaceRoot,
       workspaceRoots: [params.workspaceRoot],
+      collaborationMode: buildCollaborationModePayload("default"),
       ...params.permissionOverrides,
     });
     const threads = await getRecentThreads();
@@ -4514,6 +4755,7 @@ function App() {
           approvalPolicy: params.permissionOverrides.approvalPolicy ?? null,
           approvalsReviewer: params.permissionOverrides.approvalsReviewer ?? null,
           sandboxPolicy: params.permissionOverrides.sandboxPolicy ?? null,
+          collaborationMode: buildCollaborationModePayload("default"),
         },
         threadGoalObjective: null,
         sourceConversationId: null,
@@ -4546,7 +4788,12 @@ function App() {
       return;
     }
 
-    const turnId = await startTurn({ threadId, text, cwd });
+    const turnId = await startTurn({
+      threadId,
+      text,
+      cwd,
+      collaborationMode: buildCollaborationModePayload("default"),
+    });
     const threads = await getRecentThreads();
     syncProjectGroups(threadId, threads);
     completeImplementPlanFlowForThread(threadId);
@@ -4674,6 +4921,24 @@ function App() {
     }
   };
 
+  const markSelectedThreadUnread = async () => {
+    if (!selectedThreadId) {
+      return;
+    }
+
+    setIsThreadActionsMenuOpen(false);
+
+    try {
+      await markConversationAsUnread(selectedThreadId);
+      setThreadActionFeedback(null);
+    } catch (error) {
+      setThreadActionFeedback({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
   const toggleSelectedThreadPinnedState = async () => {
     if (!selectedThreadId) {
       return;
@@ -4756,8 +5021,12 @@ function App() {
     try {
       const forkedThreadId = await forkThread(selectedThreadId);
       const [threads, thread] = await Promise.all([getRecentThreads(), readThread(forkedThreadId)]);
+      const mergedThread = mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId);
       syncProjectGroups(forkedThreadId, threads);
-      setThreadConversation(mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId));
+      threadConversationRef.current = mergedThread;
+      loadedConversationsByIdRef.current.set(mergedThread.id, mergedThread);
+      setThreadConversation(mergedThread);
+      markConversationReadIfUnread(thread);
       setTurnError(null);
       setIsThreadActionsMenuOpen(false);
       setThreadActionFeedback(null);
@@ -4882,7 +5151,10 @@ function App() {
       syncProjectGroups(nextThreadId, threads);
       if (nextThreadId) {
         const nextThread = await readThread(nextThreadId);
+        threadConversationRef.current = nextThread;
+        loadedConversationsByIdRef.current.set(nextThread.id, nextThread);
         setThreadConversation(nextThread);
+        markConversationReadIfUnread(nextThread);
       } else {
         setThreadConversation(null);
       }
@@ -4976,8 +5248,12 @@ function App() {
         name: renameDraft.trim().length > 0 ? renameDraft.trim() : null,
       });
       const [threads, thread] = await Promise.all([getRecentThreads(), readThread(selectedThreadId)]);
+      const mergedThread = mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId);
       syncProjectGroups(selectedThreadId, threads);
-      setThreadConversation(mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId));
+      threadConversationRef.current = mergedThread;
+      loadedConversationsByIdRef.current.set(mergedThread.id, mergedThread);
+      setThreadConversation(mergedThread);
+      markConversationReadIfUnread(thread);
       setIsRenameDialogOpen(false);
       setThreadActionFeedback(null);
     } catch {
@@ -5028,6 +5304,7 @@ function App() {
               cwd,
               input,
               text: submissionPreviewText,
+              collaborationModeKind: getSelectedCollaborationModeForThread(threadId),
             }),
           );
           clearPendingPdfCommentsForThread(threadId);
@@ -5051,6 +5328,7 @@ function App() {
                   turnId,
                   text: submissionPreviewText,
                   cwd,
+                  collaborationModeKind: getSelectedCollaborationModeForThread(threadId),
                 }),
               )
             : current,
@@ -5068,7 +5346,10 @@ function App() {
           readThread(review.reviewThreadId),
         ]);
         syncProjectGroups(review.reviewThreadId, threads);
+        threadConversationRef.current = reviewThread;
+        loadedConversationsByIdRef.current.set(reviewThread.id, reviewThread);
         setThreadConversation(reviewThread);
+        markConversationReadIfUnread(reviewThread);
         setActiveTurn({ threadId: review.reviewThreadId, turnId: review.turnId });
         setComposerDraft("");
         return;
@@ -5079,12 +5360,14 @@ function App() {
               threadId,
               input,
               cwd,
+              collaborationMode: buildSelectedCollaborationModePayloadForThread(threadId),
               ...localComposerPermissionOverrides,
             })
           : await startTurn({
               threadId,
               text,
               cwd,
+              collaborationMode: buildSelectedCollaborationModePayloadForThread(threadId),
               ...localComposerPermissionOverrides,
             });
       completeImplementPlanFlowForThread(threadId);
@@ -5121,6 +5404,7 @@ function App() {
         threadId: selectedThreadId,
         input: [comment],
         cwd,
+        collaborationMode: buildSelectedCollaborationModePayloadForThread(selectedThreadId),
       });
       completeImplementPlanFlowForThread(selectedThreadId);
       setThreadConversation((current) =>
@@ -5170,6 +5454,7 @@ function App() {
               threadId,
               cwd,
               text,
+              collaborationModeKind: getSelectedCollaborationModeForThread(threadId),
             }),
           );
           setDraft("");
@@ -5198,6 +5483,7 @@ function App() {
                   turnId,
                   text,
                   cwd,
+                  collaborationModeKind: getSelectedCollaborationModeForThread(threadId),
                 }),
               )
             : current,
@@ -5211,6 +5497,7 @@ function App() {
         threadId,
         text,
         cwd,
+        collaborationMode: buildSelectedCollaborationModePayloadForThread(threadId),
         ...permissionOverrides,
       });
       if (
@@ -5265,6 +5552,7 @@ function App() {
         threadId: editableMessage.threadId,
         input: nextInput,
         cwd,
+        collaborationMode: buildSelectedCollaborationModePayloadForThread(editableMessage.threadId),
       });
       if (mergedRollbackConversation.turns.length === 0) {
         updateSideChatTabTitle(
@@ -5310,6 +5598,7 @@ function App() {
         threadId: editableUserMessage.threadId,
         input: nextInput,
         cwd,
+        collaborationMode: buildSelectedCollaborationModePayloadForThread(editableUserMessage.threadId),
       });
       completeImplementPlanFlowForThread(editableUserMessage.threadId);
       setThreadConversation((current) =>
@@ -5370,6 +5659,7 @@ function App() {
                   turnId,
                   text,
                   cwd,
+                  collaborationModeKind: getSelectedCollaborationModeForThread(request.threadId),
                 }),
               )
             : current,
@@ -5386,6 +5676,7 @@ function App() {
                 turnId,
                 text,
                 cwd,
+                collaborationModeKind: getSelectedCollaborationModeForThread(request.threadId),
               }),
             ),
           );
@@ -5398,6 +5689,7 @@ function App() {
         threadId: request.threadId,
         text,
         cwd,
+        collaborationMode: buildSelectedCollaborationModePayloadForThread(request.threadId),
       });
       setThreadConversation((current) =>
         current && current.id === request.threadId
@@ -6249,24 +6541,6 @@ function App() {
   };
   const chatConversationMainPane = (
     <ChatConversationMainPane
-      threadActionsMenuRef={threadActionsMenuRef}
-      threadHeaderStartActions={null}
-      threadHeaderTrailingActions={
-        isDefaultRemoteThreadPage && remoteTaskState !== null ? (
-          <div className="no-drag flex items-center gap-1">
-            <RemoteConversationHeaderActions
-              diffTaskTurn={remoteTaskState.task.current_diff_task_turn ?? null}
-              onShowToast={(toast) => setAppToast(toast)}
-              selectedTurn={currentRemoteConversationBranch?.selectedAssistantTurn ?? null}
-              task={remoteTaskState.task.task}
-              taskEnvironment={remoteTaskState.task.current_assistant_turn?.environment ?? null}
-              taskId={remoteTaskState.taskId}
-              turns={currentRemoteTaskTurns}
-              workspaceRoot={openProjectPath}
-            />
-          </div>
-        ) : null
-      }
       composerDraft={composerDraft}
       composerEnterBehavior={composerEnterBehavior}
       composerFocusNonce={composerFocusNonce}
@@ -6274,22 +6548,15 @@ function App() {
       composerPermissionMode={localComposerPermissionMode}
       composerPermissionsState={localComposerPermissionsState}
       followUpQueueMode={followUpQueueMode}
-      hasAttachedHeartbeatAutomation={selectedThreadAttachedHeartbeatAutomation !== null}
       isResponseInProgress={isTurnInProgress}
-      isThreadActionsMenuOpen={isThreadActionsMenuOpen}
-      isThreadHeartbeatAutomationActionDisabled={isThreadHeartbeatAutomationActionDisabled}
-      isThreadHeartbeatAutomationActionVisible={shouldShowThreadHeartbeatAutomationAction}
-      isThreadPinned={isSelectedThreadPinned}
       isWorktreeThread={isWorktreeThread}
-      showThreadHeader={!isHotkeyLocalThreadPage}
-      heartbeatAutomationActionLabelKey={threadHeartbeatAutomationActionLabelKey}
-      heartbeatAutomationButtonTooltip={heartbeatAutomationOpenButtonTooltip}
       currentThreadApprovals={currentThreadApprovals}
       currentThreadImplementPlanRequests={currentThreadImplementPlanRequests}
       currentThreadMcpServerElicitationRequest={currentThreadMcpServerElicitationRequest}
       currentThreadPermissionsRequestApproval={currentThreadPermissionsRequestApproval}
       currentThreadToolRequestUserInput={currentThreadToolRequestUserInput}
       currentThreadQueuedFollowUps={currentThreadQueuedFollowUps}
+      currentThreadPendingPdfComments={currentThreadPendingPdfComments}
       currentThreadPendingPdfCommentCount={currentThreadPendingPdfCommentCount}
       onApprovalDecision={(approval, decision) => void handleApprovalDecision(approval, decision)}
       onDismissImplementPlanRequest={dismissImplementPlanRequest}
@@ -6299,31 +6566,16 @@ function App() {
       onMcpServerElicitationRequestSubmit={(request, action, content) =>
         void handleMcpServerElicitationRequestSubmit(request, action, content)
       }
-      onArchiveThread={() => {
-        setIsArchiveDialogOpen(true);
-        setIsThreadActionsMenuOpen(false);
-      }}
-      onCopyAppLink={() => void copyAppLink()}
-      onCopyConversationMarkdown={() => void copyConversationMarkdown()}
-      onCopySessionId={() => void copySessionId()}
-      onCopyWorkingDirectory={() => void copyWorkingDirectory()}
-      onForkSelectedThread={() => void forkSelectedThread()}
-      onForkSelectedThreadIntoWorktree={() => void forkSelectedThreadIntoWorktree()}
-      onOpenInNewWindow={() => void openSelectedThreadInNewWindow()}
-      onOpenAttachedHeartbeatAutomation={() => openThreadHeartbeatAutomationDialog("edit")}
       onOpenSideChat={
         remoteTaskState === null
           ? (initialPrompt) => openSideChatForSelectedThread(initialPrompt)
           : undefined
       }
-      onOpenThreadHeartbeatAutomationAction={openThreadHeartbeatAutomationAction}
       onOpenRemoteTask={openRemoteTaskFromCurrentShell}
       onSelectRemoteTaskAssistantTurn={selectRemoteTaskAssistantTurn}
-      onOpenRenameDialog={openRenameDialog}
       onOpenWorkspaceFileSearch={openWorkspaceFileSearch}
       onFocusComposerRequest={focusMainComposer}
       onSelectThread={openThreadFromCurrentShell}
-      onTogglePinnedThread={() => void toggleSelectedThreadPinnedState()}
       onThreadGoalEditorOpenChange={setIsThreadGoalEditorOpen}
       onPendingThreadGoalObjectiveChange={setPendingThreadGoalObjective}
       onEditUserMessage={(text) => void handleEditUserMessage(text)}
@@ -6334,6 +6586,13 @@ function App() {
         void handleToolRequestUserInputSubmit(request, values)
       }
       onComposerDraftChange={setComposerDraft}
+      onComposerCollaborationModeChange={
+        selectedThreadId == null
+          ? undefined
+          : (mode) => {
+              setSelectedCollaborationModeForThread(selectedThreadId, mode);
+            }
+      }
       onComposerPermissionModeChange={setSelectedLocalPermissionMode}
       onRemoveQueuedFollowUp={removeQueuedFollowUp}
       onClearPendingPdfComments={() => {
@@ -6344,7 +6603,6 @@ function App() {
       }}
       onStopTurn={() => void stopTurn()}
       onSubmitTurn={(invertFollowUpAction) => void submitTurn(invertFollowUpAction)}
-      onToggleThreadActionsMenu={() => setIsThreadActionsMenuOpen((value) => !value)}
       onShowToast={(toast) => setAppToast(toast)}
       approvalActionErrors={approvalActionErrors}
       reviewDelivery={reviewDelivery}
@@ -6352,6 +6610,11 @@ function App() {
       submitButtonMode={submitButtonMode}
       t={t}
       authMethod={authSnapshot.authState.authMethod}
+      activeCollaborationMode={
+        selectedThreadId == null
+          ? threadConversation?.latestCollaborationMode ?? null
+          : (getSelectedCollaborationModeForThread(selectedThreadId) ?? threadConversation?.latestCollaborationMode ?? null)
+      }
       threadConversation={currentRemoteConversationBranch?.conversation ?? threadConversation}
       remoteAttemptTabsByTurnId={currentRemoteConversationBranch?.attemptTabsByTurnId ?? {}}
       remoteConversationOverridesByTurnId={currentRemoteConversationOverridesByTurnId}
@@ -6642,12 +6905,75 @@ function App() {
             >
               <ForwardNavigationIcon className="h-3.5 w-3.5" />
             </button>
-            <div className="ml-2 min-w-0 max-w-[240px] truncate text-[12px] font-medium text-[var(--app-shell-muted)]">
-              {currentRoute === "chat" ? "Codex" : shellHeaderTitle}
-            </div>
+            {currentRoute === "chat" ? null : (
+              <div className="ml-2 min-w-0 max-w-[240px] truncate text-[12px] font-medium text-[var(--app-shell-muted)]">
+                {shellHeaderTitle}
+              </div>
+            )}
           </div>
 
-          <div className="flex h-full flex-1 items-center justify-center" />
+          <div className="flex h-full min-w-0 flex-1 items-center overflow-hidden px-3">
+            {currentRoute === "chat" && !isHotkeyLocalThreadPage ? (
+              <ChatRouteHeader
+                heartbeatAutomationActionLabelKey={threadHeartbeatAutomationActionLabelKey}
+                heartbeatAutomationButtonTooltip={heartbeatAutomationOpenButtonTooltip}
+                hasAttachedHeartbeatAutomation={selectedThreadAttachedHeartbeatAutomation !== null}
+                isResponseInProgress={isTurnInProgress}
+                isThreadActionsMenuOpen={isThreadActionsMenuOpen}
+                isThreadHeartbeatAutomationActionDisabled={isThreadHeartbeatAutomationActionDisabled}
+                isThreadHeartbeatAutomationActionVisible={shouldShowThreadHeartbeatAutomationAction}
+                isThreadPinned={isSelectedThreadPinned}
+                isWorktreeThread={isWorktreeThread}
+                onArchiveThread={() => {
+                  setIsArchiveDialogOpen(true);
+                  setIsThreadActionsMenuOpen(false);
+                }}
+                onCopyAppLink={() => void copyAppLink()}
+                onCopyConversationMarkdown={() => void copyConversationMarkdown()}
+                onCopySessionId={() => void copySessionId()}
+                onCopyWorkingDirectory={() => void copyWorkingDirectory()}
+                onForkSelectedThread={() => void forkSelectedThread()}
+                onForkSelectedThreadIntoWorktree={() => void forkSelectedThreadIntoWorktree()}
+                onOpenAttachedHeartbeatAutomation={() => openThreadHeartbeatAutomationDialog("edit")}
+                onOpenInNewWindow={() => void openSelectedThreadInNewWindow()}
+                onMarkThreadUnread={() => void markSelectedThreadUnread()}
+                onOpenRenameDialog={openRenameDialog}
+                onOpenSideChat={
+                  remoteTaskState === null
+                    ? () => {
+                        void openSideChatForSelectedThread(null);
+                      }
+                    : undefined
+                }
+                onOpenThreadHeartbeatAutomationAction={openThreadHeartbeatAutomationAction}
+                onTogglePinnedThread={() => void toggleSelectedThreadPinnedState()}
+                onToggleThreadActionsMenu={() => setIsThreadActionsMenuOpen((value) => !value)}
+                remoteTaskId={remoteTaskState?.taskId ?? null}
+                showThreadHeader
+                t={t}
+                threadActionsMenuRef={threadActionsMenuRef}
+                threadConversation={currentRemoteConversationBranch?.conversation ?? threadConversation}
+                threadHeaderStartActions={null}
+                threadHeaderTrailingActions={
+                  isDefaultRemoteThreadPage && remoteTaskState !== null ? (
+                    <div className="no-drag flex items-center gap-1">
+                      <RemoteConversationHeaderActions
+                        diffTaskTurn={remoteTaskState.task.current_diff_task_turn ?? null}
+                        onShowToast={(toast) => setAppToast(toast)}
+                        selectedTurn={currentRemoteConversationBranch?.selectedAssistantTurn ?? null}
+                        task={remoteTaskState.task.task}
+                        taskEnvironment={remoteTaskState.task.current_assistant_turn?.environment ?? null}
+                        taskId={remoteTaskState.taskId}
+                        turns={currentRemoteTaskTurns}
+                        workspaceRoot={openProjectPath}
+                      />
+                    </div>
+                  ) : null
+                }
+                workspaceRoot={openProjectPath}
+              />
+            ) : null}
+          </div>
 
           <div className="no-drag flex items-center gap-3 pr-1.5">
             <div className="app-badge rounded-full px-3 py-1 text-left text-[11px] leading-4">
@@ -6789,8 +7115,13 @@ function App() {
                                   : "app-nav-item-idle",
                               ].join(" ")}
                             >
-                              <div className="min-w-0 flex-1">
-                                <div className="app-title truncate text-[13px] leading-5">{thread.title}</div>
+                              <div className="flex min-w-0 flex-1 items-start gap-2">
+                                <span className="flex w-5 shrink-0 items-center justify-center pt-0.5 text-[var(--app-shell-subtle)]">
+                                  {renderHistoryThreadStatusIndicator(thread.indicatorStatus)}
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                  <div className="app-title truncate text-[13px] leading-5">{thread.title}</div>
+                                </div>
                               </div>
                               <div className="pt-[1px] text-[12px] text-[var(--app-shell-subtle)]">{thread.age}</div>
                             </button>
@@ -6880,244 +7211,271 @@ function App() {
           ) : null}
 
           <section className="min-w-0 flex-1 bg-[var(--app-shell-surface)]">
-            <div
-              className={[
-                "flex h-full min-h-0 flex-col overflow-hidden border border-[var(--app-shell-border-heavy)] bg-[var(--app-shell-main-surface)] shadow-[0_2px_4px_rgba(0,0,0,0.08)]",
-                isLeftSidebarOpen ? "rounded-tl-[18px] rounded-bl-[18px]" : "",
-              ].join(" ")}
-            >
-              {currentRoute === "chat" ? (
-                isThreadConversationLoading ? (
-                  <div className="relative min-h-0 flex-1">
-                    <LoadingPage fillParent debugName="LocalConversationPage" />
+            {currentRoute === "chat" ? (
+              isThreadConversationLoading ? (
+                <div className="relative min-h-0 flex-1">
+                  <LoadingPage fillParent debugName="LocalConversationPage" />
+                </div>
+              ) : (
+                <div className="flex min-h-0 flex-1 overflow-hidden">
+                  <div
+                    className={rightPanelWidthMode === "full" ? "w-0 flex-none overflow-hidden" : "min-w-0 flex-1"}
+                  >
+                    {chatConversationMainPane}
                   </div>
-                ) : (
-                  <div className="flex min-h-0 flex-1 overflow-hidden">
-                    <div
-                      className={
-                        rightPanelWidthMode === "full"
-                          ? "w-0 flex-none overflow-hidden"
-                          : "min-w-0 flex-1"
-                      }
-                    >
-                      {chatConversationMainPane}
-                    </div>
 
-                    {isRightPanelOpen ? (
-                      <>
-                        {rightPanelWidthMode === "regular" ? (
+                  {isRightPanelOpen ? (
+                    <>
+                      {rightPanelWidthMode === "regular" ? (
+                        <div
+                          role="separator"
+                          aria-orientation="vertical"
+                          aria-label={t("thread.sidePanel.toggle")}
+                          onPointerDown={handleRightPanelResizePointerDown}
+                          className={[
+                            "group relative flex w-3 shrink-0 cursor-col-resize items-center justify-center bg-transparent",
+                            isRightPanelResizing ? "app-right-panel-splitter-active" : "app-right-panel-splitter",
+                          ].join(" ")}
+                        >
+                          <div className="app-right-panel-splitter-line h-full w-px" />
+                          <div className="app-right-panel-splitter-grip pointer-events-none absolute inset-y-0 left-1/2 flex -translate-x-1/2 items-center justify-center rounded-full">
+                            <SplitterGripIcon className="h-4 w-4" />
+                          </div>
+                        </div>
+                      ) : null}
+                      <aside
+                        className={[
+                          "relative h-full min-h-0 min-w-0 overflow-visible shadow-xl",
+                          rightPanelWidthMode === "full" ? "flex-1" : "shrink-0",
+                        ].join(" ")}
+                        style={rightPanelInlineStyle}
+                      >
+                        <div className="absolute inset-0 min-h-0 min-w-0 overflow-hidden">
                           <div
-                            role="separator"
-                            aria-orientation="vertical"
-                            aria-label={t("thread.sidePanel.toggle")}
-                            onPointerDown={handleRightPanelResizePointerDown}
                             className={[
-                              "group relative flex w-3 shrink-0 cursor-col-resize items-center justify-center bg-transparent",
-                              isRightPanelResizing ? "app-right-panel-splitter-active" : "app-right-panel-splitter",
+                              "absolute bottom-0 left-0 top-0 min-w-0 bg-[var(--app-shell-main-surface)]",
+                              rightPanelWidthMode === "full"
+                                ? ""
+                                : "border-l border-[var(--app-shell-border)]",
                             ].join(" ")}
+                            style={{ width: "100%" }}
                           >
-                            <div className="app-right-panel-splitter-line h-full w-px" />
-                            <div className="app-right-panel-splitter-grip pointer-events-none absolute inset-y-0 left-1/2 flex -translate-x-1/2 items-center justify-center rounded-full">
-                              <SplitterGripIcon className="h-4 w-4" />
+                            <div className="h-full min-h-0 min-w-0 overflow-hidden [--thread-content-top-inset:calc(var(--spacing)*8)]">
+                              <RightPanelTabStrip
+                                activeTabId={activeRightPanelTabId}
+                                activeStaticTabId={activeRightPanelStaticTabId}
+                                openTabs={openRightPanelTabs}
+                                onActivateTab={activateRightPanelTab}
+                                onCloseTab={closeRightPanelTab}
+                                onReorderTabs={reorderOpenRightPanelTabs}
+                                onOpenBrowserTab={() => openRightPanelStaticTab("browser")}
+                                onOpenReviewTab={() => openRightPanelStaticTab("review")}
+                                onToggleFullWidth={toggleRightPanelFullWidth}
+                                onTogglePanel={toggleRightPanel}
+                                t={t}
+                                rightPanelWidthMode={rightPanelWidthMode}
+                              />
+                              <ChatSidePanel
+                                activeStaticTabId={activeRightPanelStaticTabId}
+                                activeTab={activeRightPanelTab}
+                                browserTarget={browserSidebarTarget}
+                                conversationHostId={threadConversation?.hostId ?? null}
+                                composerDraft={activeSideChatComposerDraft}
+                                composerEnterBehavior={composerEnterBehavior}
+                                composerPermissionConfig={localComposerConfigWithStatsigFeatures}
+                                composerPermissionMode={localComposerPermissionMode}
+                                composerPermissionsState={localComposerPermissionsState}
+                                followUpQueueMode={followUpQueueMode}
+                                reviewDelivery={reviewDelivery}
+                                sideChatIsResponseInProgress={isSideChatResponseInProgress}
+                                submitButtonMode={
+                                  isSideChatResponseInProgress
+                                  && activeSideChatComposerDraft.trim().length === 0
+                                    ? "stop"
+                                    : "send"
+                                }
+                                sideChatConversation={activeSideChatConversation}
+                                sideChatApprovals={currentSideChatApprovals}
+                                sideChatImplementPlanRequests={currentSideChatImplementPlanRequests}
+                                sideChatMcpServerElicitationRequest={currentSideChatMcpServerElicitationRequest}
+                                sideChatPermissionsRequestApproval={currentSideChatPermissionsRequestApproval}
+                                sideChatToolRequestUserInput={currentSideChatToolRequestUserInput}
+                                sideChatQueuedFollowUps={currentSideChatQueuedFollowUps}
+                                sideChatTurnError={
+                                  activeSideChatConversationId === null
+                                    ? null
+                                    : (sideChatTurnErrorsById[activeSideChatConversationId] ?? null)
+                                }
+                                pendingPdfComments={currentThreadPendingPdfComments}
+                                onShowToast={(toast) => setAppToast(toast)}
+                                threadConversation={threadConversation}
+                                onOpenSideChat={
+                                  activeSideChatConversationId === null
+                                    ? null
+                                    : (initialPrompt) => {
+                                        const sourceConversation =
+                                          activeSideChatConversation
+                                          ?? sideChatConversationsByIdRef.current[activeSideChatConversationId]
+                                          ?? null;
+                                        if (sourceConversation === null) {
+                                          return false;
+                                        }
+
+                                        return openSideChatForConversation({
+                                          conversationId: activeSideChatConversationId,
+                                          conversation: sourceConversation,
+                                          initialPrompt: initialPrompt ?? null,
+                                        });
+                                      }
+                                }
+                                onOpenBrowserTarget={openBrowserSidebarTarget}
+                                onOpenReviewFile={(change) => void handleReviewFileSelected(change)}
+                                onOpenWorkspaceFileSearch={openWorkspaceFileSearch}
+                                onSelectWorkspaceFile={handleWorkspaceFileSelected}
+                                onSubmitPdfComment={handleSubmitPdfComment}
+                                onPendingPdfCommentsChange={(update) => {
+                                  if (selectedThreadId == null) {
+                                    return;
+                                  }
+                                  updatePendingPdfCommentsForThread(selectedThreadId, update);
+                                }}
+                                onApprovalDecision={(approval, decision) =>
+                                  void handleApprovalDecision(approval, decision)}
+                                onComposerDraftChange={(value) => {
+                                  if (!activeSideChatConversationId) {
+                                    return;
+                                  }
+                                  setSideChatComposerDraftsById((current) => ({
+                                    ...current,
+                                    [activeSideChatConversationId]: value,
+                                  }));
+                                }}
+                                onComposerPermissionModeChange={setSelectedLocalPermissionMode}
+                                onDismissImplementPlanRequest={dismissImplementPlanRequest}
+                                onEditUserMessage={(text) => {
+                                  if (!activeSideChatConversationId) {
+                                    return;
+                                  }
+                                  return handleEditUserMessageForConversation(
+                                    activeSideChatConversation,
+                                    text,
+                                    (conversation) => {
+                                      setSideChatConversationsById((current) => ({
+                                        ...current,
+                                        [activeSideChatConversationId]: conversation,
+                                      }));
+                                      loadedConversationsByIdRef.current.set(conversation.id, conversation);
+                                    },
+                                    (value) => {
+                                      setSideChatTurnErrorsById((current) => ({
+                                        ...current,
+                                        [activeSideChatConversationId]: value,
+                                      }));
+                                    },
+                                  );
+                                }}
+                                onImplementPlanRequestSubmit={(request, submission) =>
+                                  void handleImplementPlanRequestSubmit(request, submission)
+                                }
+                                onMcpServerElicitationRequestSubmit={(request, action, content) =>
+                                  void handleMcpServerElicitationRequestSubmit(request, action, content)
+                                }
+                                onPermissionsRequestApprovalSubmit={(request, grantMode, strictAutoReview) =>
+                                  void handlePermissionsRequestApprovalSubmit(
+                                    request,
+                                    grantMode,
+                                    strictAutoReview,
+                                  )
+                                }
+                                onComposerCollaborationModeChange={
+                                  activeSideChatConversationId == null
+                                    ? undefined
+                                    : (mode) => {
+                                        setSelectedCollaborationModeForThread(
+                                          activeSideChatConversationId,
+                                          mode,
+                                        );
+                                      }
+                                }
+                                onRemoveQueuedFollowUp={removeQueuedFollowUp}
+                                onSelectThread={(threadId) => void selectThread(threadId)}
+                                onStopTurn={() => void stopTurn()}
+                                onSubmitTurn={(invertFollowUpAction) => {
+                                  if (!activeSideChatConversationId) {
+                                    return;
+                                  }
+                                  void submitTurnForExistingConversation(
+                                    activeSideChatConversationId,
+                                    activeSideChatConversation,
+                                    sideChatComposerDraftsById[activeSideChatConversationId] ?? "",
+                                    (value) => {
+                                      setSideChatComposerDraftsById((current) => ({
+                                        ...current,
+                                        [activeSideChatConversationId]: value,
+                                      }));
+                                    },
+                                    (value) => {
+                                      setSideChatTurnErrorsById((current) => ({
+                                        ...current,
+                                        [activeSideChatConversationId]: value,
+                                      }));
+                                    },
+                                    (updater) => {
+                                      setSideChatConversationsById((current) => {
+                                        const existingConversation =
+                                          current[activeSideChatConversationId] ?? null;
+                                        const nextConversation = updater(existingConversation);
+                                        if (!nextConversation) {
+                                          return current;
+                                        }
+                                        loadedConversationsByIdRef.current.set(
+                                          nextConversation.id,
+                                          nextConversation,
+                                        );
+                                        return {
+                                          ...current,
+                                          [activeSideChatConversationId]: nextConversation,
+                                        };
+                                      });
+                                    },
+                                    localComposerPermissionOverrides,
+                                    invertFollowUpAction,
+                                    { isSideChatConversation: true },
+                                  );
+                                }}
+                                onToolRequestUserInputSubmit={(request, values) =>
+                                  void handleToolRequestUserInputSubmit(request, values)}
+                                approvalActionErrors={approvalActionErrors}
+                                respondingApprovalKeys={respondingApprovalKeys}
+                                t={t}
+                                threadDiffSummary={threadDiffSummary}
+                                authMethod={authSnapshot.authState.authMethod}
+                                activeCollaborationMode={
+                                  activeSideChatConversationId == null
+                                    ? activeSideChatConversation?.latestCollaborationMode ?? null
+                                    : (getSelectedCollaborationModeForThread(activeSideChatConversationId)
+                                      ?? activeSideChatConversation?.latestCollaborationMode
+                                      ?? null)
+                                }
+                              />
                             </div>
                           </div>
-                        ) : null}
-                        <aside
-                          className={[
-                            "app-right-panel-shell min-h-0 overflow-hidden",
-                            rightPanelWidthMode === "full" ? "flex-1" : "shrink-0",
-                          ].join(" ")}
-                          style={rightPanelInlineStyle}
-                        >
-                          <div className="flex h-full min-h-0 flex-col">
-                            <RightPanelTabStrip
-                              activeTabId={activeRightPanelTabId}
-                              activeStaticTabId={activeRightPanelStaticTabId}
-                              openTabs={openRightPanelTabs}
-                              onActivateTab={activateRightPanelTab}
-                              onCloseTab={closeRightPanelTab}
-                              onReorderTabs={reorderOpenRightPanelTabs}
-                              onOpenBrowserTab={() => openRightPanelStaticTab("browser")}
-                              onOpenReviewTab={() => openRightPanelStaticTab("review")}
-                              onToggleFullWidth={toggleRightPanelFullWidth}
-                              onTogglePanel={toggleRightPanel}
-                              t={t}
-                              rightPanelWidthMode={rightPanelWidthMode}
-                            />
-                            <ChatSidePanel
-                              activeStaticTabId={activeRightPanelStaticTabId}
-                              activeTab={activeRightPanelTab}
-                              browserTarget={browserSidebarTarget}
-                              conversationHostId={threadConversation?.hostId ?? null}
-                              composerDraft={
-                                activeSideChatComposerDraft
-                              }
-                              composerEnterBehavior={composerEnterBehavior}
-                              composerPermissionConfig={localComposerConfigWithStatsigFeatures}
-                              composerPermissionMode={localComposerPermissionMode}
-                              composerPermissionsState={localComposerPermissionsState}
-                              followUpQueueMode={followUpQueueMode}
-                              reviewDelivery={reviewDelivery}
-                              sideChatIsResponseInProgress={isSideChatResponseInProgress}
-                              submitButtonMode={
-                                isSideChatResponseInProgress &&
-                                activeSideChatComposerDraft.trim().length === 0
-                                  ? "stop"
-                                  : "send"
-                              }
-                              sideChatConversation={activeSideChatConversation}
-                              sideChatApprovals={currentSideChatApprovals}
-                              sideChatImplementPlanRequests={currentSideChatImplementPlanRequests}
-                              sideChatMcpServerElicitationRequest={currentSideChatMcpServerElicitationRequest}
-                              sideChatPermissionsRequestApproval={currentSideChatPermissionsRequestApproval}
-                              sideChatToolRequestUserInput={currentSideChatToolRequestUserInput}
-                              sideChatQueuedFollowUps={currentSideChatQueuedFollowUps}
-                              sideChatTurnError={
-                                activeSideChatConversationId === null
-                                  ? null
-                                  : (sideChatTurnErrorsById[activeSideChatConversationId] ?? null)
-                              }
-                              pendingPdfComments={currentThreadPendingPdfComments}
-                              onShowToast={(toast) => setAppToast(toast)}
-                              threadConversation={threadConversation}
-                              onOpenSideChat={
-                                activeSideChatConversationId === null
-                                  ? null
-                                  : (initialPrompt) => {
-                                      const sourceConversation =
-                                        activeSideChatConversation ?? sideChatConversationsByIdRef.current[activeSideChatConversationId] ?? null;
-                                      if (sourceConversation === null) {
-                                        return false;
-                                      }
-
-                                      return openSideChatForConversation({
-                                        conversationId: activeSideChatConversationId,
-                                        conversation: sourceConversation,
-                                        initialPrompt: initialPrompt ?? null,
-                                      });
-                                    }
-                              }
-                              onOpenBrowserTarget={openBrowserSidebarTarget}
-                              onOpenReviewFile={(change) => void handleReviewFileSelected(change)}
-                              onOpenWorkspaceFileSearch={openWorkspaceFileSearch}
-                              onSelectWorkspaceFile={handleWorkspaceFileSelected}
-                              onSubmitPdfComment={handleSubmitPdfComment}
-                              onPendingPdfCommentsChange={(update) => {
-                                if (selectedThreadId == null) {
-                                  return;
-                                }
-                                updatePendingPdfCommentsForThread(selectedThreadId, update);
-                              }}
-                              onApprovalDecision={(approval, decision) => void handleApprovalDecision(approval, decision)}
-                              onComposerDraftChange={(value) => {
-                                if (!activeSideChatConversationId) {
-                                  return;
-                                }
-                                setSideChatComposerDraftsById((current) => ({
-                                  ...current,
-                                  [activeSideChatConversationId]: value,
-                                }));
-                              }}
-                              onComposerPermissionModeChange={setSelectedLocalPermissionMode}
-                              onDismissImplementPlanRequest={dismissImplementPlanRequest}
-                              onEditUserMessage={(text) => {
-                                if (!activeSideChatConversationId) {
-                                  return;
-                                }
-                                return handleEditUserMessageForConversation(
-                                  activeSideChatConversation,
-                                  text,
-                                  (conversation) => {
-                                    setSideChatConversationsById((current) => ({
-                                      ...current,
-                                      [activeSideChatConversationId]: conversation,
-                                    }));
-                                    loadedConversationsByIdRef.current.set(conversation.id, conversation);
-                                  },
-                                  (value) => {
-                                    setSideChatTurnErrorsById((current) => ({
-                                      ...current,
-                                      [activeSideChatConversationId]: value,
-                                    }));
-                                  },
-                                );
-                              }}
-                              onImplementPlanRequestSubmit={(request, submission) =>
-                                void handleImplementPlanRequestSubmit(request, submission)
-                              }
-                              onMcpServerElicitationRequestSubmit={(request, action, content) =>
-                                void handleMcpServerElicitationRequestSubmit(request, action, content)
-                              }
-                              onPermissionsRequestApprovalSubmit={(request, grantMode, strictAutoReview) =>
-                                void handlePermissionsRequestApprovalSubmit(request, grantMode, strictAutoReview)
-                              }
-                              onRemoveQueuedFollowUp={removeQueuedFollowUp}
-                              onSelectThread={(threadId) => void selectThread(threadId)}
-                              onStopTurn={() => void stopTurn()}
-                              onSubmitTurn={(invertFollowUpAction) => {
-                                if (!activeSideChatConversationId) {
-                                  return;
-                                }
-                                void submitTurnForExistingConversation(
-                                  activeSideChatConversationId,
-                                  activeSideChatConversation,
-                                  sideChatComposerDraftsById[activeSideChatConversationId] ?? "",
-                                  (value) => {
-                                    setSideChatComposerDraftsById((current) => ({
-                                      ...current,
-                                      [activeSideChatConversationId]: value,
-                                    }));
-                                  },
-                                  (value) => {
-                                    setSideChatTurnErrorsById((current) => ({
-                                      ...current,
-                                      [activeSideChatConversationId]: value,
-                                    }));
-                                  },
-                                  (updater) => {
-                                    setSideChatConversationsById((current) => {
-                                      const existingConversation = current[activeSideChatConversationId] ?? null;
-                                      const nextConversation = updater(existingConversation);
-                                      if (!nextConversation) {
-                                        return current;
-                                      }
-                                      loadedConversationsByIdRef.current.set(nextConversation.id, nextConversation);
-                                      return {
-                                        ...current,
-                                        [activeSideChatConversationId]: nextConversation,
-                                      };
-                                    });
-                                  },
-                                  localComposerPermissionOverrides,
-                                  invertFollowUpAction,
-                                  { isSideChatConversation: true },
-                                );
-                              }}
-                              onToolRequestUserInputSubmit={(request, values) =>
-                                void handleToolRequestUserInputSubmit(request, values)
-                              }
-                              approvalActionErrors={approvalActionErrors}
-                              respondingApprovalKeys={respondingApprovalKeys}
-                              t={t}
-                              threadDiffSummary={threadDiffSummary}
-                              authMethod={authSnapshot.authState.authMethod}
-                            />
-                          </div>
-                        </aside>
-                      </>
-                    ) : shouldShowCollapsedRightPanelRail ? (
-                      <RightPanelCollapsedRail
-                        activeStaticTabId={activeRightPanelStaticTabId}
-                        collapsedTabs={collapsedRightPanelTabs}
-                        onActivateTab={activateRightPanelTab}
-                        onOpenBrowserTab={() => openRightPanelStaticTab("browser")}
-                        onOpenReviewTab={() => openRightPanelStaticTab("review")}
-                        t={t}
-                      />
-                    ) : null}
-                  </div>
-                )
-              ) : currentRoute === "scratchpad" ? (
+                        </div>
+                      </aside>
+                    </>
+                  ) : shouldShowCollapsedRightPanelRail ? (
+                    <RightPanelCollapsedRail
+                      activeStaticTabId={activeRightPanelStaticTabId}
+                      collapsedTabs={collapsedRightPanelTabs}
+                      onActivateTab={activateRightPanelTab}
+                      onOpenBrowserTab={() => openRightPanelStaticTab("browser")}
+                      onOpenReviewTab={() => openRightPanelStaticTab("review")}
+                      t={t}
+                    />
+                  ) : null}
+                </div>
+              )
+            ) : currentRoute === "scratchpad" ? (
                 <div className="min-h-0 flex-1 overflow-y-auto">
                   <ScratchpadPage
                     onOpenConversation={(conversationId) => {
@@ -7203,7 +7561,6 @@ function App() {
                   {threadActionFeedback.message}
                 </div>
               ) : null}
-            </div>
           </section>
         </div>
         )}

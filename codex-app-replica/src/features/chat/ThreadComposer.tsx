@@ -1,14 +1,15 @@
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
+  CheckCircleFilledIcon,
+  CheckCircleIcon,
   ChevronDownIcon,
   CheckIcon,
+  CloseTabIcon,
   DefaultPermissionsIcon,
   FullAccessPermissionsIcon,
-  ForkedConversationIcon,
   GuardianApprovalsIcon,
   PlusIcon,
   SettingsCogIcon,
-  WorkspaceFileIcon,
 } from "../../components/AppShellIcons";
 import type { AppToast } from "../../components/AppToastRegion";
 import type { MessageKey } from "../../i18n/messages";
@@ -18,7 +19,10 @@ import {
 } from "../../lib/followUpShortcuts";
 import { initializeGitRepository } from "../../services/gitInit";
 import { emitGitStateChanged } from "../../services/gitStateEvents";
-import type { ThreadConversationTokenUsageInfo } from "../../services/history";
+import type {
+  ThreadConversationGoal,
+  ThreadConversationTokenUsageInfo,
+} from "../../services/history";
 import type {
   ComposerEnterBehavior,
   ConfigSnapshot,
@@ -34,11 +38,15 @@ import {
   type HotkeyPermissionOptionValue,
   type HotkeyPermissionsState,
 } from "../hotkeyWindow/hotkeyPermissionsMode";
+import type { PendingPdfCommentAttachment } from "./pdfCommentAttachments";
+import { PendingPdfCommentAttachmentStrip } from "./PendingPdfCommentAttachmentStrip";
 import { ThreadComposerBranchSwitcher } from "./ThreadComposerBranchSwitcher";
 
 type ThreadComposerProps = {
+  activeCollaborationMode?: string | null;
   composerDraft: string;
   composerEnterBehavior: ComposerEnterBehavior;
+  conversationId?: string | null;
   composerPermissionConfig: ConfigSnapshot | null;
   composerPermissionMode: HotkeyPermissionAgentMode;
   composerPermissionsState: HotkeyPermissionsState;
@@ -48,15 +56,19 @@ type ThreadComposerProps = {
   isWorktreeThread: boolean;
   authMethod?: string | null;
   latestTokenUsageInfo?: ThreadConversationTokenUsageInfo | null;
+  pendingPdfComments?: PendingPdfCommentAttachment[];
   pendingPdfCommentCount?: number;
+  pendingThreadGoalObjective?: string | null;
   placement?: "main" | "side";
-  queuedFollowUpCount: number;
   reviewDelivery: ReviewDelivery;
   threadBranchLabel?: string | null;
+  threadGoal?: ThreadConversationGoal | null;
   onShowToast?: (toast: AppToast) => void;
   onComposerDraftChange: (value: string) => void;
+  onComposerCollaborationModeChange?: (mode: "default" | "plan" | null) => void;
   onComposerPermissionModeChange: (mode: HotkeyPermissionAgentMode) => void;
   onClearPendingPdfComments?: (() => void) | null;
+  onOpenThreadGoalEditor?: (() => void) | null;
   onOpenSideChat?: ((initialPrompt?: string | null) => Promise<boolean> | boolean) | null;
   onOpenWorkspaceFileSearch?: (() => void) | null;
   onStopTurn: () => void;
@@ -75,6 +87,18 @@ type PermissionOption = {
   tooltip: string;
   value: HotkeyPermissionOptionValue;
 };
+
+type ThreadComposerSuggestionStorage = {
+  getItem: (key: string) => string | null;
+  setItem: (key: string, value: string) => void;
+};
+
+type DismissedSuggestionsByScope = Record<string, string[]>;
+
+const PLAN_KEYWORD_SUGGESTION_ID = "keyword-plan-mode";
+const NEW_THREAD_SUGGESTION_SCOPE_KEY = "__new-thread__";
+const THREAD_COMPOSER_DISMISSED_SUGGESTIONS_STORAGE_KEY =
+  "codex:thread-composer-dismissed-suggestions";
 
 export function buildThreadComposerPermissionOptions(params: {
   composerPermissionsState: HotkeyPermissionsState;
@@ -140,9 +164,132 @@ export function parseSideChatCommandDraft(draft: string) {
   return match[1]?.trim() ?? "";
 }
 
+export function getThreadComposerSuggestionScopeKey(
+  conversationId: string | null | undefined,
+) {
+  const trimmedConversationId = conversationId?.trim() ?? "";
+  return trimmedConversationId.length > 0
+    ? trimmedConversationId
+    : NEW_THREAD_SUGGESTION_SCOPE_KEY;
+}
+
+export function readThreadComposerDismissedSuggestionIds(
+  storage: ThreadComposerSuggestionStorage | null | undefined,
+  conversationId: string | null | undefined,
+) {
+  if (storage == null) {
+    return [];
+  }
+
+  const rawState = storage.getItem(THREAD_COMPOSER_DISMISSED_SUGGESTIONS_STORAGE_KEY);
+  if (rawState == null) {
+    return [];
+  }
+
+  try {
+    const parsedState = JSON.parse(rawState) as unknown;
+    if (
+      typeof parsedState !== "object" ||
+      parsedState === null ||
+      Array.isArray(parsedState)
+    ) {
+      return [];
+    }
+    const parsedStateRecord = parsedState as Record<string, unknown>;
+    const dismissedSuggestionIds =
+      parsedStateRecord[getThreadComposerSuggestionScopeKey(conversationId)];
+    if (!Array.isArray(dismissedSuggestionIds)) {
+      return [];
+    }
+    return dismissedSuggestionIds.filter(
+      (dismissedSuggestionId): dismissedSuggestionId is string =>
+        typeof dismissedSuggestionId === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function writeThreadComposerDismissedSuggestionIds(
+  storage: ThreadComposerSuggestionStorage | null | undefined,
+  conversationId: string | null | undefined,
+  dismissedSuggestionIds: string[],
+) {
+  if (storage == null) {
+    return;
+  }
+
+  let parsedState: DismissedSuggestionsByScope = {};
+  const rawState = storage.getItem(THREAD_COMPOSER_DISMISSED_SUGGESTIONS_STORAGE_KEY);
+  if (rawState != null) {
+    try {
+      const nextParsedState = JSON.parse(rawState) as unknown;
+      if (
+        typeof nextParsedState === "object" &&
+        nextParsedState !== null &&
+        !Array.isArray(nextParsedState)
+      ) {
+        parsedState = Object.fromEntries(
+          Object.entries(nextParsedState).map(([scopeKey, value]) => [
+            scopeKey,
+            Array.isArray(value)
+              ? value.filter(
+                  (dismissedSuggestionId): dismissedSuggestionId is string =>
+                    typeof dismissedSuggestionId === "string",
+                )
+              : [],
+          ]),
+        );
+      }
+    } catch {
+      parsedState = {};
+    }
+  }
+
+  const scopeKey = getThreadComposerSuggestionScopeKey(conversationId);
+  if (dismissedSuggestionIds.length === 0) {
+    delete parsedState[scopeKey];
+  } else {
+    parsedState[scopeKey] = dismissedSuggestionIds;
+  }
+
+  storage.setItem(
+    THREAD_COMPOSER_DISMISSED_SUGGESTIONS_STORAGE_KEY,
+    JSON.stringify(parsedState),
+  );
+}
+
+export function shouldShowThreadComposerPlanKeywordSuggestion(params: {
+  composerDraft: string;
+  isDismissed: boolean;
+  isPlanCollaborationMode: boolean;
+  supportsPlanModeToggle: boolean;
+}) {
+  return (
+    params.supportsPlanModeToggle &&
+    !params.isPlanCollaborationMode &&
+    !params.isDismissed &&
+    /\bplan\b/iu.test(params.composerDraft)
+  );
+}
+
+function getThreadComposerSuggestionStorage() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 export function ThreadComposer({
+  activeCollaborationMode = null,
   composerDraft,
   composerEnterBehavior,
+  conversationId = null,
   composerPermissionMode,
   composerPermissionsState,
   focusComposerNonce,
@@ -150,14 +297,18 @@ export function ThreadComposer({
   isResponseInProgress = false,
   authMethod = null,
   latestTokenUsageInfo = null,
+  pendingPdfComments = [],
   pendingPdfCommentCount = 0,
+  pendingThreadGoalObjective = null,
   placement = "main",
-  queuedFollowUpCount,
   threadBranchLabel = null,
+  threadGoal = null,
   onShowToast,
   onComposerDraftChange,
+  onComposerCollaborationModeChange,
   onComposerPermissionModeChange,
   onClearPendingPdfComments = null,
+  onOpenThreadGoalEditor = null,
   onOpenSideChat = null,
   onOpenWorkspaceFileSearch = null,
   onStopTurn,
@@ -174,18 +325,27 @@ export function ThreadComposer({
   const [isPermissionMenuOpen, setIsPermissionMenuOpen] = useState(false);
   const [isFullAccessConfirmOpen, setIsFullAccessConfirmOpen] = useState(false);
   const [isCreatingGitRepository, setIsCreatingGitRepository] = useState(false);
+  const [dismissedSuggestionIds, setDismissedSuggestionIds] = useState(() =>
+    readThreadComposerDismissedSuggestionIds(
+      getThreadComposerSuggestionStorage(),
+      conversationId,
+    ),
+  );
   const composerModifierLabel = getComposerModifierLabel();
   const helperText =
     composerEnterBehavior === "cmdIfMultiline"
       ? t("general.enterBehaviorDescription", { modifierSymbol: composerModifierLabel })
       : "";
+  const resolvedPendingPdfCommentCount =
+    pendingPdfComments.length > 0 ? pendingPdfComments.length : pendingPdfCommentCount;
   const isSubmitDisabled =
     submitButtonMode === "send" &&
     composerDraft.trim().length === 0 &&
-    pendingPdfCommentCount === 0;
-  const canOpenWorkspaceFileSearch = onOpenWorkspaceFileSearch !== null;
+    resolvedPendingPdfCommentCount === 0;
   const canOpenSideChat = onOpenSideChat !== null;
   const isSidePlacement = placement === "side";
+  const hasThreadGoal = threadGoal !== null || pendingThreadGoalObjective !== null;
+  const canOpenThreadGoalEditor = placement === "main" && onOpenThreadGoalEditor !== null;
   const permissionMenuValue = getHotkeyPermissionOptionValue(composerPermissionMode);
   const permissionTriggerLabel = isDefaultPermissionsMode(composerPermissionMode)
     ? t("composer.permissionsDropdown.default.label")
@@ -256,11 +416,45 @@ export function ThreadComposer({
   );
   const submitButtonAriaLabel =
     submitButtonMode === "stop" ? t("app.chat.stop") : t("app.chat.send");
+  const isPlanCollaborationMode = activeCollaborationMode === "plan";
+  const supportsPlanModeToggle = onComposerCollaborationModeChange != null;
+  const isPlanKeywordSuggestionDismissed = dismissedSuggestionIds.includes(
+    PLAN_KEYWORD_SUGGESTION_ID,
+  );
+  const goalTriggerTooltip = hasThreadGoal
+    ? t("composer.threadGoal.editTooltip")
+    : t("composer.threadGoalEditor.createTitle");
+  const GoalTriggerIcon = hasThreadGoal ? CheckCircleFilledIcon : CheckCircleIcon;
+  const goalTriggerLabel =
+    threadGoal === null
+      ? t("composer.threadGoal.summary.active")
+      : threadGoal.status === "paused"
+        ? t("composer.threadGoal.summary.paused")
+        : threadGoal.status === "budgetLimited"
+          ? t("composer.threadGoal.summary.budgetLimited")
+          : threadGoal.status === "complete"
+            ? t("composer.threadGoal.summary.complete")
+            : t("composer.threadGoal.summary.active");
+  const shouldShowPlanKeywordSuggestion =
+    shouldShowThreadComposerPlanKeywordSuggestion({
+      composerDraft,
+      isDismissed: isPlanKeywordSuggestionDismissed,
+      isPlanCollaborationMode,
+      supportsPlanModeToggle,
+    });
 
-  const handleInsertMention = () => {
-    const suffix = composerDraft.length > 0 && !/\s$/u.test(composerDraft) ? " @" : "@";
-    onComposerDraftChange(`${composerDraft}${suffix}`);
-    textareaRef.current?.focus();
+  const updateDismissedSuggestionIds = (
+    updater: (current: string[]) => string[],
+  ) => {
+    setDismissedSuggestionIds((current) => {
+      const next = updater(current);
+      writeThreadComposerDismissedSuggestionIds(
+        getThreadComposerSuggestionStorage(),
+        conversationId,
+        next,
+      );
+      return next;
+    });
   };
 
   const handleOpenSideChat = async () => {
@@ -309,6 +503,31 @@ export function ThreadComposer({
     } finally {
       setIsCreatingGitRepository(false);
     }
+  };
+
+  const handleTogglePlanMode = () => {
+    if (!supportsPlanModeToggle) {
+      return;
+    }
+
+    onComposerCollaborationModeChange?.(isPlanCollaborationMode ? "default" : "plan");
+  };
+
+  const handleEnablePlanMode = () => {
+    onComposerCollaborationModeChange?.("plan");
+    updateDismissedSuggestionIds((current) =>
+      current.includes(PLAN_KEYWORD_SUGGESTION_ID)
+        ? current
+        : [...current, PLAN_KEYWORD_SUGGESTION_ID],
+    );
+  };
+
+  const handleDismissPlanKeywordSuggestion = () => {
+    updateDismissedSuggestionIds((current) =>
+      current.includes(PLAN_KEYWORD_SUGGESTION_ID)
+        ? current
+        : [...current, PLAN_KEYWORD_SUGGESTION_ID],
+    );
   };
 
   const handlePermissionOptionChange = (value: HotkeyPermissionOptionValue) => {
@@ -367,46 +586,47 @@ export function ThreadComposer({
     };
   }, [isPermissionMenuOpen]);
 
-  const shouldShowAttachmentStrip =
-    pendingPdfCommentCount > 0 || queuedFollowUpCount > 0;
+  useEffect(() => {
+    setDismissedSuggestionIds(
+      readThreadComposerDismissedSuggestionIds(
+        getThreadComposerSuggestionStorage(),
+        conversationId,
+      ),
+    );
+  }, [conversationId]);
+
+  const shouldShowAttachmentStrip = resolvedPendingPdfCommentCount > 0;
 
   return (
     <>
       <div className="app-thread-composer overflow-visible rounded-[26px] border border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)] shadow-[var(--app-shell-card-shadow)]">
         {shouldShowAttachmentStrip ? (
-          <div className="border-b border-[var(--app-shell-border)] px-3 py-2.5">
-            <div className="hide-scrollbar overflow-x-auto">
-              <div className="flex min-w-max items-center gap-1.5">
-                {pendingPdfCommentCount > 0 ? (
-                  <div className="app-card-muted flex items-center gap-2 rounded-[14px] px-3 py-1.5 text-[12px] leading-5">
-                    <span>{t("commentAttachments.numAnnotations", { count: pendingPdfCommentCount })}</span>
-                    {onClearPendingPdfComments == null ? null : (
-                      <button
-                        type="button"
-                        onClick={onClearPendingPdfComments}
-                        className="app-control-weak rounded-full px-2 py-0.5 text-[11px]"
-                      >
-                        {t("app.chat.removeQueuedFollowUp")}
-                      </button>
-                    )}
-                  </div>
-                ) : null}
-                {queuedFollowUpCount > 0 ? (
-                  <div className="app-card-muted rounded-[14px] px-3 py-1.5 text-[12px] leading-5">
-                    {t("app.chat.queuedFollowUps", { count: queuedFollowUpCount })}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </div>
+          <PendingPdfCommentAttachmentStrip
+            pendingPdfCommentCount={resolvedPendingPdfCommentCount}
+            pendingPdfComments={pendingPdfComments}
+            onClearPendingPdfComments={onClearPendingPdfComments}
+            t={t}
+          />
         ) : null}
 
-        <div className="px-4 pt-3 pb-2.5">
+        <div className={shouldShowAttachmentStrip ? "px-4 pt-2.5 pb-2.5" : "px-4 pt-3 pb-2.5"}>
           <textarea
             ref={textareaRef}
             value={composerDraft}
             onChange={(event) => onComposerDraftChange(event.target.value)}
             onKeyDown={(event) => {
+              if (
+                event.key === "Tab" &&
+                event.shiftKey &&
+                !event.altKey &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                supportsPlanModeToggle
+              ) {
+                event.preventDefault();
+                handleTogglePlanMode();
+                return;
+              }
               if (event.key !== "Enter") {
                 return;
               }
@@ -442,9 +662,85 @@ export function ThreadComposer({
               isSidePlacement ? "min-h-[104px]" : "min-h-[112px]",
             ].join(" ")}
           />
+          {shouldShowPlanKeywordSuggestion ? (
+            <div className="mt-3 flex items-center justify-between gap-4 rounded-[24px] border border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)] px-3 py-2.5 shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
+              <div className="min-w-0 flex-1">
+                <div className="app-title truncate text-[14px] font-medium">
+                  {t("composer.aboveSuggestion.plan.title")}
+                </div>
+                <div className="app-text-muted mt-1 flex items-center gap-1.5 text-[12px] leading-4">
+                  <span className="app-thread-composer-footer-shortcut-badge">
+                    {t("composer.aboveSuggestion.plan.shortcut")}
+                  </span>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={handleEnablePlanMode}
+                  className="app-thread-composer-footer-pill shrink-0 px-2.5 text-[12px] text-[var(--app-shell-accent)]"
+                >
+                  {t("composer.aboveSuggestion.plan.action")}
+                </button>
+                <button
+                  type="button"
+                  aria-label={t("composer.aboveSuggestion.dismiss")}
+                  onClick={handleDismissPlanKeywordSuggestion}
+                  className="app-control-weak flex h-[22px] w-[22px] items-center justify-center rounded-full"
+                >
+                  <CloseTabIcon className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          ) : null}
 
-          <div className="mt-3 flex flex-wrap items-center gap-x-2.5 gap-y-2 border-t border-[var(--app-shell-border)] pt-2.5">
+          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-2 border-t border-[var(--app-shell-border)] pt-2.5">
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+              {canOpenThreadGoalEditor ? (
+                <ComposerTooltip align="start" content={goalTriggerTooltip}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenThreadGoalEditor?.()}
+                    className="app-thread-composer-footer-pill inline-flex items-center gap-1.5"
+                    aria-label={goalTriggerTooltip}
+                  >
+                    <GoalTriggerIcon className="h-4 w-4 shrink-0" />
+                    <span>{goalTriggerLabel}</span>
+                  </button>
+                </ComposerTooltip>
+              ) : null}
+              {isPlanCollaborationMode ? (
+                <ComposerTooltip
+                  align="start"
+                  contentClassName="flex flex-col items-center text-center leading-tight"
+                  content={
+                    <>
+                      <span>{t("composer.planModeIndicator.tooltipText")}</span>
+                      <span className="inline-flex items-center gap-1">
+                        <span className="app-thread-composer-footer-shortcut-badge">
+                          {t("composer.planModeIndicator.tooltipShortcut")}
+                        </span>
+                        <span>{t("composer.planModeIndicator.tooltipToggle")}</span>
+                      </span>
+                    </>
+                  }
+                >
+                  <button
+                    type="button"
+                    onClick={handleTogglePlanMode}
+                    className="app-thread-composer-footer-pill group inline-flex max-w-[96px] items-center gap-1 text-[var(--app-shell-accent)] hover:bg-[color-mix(in_srgb,var(--app-shell-accent)_12%,transparent)]"
+                    aria-label={t("composer.planModeIndicator")}
+                  >
+                    <span aria-hidden="true" className="group-hover:hidden">
+                      ↹
+                    </span>
+                    <span aria-hidden="true" className="hidden group-hover:inline">
+                      →
+                    </span>
+                    <span className="truncate text-[12px]">{t("composer.planModeIndicator")}</span>
+                  </button>
+                </ComposerTooltip>
+              ) : null}
               <div className="relative" ref={permissionMenuRef}>
                 <ComposerTooltip
                   align="start"
@@ -525,40 +821,6 @@ export function ThreadComposer({
                   </div>
                 ) : null}
               </div>
-              {canOpenWorkspaceFileSearch ? (
-                <ComposerTooltip content={t("thread.sidePanel.openFile")}>
-                  <button
-                    type="button"
-                    onClick={() => onOpenWorkspaceFileSearch?.()}
-                    className="app-thread-composer-action-button"
-                    aria-label={t("thread.sidePanel.openFile")}
-                  >
-                    <WorkspaceFileIcon className="h-4 w-4" />
-                  </button>
-                </ComposerTooltip>
-              ) : null}
-              {canOpenSideChat ? (
-                <ComposerTooltip content={t("threadHeader.openSideChat")}>
-                  <button
-                    type="button"
-                    onClick={() => void onOpenSideChat?.(null)}
-                    className="app-thread-composer-action-button"
-                    aria-label={t("threadHeader.openSideChat")}
-                  >
-                    <ForkedConversationIcon className="h-4 w-4" />
-                  </button>
-                </ComposerTooltip>
-              ) : null}
-              <ComposerTooltip content="@">
-                <button
-                  type="button"
-                  onClick={handleInsertMention}
-                  className="app-thread-composer-action-button"
-                  aria-label="@"
-                >
-                  <span className="text-[15px] font-medium leading-none">@</span>
-                </button>
-              </ComposerTooltip>
               {placement === "main" && threadGitRoot !== null ? (
                 <ThreadComposerBranchSwitcher
                   fallbackBranchLabel={normalizedThreadBranchLabel}
@@ -588,7 +850,7 @@ export function ThreadComposer({
                 </div>
               ) : null}
             </div>
-            <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2">
+            <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-1.5">
               <div
                 className={[
                   turnError ? "app-text-error" : "app-text-subtle",

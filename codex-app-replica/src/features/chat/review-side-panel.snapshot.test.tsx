@@ -49,6 +49,22 @@ test("review side panel snapshots", async (t) => {
         </div>,
       ),
     ),
+    reviewEmptyOptionsMenuOpen: normalizeMarkup(
+      renderToStaticMarkup(
+        <div className="h-[900px] w-[1280px]">
+          <ReviewSidePanel
+            defaultOptionsMenuOpen
+            gitInitCwd="D:\\workspace"
+            gitRoot="D:\\workspace"
+            hostId={null}
+            onOpenReviewFile={() => undefined}
+            showGitRepoRequired={true}
+            t={translate}
+            threadDiffSummary={EMPTY_THREAD_DIFF_SUMMARY}
+          />
+        </div>,
+      ),
+    ),
     reviewGitActionsMenuOpen: normalizeMarkup(
       renderToStaticMarkup(
         <div className="p-6">
@@ -159,6 +175,8 @@ test("review side panel snapshots", async (t) => {
   assert.ok(!actualSnapshots.tabStripWithDynamicTabs.includes('title="Open browser tab"'));
   assert.ok(!actualSnapshots.tabStripWithDynamicTabs.includes('title="Expand panel"'));
   assert.ok(!actualSnapshots.tabStripWithDynamicTabs.includes('title="Toggle side panel"'));
+  assert.ok(actualSnapshots.reviewEmptyOptionsMenuOpen.includes("Copy git apply command"));
+  assert.ok(actualSnapshots.reviewEmptyOptionsMenuOpen.includes("disabled"));
 
   if (UPDATE_SNAPSHOTS) {
     await mkdir(path.dirname(SNAPSHOT_PATH), { recursive: true });
@@ -178,6 +196,7 @@ test("review side panel snapshots", async (t) => {
 type SnapshotMap = {
   reviewWithChanges: string;
   reviewEmpty: string;
+  reviewEmptyOptionsMenuOpen: string;
   reviewGitActionsMenuOpen: string;
   collapsedRailQuickOpenOnly: string;
   collapsedRailWithTabs: string;

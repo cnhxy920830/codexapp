@@ -8,6 +8,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { I18N_CONTEXT } from "../../i18n/i18n";
 import { ChatConversationMainPane } from "./ChatConversationMainPane";
 import { ChatSidePanel } from "./ChatSidePanel";
+import { LocalConversationPageHeader } from "./LocalConversationPageHeader";
 import { createSideChatRightPanelTab } from "./rightPanelTabs";
 import type {
   ThreadConversation,
@@ -48,21 +49,13 @@ test("local conversation page snapshots", async (t) => {
         <I18N_CONTEXT.Provider value={{ locale: "en-US", setLocale: () => undefined, t: translate }}>
           <div className="h-[1080px] w-[1440px]">
             <ChatConversationMainPane
-              threadActionsMenuRef={{ current: null }}
               composerDraft=""
               composerEnterBehavior="enter"
               composerPermissionConfig={null}
               composerPermissionMode="auto"
               composerPermissionsState={permissionsState}
               followUpQueueMode="queue"
-              hasAttachedHeartbeatAutomation={true}
-              isThreadActionsMenuOpen={false}
-              isThreadHeartbeatAutomationActionDisabled={false}
-              isThreadHeartbeatAutomationActionVisible={true}
-              isThreadPinned={true}
               isWorktreeThread={false}
-              heartbeatAutomationActionLabelKey="threadHeader.editAutomation"
-              heartbeatAutomationButtonTooltip="Next run: Tomorrow at 9:00 AM"
               currentThreadApprovals={[]}
               currentThreadImplementPlanRequests={[]}
               currentThreadMcpServerElicitationRequest={[]}
@@ -80,29 +73,16 @@ test("local conversation page snapshots", async (t) => {
               onComposerPermissionModeChange={() => undefined}
               onOpenRemoteTask={() => undefined}
               onSelectRemoteTaskAssistantTurn={() => undefined}
-              onArchiveThread={() => undefined}
-              onCopyAppLink={() => undefined}
-              onCopyConversationMarkdown={() => undefined}
-              onCopySessionId={() => undefined}
-              onCopyWorkingDirectory={() => undefined}
-              onForkSelectedThread={() => undefined}
-              onForkSelectedThreadIntoWorktree={() => undefined}
-              onOpenInNewWindow={() => undefined}
-              onOpenAttachedHeartbeatAutomation={() => undefined}
               onOpenSideChat={() => true}
-              onOpenThreadHeartbeatAutomationAction={() => undefined}
-              onOpenRenameDialog={() => undefined}
               onOpenWorkspaceFileSearch={() => undefined}
               onFocusComposerRequest={() => undefined}
               onSelectThread={() => undefined}
-              onTogglePinnedThread={() => undefined}
               onThreadGoalEditorOpenChange={() => undefined}
               onPendingThreadGoalObjectiveChange={() => undefined}
               onEditUserMessage={() => undefined}
               onRemoveQueuedFollowUp={() => undefined}
               onStopTurn={() => undefined}
               onSubmitTurn={() => undefined}
-              onToggleThreadActionsMenu={() => undefined}
               approvalActionErrors={{}}
               reviewDelivery="inline"
               respondingApprovalKeys={[]}
@@ -128,21 +108,13 @@ test("local conversation page snapshots", async (t) => {
         <I18N_CONTEXT.Provider value={{ locale: "en-US", setLocale: () => undefined, t: translate }}>
           <div className="h-[1080px] w-[1440px]">
             <ChatConversationMainPane
-              threadActionsMenuRef={{ current: null }}
               composerDraft=""
               composerEnterBehavior="enter"
               composerPermissionConfig={null}
               composerPermissionMode="auto"
               composerPermissionsState={permissionsState}
               followUpQueueMode="queue"
-              hasAttachedHeartbeatAutomation={true}
-              isThreadActionsMenuOpen={true}
-              isThreadHeartbeatAutomationActionDisabled={false}
-              isThreadHeartbeatAutomationActionVisible={true}
-              isThreadPinned={true}
               isWorktreeThread={false}
-              heartbeatAutomationActionLabelKey="threadHeader.editAutomation"
-              heartbeatAutomationButtonTooltip="Next run: Tomorrow at 9:00 AM"
               currentThreadApprovals={[]}
               currentThreadImplementPlanRequests={[]}
               currentThreadMcpServerElicitationRequest={[]}
@@ -160,29 +132,16 @@ test("local conversation page snapshots", async (t) => {
               onComposerPermissionModeChange={() => undefined}
               onOpenRemoteTask={() => undefined}
               onSelectRemoteTaskAssistantTurn={() => undefined}
-              onArchiveThread={() => undefined}
-              onCopyAppLink={() => undefined}
-              onCopyConversationMarkdown={() => undefined}
-              onCopySessionId={() => undefined}
-              onCopyWorkingDirectory={() => undefined}
-              onForkSelectedThread={() => undefined}
-              onForkSelectedThreadIntoWorktree={() => undefined}
-              onOpenInNewWindow={() => undefined}
-              onOpenAttachedHeartbeatAutomation={() => undefined}
               onOpenSideChat={() => true}
-              onOpenThreadHeartbeatAutomationAction={() => undefined}
-              onOpenRenameDialog={() => undefined}
               onOpenWorkspaceFileSearch={() => undefined}
               onFocusComposerRequest={() => undefined}
               onSelectThread={() => undefined}
-              onTogglePinnedThread={() => undefined}
               onThreadGoalEditorOpenChange={() => undefined}
               onPendingThreadGoalObjectiveChange={() => undefined}
               onEditUserMessage={() => undefined}
               onRemoveQueuedFollowUp={() => undefined}
               onStopTurn={() => undefined}
               onSubmitTurn={() => undefined}
-              onToggleThreadActionsMenu={() => undefined}
               approvalActionErrors={{}}
               reviewDelivery="inline"
               respondingApprovalKeys={[]}
@@ -208,21 +167,13 @@ test("local conversation page snapshots", async (t) => {
         <I18N_CONTEXT.Provider value={{ locale: "en-US", setLocale: () => undefined, t: translate }}>
           <div className="h-[1080px] w-[1440px]">
             <ChatConversationMainPane
-              threadActionsMenuRef={{ current: null }}
               composerDraft=""
               composerEnterBehavior="enter"
               composerPermissionConfig={null}
               composerPermissionMode="auto"
               composerPermissionsState={permissionsState}
               followUpQueueMode="queue"
-              hasAttachedHeartbeatAutomation={true}
-              isThreadActionsMenuOpen={false}
-              isThreadHeartbeatAutomationActionDisabled={false}
-              isThreadHeartbeatAutomationActionVisible={true}
-              isThreadPinned={true}
               isWorktreeThread={false}
-              heartbeatAutomationActionLabelKey="threadHeader.editAutomation"
-              heartbeatAutomationButtonTooltip="Next run: Tomorrow at 9:00 AM"
               currentThreadApprovals={[]}
               currentThreadImplementPlanRequests={[]}
               currentThreadMcpServerElicitationRequest={[]}
@@ -240,29 +191,16 @@ test("local conversation page snapshots", async (t) => {
               onComposerPermissionModeChange={() => undefined}
               onOpenRemoteTask={() => undefined}
               onSelectRemoteTaskAssistantTurn={() => undefined}
-              onArchiveThread={() => undefined}
-              onCopyAppLink={() => undefined}
-              onCopyConversationMarkdown={() => undefined}
-              onCopySessionId={() => undefined}
-              onCopyWorkingDirectory={() => undefined}
-              onForkSelectedThread={() => undefined}
-              onForkSelectedThreadIntoWorktree={() => undefined}
-              onOpenInNewWindow={() => undefined}
-              onOpenAttachedHeartbeatAutomation={() => undefined}
               onOpenSideChat={() => true}
-              onOpenThreadHeartbeatAutomationAction={() => undefined}
-              onOpenRenameDialog={() => undefined}
               onOpenWorkspaceFileSearch={() => undefined}
               onFocusComposerRequest={() => undefined}
               onSelectThread={() => undefined}
-              onTogglePinnedThread={() => undefined}
               onThreadGoalEditorOpenChange={() => undefined}
               onPendingThreadGoalObjectiveChange={() => undefined}
               onEditUserMessage={() => undefined}
               onRemoveQueuedFollowUp={() => undefined}
               onStopTurn={() => undefined}
               onSubmitTurn={() => undefined}
-              onToggleThreadActionsMenu={() => undefined}
               approvalActionErrors={{}}
               reviewDelivery="inline"
               respondingApprovalKeys={[]}
@@ -288,21 +226,13 @@ test("local conversation page snapshots", async (t) => {
         <I18N_CONTEXT.Provider value={{ locale: "en-US", setLocale: () => undefined, t: translate }}>
           <div className="h-[1080px] w-[1440px]">
             <ChatConversationMainPane
-              threadActionsMenuRef={{ current: null }}
               composerDraft=""
               composerEnterBehavior="enter"
               composerPermissionConfig={null}
               composerPermissionMode="auto"
               composerPermissionsState={permissionsState}
               followUpQueueMode="queue"
-              hasAttachedHeartbeatAutomation={true}
-              isThreadActionsMenuOpen={false}
-              isThreadHeartbeatAutomationActionDisabled={false}
-              isThreadHeartbeatAutomationActionVisible={true}
-              isThreadPinned={true}
               isWorktreeThread={false}
-              heartbeatAutomationActionLabelKey="threadHeader.editAutomation"
-              heartbeatAutomationButtonTooltip="Next run: Tomorrow at 9:00 AM"
               currentThreadApprovals={[]}
               currentThreadImplementPlanRequests={[]}
               currentThreadMcpServerElicitationRequest={[]}
@@ -320,29 +250,16 @@ test("local conversation page snapshots", async (t) => {
               onComposerPermissionModeChange={() => undefined}
               onOpenRemoteTask={() => undefined}
               onSelectRemoteTaskAssistantTurn={() => undefined}
-              onArchiveThread={() => undefined}
-              onCopyAppLink={() => undefined}
-              onCopyConversationMarkdown={() => undefined}
-              onCopySessionId={() => undefined}
-              onCopyWorkingDirectory={() => undefined}
-              onForkSelectedThread={() => undefined}
-              onForkSelectedThreadIntoWorktree={() => undefined}
-              onOpenInNewWindow={() => undefined}
-              onOpenAttachedHeartbeatAutomation={() => undefined}
               onOpenSideChat={() => true}
-              onOpenThreadHeartbeatAutomationAction={() => undefined}
-              onOpenRenameDialog={() => undefined}
               onOpenWorkspaceFileSearch={() => undefined}
               onFocusComposerRequest={() => undefined}
               onSelectThread={() => undefined}
-              onTogglePinnedThread={() => undefined}
               onThreadGoalEditorOpenChange={() => undefined}
               onPendingThreadGoalObjectiveChange={() => undefined}
               onEditUserMessage={() => undefined}
               onRemoveQueuedFollowUp={() => undefined}
               onStopTurn={() => undefined}
               onSubmitTurn={() => undefined}
-              onToggleThreadActionsMenu={() => undefined}
               approvalActionErrors={{}}
               reviewDelivery="inline"
               respondingApprovalKeys={[]}
@@ -431,6 +348,22 @@ test("local conversation page snapshots", async (t) => {
         </I18N_CONTEXT.Provider>,
       ),
     ),
+    titleHoverCardOpen: normalizeMarkup(
+      renderToStaticMarkup(
+        <div className="w-[1440px]">
+          <LocalConversationPageHeader
+            conversationId={threadConversation.id}
+            cwd={threadConversation.cwd}
+            defaultTitleHoverCardOpen={true}
+            heartbeatSummary="Next run: Tomorrow at 9:00 AM"
+            projectLabel="project"
+            source={threadConversation.source ?? null}
+            threadGitRoot={null}
+            title={threadConversation.title}
+          />
+        </div>,
+      ),
+    ),
   };
 
   assert.ok(!actualSnapshots.mainThread.includes('title="Next run: Tomorrow at 9:00 AM"'));
@@ -460,6 +393,7 @@ type SnapshotMap = {
   annotationOnlyThread: string;
   editingUserMessage: string;
   sideChat: string;
+  titleHoverCardOpen: string;
 };
 
 function normalizeMarkup(markup: string) {

@@ -6,9 +6,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   buildThreadComposerPermissionOptions,
   parseSideChatCommandDraft,
+  readThreadComposerDismissedSuggestionIds,
+  shouldShowThreadComposerPlanKeywordSuggestion,
   ThreadComposer,
+  writeThreadComposerDismissedSuggestionIds,
 } from "./ThreadComposer";
 import type { HotkeyPermissionsState } from "../hotkeyWindow/hotkeyPermissionsMode";
+import type { PendingPdfCommentAttachment } from "./pdfCommentAttachments";
 
 function translate(key: string, values?: Record<string, number | string>) {
   switch (key) {
@@ -22,6 +26,12 @@ function translate(key: string, values?: Record<string, number | string>) {
       return "Stop";
     case "commentAttachments.numAnnotations":
       return values?.count === 1 ? "1 annotation" : `${values?.count ?? 0} annotations`;
+    case "commentAttachments.removeAnnotationsAriaLabel":
+      return "Remove annotations attachment";
+    case "codex.localConversation.comment.screenshotAttached":
+      return "Screenshot attached";
+    case "codex.localConversation.pdfComment.annotationAttached":
+      return "PDF annotation attached";
     case "general.enterBehaviorDescription":
       return `Use ${values?.modifierSymbol ?? "Cmd"}+Enter`;
     case "composer.permissionsDropdown.default.label":
@@ -106,6 +116,22 @@ function translate(key: string, values?: Record<string, number | string>) {
       return `${values?.usage ?? 0}%`;
     case "composer.contextWindow.autoCompactionTooltipLine1":
       return "Codex automatically compacts its context";
+    case "composer.planModeIndicator":
+      return "Plan";
+    case "composer.planModeIndicator.tooltipText":
+      return "Create a plan";
+    case "composer.planModeIndicator.tooltipShortcut":
+      return "Shift + Tab";
+    case "composer.planModeIndicator.tooltipToggle":
+      return "to toggle";
+    case "composer.aboveSuggestion.plan.title":
+      return "Create a plan";
+    case "composer.aboveSuggestion.plan.shortcut":
+      return "Shift + Tab";
+    case "composer.aboveSuggestion.plan.action":
+      return "Use plan mode";
+    case "composer.aboveSuggestion.dismiss":
+      return "Dismiss suggestion";
     case "composer.pendingThreadGoal.summary":
       return "Goal";
     case "composer.pendingThreadGoal.editTooltip":
@@ -189,9 +215,59 @@ const permissionsState: HotkeyPermissionsState = {
   showGuardianOption: true,
 };
 
-function renderComposer(pendingPdfCommentCount: number) {
+function buildPendingPdfCommentAttachment(): PendingPdfCommentAttachment {
+  return {
+    id: "pending-pdf-comment-1",
+    comment: {
+      type: "comment",
+      path: "D:\\workspace\\docs\\report.pdf",
+      body: "Check the chart annotation.",
+      content: [],
+      position: {
+        line: 1,
+        path: "pdf:D:\\workspace\\docs\\report.pdf",
+        side: null,
+      },
+      origin: "pdf",
+      localPdfContext: {
+        pageCount: 4,
+        pageNumber: 2,
+        path: "D:\\workspace\\docs\\report.pdf",
+        title: "Quarterly report",
+      },
+      localPdfCommentMetadata: {
+        kind: "point",
+        pagePoint: {
+          x: 24,
+          y: 40,
+        },
+        pageSize: {
+          width: 612,
+          height: 792,
+        },
+      },
+      localPdfScreenshot: {
+        commentId: "pending-pdf-comment-1",
+        dataUrl: "data:image/png;base64,ZmFrZQ==",
+        width: 120,
+        height: 80,
+        pageNumber: 2,
+      },
+    },
+  };
+}
+
+function renderComposer(options?: {
+  pendingPdfCommentCount?: number;
+  pendingPdfComments?: PendingPdfCommentAttachment[];
+}) {
+  const pendingPdfComments = options?.pendingPdfComments ?? [];
+  const pendingPdfCommentCount =
+    options?.pendingPdfCommentCount ?? pendingPdfComments.length;
+
   return renderToStaticMarkup(
     <ThreadComposer
+      activeCollaborationMode={null}
       composerDraft=""
       composerEnterBehavior="enter"
       composerPermissionConfig={null}
@@ -204,8 +280,99 @@ function renderComposer(pendingPdfCommentCount: number) {
       onComposerPermissionModeChange={() => undefined}
       onStopTurn={() => undefined}
       onSubmitTurn={() => undefined}
+      pendingPdfComments={pendingPdfComments}
       pendingPdfCommentCount={pendingPdfCommentCount}
-      queuedFollowUpCount={0}
+      reviewDelivery="inline"
+      submitButtonMode="send"
+      t={translate}
+      threadBranchLabel={null}
+      threadCwd="D:\\workspace"
+      turnError={null}
+    />,
+  );
+}
+
+function renderPlanModeComposer() {
+  return renderToStaticMarkup(
+    <ThreadComposer
+      activeCollaborationMode="plan"
+      composerDraft=""
+      composerEnterBehavior="enter"
+      composerPermissionConfig={null}
+      composerPermissionMode="auto"
+      composerPermissionsState={permissionsState}
+      followUpQueueMode="queue"
+      isWorktreeThread={false}
+      onComposerDraftChange={() => undefined}
+      onComposerPermissionModeChange={() => undefined}
+      onStopTurn={() => undefined}
+      onSubmitTurn={() => undefined}
+      pendingPdfCommentCount={0}
+      reviewDelivery="inline"
+      submitButtonMode="send"
+      t={translate}
+      threadBranchLabel={null}
+      threadCwd="D:\\workspace"
+      turnError={null}
+    />,
+  );
+}
+
+function renderGoalComposer() {
+  return renderToStaticMarkup(
+    <ThreadComposer
+      activeCollaborationMode={null}
+      composerDraft=""
+      composerEnterBehavior="enter"
+      composerPermissionConfig={null}
+      composerPermissionMode="auto"
+      composerPermissionsState={permissionsState}
+      followUpQueueMode="queue"
+      isWorktreeThread={false}
+      onComposerDraftChange={() => undefined}
+      onComposerPermissionModeChange={() => undefined}
+      onOpenThreadGoalEditor={() => undefined}
+      onStopTurn={() => undefined}
+      onSubmitTurn={() => undefined}
+      pendingPdfCommentCount={0}
+      reviewDelivery="inline"
+      submitButtonMode="send"
+      t={translate}
+      threadBranchLabel={null}
+      threadCwd="D:\\workspace"
+      threadGoal={{
+        createdAt: 0,
+        objective: "Ship source parity",
+        status: "paused",
+        threadId: "thread-goal",
+        timeUsedSeconds: 120,
+        tokenBudget: 2000,
+        tokensUsed: 400,
+        updatedAt: 0,
+      }}
+      turnError={null}
+    />,
+  );
+}
+
+function renderPlanKeywordSuggestionComposer() {
+  return renderToStaticMarkup(
+    <ThreadComposer
+      activeCollaborationMode={null}
+      composerDraft="plan the remaining parity fixes"
+      composerEnterBehavior="enter"
+      composerPermissionConfig={null}
+      composerPermissionMode="auto"
+      composerPermissionsState={permissionsState}
+      conversationId="thread-plan"
+      followUpQueueMode="queue"
+      isWorktreeThread={false}
+      onComposerDraftChange={() => undefined}
+      onComposerCollaborationModeChange={() => undefined}
+      onComposerPermissionModeChange={() => undefined}
+      onStopTurn={() => undefined}
+      onSubmitTurn={() => undefined}
+      pendingPdfCommentCount={0}
       reviewDelivery="inline"
       submitButtonMode="send"
       t={translate}
@@ -217,30 +384,37 @@ function renderComposer(pendingPdfCommentCount: number) {
 }
 
 test("ThreadComposer keeps send enabled for comment-only pending PDF annotations", () => {
-  const markup = renderComposer(1);
+  const markup = renderComposer({ pendingPdfCommentCount: 1 });
 
   assert.ok(markup.includes("1 annotation"));
   assert.ok(!markup.includes('disabled=""'));
 });
 
 test("ThreadComposer disables send when both draft and pending PDF annotations are empty", () => {
-  const markup = renderComposer(0);
+  const markup = renderComposer({ pendingPdfCommentCount: 0 });
 
   assert.ok(markup.includes('disabled=""'));
 });
 
 test("ThreadComposer renders pending PDF annotations in the upper attachment strip", () => {
-  const markup = renderComposer(1);
+  const markup = renderComposer({
+    pendingPdfComments: [buildPendingPdfCommentAttachment()],
+  });
   const annotationIndex = markup.indexOf("1 annotation");
   const placeholderIndex = markup.indexOf("Ask Codex");
 
   assert.notEqual(annotationIndex, -1);
   assert.notEqual(placeholderIndex, -1);
   assert.ok(annotationIndex < placeholderIndex);
+  assert.ok(markup.includes('aria-label="Remove annotations attachment"'));
+  assert.ok(markup.includes("PDF annotation attached"));
+  assert.ok(markup.includes("Check the chart annotation."));
+  assert.ok(markup.includes('src="data:image/png;base64,ZmFrZQ=="'));
+  assert.equal(markup.includes("Queued follow-ups"), false);
 });
 
 test("ThreadComposer keeps permissions and footer status text without replica-only status chips", () => {
-  const markup = renderComposer(0);
+  const markup = renderComposer({ pendingPdfCommentCount: 0 });
   const permissionsIndex = markup.indexOf("Default permissions");
   const triggerTooltipIndex = markup.indexOf("Change permissions");
   const queueIndex = markup.indexOf("Queue");
@@ -255,8 +429,105 @@ test("ThreadComposer keeps permissions and footer status text without replica-on
   assert.equal(queueIndex, -1);
   assert.equal(inlineIndex, -1);
   assert.equal(workspaceIndex, -1);
+  assert.equal(markup.includes(">Open file<"), false);
+  assert.equal(markup.includes(">Open side chat<"), false);
   assert.notEqual(footerTextClassIndex, -1);
   assert.ok(markup.includes("group-hover:block"));
+});
+
+test("ThreadComposer renders the source-backed plan mode footer indicator only in plan mode", () => {
+  const markup = renderPlanModeComposer();
+
+  assert.ok(markup.includes(">Plan<"));
+  assert.ok(markup.includes("Create a plan"));
+  assert.ok(markup.includes("Shift + Tab"));
+  assert.ok(markup.includes("to toggle"));
+});
+
+test("ThreadComposer renders the source-backed goal footer trigger in the left control cluster", () => {
+  const markup = renderGoalComposer();
+  const goalIndex = markup.indexOf(">Goal paused<");
+  const permissionsIndex = markup.indexOf("Default permissions");
+
+  assert.notEqual(goalIndex, -1);
+  assert.notEqual(permissionsIndex, -1);
+  assert.ok(goalIndex < permissionsIndex);
+  assert.ok(markup.includes("Edit goal"));
+});
+
+test("ThreadComposer renders the source-backed plan keyword suggestion card", () => {
+  const markup = renderPlanKeywordSuggestionComposer();
+
+  assert.ok(markup.includes("Create a plan"));
+  assert.ok(markup.includes("Shift + Tab"));
+  assert.ok(markup.includes("Use plan mode"));
+  assert.ok(markup.includes('aria-label="Dismiss suggestion"'));
+  assert.ok(markup.includes("CloseTabIcon") === false);
+});
+
+test("ThreadComposer plan keyword suggestion helper matches the source-backed visibility gates", () => {
+  assert.equal(
+    shouldShowThreadComposerPlanKeywordSuggestion({
+      composerDraft: "plan the work",
+      isDismissed: false,
+      isPlanCollaborationMode: false,
+      supportsPlanModeToggle: true,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldShowThreadComposerPlanKeywordSuggestion({
+      composerDraft: "plan the work",
+      isDismissed: true,
+      isPlanCollaborationMode: false,
+      supportsPlanModeToggle: true,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldShowThreadComposerPlanKeywordSuggestion({
+      composerDraft: "plan the work",
+      isDismissed: false,
+      isPlanCollaborationMode: true,
+      supportsPlanModeToggle: true,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldShowThreadComposerPlanKeywordSuggestion({
+      composerDraft: "investigate parity",
+      isDismissed: false,
+      isPlanCollaborationMode: false,
+      supportsPlanModeToggle: true,
+    }),
+    false,
+  );
+});
+
+test("ThreadComposer stores dismissed suggestion ids per conversation scope", () => {
+  const storage = new Map<string, string>();
+  const storageAdapter = {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      storage.set(key, value);
+    },
+  };
+
+  writeThreadComposerDismissedSuggestionIds(storageAdapter, "thread-a", ["keyword-plan-mode"]);
+  writeThreadComposerDismissedSuggestionIds(storageAdapter, null, ["keyword-plan-mode"]);
+
+  assert.deepEqual(
+    readThreadComposerDismissedSuggestionIds(storageAdapter, "thread-a"),
+    ["keyword-plan-mode"],
+  );
+  assert.deepEqual(
+    readThreadComposerDismissedSuggestionIds(storageAdapter, "thread-b"),
+    [],
+  );
+  assert.deepEqual(
+    readThreadComposerDismissedSuggestionIds(storageAdapter, null),
+    ["keyword-plan-mode"],
+  );
 });
 
 test("ThreadComposer keeps disabled guardian and full-access permission items visible with source-backed tooltips", () => {
@@ -333,7 +604,6 @@ test("ThreadComposer uses the locked tooltip on the disabled permissions trigger
       onStopTurn={() => undefined}
       onSubmitTurn={() => undefined}
       pendingPdfCommentCount={0}
-      queuedFollowUpCount={0}
       reviewDelivery="inline"
       submitButtonMode="send"
       t={translate}
@@ -364,7 +634,6 @@ test("ThreadComposer suppresses workspace status chip for side placement", () =>
       onSubmitTurn={() => undefined}
       pendingPdfCommentCount={0}
       placement="side"
-      queuedFollowUpCount={0}
       reviewDelivery="inline"
       submitButtonMode="send"
       t={translate}
@@ -396,7 +665,6 @@ test("ThreadComposer renders create-git-repository footer control when no git ro
       onStopTurn={() => undefined}
       onSubmitTurn={() => undefined}
       pendingPdfCommentCount={0}
-      queuedFollowUpCount={0}
       reviewDelivery="inline"
       submitButtonMode="send"
       t={translate}
@@ -444,7 +712,6 @@ test("ThreadComposer renders context window usage footer control from latest tok
       onStopTurn={() => undefined}
       onSubmitTurn={() => undefined}
       pendingPdfCommentCount={0}
-      queuedFollowUpCount={0}
       reviewDelivery="inline"
       submitButtonMode="send"
       t={translate}
@@ -464,7 +731,7 @@ test("ThreadComposer renders context window usage footer control from latest tok
 });
 
 test("ThreadComposer uses compact submit button shell and keeps the visible permissions trigger label branch without extra aria text", () => {
-  const markup = renderComposer(0);
+  const markup = renderComposer({ pendingPdfCommentCount: 0 });
 
   assert.ok(markup.includes("app-thread-composer-submit-button"));
   assert.ok(!markup.includes('aria-label="Change permissions"'));
@@ -487,7 +754,6 @@ test("ThreadComposer keeps official follow-up submit tooltip options when a resp
       onStopTurn={() => undefined}
       onSubmitTurn={() => undefined}
       pendingPdfCommentCount={0}
-      queuedFollowUpCount={0}
       reviewDelivery="inline"
       submitButtonMode="send"
       t={translate}

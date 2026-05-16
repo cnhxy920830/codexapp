@@ -5,16 +5,13 @@ import {
   setBrowserSidebarVisible,
   type BrowserSidebarTarget,
 } from "../../services/browserSidebar";
-import type { MessageKey } from "../../i18n/messages";
 
 type BrowserSidebarPanelProps = {
   target: BrowserSidebarTarget | null;
-  t: (key: MessageKey, values?: Record<string, number | string>) => string;
 };
 
 export function BrowserSidebarPanel({
   target,
-  t,
 }: BrowserSidebarPanelProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -86,16 +83,6 @@ export function BrowserSidebarPanel({
   return (
     <div className="relative h-full min-h-0 overflow-hidden bg-[var(--app-shell-main-surface)]">
       <div ref={containerRef} className="absolute inset-0" />
-      {target == null ? (
-        <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-sm text-[var(--app-shell-subtle)]">
-          <div className="max-w-72">
-            <div className="app-title text-[14px] font-medium">{t("thread.browser.emptyState.title")}</div>
-            <div className="mt-2 text-[13px] leading-6">
-              {t("thread.browser.emptyState.description")}
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

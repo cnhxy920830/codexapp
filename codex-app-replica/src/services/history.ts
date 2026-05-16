@@ -13,6 +13,7 @@ export type ThreadHistoryEntry = {
   path: string | null;
   name: string | null;
   source: ThreadHistoryEntrySource | null;
+  hasUnreadTurn?: boolean;
 };
 
 export type ThreadHistoryStatus =
@@ -38,7 +39,10 @@ export type HistoryThreadView = {
   title: string;
   age: string;
   active?: boolean;
+  indicatorStatus?: HistoryThreadIndicatorStatus;
 };
+
+export type HistoryThreadIndicatorStatus = "running" | "unread" | "read";
 
 export type HistoryProjectGroup = {
   name: string;
@@ -139,6 +143,7 @@ export type ThreadConversationSteeringUserMessage = {
   status: "pending" | "accepted";
   text: string;
   cwd: string | null;
+  collaborationModeKind?: CollaborationModeKind | null;
 };
 
 export type ThreadConversationSteered = {
@@ -320,6 +325,8 @@ export type ThreadConversation = {
   cwd: string;
   hostId?: string | null;
   source?: ThreadHistoryEntrySource | null;
+  hasUnreadTurn?: boolean;
+  latestCollaborationMode?: string | null;
   latestTokenUsageInfo?: ThreadConversationTokenUsageInfo | null;
   threadGoal?: ThreadConversationGoal | null;
   turns: ThreadConversationTurn[];
@@ -501,6 +508,11 @@ export type NetworkApprovalContext = {
 export type NetworkPolicyAmendment = {
   host: string;
   action: "allow" | "deny" | string;
+};
+
+export type ThreadReadStateChangedEvent = {
+  conversationId: string;
+  hasUnreadTurn: boolean;
 };
 
 export type CommandAction =
@@ -862,6 +874,12 @@ export type ThreadEvent =
       tokenUsage: ThreadConversationTokenUsageInfo;
     }
   | {
+      type: "threadCollaborationModeUpdated";
+      threadId: string;
+      turnId: string;
+      collaborationMode: string;
+    }
+  | {
       type: "threadGoalUpdated";
       threadId: string;
       goal: ThreadConversationGoal;
@@ -957,13 +975,24 @@ export type TurnStartPermissionOverrides = {
   sandboxPolicy?: TurnStartSandboxPolicy | null;
 };
 
+export type CollaborationModeKind = "default" | "plan";
+
+export type CollaborationModePayload = {
+  mode: CollaborationModeKind;
+  settings: {
+    model: string;
+    reasoning_effort: string;
+    developer_instructions: null;
+  };
+};
+
 export type StartConversationParams = {
   hostId?: string | null;
   input?: ThreadConversationUserInput[];
   text?: string | null;
   cwd?: string | null;
   workspaceRoots?: string[];
-  collaborationMode?: unknown | null;
+  collaborationMode?: CollaborationModePayload | null;
   projectlessOutputDirectory?: string | null;
   workspaceKind?: string | null;
   skipAutoTitleGeneration?: boolean;
@@ -975,11 +1004,28 @@ export type MaybeResumeConversationParams = {
   model?: string | null;
   reasoningEffort?: string | null;
   workspaceRoots?: string[];
-  collaborationMode?: unknown | null;
+  collaborationMode?: CollaborationModePayload | null;
 };
 
+export function buildCollaborationModePayload(
+  mode: CollaborationModeKind | null | undefined,
+): CollaborationModePayload | null {
+  if (mode == null) {
+    return null;
+  }
+
+  return {
+    mode,
+    settings: {
+      model: "gpt-5.5",
+      reasoning_effort: "medium",
+      developer_instructions: null,
+    },
+  };
+}
+
 export async function getRecentThreads() {
-  return invoke<ThreadHistoryEntry[]>("list_recent_threads");
+  return invoke<ThreadHistoryEntry[]>("list_recent_threads").then(normalizeThreadHistoryEntries);
 }
 
 export async function getRecentThreadsForHost(hostId?: string | null) {
@@ -987,11 +1033,11 @@ export async function getRecentThreadsForHost(hostId?: string | null) {
     params: {
       hostId: normalizeHostId(hostId),
     },
-  });
+  }).then(normalizeThreadHistoryEntries);
 }
 
 export async function getArchivedThreads() {
-  return invoke<ThreadHistoryEntry[]>("list_archived_threads");
+  return invoke<ThreadHistoryEntry[]>("list_archived_threads").then(normalizeThreadHistoryEntries);
 }
 
 export async function getArchivedThreadsForHost(hostId?: string | null) {
@@ -999,7 +1045,7 @@ export async function getArchivedThreadsForHost(hostId?: string | null) {
     params: {
       hostId: normalizeHostId(hostId),
     },
-  });
+  }).then(normalizeThreadHistoryEntries);
 }
 
 export async function startThread(cwd: string | null) {
@@ -1129,6 +1175,22 @@ export async function setThreadName(params: { threadId: string; name: string | n
   return invoke<void>("set_thread_name", params);
 }
 
+export async function markConversationAsUnread(conversationId: string) {
+  return invoke<void>("mark-conversation-as-unread", {
+    params: {
+      conversationId,
+    },
+  });
+}
+
+export async function markConversationAsRead(conversationId: string) {
+  return invoke<void>("mark-conversation-as-read", {
+    params: {
+      conversationId,
+    },
+  });
+}
+
 export async function setThreadGoal(params: {
   threadId: string;
   objective: string;
@@ -1170,7 +1232,12 @@ export async function clearThreadGoal(params: {
 }
 
 export async function startTurn(
-  params: { threadId: string; text: string; cwd: string | null } & TurnStartPermissionOverrides,
+  params: {
+    threadId: string;
+    text: string;
+    cwd: string | null;
+    collaborationMode?: CollaborationModePayload | null;
+  } & TurnStartPermissionOverrides,
 ) {
   return invoke<string>("start_turn", params);
 }
@@ -1179,6 +1246,7 @@ export async function startTurnWithInput(params: {
   threadId: string;
   input: ThreadConversationUserInput[];
   cwd: string | null;
+  collaborationMode?: CollaborationModePayload | null;
 } & TurnStartPermissionOverrides) {
   return invoke<string>("start_turn_with_input", params);
 }
@@ -1257,6 +1325,23 @@ export function onThreadEvent(handler: (event: ThreadEvent) => void) {
   });
 }
 
+export function onThreadReadStateChanged(
+  handler: (event: ThreadReadStateChangedEvent) => void,
+) {
+  return listen<ThreadReadStateChangedEvent>("thread-read-state-changed", (event) => {
+    const conversationId =
+      typeof event.payload?.conversationId === "string" ? event.payload.conversationId.trim() : "";
+    if (conversationId.length === 0) {
+      return;
+    }
+
+    handler({
+      conversationId,
+      hasUnreadTurn: event.payload?.hasUnreadTurn === true,
+    });
+  });
+}
+
 export function buildProjectGroups(
   entries: ThreadHistoryEntry[],
   options?: { activeThreadId?: string | null; locale?: string; now?: Date; noMessageLabel?: string },
@@ -1275,6 +1360,7 @@ export function buildProjectGroups(
       title: (entry.name ?? entry.preview).trim() || noMessageLabel,
       age: formatRelativeTime(entry.updatedAt, now, locale),
       active: activeThreadId === entry.id,
+      indicatorStatus: getHistoryThreadIndicatorStatus(entry),
     });
     groups.set(groupName, current);
   }
@@ -1326,6 +1412,8 @@ export function normalizeThreadConversation(thread: ThreadConversation): ThreadC
   return {
     ...thread,
     source: normalizeThreadHistorySource(thread.source),
+    hasUnreadTurn: normalizeThreadUnreadFlag(thread.hasUnreadTurn),
+    latestCollaborationMode: normalizeThreadCollaborationMode(thread.latestCollaborationMode),
     latestTokenUsageInfo: normalizeThreadConversationTokenUsageInfo(thread.latestTokenUsageInfo),
     threadGoal: normalizeThreadConversationGoal(thread.threadGoal),
     turns: Array.isArray(thread.turns)
@@ -1341,6 +1429,44 @@ export function normalizeThreadConversation(thread: ThreadConversation): ThreadC
     turnTimings: Array.isArray(thread.turnTimings) ? thread.turnTimings : [],
     items,
   };
+}
+
+function normalizeThreadHistoryEntries(entries: ThreadHistoryEntry[]) {
+  return entries.map(normalizeThreadHistoryEntry);
+}
+
+function normalizeThreadHistoryEntry(entry: ThreadHistoryEntry): ThreadHistoryEntry {
+  return {
+    ...entry,
+    status: normalizeThreadHistoryStatus(entry.status),
+    source: normalizeThreadHistorySource(entry.source),
+    hasUnreadTurn: normalizeThreadUnreadFlag(entry.hasUnreadTurn),
+  };
+}
+
+function normalizeThreadHistoryStatus(status: ThreadHistoryStatus): ThreadHistoryStatus {
+  if (status.type !== "active") {
+    return status;
+  }
+
+  return {
+    ...status,
+    activeFlags: Array.isArray(status.activeFlags) ? status.activeFlags : [],
+  };
+}
+
+function normalizeThreadUnreadFlag(value: boolean | null | undefined) {
+  return value === true;
+}
+
+function getHistoryThreadIndicatorStatus(
+  entry: Pick<ThreadHistoryEntry, "hasUnreadTurn" | "status">,
+): HistoryThreadIndicatorStatus {
+  if (entry.status.type === "active") {
+    return "running";
+  }
+
+  return entry.hasUnreadTurn === true ? "unread" : "read";
 }
 
 function normalizeThreadHistorySource(
@@ -1847,6 +1973,18 @@ export function normalizeThreadEvent(event: ThreadEvent): ThreadEvent | null {
     };
   }
 
+  if (event.type === "threadCollaborationModeUpdated") {
+    const collaborationMode = normalizeThreadCollaborationMode(event.collaborationMode);
+    if (collaborationMode === null) {
+      return null;
+    }
+
+    return {
+      ...event,
+      collaborationMode,
+    };
+  }
+
   if (event.type !== "threadItemUpdated") {
     return event;
   }
@@ -1860,6 +1998,15 @@ export function normalizeThreadEvent(event: ThreadEvent): ThreadEvent | null {
     ...event,
     item: normalizedItem,
   };
+}
+
+function normalizeThreadCollaborationMode(mode: string | null | undefined) {
+  if (typeof mode !== "string") {
+    return null;
+  }
+
+  const normalized = mode.trim();
+  return normalized.length > 0 ? normalized : null;
 }
 
 function normalizeThreadConversationGoal(

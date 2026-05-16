@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
-import type { RefObject } from "react";
 import {
   CheckIcon,
   CheckCircleFilledIcon,
@@ -52,7 +51,6 @@ import {
 } from "./threadConversationState";
 import { renderMessageContent } from "./messageContent";
 import { LatestTurnPreview } from "./LatestTurnPreview";
-import { LocalConversationPageHeader } from "./LocalConversationPageHeader";
 import { LocalUserImageAttachment } from "./LocalUserImageAttachment";
 import { MultiAgentGroupSummary } from "./MultiAgentGroupSummary";
 import { PlanSummaryItemCard } from "./PlanSummaryItemCard";
@@ -79,14 +77,9 @@ import {
   resolveCollapsedToolActivitySummaryText,
 } from "./renderableConversationItems";
 import { isMultiAgentInProgressStatus, toSingleMultiAgentGroupItem } from "./multiAgentAction";
-import {
-  ThreadHeaderActionMenu,
-  ThreadHeaderHeartbeatButton,
-  ThreadHeaderOverflowMenu,
-  ThreadPageHeader,
-} from "./ThreadPageHeader";
 import { ThreadComposer } from "./ThreadComposer";
 import { CodexMobileOnboarding } from "./CodexMobileOnboarding";
+import type { PendingPdfCommentAttachment } from "./pdfCommentAttachments";
 import type {
   HotkeyPermissionAgentMode,
   HotkeyPermissionsState,
@@ -129,9 +122,6 @@ type CurrentPendingRequest =
     };
 
 type ChatConversationMainPaneProps = {
-  threadActionsMenuRef: RefObject<HTMLDivElement | null>;
-  threadHeaderStartActions?: ReactNode;
-  threadHeaderTrailingActions?: ReactNode;
   composerDraft: string;
   composerEnterBehavior: ComposerEnterBehavior;
   composerFocusNonce?: number | null;
@@ -139,22 +129,15 @@ type ChatConversationMainPaneProps = {
   composerPermissionMode: HotkeyPermissionAgentMode;
   composerPermissionsState: HotkeyPermissionsState;
   followUpQueueMode: FollowUpQueueMode;
-  hasAttachedHeartbeatAutomation: boolean;
   isResponseInProgress?: boolean;
-  isThreadActionsMenuOpen: boolean;
-  isThreadHeartbeatAutomationActionDisabled: boolean;
-  isThreadHeartbeatAutomationActionVisible: boolean;
-  isThreadPinned?: boolean;
   isWorktreeThread: boolean;
-  showThreadHeader?: boolean;
-  heartbeatAutomationActionLabelKey: MessageKey;
-  heartbeatAutomationButtonTooltip: string;
   currentThreadApprovals: PendingApproval[];
   currentThreadImplementPlanRequests: PendingImplementPlanRequest[];
   currentThreadMcpServerElicitationRequest: PendingMcpServerElicitationRequest[];
   currentThreadPermissionsRequestApproval: PendingPermissionsRequestApproval[];
   currentThreadToolRequestUserInput: PendingToolRequestUserInput[];
   currentThreadQueuedFollowUps: QueuedLocalFollowUp[];
+  currentThreadPendingPdfComments?: PendingPdfCommentAttachment[];
   currentThreadPendingPdfCommentCount?: number;
   onApprovalDecision: (approval: PendingApproval, decision: ApprovalDecision) => void;
   onDismissImplementPlanRequest: (request: PendingImplementPlanRequest) => void;
@@ -177,25 +160,14 @@ type ChatConversationMainPaneProps = {
     values: Record<string, string>,
   ) => void;
   onComposerDraftChange: (value: string) => void;
+  onComposerCollaborationModeChange?: (mode: "default" | "plan" | null) => void;
   onComposerPermissionModeChange: (mode: HotkeyPermissionAgentMode) => void;
   onOpenRemoteTask: (taskId: string) => void;
   onSelectRemoteTaskAssistantTurn: (assistantTurnId: string) => void;
-  onArchiveThread: () => void;
-  onCopyAppLink: () => void;
-  onCopyConversationMarkdown: () => void;
-  onCopySessionId: () => void;
-  onCopyWorkingDirectory: () => void;
-  onForkSelectedThread: () => void;
-  onForkSelectedThreadIntoWorktree: () => void;
-  onOpenInNewWindow: () => void;
-  onOpenAttachedHeartbeatAutomation: () => void;
   onOpenSideChat?: (initialPrompt?: string | null) => boolean | Promise<boolean>;
-  onOpenThreadHeartbeatAutomationAction: () => void;
-  onOpenRenameDialog: () => void;
   onOpenWorkspaceFileSearch?: () => void;
   onFocusComposerRequest?: () => void;
   onSelectThread: (threadId: string) => void;
-  onTogglePinnedThread: () => void;
   onThreadGoalEditorOpenChange?: (open: boolean) => void;
   onPendingThreadGoalObjectiveChange?: (value: string | null) => void;
   onEditUserMessage: (text: string) => void | Promise<void>;
@@ -203,7 +175,6 @@ type ChatConversationMainPaneProps = {
   onClearPendingPdfComments?: () => void;
   onStopTurn: () => void;
   onSubmitTurn: (invertFollowUpAction?: boolean) => void;
-  onToggleThreadActionsMenu: () => void;
   onShowToast?: (toast: AppToast) => void;
   approvalActionErrors: Record<string, string>;
   reviewDelivery: ReviewDelivery;
@@ -233,12 +204,10 @@ type ChatConversationMainPaneProps = {
   workspaceRoot?: string | null;
   conversationHostId?: string | null;
   authMethod?: string | null;
+  activeCollaborationMode?: string | null;
 };
 
 export function ChatConversationMainPane({
-  threadActionsMenuRef,
-  threadHeaderStartActions,
-  threadHeaderTrailingActions,
   composerDraft,
   composerEnterBehavior,
   composerFocusNonce,
@@ -246,22 +215,15 @@ export function ChatConversationMainPane({
   composerPermissionMode,
   composerPermissionsState,
   followUpQueueMode,
-  hasAttachedHeartbeatAutomation,
   isResponseInProgress = false,
-  isThreadActionsMenuOpen,
-  isThreadHeartbeatAutomationActionDisabled,
-  isThreadHeartbeatAutomationActionVisible,
-  isThreadPinned = false,
   isWorktreeThread,
-  showThreadHeader = true,
-  heartbeatAutomationActionLabelKey,
-  heartbeatAutomationButtonTooltip,
   currentThreadApprovals,
   currentThreadImplementPlanRequests,
   currentThreadMcpServerElicitationRequest,
   currentThreadPermissionsRequestApproval,
   currentThreadToolRequestUserInput,
   currentThreadQueuedFollowUps,
+  currentThreadPendingPdfComments = [],
   currentThreadPendingPdfCommentCount = 0,
   onApprovalDecision,
   onDismissImplementPlanRequest,
@@ -270,25 +232,14 @@ export function ChatConversationMainPane({
   onPermissionsRequestApprovalSubmit,
   onToolRequestUserInputSubmit,
   onComposerDraftChange,
+  onComposerCollaborationModeChange,
   onComposerPermissionModeChange,
   onOpenRemoteTask,
   onSelectRemoteTaskAssistantTurn,
-  onArchiveThread,
-  onCopyAppLink,
-  onCopyConversationMarkdown,
-  onCopySessionId,
-  onCopyWorkingDirectory,
-  onForkSelectedThread,
-  onForkSelectedThreadIntoWorktree,
-  onOpenInNewWindow,
-  onOpenAttachedHeartbeatAutomation,
   onOpenSideChat,
-  onOpenThreadHeartbeatAutomationAction,
-  onOpenRenameDialog,
   onOpenWorkspaceFileSearch,
   onFocusComposerRequest = () => undefined,
   onSelectThread,
-  onTogglePinnedThread,
   onThreadGoalEditorOpenChange = () => undefined,
   onPendingThreadGoalObjectiveChange = () => undefined,
   onEditUserMessage,
@@ -296,7 +247,6 @@ export function ChatConversationMainPane({
   onClearPendingPdfComments,
   onStopTurn,
   onSubmitTurn,
-  onToggleThreadActionsMenu,
   onShowToast,
   approvalActionErrors,
   reviewDelivery,
@@ -319,6 +269,7 @@ export function ChatConversationMainPane({
   workspaceRoot = null,
   conversationHostId = null,
   authMethod = null,
+  activeCollaborationMode = null,
 }: ChatConversationMainPaneProps) {
   const conversationScrollRef = useRef<HTMLDivElement | null>(null);
   const [showScrollToBottomButton, setShowScrollToBottomButton] = useState(false);
@@ -357,101 +308,6 @@ export function ChatConversationMainPane({
   const latestConversationGroup = conversationGroups.at(-1) ?? null;
   const latestConversationGroupTurnId = conversationGroups.at(-1)?.turnId ?? null;
   const conversationId = threadConversation?.id ?? null;
-  const threadTitle =
-    threadConversation?.title.trim().length ? threadConversation.title.trim() : t("app.nav.newChat");
-  const threadProjectLabel =
-    (threadConversation?.cwd ?? workspaceRoot ?? "")
-      .split(/[\\/]/u)
-      .filter((segment) => segment.length > 0)
-      .at(-1) ?? null;
-  const threadHeaderEnvironmentType =
-    remoteTaskId !== null ? "cloud" : isWorktreeThread ? "worktree" : threadConversation ? "local" : null;
-  const threadHeaderSecondaryText =
-    threadProjectLabel !== null && threadProjectLabel !== threadTitle ? threadProjectLabel : null;
-  const isLocalConversationHeader = showThreadHeader && remoteTaskId === null;
-  const localConversationHeaderSource = threadConversation?.source ?? null;
-  const canPinLocalConversationThread = localConversationHeaderSource?.parentThreadId == null;
-  const canCopyWorkingDirectory = (threadConversation?.cwd ?? "").trim().length > 0;
-  const threadHeaderTrailing = threadHeaderTrailingActions ? (
-    <div className="no-drag flex items-center gap-1">{threadHeaderTrailingActions}</div>
-  ) : null;
-  const threadHeaderMenuActions = threadConversation ? (
-    <ThreadHeaderActionMenu
-      actionsMenuRef={threadActionsMenuRef}
-      canPinThread={isLocalConversationHeader ? canPinLocalConversationThread : true}
-      canCopyWorkingDirectory={canCopyWorkingDirectory}
-      hasAttachedHeartbeatAutomation={hasAttachedHeartbeatAutomation}
-      heartbeatAutomationActionLabelKey={heartbeatAutomationActionLabelKey}
-      heartbeatAutomationButtonTooltip={heartbeatAutomationButtonTooltip}
-      isThreadActionsMenuOpen={isThreadActionsMenuOpen}
-      isThreadHeartbeatAutomationActionDisabled={isThreadHeartbeatAutomationActionDisabled}
-      isThreadHeartbeatAutomationActionVisible={isThreadHeartbeatAutomationActionVisible}
-      isThreadPinned={isThreadPinned}
-      isTurnInProgress={isResponseInProgress}
-      isWorktreeThread={isWorktreeThread}
-      variant={isLocalConversationHeader ? "localConversation" : "default"}
-      onArchive={onArchiveThread}
-      onCopyAppLink={onCopyAppLink}
-      onCopyConversationMarkdown={onCopyConversationMarkdown}
-      onCopySessionId={onCopySessionId}
-      onCopyWorkingDirectory={onCopyWorkingDirectory}
-      onForkThread={onForkSelectedThread}
-      onForkThreadIntoWorktree={onForkSelectedThreadIntoWorktree}
-      onOpenAttachedHeartbeatAutomation={onOpenAttachedHeartbeatAutomation}
-      onOpenInNewWindow={onOpenInNewWindow}
-      onOpenSideChat={onOpenSideChat}
-      onOpenThreadHeartbeatAutomationAction={onOpenThreadHeartbeatAutomationAction}
-      onOpenRenameDialog={onOpenRenameDialog}
-      onTogglePinThread={onTogglePinnedThread}
-      onToggleThreadActionsMenu={onToggleThreadActionsMenu}
-      t={t}
-    />
-  ) : null;
-  const localConversationHeaderHeartbeat = threadConversation ? (
-    <ThreadHeaderHeartbeatButton
-      hasAttachedHeartbeatAutomation={hasAttachedHeartbeatAutomation}
-      heartbeatAutomationButtonTooltip={heartbeatAutomationButtonTooltip}
-      onOpenAttachedHeartbeatAutomation={onOpenAttachedHeartbeatAutomation}
-      t={t}
-      variant="localConversation"
-    />
-  ) : null;
-  const localConversationHeaderActions = (
-    <div className="no-drag flex shrink-0 items-center gap-2">
-      {threadHeaderTrailingActions ? (
-        <div className="no-drag flex shrink-0 items-center gap-1">{threadHeaderTrailingActions}</div>
-      ) : null}
-      {threadConversation ? (
-        <ThreadHeaderOverflowMenu
-          actionsMenuRef={threadActionsMenuRef}
-          canPinThread={canPinLocalConversationThread}
-          canCopyWorkingDirectory={canCopyWorkingDirectory}
-          heartbeatAutomationActionLabelKey={heartbeatAutomationActionLabelKey}
-          isThreadActionsMenuOpen={isThreadActionsMenuOpen}
-          isThreadHeartbeatAutomationActionDisabled={isThreadHeartbeatAutomationActionDisabled}
-          isThreadHeartbeatAutomationActionVisible={isThreadHeartbeatAutomationActionVisible}
-          isThreadPinned={isThreadPinned}
-          isTurnInProgress={isResponseInProgress}
-          isWorktreeThread={isWorktreeThread}
-          variant="localConversation"
-          onArchive={onArchiveThread}
-          onCopyAppLink={onCopyAppLink}
-          onCopyConversationMarkdown={onCopyConversationMarkdown}
-          onCopySessionId={onCopySessionId}
-          onCopyWorkingDirectory={onCopyWorkingDirectory}
-          onForkThread={onForkSelectedThread}
-          onForkThreadIntoWorktree={onForkSelectedThreadIntoWorktree}
-          onOpenInNewWindow={onOpenInNewWindow}
-          onOpenSideChat={onOpenSideChat}
-          onOpenThreadHeartbeatAutomationAction={onOpenThreadHeartbeatAutomationAction}
-          onOpenRenameDialog={onOpenRenameDialog}
-          onTogglePinThread={onTogglePinnedThread}
-          onToggleThreadActionsMenu={onToggleThreadActionsMenu}
-          t={t}
-        />
-      ) : null}
-    </div>
-  );
   const latestUnifiedDiff = latestConversationGroup?.unifiedDiffItem?.unifiedDiff ?? "";
   const remoteApplyTurnId = remoteSelectedAssistantTurn?.id ?? null;
   const remoteApplyDiff = getRemoteTaskApplyDiff({
@@ -460,16 +316,10 @@ export function ChatConversationMainPane({
     currentAssistantTurn: remoteCurrentAssistantTurn,
   });
   const showRemoteApplyFooter = Boolean(
-    showThreadHeader &&
-      remoteApplyTurnId &&
-      remoteApplyDiff &&
-      threadConversation !== null,
+    remoteApplyTurnId && remoteApplyDiff && threadConversation !== null,
   );
   const showRemoteFailedFooter = Boolean(
-    showThreadHeader &&
-      remoteCurrentAssistantTurn?.turn_status === "failed" &&
-      remoteTaskId &&
-      threadConversation !== null,
+    remoteCurrentAssistantTurn?.turn_status === "failed" && remoteTaskId && threadConversation !== null,
   );
   const hasTurnContent = threadConversation !== null && conversationGroups.length > 0;
   const hasUnmatchedBodyContent =
@@ -616,32 +466,6 @@ export function ChatConversationMainPane({
 
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col bg-[var(--app-shell-main-surface)]">
-      {showThreadHeader ? (
-        isLocalConversationHeader ? (
-          <LocalConversationPageHeader
-            conversationId={conversationId}
-            cwd={threadConversation?.cwd ?? workspaceRoot ?? null}
-            heartbeatSummary={hasAttachedHeartbeatAutomation ? heartbeatAutomationButtonTooltip : null}
-            projectLabel={threadProjectLabel}
-            source={localConversationHeaderSource}
-            threadGitRoot={threadGitRoot}
-            title={threadTitle}
-            heartbeatAction={localConversationHeaderHeartbeat}
-            trailingActions={localConversationHeaderActions}
-          />
-        ) : (
-          <ThreadPageHeader
-            environmentType={threadHeaderEnvironmentType}
-            secondaryText={threadHeaderSecondaryText}
-            variant="default"
-            start={threadTitle}
-            startActions={threadHeaderStartActions}
-            trailing={threadHeaderTrailing}
-            trailingActions={threadHeaderMenuActions}
-          />
-        )
-      ) : null}
-
       {showBlankConversationBody ? (
         <div
           className="[container-type:size] relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden"
@@ -746,8 +570,10 @@ export function ChatConversationMainPane({
         }
         composer={
           <ThreadComposer
+            activeCollaborationMode={activeCollaborationMode}
             composerDraft={composerDraft}
             composerEnterBehavior={composerEnterBehavior}
+            conversationId={conversationId}
             focusComposerNonce={composerFocusNonce}
             composerPermissionConfig={composerPermissionConfig}
             composerPermissionMode={composerPermissionMode}
@@ -756,20 +582,30 @@ export function ChatConversationMainPane({
             isResponseInProgress={isResponseInProgress}
             isWorktreeThread={isWorktreeThread}
             onComposerDraftChange={onComposerDraftChange}
+            onComposerCollaborationModeChange={onComposerCollaborationModeChange}
             onComposerPermissionModeChange={onComposerPermissionModeChange}
             onClearPendingPdfComments={onClearPendingPdfComments}
             onOpenWorkspaceFileSearch={onOpenWorkspaceFileSearch}
+            onOpenThreadGoalEditor={
+              composerPlacement === "main"
+                ? () => onThreadGoalEditorOpenChange(true)
+                : null
+            }
             onStopTurn={onStopTurn}
             onSubmitTurn={onSubmitTurn}
+            pendingPdfComments={currentThreadPendingPdfComments}
             pendingPdfCommentCount={currentThreadPendingPdfCommentCount}
+            pendingThreadGoalObjective={
+              composerPlacement === "main" ? pendingThreadGoalObjective : null
+            }
             placement={composerPlacement}
-            queuedFollowUpCount={currentThreadQueuedFollowUps.length}
             reviewDelivery={reviewDelivery}
             submitButtonMode={submitButtonMode}
             t={t}
             authMethod={authMethod}
             latestTokenUsageInfo={threadConversation?.latestTokenUsageInfo ?? null}
             threadBranchLabel={threadBranchLabel}
+            threadGoal={threadConversation?.threadGoal ?? null}
             threadGitRoot={threadGitRoot}
             threadHostId={conversationHostId}
             threadCwd={threadConversation?.cwd ?? null}
@@ -1993,7 +1829,7 @@ function UserConversationMessageCard({
   }, [locale, sentAtMs]);
   const messageStatusLabel = resolveUserMessageStatusLabel(item, t);
   const canEdit = !normalizedText.startsWith("PLEASE IMPLEMENT THIS PLAN:");
-  const shouldRenderMetaRow = chips.length > 0 || (hasVisibleMessageText && !isEditing);
+  const shouldRenderMetaRow = chips.length > 0 || hasVisibleMessageText;
 
   const handleCopy = async () => {
     if (!hasVisibleText) {
@@ -2031,7 +1867,7 @@ function UserConversationMessageCard({
   const shouldRenderAttachmentRow = shouldRenderParentContext || hasAttachments || hasImages;
 
   return (
-    <div className="flex w-full flex-col gap-2">
+      <div className="flex w-full flex-col gap-2">
       {shouldRenderAttachmentRow ? (
         <div className="flex flex-wrap items-end justify-end gap-2 self-end">
           {shouldRenderParentContext ? (
@@ -2100,26 +1936,24 @@ function UserConversationMessageCard({
                   <span className="text-[12px]">{messageStatusLabel}</span>
                 </div>
               ) : null}
-              <div className="flex justify-end">
-                <div
-                  className={[
-                    "app-user-message max-w-[77%] break-words rounded-2xl px-3 py-2 [&_.contain-inline-size]:[contain:initial]",
-                    hasVisibleText ? "" : "leading-none",
-                  ].join(" ")}
-                >
-                  {hasVisibleText ? (
-                    <UserMessageCollapsibleContent
-                      cwd={conversationCwd}
-                      hostId={conversationHostId}
-                      text={visibleText}
-                      t={t}
-                    />
-                  ) : (
-                    <div className="app-text-subtle mb-px text-[13px] leading-6">
-                      {t("app.chat.userMessage.noContent")}
-                    </div>
-                  )}
-                </div>
+              <div
+                className={[
+                  "app-user-message max-w-[77%] break-words rounded-2xl px-3 py-2 [&_.contain-inline-size]:[contain:initial]",
+                  hasVisibleText ? "" : "leading-none",
+                ].join(" ")}
+              >
+                {hasVisibleText ? (
+                  <UserMessageCollapsibleContent
+                    cwd={conversationCwd}
+                    hostId={conversationHostId}
+                    text={visibleText}
+                    t={t}
+                  />
+                ) : (
+                  <div className="app-text-subtle mb-px text-[13px] leading-6">
+                    {t("app.chat.userMessage.noContent")}
+                  </div>
+                )}
               </div>
             </>
           )
@@ -2141,7 +1975,9 @@ function UserConversationMessageCard({
                 </span>
               ) : null}
               <div className="flex items-center gap-1">
-                <UserMessageActionTooltip content={copied ? t("app.chat.userMessage.copyCopiedTooltip") : t("app.chat.userMessage.copyTooltip")}>
+                <UserMessageActionTooltip
+                  content={copied ? t("app.chat.userMessage.copyCopiedTooltip") : t("app.chat.userMessage.copyTooltip")}
+                >
                   <button
                     type="button"
                     aria-label={copied ? t("app.chat.userMessage.copyCopiedAriaLabel") : t("app.chat.userMessage.copyAriaLabel")}

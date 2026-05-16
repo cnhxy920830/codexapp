@@ -52,7 +52,7 @@ export function RightPanelCollapsedRail({
   t,
 }: RightPanelCollapsedRailProps) {
   return (
-    <aside className="app-right-panel-collapsed-rail flex w-[54px] shrink-0 flex-col items-center gap-2 px-2 py-3">
+    <aside className="flex w-[54px] shrink-0 flex-col items-center gap-2 border-l border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)] px-2 py-3">
       <RightPanelQuickOpenActions
         activeStaticTabId={activeStaticTabId}
         onOpenBrowserTab={onOpenBrowserTab}
@@ -199,7 +199,7 @@ export function RightPanelTabStrip({
   const activeTabIndex = activeTabId === null ? -1 : openTabs.findIndex((tab) => tab.id === activeTabId);
 
   return (
-    <div className="app-right-panel-tab-strip flex h-[var(--app-shell-toolbar-pane)] min-w-0 shrink-0 items-center border-b border-[var(--app-shell-border)] px-2">
+    <div className="flex h-[var(--app-shell-toolbar-pane)] min-w-0 shrink-0 items-center bg-[var(--app-shell-main-surface)] px-2">
       <div
         ref={scrollContainerRef}
         className="hide-scrollbar relative flex h-full min-w-0 flex-1 scroll-px-1 items-center overflow-x-auto overflow-y-hidden"
@@ -320,9 +320,7 @@ export function RightPanelTabStrip({
                     <span aria-hidden="true" className="flex h-4 w-4 shrink-0 items-center justify-center">
                       {icon}
                     </span>
-                    <RightPanelTooltip content={tooltip} wrapperClassName="min-w-0">
-                      <span className="min-w-0 truncate">{title}</span>
-                    </RightPanelTooltip>
+                    <RightPanelTabLabel isActive={isActive} title={title} tooltip={tooltip} />
                   </button>
                   <button
                     type="button"
@@ -380,6 +378,13 @@ export function RightPanelTabStrip({
       <div className="my-auto flex shrink-0 items-center gap-1" role="presentation">
         <IconActionButton
           className="app-topbar-button no-drag flex h-7 w-7 items-center justify-center rounded-[8px] text-[12px]"
+          label={t("thread.sidePanel.toggle")}
+          onClick={onTogglePanel}
+        >
+          <ChevronDownIcon className="h-4 w-4 -rotate-90" />
+        </IconActionButton>
+        <IconActionButton
+          className="app-topbar-button no-drag flex h-7 w-7 items-center justify-center rounded-[8px] text-[12px]"
           label={
             rightPanelWidthMode === "full"
               ? t("codex.rightPanel.restoreWidth")
@@ -393,13 +398,6 @@ export function RightPanelTabStrip({
           ) : (
             <ExpandPanelIcon className="h-4 w-4" />
           )}
-        </IconActionButton>
-        <IconActionButton
-          className="app-topbar-button no-drag flex h-7 w-7 items-center justify-center rounded-[8px] text-[12px]"
-          label={t("thread.sidePanel.toggle")}
-          onClick={onTogglePanel}
-        >
-          <ChevronDownIcon className="h-4 w-4 -rotate-90" />
         </IconActionButton>
       </div>
       {contextMenuState ? (
@@ -519,6 +517,66 @@ function renderRightPanelTabIcon(tab: RightPanelTab) {
   return <WorkspaceFileIcon className="h-4 w-4 shrink-0" />;
 }
 
+function RightPanelTabLabel({
+  isActive,
+  title,
+  tooltip,
+}: {
+  isActive: boolean;
+  title: string;
+  tooltip: string;
+}) {
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const labelRef = useRef<HTMLSpanElement | null>(null);
+
+  useEffect(() => {
+    const label = labelRef.current;
+    if (label === null) {
+      return;
+    }
+
+    const updateOverflowState = () => {
+      setIsOverflowing(label.scrollWidth > label.clientWidth);
+    };
+
+    updateOverflowState();
+
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateOverflowState();
+    });
+    resizeObserver.observe(label);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [title]);
+
+  return (
+    <RightPanelTooltip content={tooltip} wrapperClassName="min-w-0">
+      <span className="relative flex min-w-0 items-center">
+        <span ref={labelRef} className="inline-block min-w-0 truncate whitespace-nowrap">
+          {title}
+        </span>
+        {isOverflowing ? (
+          <span
+            aria-hidden="true"
+            className={joinClassNames(
+              "pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-r from-transparent",
+              isActive
+                ? "to-[var(--app-shell-tab-background)]"
+                : "to-[var(--app-shell-main-surface)] group-hover/tab:to-[var(--app-shell-tab-background)]",
+            )}
+          />
+        ) : null}
+      </span>
+    </RightPanelTooltip>
+  );
+}
+
 function RightPanelTooltip({
   children,
   content,
@@ -529,7 +587,7 @@ function RightPanelTooltip({
   wrapperClassName?: string;
 }) {
   return (
-    <div className={joinClassNames("group relative flex shrink-0 items-center", wrapperClassName)}>
+    <div className={joinClassNames("group relative flex items-center", wrapperClassName)}>
       {children}
       <div className="pointer-events-none absolute top-full left-1/2 z-20 mt-2 hidden max-w-[min(32rem,calc(100vw-16px))] -translate-x-1/2 rounded-[12px] border border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)] px-3 py-2 text-[12px] leading-5 whitespace-pre-line text-[var(--app-shell-text)] shadow-[0_12px_30px_rgba(0,0,0,0.18)] group-hover:block group-focus-within:block">
         {content}

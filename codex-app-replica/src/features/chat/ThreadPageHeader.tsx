@@ -6,6 +6,7 @@ import {
   CopyPathIcon,
   FolderIcon,
   MacbookIcon,
+  MarkUnreadIcon,
   MoreActionsIcon,
   OpenInNewWindowIcon,
   OpenSideChatIcon,
@@ -20,6 +21,7 @@ import type { MessageKey } from "../../i18n/messages";
 type ThreadHeaderEnvironment = "cloud" | "local" | "worktree" | null;
 
 type ThreadPageHeaderProps = {
+  compact?: boolean;
   environmentType: ThreadHeaderEnvironment;
   secondaryText?: string | null;
   titleSuffix?: ReactNode;
@@ -54,6 +56,7 @@ type ThreadHeaderActionMenuProps = {
   onForkThreadIntoWorktree: () => void;
   onOpenAttachedHeartbeatAutomation: () => void;
   onOpenInNewWindow: () => void;
+  onMarkUnread?: () => void;
   onOpenSideChat?: () => void;
   onOpenThreadHeartbeatAutomationAction: () => void;
   onOpenRenameDialog: () => void;
@@ -76,6 +79,7 @@ type ThreadHeaderOverflowMenuProps = Omit<
 >;
 
 export function ThreadPageHeader({
+  compact = false,
   environmentType,
   secondaryText = null,
   titleSuffix,
@@ -89,6 +93,45 @@ export function ThreadPageHeader({
     secondaryText !== null && secondaryText.trim().length > 0 ? secondaryText.trim() : null;
   const headerTrailingActions = normalizeThreadHeaderActions(trailingActions);
   const shouldShowTrailingDivider = trailing !== null && headerTrailingActions.length > 0;
+
+  if (compact && variant === "default") {
+    return (
+      <>
+        <div className="flex min-w-0 items-center gap-2 truncate text-base electron:font-medium">
+          {start ? (
+            <div className="app-title no-drag pointer-events-auto max-w-[320px] min-w-0 truncate text-[15px] font-medium">
+              {start}
+            </div>
+          ) : null}
+          {environmentType === "cloud" ? (
+            <CloudTaskIcon className="h-4 w-4 shrink-0 text-[var(--app-shell-subtle)]" />
+          ) : environmentType === "worktree" ? (
+            <WorktreeIcon className="h-4 w-4 shrink-0 text-[var(--app-shell-subtle)]" />
+          ) : environmentType !== null ? (
+            <FolderIcon className="h-4 w-4 shrink-0 text-[var(--app-shell-subtle)]" />
+          ) : null}
+          {renderedSecondaryText ? (
+            <div className="flex min-w-0 truncate text-[12px] leading-[18px] font-normal text-[var(--app-shell-subtle)]">
+              {renderedSecondaryText}
+            </div>
+          ) : null}
+          {startActions}
+        </div>
+
+        <div className="flex items-center justify-end gap-1.5">
+          {trailing}
+          {headerTrailingActions.length > 0 ? (
+            <div className="flex items-center gap-0.5">
+              {shouldShowTrailingDivider ? (
+                <div className="mx-2 h-[16px] w-px bg-[var(--app-shell-border)]" />
+              ) : null}
+              {headerTrailingActions}
+            </div>
+          ) : null}
+        </div>
+      </>
+    );
+  }
 
   if (variant === "localConversation") {
     return (
@@ -124,6 +167,8 @@ export function ThreadPageHeader({
           ) : null}
           {environmentType === "cloud" ? (
             <CloudTaskIcon className="h-4 w-4 shrink-0 text-[var(--app-shell-subtle)]" />
+          ) : environmentType === "worktree" ? (
+            <WorktreeIcon className="h-4 w-4 shrink-0 text-[var(--app-shell-subtle)]" />
           ) : environmentType !== null ? (
             <FolderIcon className="h-4 w-4 shrink-0 text-[var(--app-shell-subtle)]" />
           ) : null}
@@ -175,6 +220,7 @@ export function ThreadHeaderActionMenu({
   onForkThreadIntoWorktree,
   onOpenAttachedHeartbeatAutomation,
   onOpenInNewWindow,
+  onMarkUnread,
   onOpenSideChat,
   onOpenThreadHeartbeatAutomationAction,
   onOpenRenameDialog,
@@ -212,6 +258,7 @@ export function ThreadHeaderActionMenu({
         onForkThread={onForkThread}
         onForkThreadIntoWorktree={onForkThreadIntoWorktree}
         onOpenInNewWindow={onOpenInNewWindow}
+        onMarkUnread={onMarkUnread}
         onOpenSideChat={onOpenSideChat}
         onOpenThreadHeartbeatAutomationAction={onOpenThreadHeartbeatAutomationAction}
         onOpenRenameDialog={onOpenRenameDialog}
@@ -274,6 +321,7 @@ export function ThreadHeaderOverflowMenu({
   onForkThread,
   onForkThreadIntoWorktree,
   onOpenInNewWindow,
+  onMarkUnread,
   onOpenSideChat,
   onOpenThreadHeartbeatAutomationAction,
   onOpenRenameDialog,
@@ -337,6 +385,16 @@ export function ThreadHeaderOverflowMenu({
               <ArchiveIcon className="h-4 w-4 shrink-0" />
               {t("sidebarElectron.archiveThread")}
             </button>
+            {onMarkUnread ? (
+              <button
+                type="button"
+                onClick={onMarkUnread}
+                className="app-nav-item-idle mt-1 flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
+              >
+                <MarkUnreadIcon className="h-4 w-4 shrink-0" />
+                {t("sidebarElectron.markThreadUnread")}
+              </button>
+            ) : null}
             <div className="my-1 h-px bg-[var(--app-shell-border)]" />
             <button
               type="button"

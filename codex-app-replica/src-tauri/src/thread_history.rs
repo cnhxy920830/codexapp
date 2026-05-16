@@ -18,6 +18,8 @@ pub struct ThreadConversation {
     pub title: String,
     pub cwd: String,
     pub source: Option<ThreadHistorySource>,
+    pub has_unread_turn: bool,
+    pub latest_collaboration_mode: Option<String>,
     pub latest_token_usage_info: Option<ThreadConversationTokenUsageInfo>,
     pub thread_goal: Option<ThreadConversationGoal>,
     pub turns: Vec<ThreadConversationTurn>,
@@ -2271,8 +2273,7 @@ fn extract_integer(value: Option<&serde_json::Value>) -> Option<i64> {
 }
 
 fn extract_u32(value: Option<&serde_json::Value>) -> Option<u32> {
-    extract_integer(value)
-        .and_then(|number| u32::try_from(number).ok())
+    extract_integer(value).and_then(|number| u32::try_from(number).ok())
 }
 
 fn extract_bool(value: Option<&serde_json::Value>) -> Option<bool> {
@@ -2496,7 +2497,8 @@ mod tests {
             attachments,
             vec![ThreadConversationUserAttachment {
                 label: "ThreadPageHeader.tsx (42-44)".to_string(),
-                path: "D:\\workspace\\project\\src\\features\\chat\\ThreadPageHeader.tsx".to_string(),
+                path: "D:\\workspace\\project\\src\\features\\chat\\ThreadPageHeader.tsx"
+                    .to_string(),
                 fs_path: Some(
                     "D:\\workspace\\project\\src\\features\\chat\\ThreadPageHeader.tsx".to_string()
                 ),

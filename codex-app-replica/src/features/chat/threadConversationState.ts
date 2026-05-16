@@ -418,6 +418,7 @@ export function createSteeringUserMessage(params: {
   turnId: string;
   text: string;
   cwd: string | null;
+  collaborationModeKind?: "default" | "plan" | null;
 }): ThreadConversationSteeringUserMessage {
   return {
     type: "steeringUserMessage",
@@ -426,6 +427,7 @@ export function createSteeringUserMessage(params: {
     status: "pending",
     text: params.text,
     cwd: params.cwd,
+    collaborationModeKind: params.collaborationModeKind ?? null,
   };
 }
 
@@ -581,6 +583,7 @@ export function clearUnacceptedSteeringUserMessagesForTurn(
       threadId,
       cwd: item.cwd,
       text: item.text,
+      collaborationModeKind: item.collaborationModeKind ?? null,
     });
     return false;
   });

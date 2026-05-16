@@ -38,14 +38,15 @@ use crate::thread_history::FileChangeSummary;
 use crate::thread_history::ThreadConversation;
 use crate::thread_history::ThreadConversationGoal;
 use crate::thread_history::ThreadConversationItem;
-pub use crate::thread_history::ThreadHistorySource;
 use crate::thread_history::ThreadConversationTokenUsageBreakdown;
 use crate::thread_history::ThreadConversationTokenUsageInfo;
 use crate::thread_history::ThreadConversationTurn;
 use crate::thread_history::ThreadConversationTurnTiming;
+pub use crate::thread_history::ThreadHistorySource;
 
 const AUTH_EVENT: &str = "auth-state-changed";
 const THREAD_EVENT: &str = "thread-event";
+const THREAD_READ_STATE_CHANGED_EVENT: &str = "thread-read-state-changed";
 const MCP_OAUTH_EVENT: &str = "mcp-oauth-login-completed";
 const APPS_LIST_UPDATED_EVENT: &str = "apps-list-updated";
 const CODEX_APP_SERVER_INITIALIZED_EVENT: &str = "codex-app-server-initialized";
@@ -113,6 +114,12 @@ pub struct ForkConversationFromLatestParams {
     pub developer_instructions: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConversationReadStateParams {
+    pub conversation_id: String,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct CodexAppServerInitializedNotification {
@@ -131,6 +138,7 @@ pub struct ThreadHistoryEntry {
     pub path: Option<String>,
     pub name: Option<String>,
     pub source: Option<ThreadHistorySource>,
+    pub has_unread_turn: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -382,6 +390,8 @@ struct ThreadListItem {
     name: Option<String>,
     #[serde(default)]
     source: Option<serde_json::Value>,
+    #[serde(default)]
+    has_unread_turn: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1186,7 +1196,16 @@ struct ThreadReadThread {
     cwd: String,
     name: Option<String>,
     source: Option<serde_json::Value>,
+    #[serde(default)]
+    has_unread_turn: bool,
     turns: Vec<ThreadReadTurn>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadReadStateChangedNotification {
+    conversation_id: String,
+    has_unread_turn: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1281,7 +1300,9 @@ pub struct AuthBridgeState {
     observed_turn_completion_notify: Notify,
     turn_errors: Mutex<HashMap<String, Vec<TurnErrorCacheEntry>>>,
     forked_from_conversations: Mutex<HashMap<String, ForkedFromConversationCacheEntry>>,
+    latest_thread_collaboration_modes: Mutex<HashMap<String, String>>,
     latest_thread_token_usage: Mutex<HashMap<String, ThreadConversationTokenUsageInfo>>,
+    thread_unread_state: Mutex<HashMap<String, bool>>,
     thread_goals: Mutex<HashMap<String, ThreadConversationGoal>>,
     external_agent_import_completed_generation: Mutex<u64>,
     external_agent_import_completed_notify: Notify,
@@ -1411,6 +1432,11 @@ pub enum ThreadEventPayload {
         thread_id: String,
         turn_id: String,
         token_usage: ThreadConversationTokenUsageInfo,
+    },
+    ThreadCollaborationModeUpdated {
+        thread_id: String,
+        turn_id: String,
+        collaboration_mode: String,
     },
     ThreadGoalUpdated {
         thread_id: String,
@@ -1590,7 +1616,9 @@ impl Default for AuthBridgeState {
             observed_turn_completion_notify: Notify::new(),
             turn_errors: Mutex::new(HashMap::new()),
             forked_from_conversations: Mutex::new(HashMap::new()),
+            latest_thread_collaboration_modes: Mutex::new(HashMap::new()),
             latest_thread_token_usage: Mutex::new(HashMap::new()),
+            thread_unread_state: Mutex::new(HashMap::new()),
             thread_goals: Mutex::new(HashMap::new()),
             external_agent_import_completed_generation: Mutex::new(0),
             external_agent_import_completed_notify: Notify::new(),
@@ -3351,6 +3379,7 @@ async fn list_threads(
     archived: bool,
 ) -> Result<Vec<ThreadHistoryEntry>, String> {
     list_threads_from_value(
+        state,
         send_request(
             state,
             AppServerRequestKind::ThreadList,
@@ -3371,6 +3400,7 @@ async fn list_threads_for_host(
     archived: bool,
 ) -> Result<Vec<ThreadHistoryEntry>, String> {
     list_threads_from_value(
+        state,
         send_request_for_host(
             app,
             state,
@@ -3386,24 +3416,32 @@ async fn list_threads_for_host(
     )
 }
 
-fn list_threads_from_value(value: serde_json::Value) -> Result<Vec<ThreadHistoryEntry>, String> {
+fn list_threads_from_value(
+    state: &Arc<AuthBridgeState>,
+    value: serde_json::Value,
+) -> Result<Vec<ThreadHistoryEntry>, String> {
     let response = serde_json::from_value::<ThreadListResponse>(value)
         .map_err(|err| format!("failed to decode thread list response: {err}"))?;
     let mut threads = response
         .data
         .into_iter()
-        .map(|thread| ThreadHistoryEntry {
-            id: thread.id,
-            preview: thread.preview,
-            created_at: thread.created_at,
-            updated_at: thread.updated_at,
-            status: thread.status,
-            cwd: thread.cwd,
-            path: thread.path,
-            name: thread.name,
-            source: thread_history_source_from_value(thread.source.as_ref()),
+        .map(|thread| {
+            let has_unread_turn =
+                effective_thread_unread_state(state, &thread.id, thread.has_unread_turn)?;
+            Ok(ThreadHistoryEntry {
+                id: thread.id,
+                preview: thread.preview,
+                created_at: thread.created_at,
+                updated_at: thread.updated_at,
+                status: thread.status,
+                cwd: thread.cwd,
+                path: thread.path,
+                name: thread.name,
+                source: thread_history_source_from_value(thread.source.as_ref()),
+                has_unread_turn,
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Result<Vec<_>, String>>()?;
     threads.sort_by(|left, right| {
         right
             .updated_at
@@ -3411,6 +3449,20 @@ fn list_threads_from_value(value: serde_json::Value) -> Result<Vec<ThreadHistory
             .then_with(|| right.created_at.cmp(&left.created_at))
     });
     Ok(threads)
+}
+
+fn effective_thread_unread_state(
+    state: &Arc<AuthBridgeState>,
+    thread_id: &str,
+    upstream_has_unread_turn: bool,
+) -> Result<bool, String> {
+    Ok(state
+        .thread_unread_state
+        .lock()
+        .map_err(|_| "failed to lock thread unread state cache".to_string())?
+        .get(thread_id)
+        .copied()
+        .unwrap_or(upstream_has_unread_turn))
 }
 
 fn thread_history_source_from_value(
@@ -3477,7 +3529,6 @@ pub async fn start_conversation(
         skip_auto_title_generation,
     } = params;
     let _ = skip_auto_title_generation;
-    let _ = collaboration_mode;
     let _ = projectless_output_directory;
     let _ = workspace_kind;
 
@@ -3511,12 +3562,20 @@ pub async fn start_conversation(
         approvals_reviewer,
         sandbox_policy,
     });
+    let mut thread_start_overrides = serde_json::Map::new();
+    if let Some(collaboration_mode) = collaboration_mode {
+        thread_start_overrides.insert("collaborationMode".to_string(), collaboration_mode);
+    }
     let thread_value = send_request_for_host(
         &app,
         state.inner(),
         host_id.as_deref(),
         AppServerRequestKind::ThreadStart,
-        build_thread_start_payload(cwd.clone(), state.current_personality()),
+        build_thread_start_payload_with_overrides(
+            cwd.clone(),
+            state.current_personality(),
+            thread_start_overrides,
+        ),
     )
     .await?;
     let thread_response = serde_json::from_value::<ThreadStartResponse>(thread_value)
@@ -3532,6 +3591,7 @@ pub async fn start_conversation(
             input,
             cwd,
             state.current_personality(),
+            None,
             permission_overrides,
         ),
     )
@@ -3798,6 +3858,65 @@ pub async fn set_thread_name(
     .map(|_| ())
 }
 
+#[tauri::command(rename = "mark-conversation-as-unread")]
+pub async fn mark_conversation_as_unread(
+    app: AppHandle,
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: ConversationReadStateParams,
+) -> Result<(), String> {
+    set_conversation_unread_state(&app, state.inner(), params.conversation_id, true)
+}
+
+#[tauri::command(rename = "mark-conversation-as-read")]
+pub async fn mark_conversation_as_read(
+    app: AppHandle,
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: ConversationReadStateParams,
+) -> Result<(), String> {
+    set_conversation_unread_state(&app, state.inner(), params.conversation_id, false)
+}
+
+fn set_conversation_unread_state(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    conversation_id: String,
+    has_unread_turn: bool,
+) -> Result<(), String> {
+    let normalized_conversation_id = conversation_id.trim().to_string();
+    if normalized_conversation_id.is_empty() {
+        return Ok(());
+    }
+
+    let did_change = {
+        let mut thread_unread_state = state
+            .thread_unread_state
+            .lock()
+            .map_err(|_| "failed to lock thread unread state cache".to_string())?;
+        let current_value = thread_unread_state
+            .get(&normalized_conversation_id)
+            .copied();
+        if current_value == Some(has_unread_turn) {
+            false
+        } else {
+            thread_unread_state.insert(normalized_conversation_id.clone(), has_unread_turn);
+            true
+        }
+    };
+
+    if !did_change {
+        return Ok(());
+    }
+
+    let _ = app.emit(
+        THREAD_READ_STATE_CHANGED_EVENT,
+        ThreadReadStateChangedNotification {
+            conversation_id: normalized_conversation_id,
+            has_unread_turn,
+        },
+    );
+    Ok(())
+}
+
 #[tauri::command(rename = "set-thread-goal")]
 pub async fn set_thread_goal(
     app: AppHandle,
@@ -3863,6 +3982,7 @@ pub async fn start_turn(
     thread_id: String,
     text: String,
     cwd: Option<String>,
+    collaboration_mode: Option<serde_json::Value>,
     approval_policy: Option<serde_json::Value>,
     approvals_reviewer: Option<String>,
     sandbox_policy: Option<serde_json::Value>,
@@ -3873,6 +3993,7 @@ pub async fn start_turn(
         text,
         cwd,
         state.current_personality(),
+        collaboration_mode,
         Some(TurnStartPermissionOverrides {
             approval_policy,
             approvals_reviewer,
@@ -3888,6 +4009,7 @@ pub async fn start_turn_with_input(
     thread_id: String,
     input: Vec<serde_json::Value>,
     cwd: Option<String>,
+    collaboration_mode: Option<serde_json::Value>,
     approval_policy: Option<serde_json::Value>,
     approvals_reviewer: Option<String>,
     sandbox_policy: Option<serde_json::Value>,
@@ -3898,6 +4020,7 @@ pub async fn start_turn_with_input(
         serde_json::Value::Array(input),
         cwd,
         state.current_personality(),
+        collaboration_mode,
         Some(TurnStartPermissionOverrides {
             approval_policy,
             approvals_reviewer,
@@ -4148,27 +4271,29 @@ pub async fn maybe_resume_conversation(
     state: State<'_, Arc<AuthBridgeState>>,
     params: MaybeResumeConversationParams,
 ) -> Result<ThreadConversation, String> {
-    let _ = params.reasoning_effort;
-    let _ = params.collaboration_mode;
+    let MaybeResumeConversationParams {
+        host_id,
+        conversation_id,
+        model,
+        reasoning_effort,
+        workspace_roots,
+        collaboration_mode,
+    } = params;
+    let _ = reasoning_effort;
 
-    let cwd = params
-        .workspace_roots
+    let cwd = workspace_roots
         .iter()
         .map(String::as_str)
         .map(str::trim)
         .find(|value| !value.is_empty())
         .map(ToOwned::to_owned);
-    let thread_id_for_goal = params.conversation_id.clone();
+    let thread_id_for_goal = conversation_id.clone();
     let value = send_request_for_host(
         &app,
         state.inner(),
-        params.host_id.as_deref(),
+        host_id.as_deref(),
         AppServerRequestKind::ThreadResume,
-        serde_json::json!({
-            "threadId": params.conversation_id,
-            "cwd": cwd,
-            "model": params.model,
-        }),
+        build_thread_resume_payload(conversation_id, cwd, model, collaboration_mode),
     )
     .await?;
     let response = serde_json::from_value::<ThreadResumeResponse>(value)
@@ -4254,6 +4379,12 @@ fn map_thread_conversation(
         .latest_thread_token_usage
         .lock()
         .map_err(|_| "failed to lock thread token usage cache".to_string())?
+        .get(&thread.id)
+        .cloned();
+    let latest_collaboration_mode = state
+        .latest_thread_collaboration_modes
+        .lock()
+        .map_err(|_| "failed to lock thread collaboration mode cache".to_string())?
         .get(&thread.id)
         .cloned();
     let thread_goal = state
@@ -4422,6 +4553,7 @@ fn map_thread_conversation(
         }
     }
     let title = resolved_thread_title(&thread);
+    let has_unread_turn = effective_thread_unread_state(state, &thread.id, thread.has_unread_turn)?;
     let id = thread.id;
     let cwd = thread.cwd;
     let source = thread_history_source_from_value(thread.source.as_ref());
@@ -4430,6 +4562,8 @@ fn map_thread_conversation(
         title,
         cwd,
         source,
+        has_unread_turn,
+        latest_collaboration_mode,
         latest_token_usage_info,
         thread_goal,
         turns,
@@ -4514,11 +4648,32 @@ pub(crate) fn build_thread_start_payload_with_overrides(
     serde_json::Value::Object(payload)
 }
 
+fn build_thread_resume_payload(
+    thread_id: String,
+    cwd: Option<String>,
+    model: Option<String>,
+    collaboration_mode: Option<serde_json::Value>,
+) -> serde_json::Value {
+    let mut payload = serde_json::Map::new();
+    payload.insert("threadId".to_string(), serde_json::Value::String(thread_id));
+    if let Some(cwd) = cwd {
+        payload.insert("cwd".to_string(), serde_json::Value::String(cwd));
+    }
+    if let Some(model) = model {
+        payload.insert("model".to_string(), serde_json::Value::String(model));
+    }
+    if let Some(collaboration_mode) = collaboration_mode {
+        payload.insert("collaborationMode".to_string(), collaboration_mode);
+    }
+    serde_json::Value::Object(payload)
+}
+
 fn build_turn_start_payload(
     thread_id: String,
     input: serde_json::Value,
     cwd: Option<String>,
     personality: Option<String>,
+    collaboration_mode: Option<serde_json::Value>,
     permission_overrides: Option<TurnStartPermissionOverrides>,
 ) -> serde_json::Value {
     let mut payload = serde_json::Map::new();
@@ -4532,6 +4687,9 @@ fn build_turn_start_payload(
             "personality".to_string(),
             serde_json::Value::String(personality),
         );
+    }
+    if let Some(collaboration_mode) = collaboration_mode {
+        payload.insert("collaborationMode".to_string(), collaboration_mode);
     }
     if let Some(permission_overrides) = permission_overrides {
         if let Some(approval_policy) = permission_overrides.approval_policy {
@@ -4555,14 +4713,21 @@ pub(crate) fn build_turn_start_payload_with_overrides(
     input: serde_json::Value,
     cwd: Option<String>,
     personality: Option<String>,
+    collaboration_mode: Option<serde_json::Value>,
     permission_overrides: Option<TurnStartPermissionOverrides>,
     mut extra: serde_json::Map<String, serde_json::Value>,
 ) -> serde_json::Value {
-    let mut payload =
-        match build_turn_start_payload(thread_id, input, cwd, personality, permission_overrides) {
-            serde_json::Value::Object(object) => object,
-            _ => serde_json::Map::new(),
-        };
+    let mut payload = match build_turn_start_payload(
+        thread_id,
+        input,
+        cwd,
+        personality,
+        collaboration_mode,
+        permission_overrides,
+    ) {
+        serde_json::Value::Object(object) => object,
+        _ => serde_json::Map::new(),
+    };
     payload.append(&mut extra);
     serde_json::Value::Object(payload)
 }
@@ -4636,6 +4801,7 @@ pub async fn start_turn_with_personality(
     text: String,
     cwd: Option<String>,
     personality: Option<String>,
+    collaboration_mode: Option<serde_json::Value>,
     permission_overrides: Option<TurnStartPermissionOverrides>,
 ) -> Result<String, String> {
     start_turn_with_input_and_personality(
@@ -4644,6 +4810,7 @@ pub async fn start_turn_with_personality(
         serde_json::json!([{ "type": "text", "text": text }]),
         cwd,
         personality,
+        collaboration_mode,
         permission_overrides,
     )
     .await
@@ -4655,12 +4822,20 @@ pub async fn start_turn_with_input_and_personality(
     input: serde_json::Value,
     cwd: Option<String>,
     personality: Option<String>,
+    collaboration_mode: Option<serde_json::Value>,
     permission_overrides: Option<TurnStartPermissionOverrides>,
 ) -> Result<String, String> {
     let value = send_request(
         state,
         AppServerRequestKind::TurnStart,
-        build_turn_start_payload(thread_id, input, cwd, personality, permission_overrides),
+        build_turn_start_payload(
+            thread_id,
+            input,
+            cwd,
+            personality,
+            collaboration_mode,
+            permission_overrides,
+        ),
     )
     .await?;
     let response = serde_json::from_value::<TurnStartResponse>(value)
@@ -5019,6 +5194,9 @@ async fn run_client(
                             "mcpServer/startupStatus/updated" => {}
                             "turn/started" => {
                                 remember_latest_turn_from_notification(&state, &params);
+                                remember_latest_collaboration_mode_from_notification(
+                                    &app, &state, &params,
+                                );
                             }
                             "item/started" => {
                                 remember_latest_turn_from_notification(&state, &params);
@@ -5697,7 +5875,9 @@ fn map_thread_token_usage_breakdown(
     }
 }
 
-fn map_thread_token_usage_info(payload: ThreadTokenUsagePayload) -> ThreadConversationTokenUsageInfo {
+fn map_thread_token_usage_info(
+    payload: ThreadTokenUsagePayload,
+) -> ThreadConversationTokenUsageInfo {
     ThreadConversationTokenUsageInfo {
         total: map_thread_token_usage_breakdown(payload.total),
         last: map_thread_token_usage_breakdown(payload.last),
@@ -5710,7 +5890,8 @@ fn handle_thread_token_usage_updated(
     state: &Arc<AuthBridgeState>,
     params: serde_json::Value,
 ) {
-    let Ok(notification) = serde_json::from_value::<ThreadTokenUsageUpdatedNotification>(params) else {
+    let Ok(notification) = serde_json::from_value::<ThreadTokenUsageUpdatedNotification>(params)
+    else {
         return;
     };
     let token_usage = map_thread_token_usage_info(notification.token_usage);
@@ -5793,6 +5974,57 @@ fn remember_latest_turn_from_notification(
         return;
     };
     remember_latest_turn_id(state, thread_id, turn_id);
+}
+
+fn remember_latest_collaboration_mode_from_notification(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    params: &serde_json::Value,
+) {
+    let Some(thread_id) = params.get("threadId").and_then(serde_json::Value::as_str) else {
+        return;
+    };
+    let turn_id = params
+        .get("turnId")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            params
+                .get("turn")
+                .and_then(|turn| turn.get("id"))
+                .and_then(serde_json::Value::as_str)
+        });
+    let Some(turn_id) = turn_id else {
+        return;
+    };
+    let Some(collaboration_mode) = params
+        .get("collaborationModeKind")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| {
+            params
+                .get("collaboration_mode_kind")
+                .and_then(serde_json::Value::as_str)
+        })
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+    else {
+        return;
+    };
+
+    if let Ok(mut latest_thread_collaboration_modes) =
+        state.latest_thread_collaboration_modes.lock()
+    {
+        latest_thread_collaboration_modes.insert(thread_id.to_string(), collaboration_mode.clone());
+    }
+
+    let _ = app.emit(
+        THREAD_EVENT,
+        ThreadEventPayload::ThreadCollaborationModeUpdated {
+            thread_id: thread_id.to_string(),
+            turn_id: turn_id.to_string(),
+            collaboration_mode,
+        },
+    );
 }
 
 fn remember_latest_turn_id(state: &Arc<AuthBridgeState>, thread_id: &str, turn_id: &str) {
@@ -6844,6 +7076,9 @@ async fn write_json(stdin: &mut ChildStdin, value: &serde_json::Value) -> Result
 
 #[cfg(test)]
 mod tests {
+    use super::build_thread_resume_payload;
+    use super::build_thread_start_payload_with_overrides;
+    use super::build_turn_start_payload;
     use super::ensure_supported_host_id;
     use super::list_threads_from_value;
     use super::map_account;
@@ -6852,6 +7087,7 @@ mod tests {
     use super::normalize_turn_input_value;
     use super::plugin_list_cwds;
     use super::remote_host_id;
+    use super::shared_state;
     use super::skills_list_cwds;
     use super::Account;
     use super::AccountInfoResponse;
@@ -7071,34 +7307,146 @@ mod tests {
     }
 
     #[test]
+    fn build_thread_start_payload_with_overrides_preserves_collaboration_mode() {
+        let payload = build_thread_start_payload_with_overrides(
+            Some("D:/workspace".to_string()),
+            Some("analytical".to_string()),
+            serde_json::Map::from_iter([(
+                "collaborationMode".to_string(),
+                json!({
+                    "mode": "plan",
+                    "settings": {
+                        "model": "gpt-5",
+                        "reasoning_effort": null,
+                        "developer_instructions": null
+                    }
+                }),
+            )]),
+        );
+
+        assert_eq!(
+            payload,
+            json!({
+                "cwd": "D:/workspace",
+                "personality": "analytical",
+                "collaborationMode": {
+                    "mode": "plan",
+                    "settings": {
+                        "model": "gpt-5",
+                        "reasoning_effort": null,
+                        "developer_instructions": null
+                    }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn build_thread_resume_payload_preserves_collaboration_mode() {
+        let payload = build_thread_resume_payload(
+            "thr_123".to_string(),
+            Some("D:/workspace".to_string()),
+            Some("gpt-5".to_string()),
+            Some(json!({
+                "mode": "plan",
+                "settings": {
+                    "model": "gpt-5",
+                    "reasoning_effort": null,
+                    "developer_instructions": null
+                }
+            })),
+        );
+
+        assert_eq!(
+            payload,
+            json!({
+                "threadId": "thr_123",
+                "cwd": "D:/workspace",
+                "model": "gpt-5",
+                "collaborationMode": {
+                    "mode": "plan",
+                    "settings": {
+                        "model": "gpt-5",
+                        "reasoning_effort": null,
+                        "developer_instructions": null
+                    }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn build_turn_start_payload_preserves_collaboration_mode() {
+        let payload = build_turn_start_payload(
+            "thr_123".to_string(),
+            json!([{ "type": "text", "text": "plan this" }]),
+            Some("D:/workspace".to_string()),
+            Some("analytical".to_string()),
+            Some(json!({
+                "mode": "plan",
+                "settings": {
+                    "model": "gpt-5",
+                    "reasoning_effort": null,
+                    "developer_instructions": null
+                }
+            })),
+            None,
+        );
+
+        assert_eq!(
+            payload,
+            json!({
+                "threadId": "thr_123",
+                "input": [{
+                    "type": "text",
+                    "text": "plan this"
+                }],
+                "cwd": "D:/workspace",
+                "personality": "analytical",
+                "collaborationMode": {
+                    "mode": "plan",
+                    "settings": {
+                        "model": "gpt-5",
+                        "reasoning_effort": null,
+                        "developer_instructions": null
+                    }
+                }
+            })
+        );
+    }
+
+    #[test]
     fn list_threads_from_value_preserves_thread_spawn_parent_thread_id() {
-        let threads = list_threads_from_value(json!({
-            "data": [
-                {
-                    "id": "thread-1",
-                    "preview": "hello",
-                    "createdAt": 100,
-                    "updatedAt": 200,
-                    "status": {
-                        "type": "active",
-                        "activeFlags": ["waitingOnUserInput"]
-                    },
-                    "cwd": "D:/workspace",
-                    "path": "D:/workspace/.codex/session.jsonl",
-                    "name": "Demo",
-                    "source": {
-                        "subAgent": {
-                            "thread_spawn": {
-                                "parent_thread_id": "parent-thread-1",
-                                "depth": 1,
-                                "agent_nickname": "@Planner",
-                                "agent_role": "reviewer"
+        let threads = list_threads_from_value(
+            &shared_state(),
+            json!({
+                "data": [
+                    {
+                        "id": "thread-1",
+                        "preview": "hello",
+                        "createdAt": 100,
+                        "updatedAt": 200,
+                        "status": {
+                            "type": "active",
+                            "activeFlags": ["waitingOnUserInput"]
+                        },
+                        "cwd": "D:/workspace",
+                        "path": "D:/workspace/.codex/session.jsonl",
+                        "name": "Demo",
+                        "source": {
+                            "subAgent": {
+                                "thread_spawn": {
+                                    "parent_thread_id": "parent-thread-1",
+                                    "depth": 1,
+                                    "agent_nickname": "@Planner",
+                                    "agent_role": "reviewer"
+                                }
                             }
                         }
                     }
-                }
-            ]
-        }))
+                ]
+            }),
+        )
         .expect("thread list should deserialize");
 
         assert_eq!(
@@ -7114,6 +7462,7 @@ mod tests {
                 cwd: "D:/workspace".to_string(),
                 path: Some("D:/workspace/.codex/session.jsonl".to_string()),
                 name: Some("Demo".to_string()),
+                has_unread_turn: false,
                 source: Some(ThreadHistorySource {
                     parent_thread_id: Some("parent-thread-1".to_string()),
                     depth: Some(1),
@@ -7122,6 +7471,40 @@ mod tests {
                 }),
             }]
         );
+    }
+
+    #[test]
+    fn list_threads_from_value_prefers_local_unread_overlay() {
+        let state = shared_state();
+        state
+            .thread_unread_state
+            .lock()
+            .expect("unread state mutex should lock")
+            .insert("thread-1".to_string(), true);
+
+        let threads = list_threads_from_value(
+            &state,
+            json!({
+                "data": [
+                    {
+                        "id": "thread-1",
+                        "preview": "hello",
+                        "createdAt": 100,
+                        "updatedAt": 200,
+                        "status": {
+                            "type": "idle"
+                        },
+                        "cwd": "D:/workspace",
+                        "path": null,
+                        "name": "Demo",
+                        "hasUnreadTurn": false
+                    }
+                ]
+            }),
+        )
+        .expect("thread list should deserialize");
+
+        assert_eq!(threads[0].has_unread_turn, true);
     }
 
     #[test]

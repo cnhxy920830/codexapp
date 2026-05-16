@@ -27,6 +27,7 @@ import { ReviewChangedFilesTreePane } from "./ReviewChangedFilesTreePane";
 import { ReviewEmptyState } from "./ReviewEmptyState";
 
 type ReviewSidePanelProps = {
+  defaultOptionsMenuOpen?: boolean;
   gitInitCwd?: string | null;
   gitRoot?: string | null;
   hostId?: string | null;
@@ -44,6 +45,7 @@ const REVIEW_CHANGED_FILES_PANE_DEFAULT_WIDTH = 220;
 const REVIEW_CHANGED_FILES_PANE_MAX_WIDTH_RATIO = 0.6;
 
 export function ReviewSidePanel({
+  defaultOptionsMenuOpen = false,
   gitInitCwd = null,
   gitRoot = null,
   hostId = null,
@@ -61,7 +63,7 @@ export function ReviewSidePanel({
   const [hideWhitespace, setHideWhitespace] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [copiedApplyCommand, setCopiedApplyCommand] = useState(false);
-  const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState(false);
+  const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState(defaultOptionsMenuOpen);
   const [isChangedFilesPaneOpen, setIsChangedFilesPaneOpen] = useState(true);
   const [changedFilesPaneWidth, setChangedFilesPaneWidth] = useState(
     REVIEW_CHANGED_FILES_PANE_DEFAULT_WIDTH,
@@ -76,6 +78,10 @@ export function ReviewSidePanel({
   const changedFilesPaneRef = useRef<HTMLDivElement | null>(null);
   const fileKeys = useMemo(
     () => threadDiffSummary.files.map((file, index) => buildReviewFileKey(file, index)),
+    [threadDiffSummary.files],
+  );
+  const gitApplyCommand = useMemo(
+    () => buildGitApplyCommand(threadDiffSummary.files),
     [threadDiffSummary.files],
   );
   const [expandedFileKeys, setExpandedFileKeys] = useState<Set<string>>(() => new Set(fileKeys));
@@ -245,17 +251,18 @@ export function ReviewSidePanel({
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <ReviewHeaderToolbar
+          copyGitApplyCommandDisabled
           diffMode={diffMode}
           gitActions={
             gitRoot ? <ReviewGitActions gitRoot={gitRoot} hostId={hostId} t={t} /> : null
           }
-          handleCopyGitApplyCommand={null}
           hideWhitespace={hideWhitespace}
           isAllExpanded={false}
           isChangedFilesPaneOpen={isChangedFilesPaneOpen}
           isOptionsMenuOpen={isOptionsMenuOpen}
           isRefreshing={isRefreshing}
           loadFullFilesEnabled={loadFullFilesEnabled}
+          onClickCopyGitApplyCommand={null}
           onHandleRefresh={handleRefresh}
           onToggleChangedFilesPane={() => setIsChangedFilesPaneOpen((current) => !current)}
           onToggleDiffMode={() =>
@@ -270,6 +277,7 @@ export function ReviewSidePanel({
           onToggleWrap={() => setWrap((current) => !current)}
           optionsMenuRef={optionsMenuRef}
           richPreviewEnabled={richPreviewEnabled}
+          showCopyGitApplyCommand
           summary={
             <div className="flex min-w-0 items-center gap-3 overflow-hidden">
               <div className="app-title truncate text-[13px] font-medium text-[var(--app-shell-text)]">
@@ -297,13 +305,12 @@ export function ReviewSidePanel({
   }
 
   const handleCopyGitApplyCommand = async () => {
-    const command = buildGitApplyCommand(threadDiffSummary.files);
-    if (command.length === 0) {
+    if (gitApplyCommand.length === 0) {
       return;
     }
 
     try {
-      await navigator.clipboard.writeText(command);
+      await navigator.clipboard.writeText(gitApplyCommand);
       setCopiedApplyCommand(true);
       window.setTimeout(() => setCopiedApplyCommand(false), 1600);
     } finally {
@@ -314,17 +321,20 @@ export function ReviewSidePanel({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <ReviewHeaderToolbar
+        copyGitApplyCommandDisabled={gitApplyCommand.length === 0}
         diffMode={diffMode}
         gitActions={
           gitRoot ? <ReviewGitActions gitRoot={gitRoot} hostId={hostId} t={t} /> : null
         }
-        handleCopyGitApplyCommand={() => void handleCopyGitApplyCommand()}
         hideWhitespace={hideWhitespace}
         isAllExpanded={isAllExpanded}
         isChangedFilesPaneOpen={isChangedFilesPaneOpen}
         isOptionsMenuOpen={isOptionsMenuOpen}
         isRefreshing={isRefreshing}
         loadFullFilesEnabled={loadFullFilesEnabled}
+        onClickCopyGitApplyCommand={
+          gitApplyCommand.length === 0 ? null : () => void handleCopyGitApplyCommand()
+        }
         onHandleRefresh={handleRefresh}
         onToggleChangedFilesPane={() => setIsChangedFilesPaneOpen((current) => !current)}
         onToggleDiffMode={() =>
@@ -341,6 +351,7 @@ export function ReviewSidePanel({
         onToggleWrap={() => setWrap((current) => !current)}
         optionsMenuRef={optionsMenuRef}
         richPreviewEnabled={richPreviewEnabled}
+        showCopyGitApplyCommand
         summary={
           <div className="flex min-w-0 items-center gap-3 overflow-hidden">
             <div className="app-title truncate text-[13px] font-medium text-[var(--app-shell-text)]">
@@ -448,15 +459,16 @@ export function ReviewSidePanel({
 }
 
 function ReviewHeaderToolbar({
+  copyGitApplyCommandDisabled,
   diffMode,
   gitActions,
-  handleCopyGitApplyCommand,
   hideWhitespace,
   isAllExpanded,
   isChangedFilesPaneOpen,
   isOptionsMenuOpen,
   isRefreshing,
   loadFullFilesEnabled,
+  onClickCopyGitApplyCommand,
   onHandleRefresh,
   onToggleChangedFilesPane,
   onToggleDiffMode,
@@ -469,20 +481,22 @@ function ReviewHeaderToolbar({
   onToggleWrap,
   optionsMenuRef,
   richPreviewEnabled,
+  showCopyGitApplyCommand,
   summary,
   t,
   wordDiffsEnabled,
   wrap,
 }: {
+  copyGitApplyCommandDisabled: boolean;
   diffMode: ReviewDiffMode;
   gitActions?: ReactNode;
-  handleCopyGitApplyCommand: (() => void) | null;
   hideWhitespace: boolean;
   isAllExpanded: boolean;
   isChangedFilesPaneOpen: boolean;
   isOptionsMenuOpen: boolean;
   isRefreshing: boolean;
   loadFullFilesEnabled: boolean;
+  onClickCopyGitApplyCommand: (() => void) | null;
   onHandleRefresh: () => void;
   onToggleChangedFilesPane: () => void;
   onToggleDiffMode: () => void;
@@ -495,134 +509,139 @@ function ReviewHeaderToolbar({
   onToggleWrap: () => void;
   optionsMenuRef: React.RefObject<HTMLDivElement | null>;
   richPreviewEnabled: boolean;
+  showCopyGitApplyCommand: boolean;
   summary: ReactNode;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
   wordDiffsEnabled: boolean;
   wrap: boolean;
 }) {
+  const reviewHeaderActions = (
+    <div className="flex items-center gap-px">
+      <div className="relative" ref={optionsMenuRef}>
+        <ToolbarButton
+          label={t("codex.review.header.moreOptions")}
+          onClick={onToggleOptionsMenu}
+          pressed={isOptionsMenuOpen}
+        >
+          <MoreActionsIcon className="h-4 w-4" />
+        </ToolbarButton>
+        {isOptionsMenuOpen ? (
+          <div className="app-card absolute top-[calc(100%+8px)] right-0 z-10 min-w-[236px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+            <OptionsMenuButton
+              icon={<OpenFilesIcon className="h-4 w-4" />}
+              label={
+                loadFullFilesEnabled
+                  ? t("codex.review.loadFullFiles.disable")
+                  : t("codex.review.loadFullFiles.enable")
+              }
+              onClick={() => {
+                onToggleLoadFullFiles();
+                onToggleOptionsMenu();
+              }}
+            />
+            <OptionsMenuButton
+              icon={
+                richPreviewEnabled ? (
+                  <RichPreviewEnabledIcon className="h-4 w-4" />
+                ) : (
+                  <RichPreviewDisabledIcon className="h-4 w-4" />
+                )
+              }
+              label={
+                richPreviewEnabled
+                  ? t("codex.review.richPreview.disable")
+                  : t("codex.review.richPreview.enable")
+              }
+              onClick={() => {
+                onToggleRichPreview();
+                onToggleOptionsMenu();
+              }}
+            />
+            <OptionsMenuButton
+              icon={
+                wordDiffsEnabled ? (
+                  <WordDiffsEnabledIcon className="h-4 w-4" />
+                ) : (
+                  <WordDiffsDisabledIcon className="h-4 w-4" />
+                )
+              }
+              label={
+                wordDiffsEnabled
+                  ? t("codex.review.wordDiffs.disable")
+                  : t("codex.review.wordDiffs.enable")
+              }
+              onClick={() => {
+                onToggleWordDiffs();
+                onToggleOptionsMenu();
+              }}
+            />
+            <OptionsMenuButton
+              icon={<WhitespaceIcon className="h-4 w-4" />}
+              label={
+                hideWhitespace
+                  ? t("codex.review.whitespace.show")
+                  : t("codex.review.whitespace.hide")
+              }
+              onClick={() => {
+                onToggleHideWhitespace();
+                onToggleOptionsMenu();
+              }}
+            />
+            {showCopyGitApplyCommand ? (
+              <OptionsMenuButton
+                disabled={copyGitApplyCommandDisabled || onClickCopyGitApplyCommand == null}
+                icon={<CopyPathIcon className="h-4 w-4" />}
+                label={t("codex.review.copyGitApplyCommand")}
+                onClick={onClickCopyGitApplyCommand}
+              />
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+      <ToolbarButton label={t("codex.review.refreshGitQueries")} onClick={onHandleRefresh}>
+        <RefreshIcon className={["h-4 w-4", isRefreshing ? "animate-spin" : ""].join(" ")} />
+      </ToolbarButton>
+      <ToolbarButton
+        label={wrap ? t("codex.review.wrap.disable") : t("codex.review.wrap.enable")}
+        onClick={onToggleWrap}
+      >
+        {wrap ? <WrapEnabledIcon className="h-4 w-4" /> : <WrapDisabledIcon className="h-4 w-4" />}
+      </ToolbarButton>
+      <ToolbarButton
+        label={
+          isAllExpanded
+            ? t("codex.review.expandOrCollapseDiffMenu.collapse")
+            : t("codex.review.expandOrCollapseDiffMenu.expand")
+        }
+        onClick={onToggleExpanded}
+      >
+        {isAllExpanded ? (
+          <CollapseAllDiffsIcon className="h-4 w-4" />
+        ) : (
+          <ExpandAllDiffsIcon className="h-4 w-4" />
+        )}
+      </ToolbarButton>
+      <ToolbarButton
+        label={
+          diffMode === "unified"
+            ? t("codex.review.switchToSplit")
+            : t("codex.review.switchToUnified")
+        }
+        onClick={onToggleDiffMode}
+      >
+        {diffMode === "unified" ? (
+          <DiffSplitIcon className="h-4 w-4" />
+        ) : (
+          <DiffUnifiedIcon className="h-4 w-4" />
+        )}
+      </ToolbarButton>
+    </div>
+  );
+
   return (
     <div className="grid h-[var(--app-shell-toolbar-pane)] grid-cols-[minmax(0,1fr)_auto] items-center gap-1 border-b border-[var(--app-shell-border)] px-2 text-[var(--app-shell-muted)]">
       {summary}
       <div className="flex items-center gap-px">
-        <div className="flex items-center gap-px">
-          <div className="relative" ref={optionsMenuRef}>
-            <ToolbarButton
-              label={t("codex.review.header.moreOptions")}
-              onClick={onToggleOptionsMenu}
-              pressed={isOptionsMenuOpen}
-            >
-              <MoreActionsIcon className="h-4 w-4" />
-            </ToolbarButton>
-            {isOptionsMenuOpen ? (
-              <div className="app-card absolute top-[calc(100%+8px)] right-0 z-10 min-w-[236px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
-                <OptionsMenuButton
-                  icon={<OpenFilesIcon className="h-4 w-4" />}
-                  label={
-                    loadFullFilesEnabled
-                      ? t("codex.review.loadFullFiles.disable")
-                      : t("codex.review.loadFullFiles.enable")
-                  }
-                  onClick={() => {
-                    onToggleLoadFullFiles();
-                    onToggleOptionsMenu();
-                  }}
-                />
-                <OptionsMenuButton
-                  icon={
-                    richPreviewEnabled ? (
-                      <RichPreviewEnabledIcon className="h-4 w-4" />
-                    ) : (
-                      <RichPreviewDisabledIcon className="h-4 w-4" />
-                    )
-                  }
-                  label={
-                    richPreviewEnabled
-                      ? t("codex.review.richPreview.disable")
-                      : t("codex.review.richPreview.enable")
-                  }
-                  onClick={() => {
-                    onToggleRichPreview();
-                    onToggleOptionsMenu();
-                  }}
-                />
-                <OptionsMenuButton
-                  icon={
-                    wordDiffsEnabled ? (
-                      <WordDiffsEnabledIcon className="h-4 w-4" />
-                    ) : (
-                      <WordDiffsDisabledIcon className="h-4 w-4" />
-                    )
-                  }
-                  label={
-                    wordDiffsEnabled
-                      ? t("codex.review.wordDiffs.disable")
-                      : t("codex.review.wordDiffs.enable")
-                  }
-                  onClick={() => {
-                    onToggleWordDiffs();
-                    onToggleOptionsMenu();
-                  }}
-                />
-                <OptionsMenuButton
-                  icon={<WhitespaceIcon className="h-4 w-4" />}
-                  label={
-                    hideWhitespace
-                      ? t("codex.review.whitespace.show")
-                      : t("codex.review.whitespace.hide")
-                  }
-                  onClick={() => {
-                    onToggleHideWhitespace();
-                    onToggleOptionsMenu();
-                  }}
-                />
-                {handleCopyGitApplyCommand ? (
-                  <OptionsMenuButton
-                    icon={<CopyPathIcon className="h-4 w-4" />}
-                    label={t("codex.review.copyGitApplyCommand")}
-                    onClick={handleCopyGitApplyCommand}
-                  />
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-          <ToolbarButton label={t("codex.review.refreshGitQueries")} onClick={onHandleRefresh}>
-            <RefreshIcon className={["h-4 w-4", isRefreshing ? "animate-spin" : ""].join(" ")} />
-          </ToolbarButton>
-          <ToolbarButton
-            label={wrap ? t("codex.review.wrap.disable") : t("codex.review.wrap.enable")}
-            onClick={onToggleWrap}
-          >
-            {wrap ? <WrapEnabledIcon className="h-4 w-4" /> : <WrapDisabledIcon className="h-4 w-4" />}
-          </ToolbarButton>
-          <ToolbarButton
-            label={
-              isAllExpanded
-                ? t("codex.review.expandOrCollapseDiffMenu.collapse")
-                : t("codex.review.expandOrCollapseDiffMenu.expand")
-            }
-            onClick={onToggleExpanded}
-          >
-            {isAllExpanded ? (
-              <CollapseAllDiffsIcon className="h-4 w-4" />
-            ) : (
-              <ExpandAllDiffsIcon className="h-4 w-4" />
-            )}
-          </ToolbarButton>
-          <ToolbarButton
-            label={
-              diffMode === "unified"
-                ? t("codex.review.switchToSplit")
-                : t("codex.review.switchToUnified")
-            }
-            onClick={onToggleDiffMode}
-          >
-            {diffMode === "unified" ? (
-              <DiffSplitIcon className="h-4 w-4" />
-            ) : (
-              <DiffUnifiedIcon className="h-4 w-4" />
-            )}
-          </ToolbarButton>
-        </div>
         {gitActions ?? null}
         <ToolbarButton
           label={t("thread.sidePanel.openFile")}
@@ -631,6 +650,8 @@ function ReviewHeaderToolbar({
         >
           <OpenFilesIcon className="h-4 w-4" />
         </ToolbarButton>
+        <div className="mx-1 h-4 w-px bg-[var(--app-shell-border)]" />
+        {reviewHeaderActions}
       </div>
     </div>
   );
@@ -821,19 +842,22 @@ function ReviewToolbarTooltip({
 }
 
 function OptionsMenuButton({
+  disabled = false,
   icon,
   label,
   onClick,
 }: {
+  disabled?: boolean;
   icon: ReactNode;
   label: string;
-  onClick: () => void;
+  onClick: (() => void) | null;
 }) {
   return (
     <button
       type="button"
-      onClick={onClick}
-      className="app-nav-item-idle flex w-full items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-left text-[13px]"
+      disabled={disabled}
+      onClick={onClick ?? undefined}
+      className="app-nav-item-idle flex w-full items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-left text-[13px] disabled:cursor-not-allowed disabled:opacity-60"
     >
       <span className="flex min-w-0 flex-1 items-center gap-2">
         <span className="shrink-0 text-[var(--app-shell-muted)]">{icon}</span>

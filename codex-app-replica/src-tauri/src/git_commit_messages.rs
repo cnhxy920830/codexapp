@@ -55,6 +55,7 @@ async fn generate_commit_message(
         cwd,
         None,
         None,
+        None,
     )
     .await
     {

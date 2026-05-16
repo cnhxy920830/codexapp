@@ -692,26 +692,6 @@ body[data-hotkey-window-home-composer-menu-open] .hotkey-window-home-underlay {
   cursor: not-allowed;
 }
 
-.app-right-panel-shell {
-  border-left: 1px solid var(--app-shell-border);
-  background: color-mix(in srgb, var(--app-shell-right) 94%, var(--app-shell-main-surface));
-  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--app-shell-border) 55%, transparent);
-}
-
-.app-right-panel-collapsed-rail {
-  border-left: 1px solid var(--app-shell-border);
-  background: color-mix(in srgb, var(--app-shell-right) 96%, var(--app-shell-main-surface));
-}
-
-.app-right-panel-content {
-  background: color-mix(in srgb, var(--app-shell-right) 92%, var(--app-shell-main-surface));
-}
-
-.app-right-panel-tab-strip {
-  background: color-mix(in srgb, var(--app-shell-right) 96%, transparent);
-  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--app-shell-border) 55%, transparent);
-}
-
 .app-right-panel-splitter,
 .app-right-panel-splitter-active {
   position: relative;
@@ -752,10 +732,10 @@ body[data-hotkey-window-home-composer-menu-open] .hotkey-window-home-underlay {
   outline: none;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   min-height: 24px;
   border-radius: 999px;
-  padding: 0 9px;
+  padding: 0 8px;
   background: color-mix(in srgb, var(--app-shell-control-bg) 82%, transparent);
   color: var(--app-shell-control-text-muted);
   font-size: 11px;
@@ -830,8 +810,8 @@ body[data-hotkey-window-home-composer-menu-open] .hotkey-window-home-underlay {
   background: color-mix(in srgb, var(--app-shell-control-bg) 82%, transparent);
   color: var(--app-shell-control-text-muted);
   display: inline-flex;
-  height: 28px;
-  width: 28px;
+  height: 26px;
+  width: 26px;
   align-items: center;
   justify-content: center;
   border-radius: 999px;
@@ -878,6 +858,8 @@ body[data-hotkey-window-home-composer-menu-open] .hotkey-window-home-underlay {
 
 .app-user-message-chip {
   color: var(--app-shell-muted);
+  font-size: 12px;
+  line-height: 1.2;
 }
 
 .app-user-message-pill {
@@ -885,10 +867,10 @@ body[data-hotkey-window-home-composer-menu-open] .hotkey-window-home-underlay {
   max-width: 320px;
   align-items: center;
   gap: 4px;
-  border: 1px solid color-mix(in srgb, var(--app-shell-border) 70%, transparent);
+  border: 1px solid var(--app-shell-border);
   border-radius: 999px;
   padding: 6px 8px;
-  background: color-mix(in srgb, var(--app-shell-main-surface) 96%, transparent);
+  background: var(--app-shell-main-surface);
   color: var(--app-shell-text);
   text-align: left;
   transition:
@@ -897,8 +879,8 @@ body[data-hotkey-window-home-composer-menu-open] .hotkey-window-home-underlay {
 }
 
 .app-user-message-pill:hover {
-  background: color-mix(in srgb, var(--app-shell-card-bg-weak) 92%, transparent);
-  border-color: color-mix(in srgb, var(--app-shell-border) 86%, transparent);
+  background: var(--app-shell-control-hover);
+  border-color: var(--app-shell-border);
 }
 
 .app-user-message-pill-icon {
@@ -924,7 +906,7 @@ body[data-hotkey-window-home-composer-menu-open] .hotkey-window-home-underlay {
   text-overflow: ellipsis;
   white-space: nowrap;
   padding-right: 4px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   line-height: 1.2;
 }
@@ -932,7 +914,7 @@ body[data-hotkey-window-home-composer-menu-open] .hotkey-window-home-underlay {
 .app-user-message-pill-line {
   flex-shrink: 0;
   color: var(--app-shell-subtle);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 400;
   line-height: 1.2;
 }

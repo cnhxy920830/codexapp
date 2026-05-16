@@ -78,6 +78,7 @@ use auth_bridge::archive_thread;
 use auth_bridge::batch_write_config_value_command;
 use auth_bridge::batch_write_config_values;
 use auth_bridge::cancel_login;
+use auth_bridge::clear_thread_goal;
 use auth_bridge::codex_app_server_restart;
 use auth_bridge::delete_plugin_share;
 use auth_bridge::delete_plugin_share_command;
@@ -117,6 +118,8 @@ use auth_bridge::login_chatgpt_for_host_command;
 use auth_bridge::login_mcp_server;
 use auth_bridge::login_mcp_server_command;
 use auth_bridge::logout;
+use auth_bridge::mark_conversation_as_read;
+use auth_bridge::mark_conversation_as_unread;
 use auth_bridge::maybe_resume_conversation;
 use auth_bridge::read_account_info;
 use auth_bridge::read_account_rate_limits;
@@ -139,7 +142,6 @@ use auth_bridge::respond_to_tool_request_user_input;
 use auth_bridge::rollback_thread;
 use auth_bridge::save_plugin_share;
 use auth_bridge::save_plugin_share_command;
-use auth_bridge::clear_thread_goal;
 use auth_bridge::send_add_credits_nudge_email;
 use auth_bridge::send_follow_up_message;
 use auth_bridge::set_experimental_feature_enablement;
@@ -652,6 +654,8 @@ pub fn run() {
             unarchive_thread,
             unarchive_conversation_command,
             set_thread_name,
+            mark_conversation_as_unread,
+            mark_conversation_as_read,
             set_thread_goal,
             set_thread_goal_status,
             clear_thread_goal,

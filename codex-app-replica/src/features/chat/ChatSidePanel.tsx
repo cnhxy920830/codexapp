@@ -72,6 +72,8 @@ type ChatSidePanelProps = {
   ) => void) | null;
   onApprovalDecision: (approval: PendingApproval, decision: "accept" | "acceptForSession" | "decline" | "cancel") => void;
   onComposerDraftChange: (value: string) => void;
+  onComposerCollaborationModeChange?: ((mode: "default" | "plan" | null) => void) | null;
+  activeCollaborationMode?: string | null;
   onComposerPermissionModeChange: (mode: HotkeyPermissionAgentMode) => void;
   onDismissImplementPlanRequest: (request: PendingImplementPlanRequest) => void;
   onEditUserMessage: (text: string) => void | Promise<void>;
@@ -138,6 +140,8 @@ export function ChatSidePanel({
   onPendingPdfCommentsChange,
   onApprovalDecision,
   onComposerDraftChange,
+  onComposerCollaborationModeChange,
+  activeCollaborationMode = null,
   onComposerPermissionModeChange,
   onDismissImplementPlanRequest,
   onEditUserMessage,
@@ -201,7 +205,7 @@ export function ChatSidePanel({
   }, [conversationHostId, threadConversation?.cwd]);
 
   return (
-    <aside className="app-right-panel-content flex min-h-0 min-w-0 flex-1 flex-col">
+    <aside className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--app-shell-main-surface)]">
       {shouldRenderReviewPanel ? (
         <div className="min-h-0 flex-1 overflow-hidden">
           <ReviewSidePanel
@@ -217,7 +221,7 @@ export function ChatSidePanel({
         </div>
       ) : shouldRenderBrowserPanel ? (
         <div className="min-h-0 flex-1">
-          <BrowserSidebarPanel target={browserTarget} t={t} />
+          <BrowserSidebarPanel target={browserTarget} />
         </div>
       ) : activeTab && isWorkspaceFileRightPanelTab(activeTab) ? (
         <div className="min-h-0 flex-1 overflow-hidden">
@@ -236,22 +240,14 @@ export function ChatSidePanel({
       ) : activeTab?.kind === "sideChat" ? (
         <div className="min-h-0 flex-1 overflow-hidden">
           <ChatConversationMainPane
-            threadActionsMenuRef={{ current: null }}
             composerDraft={composerDraft}
             composerEnterBehavior={composerEnterBehavior}
             composerPermissionConfig={composerPermissionConfig}
             composerPermissionMode={composerPermissionMode}
             composerPermissionsState={composerPermissionsState}
             followUpQueueMode={followUpQueueMode}
-            hasAttachedHeartbeatAutomation={false}
             isResponseInProgress={sideChatIsResponseInProgress}
-            isThreadActionsMenuOpen={false}
-            isThreadHeartbeatAutomationActionDisabled
-            isThreadHeartbeatAutomationActionVisible={false}
             isWorktreeThread={false}
-            showThreadHeader={false}
-            heartbeatAutomationActionLabelKey="threadHeader.addAutomation"
-            heartbeatAutomationButtonTooltip=""
             currentThreadApprovals={sideChatApprovals}
             currentThreadImplementPlanRequests={sideChatImplementPlanRequests}
             currentThreadMcpServerElicitationRequest={sideChatMcpServerElicitationRequest}
@@ -266,31 +262,20 @@ export function ChatSidePanel({
             onPermissionsRequestApprovalSubmit={onPermissionsRequestApprovalSubmit}
             onToolRequestUserInputSubmit={onToolRequestUserInputSubmit}
             onComposerDraftChange={onComposerDraftChange}
+            onComposerCollaborationModeChange={onComposerCollaborationModeChange ?? undefined}
+            activeCollaborationMode={activeCollaborationMode}
             onComposerPermissionModeChange={onComposerPermissionModeChange}
             onOpenRemoteTask={onSelectThread}
             onSelectRemoteTaskAssistantTurn={() => undefined}
-            onArchiveThread={() => undefined}
-            onCopyAppLink={() => undefined}
-            onCopyConversationMarkdown={() => undefined}
-            onCopySessionId={() => undefined}
-            onCopyWorkingDirectory={() => undefined}
-            onForkSelectedThread={() => undefined}
-            onForkSelectedThreadIntoWorktree={() => undefined}
-            onOpenInNewWindow={() => undefined}
-            onOpenAttachedHeartbeatAutomation={() => undefined}
             onOpenSideChat={onOpenSideChat ?? undefined}
-            onOpenThreadHeartbeatAutomationAction={() => undefined}
-            onOpenRenameDialog={() => undefined}
             onOpenWorkspaceFileSearch={onOpenWorkspaceFileSearch ?? undefined}
             onSelectThread={onSelectThread}
-            onTogglePinnedThread={() => undefined}
             onEditUserMessage={onEditUserMessage}
             onRemoveQueuedFollowUp={onRemoveQueuedFollowUp}
             onClearPendingPdfComments={undefined}
             onStopTurn={onStopTurn}
             onSubmitTurn={onSubmitTurn}
             onShowToast={onShowToast}
-            onToggleThreadActionsMenu={() => undefined}
             approvalActionErrors={approvalActionErrors}
             reviewDelivery={reviewDelivery}
             respondingApprovalKeys={respondingApprovalKeys}
