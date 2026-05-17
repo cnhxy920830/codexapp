@@ -39,6 +39,7 @@ type SnapshotMap = {
   apiKeyEntry: string;
   browserPending: string;
   defaultState: string;
+  multiProviderState: string;
   snakeState: string;
 };
 
@@ -107,6 +108,29 @@ function buildSnapshots(): SnapshotMap {
         </div>
       </StaticI18nProvider>,
     ),
+    multiProviderState: renderSnapshot(
+      <StaticI18nProvider>
+        <div className="h-[720px]">
+          <LoginRouteView
+            apiKeyValue=""
+            isApiKeyEntryVisible={false}
+            isApiKeySignInPending={false}
+            isBrowserSignInPending={false}
+            isSnakeVisible={false}
+            onApiKeyCancel={noop}
+            onApiKeySubmit={noop}
+            onApiKeyValueChange={noopString}
+            onCancelSignIn={noop}
+            onChatGptSignIn={noop}
+            onGoogleSignIn={noop}
+            onMicrosoftSignIn={noop}
+            onPlaySnake={noop}
+            onShowApiKeyEntry={noop}
+            onSignUp={noop}
+          />
+        </div>
+      </StaticI18nProvider>,
+    ),
     snakeState: renderSnapshot(
       <StaticI18nProvider>
         <div className="h-[720px]">
@@ -129,6 +153,7 @@ function buildSnapshots(): SnapshotMap {
         </div>
       </StaticI18nProvider>,
     ),
+
   };
 }
 

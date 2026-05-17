@@ -10,7 +10,7 @@ import {
 import type { ReactNode } from "react";
 import type { AutomationRecord, CronAutomationRecord } from "../../services/automations";
 import { AutomationsQuickStartTemplates } from "./AutomationsQuickStartTemplates";
-import { SectionedPage, SectionedPageSection } from "./SectionedPage";
+import { SectionedPage, SectionedPageSection, type SectionedPageSection as SectionedPageSectionConfig } from "./SectionedPage";
 import type { TranslateFn } from "./automationsPageUtils";
 import {
   describeAutomation,
@@ -253,6 +253,20 @@ export function AutomationsOverviewPane({
   const currentItems = items.filter((item) => !isPaused(item));
   const pausedItems = items.filter(isPaused);
   const isRunNowDisabled = isRunningNowId !== null;
+  const sections: SectionedPageSectionConfig[] = [];
+
+  if (currentItems.length > 0) {
+    sections.push({
+      id: "current-automations",
+      title: t("inbox.automations.current"),
+    });
+  }
+  if (pausedItems.length > 0) {
+    sections.push({
+      id: "paused-automations",
+      title: t("inbox.automations.pausedSection"),
+    });
+  }
 
   return (
     <div className="flex min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
@@ -279,7 +293,8 @@ export function AutomationsOverviewPane({
             ariaLabel={t("inbox.automations.sectionsNav")}
             className="[--sectioned-page-leading-inset:0]"
             contentInnerClassName="flex flex-col gap-8 px-panel pb-panel [&>section]:gap-2"
-            showNav={false}
+            sections={sections}
+            showNav={sections.length > 1}
           >
             {currentItems.length > 0 ? (
               <SectionedPageSection

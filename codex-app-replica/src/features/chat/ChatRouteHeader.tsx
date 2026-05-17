@@ -99,6 +99,7 @@ export function ChatRouteHeader({
   const localConversationHeaderSource = threadConversation?.source ?? null;
   const canPinLocalConversationThread = localConversationHeaderSource?.parentThreadId == null;
   const canCopyWorkingDirectory = (threadConversation?.cwd ?? "").trim().length > 0;
+  const latestReasoningEffort = getLatestHeaderReasoningEffort(threadConversation);
   const [threadGitRoot, setThreadGitRoot] = useState<string | null>(null);
 
   useEffect(() => {
@@ -239,8 +240,11 @@ export function ChatRouteHeader({
         conversationId={threadConversation?.id ?? null}
         cwd={threadConversation?.cwd ?? workspaceRoot ?? null}
         heartbeatSummary={hasAttachedHeartbeatAutomation ? heartbeatAutomationButtonTooltip : null}
+        latestCollaborationMode={threadConversation?.latestCollaborationMode ?? null}
+        latestReasoningEffort={latestReasoningEffort}
         projectLabel={threadProjectLabel}
         source={localConversationHeaderSource}
+        t={t}
         threadGitRoot={threadGitRoot}
         title={threadTitle}
         heartbeatAction={localConversationHeaderHeartbeat}
@@ -261,4 +265,24 @@ export function ChatRouteHeader({
       />
     </div>
   );
+}
+
+function getLatestHeaderReasoningEffort(threadConversation: ThreadConversation | null) {
+  if (threadConversation == null) {
+    return null;
+  }
+
+  for (let index = threadConversation.items.length - 1; index >= 0; index -= 1) {
+    const item = threadConversation.items[index];
+    if (item?.type !== "multiAgentAction") {
+      continue;
+    }
+
+    const reasoningEffort = item.reasoningEffort?.trim() ?? "";
+    if (reasoningEffort.length > 0) {
+      return reasoningEffort;
+    }
+  }
+
+  return null;
 }

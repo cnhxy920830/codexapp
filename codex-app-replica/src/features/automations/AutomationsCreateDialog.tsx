@@ -5,6 +5,7 @@ import { PlusIcon } from "../../components/AppShellIcons";
 import { AutomationFormFields } from "./AutomationFormFields";
 import { AutomationsQuickStartTemplates } from "./AutomationsQuickStartTemplates";
 import type { CronAutomationRecord } from "../../services/automations";
+import type { ModelListEntry } from "../../services/settings";
 import type {
   HeartbeatThreadOption,
   TranslateFn,
@@ -14,8 +15,11 @@ import type { AutomationLocalEnvironmentState } from "./useAutomationLocalEnviro
 type AutomationsCreateDialogProps = {
   canSave: boolean;
   draft: AutomationRecord | null;
+  heartbeatThreadOptions: HeartbeatThreadOption[];
   isSaving: boolean;
   initialTemplateMode?: boolean;
+  locale: string;
+  modelOptions: ModelListEntry[];
   quickStartBaseDraft: CronAutomationRecord;
   localEnvironmentState: AutomationLocalEnvironmentState;
   onCancel: () => void;
@@ -27,15 +31,19 @@ type AutomationsCreateDialogProps = {
     configPath: string | null;
     workspaceRoot: string;
   }) => void;
-  heartbeatThreadOptions: HeartbeatThreadOption[];
+  workspaceRootLabels: Record<string, string>;
+  workspaceRootOptions: string[];
   t: TranslateFn;
 };
 
 export function AutomationsCreateDialog({
   canSave,
   draft,
+  heartbeatThreadOptions,
   isSaving,
   initialTemplateMode = false,
+  locale,
+  modelOptions,
   quickStartBaseDraft,
   localEnvironmentState,
   onCancel,
@@ -44,7 +52,8 @@ export function AutomationsCreateDialog({
   onDraftChange,
   onSelectTemplateDraft,
   onOpenLocalEnvironmentsSettings,
-  heartbeatThreadOptions,
+  workspaceRootLabels,
+  workspaceRootOptions,
   t,
 }: AutomationsCreateDialogProps) {
   const [isTemplateMode, setIsTemplateMode] = useState(initialTemplateMode);
@@ -126,8 +135,12 @@ export function AutomationsCreateDialog({
                 draft={draft}
                 heartbeatThreadOptions={heartbeatThreadOptions}
                 localEnvironmentState={localEnvironmentState}
+                locale={locale}
+                modelOptions={modelOptions}
                 onOpenLocalEnvironmentsSettings={onOpenLocalEnvironmentsSettings}
                 onDraftChange={onDraftChange}
+                workspaceRootLabels={workspaceRootLabels}
+                workspaceRootOptions={workspaceRootOptions}
                 t={t}
               />
             </div>

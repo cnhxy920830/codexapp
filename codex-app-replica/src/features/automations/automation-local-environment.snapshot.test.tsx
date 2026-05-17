@@ -127,8 +127,14 @@ function buildSnapshots(): SnapshotMap {
           draft={draft}
           heartbeatThreadOptions={[]}
           localEnvironmentState={localEnvironmentState}
+          locale="en-US"
+          modelOptions={[{ id: "gpt-5.4", hidden: false, additionalSpeedTiers: [] }]}
           onOpenLocalEnvironmentsSettings={noopOpenSettings}
           onDraftChange={noopDraftChange}
+          workspaceRootLabels={{
+            "D:\\workspace\\codex-app": "codex-app",
+          }}
+          workspaceRootOptions={["D:\\workspace\\codex-app"]}
           t={translate}
         />
       </StaticI18nProvider>,

@@ -5,6 +5,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
+import type { MessageKey } from "../../i18n/messages";
 import type { ThreadHistoryEntrySource } from "../../services/history";
 
 type LocalConversationPageHeaderProps = {
@@ -14,8 +15,11 @@ type LocalConversationPageHeaderProps = {
   compact?: boolean;
   heartbeatAction?: ReactNode;
   heartbeatSummary?: string | null;
+  latestCollaborationMode?: string | null;
+  latestReasoningEffort?: string | null;
   projectLabel: string | null;
   source: ThreadHistoryEntrySource | null;
+  t?: (key: MessageKey, values?: Record<string, number | string>) => string;
   threadGitRoot: string | null;
   title: string;
   trailingActions?: ReactNode;
@@ -28,13 +32,22 @@ export function LocalConversationPageHeader({
   compact = false,
   heartbeatAction,
   heartbeatSummary = null,
+  latestCollaborationMode = null,
+  latestReasoningEffort = null,
   projectLabel,
   source,
+  t,
   threadGitRoot,
   title,
   trailingActions,
 }: LocalConversationPageHeaderProps) {
-  const titleSuffix = buildLocalConversationTitleSuffix(source, conversationId);
+  const titleSuffix = buildLocalConversationTitleSuffix({
+    conversationId,
+    latestCollaborationMode,
+    latestReasoningEffort,
+    source,
+    t,
+  });
   const trimmedProjectLabel = projectLabel?.trim() || null;
   const trimmedCwd = cwd?.trim() || null;
   const trimmedHeartbeatSummary = heartbeatSummary?.trim() || null;
@@ -238,24 +251,35 @@ function LocalConversationTitleHoverCardContent({
   );
 }
 
-function buildLocalConversationTitleSuffix(
-  source: ThreadHistoryEntrySource | null,
-  conversationId: string | null,
-) {
-  const parentThreadId = source?.parentThreadId ?? null;
+function buildLocalConversationTitleSuffix(params: {
+  source: ThreadHistoryEntrySource | null;
+  conversationId: string | null;
+  latestCollaborationMode: string | null;
+  latestReasoningEffort: string | null;
+  t?: (key: MessageKey, values?: Record<string, number | string>) => string;
+}) {
+  const parentThreadId = params.source?.parentThreadId ?? null;
   if (parentThreadId === null) {
     return null;
   }
 
-  const nickname = formatSubagentNickname(source?.agentNickname ?? null, conversationId);
+  const nickname = formatSubagentNickname(params.source?.agentNickname ?? null, params.conversationId);
   const role =
-    typeof source?.agentRole === "string" &&
-    source.agentRole.trim().length > 0 &&
-    source.agentRole !== "default"
-      ? source.agentRole.trim()
+    typeof params.source?.agentRole === "string" &&
+    params.source.agentRole.trim().length > 0 &&
+    params.source.agentRole !== "default"
+      ? params.source.agentRole.trim()
       : null;
+  const collaborationMode = formatCollaborationModeLabel(params.latestCollaborationMode, params.t);
+  const reasoningEffort = formatReasoningEffortLabel(params.latestReasoningEffort, params.t);
+  const modeSuffix =
+    collaborationMode == null
+      ? null
+      : reasoningEffort == null
+        ? collaborationMode
+        : `${collaborationMode} (${reasoningEffort})`;
 
-  if (nickname === null && role === null) {
+  if (nickname === null && role === null && modeSuffix === null) {
     return null;
   }
 
@@ -266,12 +290,52 @@ function buildLocalConversationTitleSuffix(
           {nickname}
         </span>
       ) : null}
-      {role ? (
-        <span className="ml-1 shrink-0 text-[var(--app-shell-subtle)]">({role})</span>
+      {role ? <span className="ml-1 shrink-0 text-[var(--app-shell-subtle)]">({role})</span> : null}
+      {modeSuffix ? (
+        <span className="ml-1 shrink-0 text-[var(--app-shell-subtle)]">{modeSuffix}</span>
       ) : null}
     </>
   );
 }
+
+function formatCollaborationModeLabel(
+  value: string | null,
+  t?: (key: MessageKey, values?: Record<string, number | string>) => string,
+) {
+  if (value === "plan") {
+    return t?.("composer.planModeIndicator") ?? "Plan";
+  }
+  if (value === "default") {
+    return "Default";
+  }
+  const trimmedValue = value?.trim() ?? "";
+  return trimmedValue.length > 0 ? trimmedValue : null;
+}
+
+function formatReasoningEffortLabel(
+  value: string | null,
+  t?: (key: MessageKey, values?: Record<string, number | string>) => string,
+) {
+  switch (value) {
+    case "none":
+      return t?.("settings.agent.approval.never") ?? "Never";
+    case "minimal":
+      return "Minimal";
+    case "low":
+      return "Low";
+    case "medium":
+      return "Medium";
+    case "high":
+      return "High";
+    case "xhigh":
+      return "Very high";
+    default: {
+      const trimmedValue = value?.trim() ?? "";
+      return trimmedValue.length > 0 ? trimmedValue : null;
+    }
+  }
+}
+
 
 function formatSubagentNickname(
   agentNickname: string | null,

@@ -80,6 +80,7 @@ test("review side panel snapshots", async (t) => {
           onActivateTab={() => undefined}
           onOpenBrowserTab={() => undefined}
           onOpenReviewTab={() => undefined}
+          onOpenWorkspaceFileSearch={() => undefined}
           t={translate}
         />,
       ),
@@ -105,6 +106,7 @@ test("review side panel snapshots", async (t) => {
           onActivateTab={() => undefined}
           onOpenBrowserTab={() => undefined}
           onOpenReviewTab={() => undefined}
+          onOpenWorkspaceFileSearch={() => undefined}
           t={translate}
         />,
       ),
@@ -133,6 +135,7 @@ test("review side panel snapshots", async (t) => {
           onReorderTabs={() => undefined}
           onOpenBrowserTab={() => undefined}
           onOpenReviewTab={() => undefined}
+          onOpenWorkspaceFileSearch={() => undefined}
           onToggleFullWidth={() => undefined}
           onTogglePanel={() => undefined}
           rightPanelWidthMode="regular"
@@ -158,6 +161,7 @@ test("review side panel snapshots", async (t) => {
           onReorderTabs={() => undefined}
           onOpenBrowserTab={() => undefined}
           onOpenReviewTab={() => undefined}
+          onOpenWorkspaceFileSearch={() => undefined}
           onToggleFullWidth={() => undefined}
           onTogglePanel={() => undefined}
           rightPanelWidthMode="full"

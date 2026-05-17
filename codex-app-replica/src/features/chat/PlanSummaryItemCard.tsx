@@ -1,13 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
+  CheckIcon,
   ChevronDownIcon,
   CopyPathIcon,
+  DownloadIcon,
   OpenInEditorIcon,
 } from "../../components/AppShellIcons";
+import { Button } from "../../components/Button";
+import { MarkdownPreview } from "../../components/MarkdownPreview";
 import type { MessageKey } from "../../i18n/messages";
 import type { ThreadConversationPlan } from "../../services/history";
 import { showPlanSummary } from "../../services/windowNavigation";
-import { renderMessageContent } from "./messageContent";
 
 type Translate = (key: MessageKey, values?: Record<string, number | string>) => string;
 
@@ -29,6 +32,7 @@ type PlanSummaryAssistantMessageItem = {
 };
 
 const PLAN_DOWNLOAD_NAME = "PLAN.md";
+const COLLAPSED_PLAN_HEIGHT = 320;
 
 export function PlanSummaryItemCard({
   conversationId,
@@ -44,27 +48,40 @@ export function PlanSummaryItemCard({
   const completed = "completed" in item ? item.completed : true;
   const isWritingPlan = isWriting || !completed;
   const text = summaryText.trim();
-  const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed ?? !isWritingPlan);
+  const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed ?? false);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    setIsCollapsed(defaultCollapsed ?? !isWritingPlan);
-  }, [defaultCollapsed, isWritingPlan]);
+    setIsCollapsed(defaultCollapsed ?? false);
+  }, [defaultCollapsed]);
 
   useEffect(() => {
-    if (isWriting) {
-      setIsCollapsed(false);
+    if (!copied || typeof window === "undefined") {
+      return;
     }
-  }, [isWriting]);
+
+    const timeoutId = window.setTimeout(() => {
+      setCopied(false);
+    }, 2000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [copied]);
 
   if (text.length === 0) {
     return null;
   }
 
   const showCompletedActions = !isWritingPlan;
+  const collapseButtonTooltip = isCollapsed
+    ? t("localConversation.planSummary.expandTooltip")
+    : t("localConversation.planSummary.collapseTooltip");
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(summaryText);
+      setCopied(true);
     } catch {
       // Keep the plan summary visible if clipboard access is unavailable.
     }
@@ -94,11 +111,11 @@ export function PlanSummaryItemCard({
   };
 
   return (
-    <div className="app-card overflow-hidden rounded-[18px]">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+    <div className="relative overflow-clip rounded-lg bg-token-foreground/5">
+      <div className="relative flex flex-wrap items-center justify-between gap-2 px-3 py-2">
         <div
           className={[
-            "text-[16px] font-semibold leading-tight text-[var(--app-shell-text)]",
+            "text-base font-semibold leading-tight text-token-foreground",
             isWritingPlan ? "loading-shimmer-pure-text" : "",
           ].join(" ")}
         >
@@ -106,76 +123,128 @@ export function PlanSummaryItemCard({
         </div>
         <div className="flex items-center gap-1">
           {showCompletedActions ? (
-            <button
-              type="button"
-              onClick={handleDownload}
-              className="app-control-weak rounded-full px-2.5 py-1 text-[11px]"
-            >
-              {t("localConversation.planSummary.download")}
-            </button>
+            <PlanSummaryActionTooltip content={t("localConversation.planSummary.download")}>
+              <Button
+                aria-label={t("localConversation.planSummary.download")}
+                color="ghost"
+                onClick={handleDownload}
+                size="icon"
+              >
+                <DownloadIcon className="icon-2xs" />
+              </Button>
+            </PlanSummaryActionTooltip>
           ) : null}
           {showCompletedActions ? (
-            <button
-              type="button"
-              onClick={() => void handleCopy()}
-              aria-label={t("localConversation.planSummary.copy")}
-              className="app-control-weak rounded-full p-2"
+            <PlanSummaryActionTooltip
+              content={copied ? t("copyButton.copied") : t("copyButton.copyAriaLabel")}
+              disabled={copied}
             >
-              <CopyPathIcon className="h-4 w-4" />
-            </button>
+              {copied ? (
+                <Button
+                  aria-label={t("copyButton.copiedAriaLabel")}
+                  className="text-token-foreground"
+                  color="ghost"
+                  size="icon"
+                >
+                  <CheckIcon className="icon-2xs" />
+                </Button>
+              ) : (
+                <Button
+                  aria-label={t("copyButton.copyAriaLabel")}
+                  color="ghost"
+                  onClick={() => void handleCopy()}
+                  size="icon"
+                >
+                  <CopyPathIcon className="icon-2xs" />
+                </Button>
+              )}
+            </PlanSummaryActionTooltip>
           ) : null}
           {showCompletedActions && showOpenButton ? (
-            <button
-              type="button"
-              onClick={() => void handleOpen()}
-              className="app-control flex items-center gap-1 rounded-full px-3 py-1 text-[12px]"
-            >
-              <span>{t("localConversation.planSummary.openInNewWindow")}</span>
-              <OpenInEditorIcon className="h-4 w-4" />
-            </button>
+            <PlanSummaryActionTooltip content={t("localConversation.planSummary.openInNewWindow.tooltip")}>
+              <Button
+                color="outline"
+                className="gap-1"
+                onClick={() => void handleOpen()}
+              >
+                <span>{t("localConversation.planSummary.openInNewWindow")}</span>
+                <OpenInEditorIcon className="icon-2xs" />
+              </Button>
+            </PlanSummaryActionTooltip>
           ) : null}
-          <button
-            type="button"
-            aria-label={
-              isCollapsed
-                ? t("localConversation.planSummary.expand")
-                : t("localConversation.planSummary.collapse")
-            }
-            onClick={() => setIsCollapsed((current) => !current)}
-            className="app-control-weak rounded-full p-2"
-          >
-            <ChevronDownIcon
-              className={[
-                "h-4 w-4 transition-transform",
-                isCollapsed ? "rotate-180" : "",
-              ].join(" ")}
-            />
-          </button>
+          <PlanSummaryActionTooltip content={collapseButtonTooltip}>
+            <Button
+              aria-label={
+                isCollapsed
+                  ? t("localConversation.planSummary.expand")
+                  : t("localConversation.planSummary.collapse")
+              }
+              color="ghost"
+              onClick={() => setIsCollapsed((current) => !current)}
+              size="icon"
+            >
+              <ChevronDownIcon
+                className={[
+                  "icon-2xs transition-transform",
+                  isCollapsed ? "rotate-180" : "rotate-0",
+                ].join(" ")}
+              />
+            </Button>
+          </PlanSummaryActionTooltip>
         </div>
       </div>
 
-      <div className={isCollapsed ? "relative max-h-[320px] overflow-hidden" : undefined}>
-        <div className="px-4 pb-4">
-          {renderMessageContent(summaryText, {
-            cwd: conversationCwd,
-            hostId: conversationHostId,
-          })}
+      <div
+        className="relative overflow-hidden"
+        style={{
+          height: isCollapsed ? COLLAPSED_PLAN_HEIGHT : "auto",
+        }}
+      >
+        <div className="px-4 py-3">
+          <MarkdownPreview
+            className="text-size-chat"
+            cwd={conversationCwd}
+            hostId={conversationHostId}
+            text={summaryText}
+            variant="notebook"
+          />
         </div>
         {isCollapsed ? (
           <>
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[var(--app-shell-card-bg)] to-transparent" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-token-input-background to-transparent" />
             <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
-              <button
-                type="button"
+              <Button
+                className="pointer-events-auto"
+                color="primary"
                 onClick={() => setIsCollapsed(false)}
-                className="app-button-primary pointer-events-auto rounded-full px-4 py-1.5 text-[12px]"
               >
                 {t("localConversation.planSummary.viewPlan")}
-              </button>
+              </Button>
             </div>
           </>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function PlanSummaryActionTooltip({
+  children,
+  content,
+  disabled = false,
+}: {
+  children: ReactNode;
+  content: ReactNode;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="group relative flex shrink-0 items-center">
+      {children}
+      {disabled ? null : (
+        <div className="pointer-events-none absolute top-full left-1/2 z-20 mt-2 hidden max-w-[min(32rem,calc(100vw-16px))] -translate-x-1/2 rounded-[12px] border border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)] px-3 py-2 text-[12px] leading-5 whitespace-pre-line text-[var(--app-shell-text)] shadow-[0_12px_30px_rgba(0,0,0,0.18)] group-hover:block group-focus-within:block">
+          {content}
+        </div>
+      )}
     </div>
   );
 }

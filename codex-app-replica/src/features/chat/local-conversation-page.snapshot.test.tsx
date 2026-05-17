@@ -356,6 +356,8 @@ test("local conversation page snapshots", async (t) => {
             cwd={threadConversation.cwd}
             defaultTitleHoverCardOpen={true}
             heartbeatSummary="Next run: Tomorrow at 9:00 AM"
+            latestCollaborationMode={threadConversation.latestCollaborationMode ?? null}
+            latestReasoningEffort="high"
             projectLabel="project"
             source={threadConversation.source ?? null}
             threadGitRoot={null}
@@ -415,6 +417,7 @@ function buildLocalConversationFixture(): ThreadConversation {
       agentNickname: "@Planner",
       agentRole: "reviewer",
     },
+    latestCollaborationMode: "plan",
     latestTokenUsageInfo: {
       total: {
         totalTokens: 92000,

@@ -15,6 +15,8 @@ export type LoginRouteViewProps = {
   onApiKeyValueChange: (value: string) => void;
   onCancelSignIn: () => void;
   onChatGptSignIn: () => void;
+  onGoogleSignIn?: () => void;
+  onMicrosoftSignIn?: () => void;
   onPlaySnake: () => void;
   onShowApiKeyEntry: () => void;
   onSignUp: () => void;
@@ -32,6 +34,8 @@ export function LoginRouteView({
   onApiKeyValueChange,
   onCancelSignIn,
   onChatGptSignIn,
+  onGoogleSignIn,
+  onMicrosoftSignIn,
   onPlaySnake,
   onShowApiKeyEntry,
   onSignUp,
@@ -114,6 +118,28 @@ export function LoginRouteView({
             >
               {t("electron.onboarding.login.chatgpt.signIn")}
             </Button>
+            {onGoogleSignIn ? (
+              <button
+                aria-label={t("electron.onboarding.login.google.signIn")}
+                className="flex h-[46px] w-full cursor-interaction items-center justify-center gap-2 rounded-full border border-token-border bg-token-main-surface-primary text-[14px] leading-5 font-medium text-token-foreground hover:bg-token-list-hover-background"
+                type="button"
+                onClick={onGoogleSignIn}
+              >
+                <GoogleProviderIcon className="size-5 shrink-0" />
+                {t("electron.onboarding.login.google.signIn")}
+              </button>
+            ) : null}
+            {onMicrosoftSignIn ? (
+              <button
+                aria-label={t("electron.onboarding.login.microsoft.signIn")}
+                className="flex h-[46px] w-full cursor-interaction items-center justify-center gap-2 rounded-full border border-token-border bg-token-main-surface-primary text-[14px] leading-5 font-medium text-token-foreground hover:bg-token-list-hover-background"
+                type="button"
+                onClick={onMicrosoftSignIn}
+              >
+                <MicrosoftProviderIcon className="size-5 shrink-0" />
+                {t("electron.onboarding.login.microsoft.signIn")}
+              </button>
+            ) : null}
             <Button
               className="h-[46px] w-full justify-center rounded-full text-[14px] leading-5 font-medium"
               color="outline"
@@ -133,6 +159,40 @@ export function LoginRouteView({
         )}
       </div>
     </main>
+  );
+}
+
+function GoogleProviderIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.76h3.56c2.08-1.92 3.28-4.74 3.28-8.09Z"
+        fill="#4285F4"
+      />
+      <path
+        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.56-2.76c-.99.66-2.25 1.06-3.72 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23Z"
+        fill="#34A853"
+      />
+      <path
+        d="M5.84 14.11A6.6 6.6 0 0 1 5.5 12c0-.74.13-1.45.34-2.11V7.05H2.18A11 11 0 0 0 1 12c0 1.78.43 3.46 1.18 4.95l3.66-2.84Z"
+        fill="#FBBC05"
+      />
+      <path
+        d="M12 5.38c1.62 0 3.07.56 4.21 1.64l3.16-3.16C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.05l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38Z"
+        fill="#EA4335"
+      />
+    </svg>
+  );
+}
+
+function MicrosoftProviderIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="2" y="2" width="9.5" height="9.5" fill="#F25022" />
+      <rect x="12.5" y="2" width="9.5" height="9.5" fill="#7FBA00" />
+      <rect x="2" y="12.5" width="9.5" height="9.5" fill="#00A4EF" />
+      <rect x="12.5" y="12.5" width="9.5" height="9.5" fill="#FFB900" />
+    </svg>
   );
 }
 

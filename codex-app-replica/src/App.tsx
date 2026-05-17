@@ -7270,6 +7270,7 @@ function App() {
                                 onReorderTabs={reorderOpenRightPanelTabs}
                                 onOpenBrowserTab={() => openRightPanelStaticTab("browser")}
                                 onOpenReviewTab={() => openRightPanelStaticTab("review")}
+                                onOpenWorkspaceFileSearch={openWorkspaceFileSearch}
                                 onToggleFullWidth={toggleRightPanelFullWidth}
                                 onTogglePanel={toggleRightPanel}
                                 t={t}
@@ -7470,6 +7471,7 @@ function App() {
                       onActivateTab={activateRightPanelTab}
                       onOpenBrowserTab={() => openRightPanelStaticTab("browser")}
                       onOpenReviewTab={() => openRightPanelStaticTab("review")}
+                      onOpenWorkspaceFileSearch={openWorkspaceFileSearch}
                       t={t}
                     />
                   ) : null}

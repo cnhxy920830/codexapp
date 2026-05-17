@@ -85,6 +85,14 @@ export type MessageKey =
   | "app.nav.newChat"
   | "app.nav.search"
   | "app.nav.settings"
+  | "app.route.inbox.title"
+  | "app.route.inbox.description"
+  | "app.route.remoteConnections.title"
+  | "app.route.remoteConnections.description"
+  | "app.route.oauthCallback.title"
+  | "app.route.oauthCallback.description"
+  | "app.route.extensionPanelNew.title"
+  | "app.route.extensionPanelNew.description"
   | "skills.appsPage.heading.plugins"
   | "skills.appsPage.subheading.plugins"
   | "skills.appsPage.search.plugins"
@@ -607,8 +615,11 @@ export type MessageKey =
   | "localConversation.planSummary.download"
   | "localConversation.planSummary.copy"
   | "localConversation.planSummary.openInNewWindow"
+  | "localConversation.planSummary.openInNewWindow.tooltip"
   | "localConversation.planSummary.expand"
   | "localConversation.planSummary.collapse"
+  | "localConversation.planSummary.expandTooltip"
+  | "localConversation.planSummary.collapseTooltip"
   | "localConversation.planSummary.viewPlan"
   | "avatarOverlay.session.readFile"
   | "avatarOverlay.session.readingFile"
@@ -2297,6 +2308,8 @@ export type MessageKey =
   | "electron.onboarding.login.snake.start"
   | "electron.onboarding.login.welcomeV2.title"
   | "electron.onboarding.login.chatgpt.signIn"
+  | "electron.onboarding.login.google.signIn"
+  | "electron.onboarding.login.microsoft.signIn"
   | "electron.onboarding.login.chatgpt.cancel.welcomeV2"
   | "electron.onboarding.login.apikey.open.welcomeV2"
   | "electron.onboarding.login.apikey.label"
@@ -2399,6 +2412,14 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.nav.newChat": "New chat",
     "app.nav.search": "Search",
     "app.nav.settings": "Settings",
+    "app.route.inbox.title": "Inbox",
+    "app.route.inbox.description": "Your activity inbox is not available in this build.",
+    "app.route.remoteConnections.title": "Remote connections",
+    "app.route.remoteConnections.description": "Manage remote hosts from Settings → Connections.",
+    "app.route.oauthCallback.title": "Sign-in complete",
+    "app.route.oauthCallback.description": "You can close this window and return to Codex.",
+    "app.route.extensionPanelNew.title": "Extension panel",
+    "app.route.extensionPanelNew.description": "This route is reserved for the extension host.",
     "skills.appsPage.heading.plugins": "Plugins",
     "skills.appsPage.subheading.plugins": "Plugins let Codex work your way.",
     "skills.appsPage.search.plugins": "Search plugins",
@@ -3034,8 +3055,11 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "localConversation.planSummary.download": "Download plan",
     "localConversation.planSummary.copy": "Copy plan",
     "localConversation.planSummary.openInNewWindow": "Open",
+    "localConversation.planSummary.openInNewWindow.tooltip": "Open in new window",
     "localConversation.planSummary.expand": "Expand plan summary",
     "localConversation.planSummary.collapse": "Collapse plan summary",
+    "localConversation.planSummary.expandTooltip": "Expand",
+    "localConversation.planSummary.collapseTooltip": "Collapse",
     "localConversation.planSummary.viewPlan": "Expand plan",
     "avatarOverlay.session.readFile": "Read {fileName}",
     "avatarOverlay.session.readingFile": "Reading {fileName}",
@@ -4848,6 +4872,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "electron.onboarding.login.snake.start": "Play Snake",
     "electron.onboarding.login.welcomeV2.title": "Get started with Codex",
     "electron.onboarding.login.chatgpt.signIn": "Sign in with ChatGPT",
+    "electron.onboarding.login.google.signIn": "Continue with Google",
+    "electron.onboarding.login.microsoft.signIn": "Continue with Microsoft",
     "electron.onboarding.login.chatgpt.cancel.welcomeV2": "Cancel sign-in",
     "electron.onboarding.login.apikey.open.welcomeV2": "Sign in another way",
     "electron.onboarding.login.apikey.label": "OpenAI API key",
@@ -4906,6 +4932,14 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.nav.newChat": "新对话",
     "app.nav.search": "搜索",
     "app.nav.settings": "设置",
+    "app.route.inbox.title": "收件箱",
+    "app.route.inbox.description": "当前构建未提供活动收件箱。",
+    "app.route.remoteConnections.title": "远程连接",
+    "app.route.remoteConnections.description": "请在“设置 → 连接”中管理远程主机。",
+    "app.route.oauthCallback.title": "登录完成",
+    "app.route.oauthCallback.description": "您可以关闭此窗口并返回 Codex。",
+    "app.route.extensionPanelNew.title": "扩展面板",
+    "app.route.extensionPanelNew.description": "此路由保留给扩展宿主使用。",
     "skills.appsPage.heading.plugins": "插件",
     "skills.appsPage.subheading.plugins": "插件让 Codex 按你的方式运行。",
     "skills.appsPage.search.plugins": "搜索插件",
@@ -5531,8 +5565,11 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "localConversation.planSummary.download": "下载计划",
     "localConversation.planSummary.copy": "复制计划",
     "localConversation.planSummary.openInNewWindow": "打开",
+    "localConversation.planSummary.openInNewWindow.tooltip": "在新窗口中打开",
     "localConversation.planSummary.expand": "展开计划摘要",
     "localConversation.planSummary.collapse": "折叠计划摘要",
+    "localConversation.planSummary.expandTooltip": "展开",
+    "localConversation.planSummary.collapseTooltip": "折叠",
     "localConversation.planSummary.viewPlan": "展开计划",
     "avatarOverlay.session.readFile": "已读取 {fileName}",
     "avatarOverlay.session.readingFile": "正在读取 {fileName}",
@@ -7290,6 +7327,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "electron.onboarding.login.snake.start": "玩贪吃蛇",
     "electron.onboarding.login.welcomeV2.title": "开始使用 Codex",
     "electron.onboarding.login.chatgpt.signIn": "使用 ChatGPT 登录",
+    "electron.onboarding.login.google.signIn": "使用 Google 登录",
+    "electron.onboarding.login.microsoft.signIn": "使用 Microsoft 登录",
     "electron.onboarding.login.chatgpt.cancel.welcomeV2": "取消登录",
     "electron.onboarding.login.apikey.open.welcomeV2": "使用其他方式登录",
     "electron.onboarding.login.apikey.label": "OpenAI API 密钥",

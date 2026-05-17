@@ -686,6 +686,7 @@ export type ThreadConversationMultiAgentAction = {
   receiverThreads: ThreadConversationReceiverThread[];
   prompt: string | null;
   model: string | null;
+  reasoningEffort: string | null;
   agentsStates: Record<string, ThreadConversationCollabAgentState>;
 };
 
@@ -2153,6 +2154,7 @@ function normalizeCollabAgentToolCall(
     })),
     prompt: item.prompt,
     model: item.model,
+    reasoningEffort: item.reasoningEffort,
     agentsStates,
   };
 }

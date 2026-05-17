@@ -46,16 +46,16 @@ export function FilePreviewPage({ routeState, t }: FilePreviewPageProps) {
   ) {
     return (
       <Suspense fallback={<div className="h-full bg-token-main-surface-primary" />}>
-        <PdbPreview contents={normalizedContents} t={t} />
+        <PdbPreview contents={normalizedContents} filePath={state.filePath} t={t} />
       </Suspense>
     );
   }
 
   return (
     <div className="h-full overflow-auto">
-      <div className="border-0 shadow-none rounded-none">
-        <div className="p-panel overflow-visible">
-          <code className="block whitespace-pre-wrap break-words">{normalizedContents}</code>
+      <div className="relative w-full min-w-0 overflow-clip rounded-lg border border-token-input-background bg-token-text-code-block-background contain-inline-size border-0 shadow-none rounded-none">
+        <div className="text-size-chat overflow-auto p-2 p-panel overflow-visible" dir="ltr">
+          <code className="block whitespace-pre-wrap">{normalizedContents}</code>
         </div>
       </div>
     </div>

@@ -1,21 +1,45 @@
-import type { Dispatch, ReactNode, SetStateAction } from "react";
+import { useMemo, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import {
+  BrowserTabIcon,
+  ClockIcon,
+  FolderIcon,
+  SettingsCogIcon,
+  WorkspaceFileIcon,
+} from "../../components/AppShellIcons";
 import type { AutomationRecord } from "../../services/automations";
+import type { ModelListEntry } from "../../services/settings";
 import { AutomationLocalEnvironmentSelector } from "./AutomationLocalEnvironmentSelector";
+import {
+  AUTOMATION_REASONING_OPTIONS,
+  CompactRailSelect,
+  CompactScheduleEditor,
+  formatReasoningLabel,
+} from "./AutomationsCompactControls";
 import type {
   HeartbeatThreadOption,
+  ScheduleConfig,
   TranslateFn,
+} from "./automationsPageUtils";
+import {
+  formatWorkspaceRootsLabel,
+  getScheduleConfigForAutomation,
+  scheduleConfigToRrule,
 } from "./automationsPageUtils";
 import type { AutomationLocalEnvironmentState } from "./useAutomationLocalEnvironmentSelection";
 
-type AutomationFormFieldsProps = {
+export type AutomationFormFieldsProps = {
   draft: AutomationRecord;
+  heartbeatThreadOptions: HeartbeatThreadOption[];
   localEnvironmentState: AutomationLocalEnvironmentState;
+  locale: string;
+  modelOptions: ModelListEntry[];
   onOpenLocalEnvironmentsSettings: (params: {
     configPath: string | null;
     workspaceRoot: string;
   }) => void;
   onDraftChange: Dispatch<SetStateAction<AutomationRecord | null>>;
-  heartbeatThreadOptions: HeartbeatThreadOption[];
+  workspaceRootLabels: Record<string, string>;
+  workspaceRootOptions: string[];
   t: TranslateFn;
 };
 
@@ -36,12 +60,39 @@ function FormField({
 
 export function AutomationFormFields({
   draft,
+  heartbeatThreadOptions,
   localEnvironmentState,
+  locale,
+  modelOptions,
   onOpenLocalEnvironmentsSettings,
   onDraftChange,
-  heartbeatThreadOptions,
+  workspaceRootLabels,
+  workspaceRootOptions,
   t,
 }: AutomationFormFieldsProps) {
+  const scheduleConfig = useMemo<ScheduleConfig>(
+    () => getScheduleConfigForAutomation(draft),
+    [draft],
+  );
+  const selectedWorkspaceRootId = draft.kind === "cron" ? draft.cwds[0] ?? "" : "";
+  const selectedWorkspaceRootLabel =
+    draft.kind === "cron" && selectedWorkspaceRootId.length > 0
+      ? formatWorkspaceRootsLabel(
+          [selectedWorkspaceRootId],
+          locale,
+          workspaceRootLabels,
+          t,
+        )
+      : t("settings.automations.projectDropdown.placeholder");
+  const selectedModelLabel =
+    draft.kind === "cron" && draft.model && modelOptions.length > 0
+      ? modelOptions.find((option) => option.id === draft.model)?.id ?? draft.model
+      : t("settings.automations.model.loading");
+  const selectedReasoningLabel =
+    draft.kind === "cron" && draft.reasoningEffort && draft.reasoningEffort.trim().length > 0
+      ? formatReasoningLabel(draft.reasoningEffort, t)
+      : t("settings.automations.reasoning.loading");
+
   return (
     <div className="grid gap-5">
       <FormField label={t("settings.automations.promptLabel")}>
@@ -59,70 +110,100 @@ export function AutomationFormFields({
 
       {draft.kind === "heartbeat" ? (
         <FormField label={t("inbox.automations.targetThread.label")}>
-          <select
-            value={draft.targetThreadId}
-            onChange={(event) =>
+          <CompactRailSelect
+            ariaLabel={t("settings.automations.heartbeatThread.ariaLabel")}
+            icon={<BrowserTabIcon className="h-4 w-4 shrink-0" />}
+            menuTitle={t("settings.automations.heartbeatThread.title")}
+            triggerLabel={
+              heartbeatThreadOptions.find((thread) => thread.id === draft.targetThreadId)?.title ??
+              t("settings.automations.heartbeatThread.placeholder")
+            }
+            emptyLabel={t("settings.automations.heartbeatThread.empty")}
+            options={heartbeatThreadOptions.map((thread) => ({
+              disabled: thread.unavailable,
+              id: thread.id,
+              label: thread.title,
+              secondaryLabel: thread.isPinned
+                ? undefined
+                : t("settings.automations.heartbeatThread.unpinned"),
+            }))}
+            selectedId={draft.targetThreadId}
+            onSelect={(value) =>
               onDraftChange((current) =>
                 current && current.kind === "heartbeat"
-                  ? { ...current, targetThreadId: event.target.value }
+                  ? { ...current, targetThreadId: value }
                   : current,
               )
             }
-            className="app-input h-11 rounded-[12px] px-3 text-[14px]"
-          >
-            <option value="">
-              {t("settings.automations.heartbeatThread.placeholder")}
-            </option>
-            {heartbeatThreadOptions.map((thread) => (
-              <option key={thread.id} value={thread.id}>
-                {thread.title}
-              </option>
-            ))}
-          </select>
+          />
         </FormField>
       ) : (
         <>
           <FormField label={t("inbox.automations.folder.label")}>
-            <textarea
-              value={draft.cwds.join("\n")}
-              onChange={(event) =>
+            <CompactRailSelect
+              ariaLabel={t("settings.automations.projectDropdown.placeholder")}
+              icon={<FolderIcon className="h-4 w-4 shrink-0" />}
+              menuTitle={t("inbox.automations.folder.label")}
+              triggerLabel={selectedWorkspaceRootLabel}
+              options={workspaceRootOptions.map((root) => ({
+                id: root,
+                label: formatWorkspaceRootsLabel([root], locale, workspaceRootLabels, t),
+              }))}
+              selectedId={selectedWorkspaceRootId}
+              onSelect={(value) =>
                 onDraftChange((current) =>
                   current && current.kind === "cron"
-                    ? {
-                        ...current,
-                        cwds: event.target.value
-                          .split(/\r?\n/)
-                          .map((line) => line.trim())
-                          .filter(Boolean),
-                      }
+                    ? { ...current, cwds: value ? [value] : [] }
                     : current,
                 )
               }
-              placeholder={t("settings.automations.cwdPlaceholder")}
-              className="app-input min-h-[88px] rounded-[12px] px-3 py-3 text-[14px] leading-6"
             />
           </FormField>
 
           <FormField label={t("inbox.automations.executionEnvironment.label")}>
-            <select
-              aria-label={t("settings.automations.executionEnvironment.ariaLabel")}
-              value={draft.executionEnvironment}
-              onChange={(event) =>
+            <CompactRailSelect
+              ariaLabel={t("settings.automations.executionEnvironment.ariaLabel")}
+              icon={
+                draft.executionEnvironment === "worktree" ? (
+                  <WorkspaceFileIcon className="h-4 w-4 shrink-0" />
+                ) : (
+                  <FolderIcon className="h-4 w-4 shrink-0" />
+                )
+              }
+              menuTitle={t("settings.automations.executionEnvironment.menuTitle")}
+              triggerLabel={
+                draft.executionEnvironment === "worktree"
+                  ? t("settings.automations.executionEnvironment.worktree")
+                  : t("settings.automations.executionEnvironment.local")
+              }
+              options={[
+                {
+                  id: "local",
+                  label: t("settings.automations.executionEnvironment.local"),
+                  description: t("settings.automations.executionEnvironment.local.help"),
+                },
+                {
+                  id: "worktree",
+                  label: t("settings.automations.executionEnvironment.worktree"),
+                  description: t("settings.automations.executionEnvironment.worktree.help"),
+                },
+              ]}
+              selectedId={draft.executionEnvironment}
+              onSelect={(value) =>
                 onDraftChange((current) =>
                   current && current.kind === "cron"
-                    ? { ...current, executionEnvironment: event.target.value }
+                    ? {
+                        ...current,
+                        executionEnvironment: value,
+                        localEnvironmentConfigPath:
+                          value === "worktree"
+                            ? current.localEnvironmentConfigPath
+                            : null,
+                      }
                     : current,
                 )
               }
-              className="app-input h-11 rounded-[12px] px-3 text-[14px]"
-            >
-              <option value="local">
-                {t("settings.automations.executionEnvironment.local")}
-              </option>
-              <option value="worktree">
-                {t("settings.automations.executionEnvironment.worktree")}
-              </option>
-            </select>
+            />
           </FormField>
 
           {localEnvironmentState.visible ? (
@@ -136,30 +217,46 @@ export function AutomationFormFields({
           ) : null}
 
           <FormField label={t("inbox.automations.model.label")}>
-            <input
-              value={draft.model ?? ""}
-              onChange={(event) =>
+            <CompactRailSelect
+              ariaLabel={t("settings.automations.model.ariaLabel")}
+              icon={<SettingsCogIcon className="h-4 w-4 shrink-0" />}
+              menuTitle={t("settings.automations.model.title")}
+              triggerLabel={selectedModelLabel}
+              emptyLabel={t("settings.automations.model.loading")}
+              options={modelOptions.map((modelOption) => ({
+                id: modelOption.id,
+                label: modelOption.id,
+              }))}
+              selectedId={draft.model ?? ""}
+              onSelect={(value) =>
                 onDraftChange((current) =>
                   current && current.kind === "cron"
-                    ? { ...current, model: event.target.value || null }
+                    ? { ...current, model: value || null }
                     : current,
                 )
               }
-              className="app-input h-11 rounded-[12px] px-3 text-[14px]"
             />
           </FormField>
 
           <FormField label={t("inbox.automations.reasoning.label")}>
-            <input
-              value={draft.reasoningEffort ?? ""}
-              onChange={(event) =>
+            <CompactRailSelect
+              ariaLabel={t("settings.automations.reasoning.ariaLabel")}
+              icon={<SettingsCogIcon className="h-4 w-4 shrink-0" />}
+              menuTitle={t("settings.automations.reasoning.title")}
+              triggerLabel={selectedReasoningLabel}
+              emptyLabel={t("settings.automations.reasoning.loading")}
+              options={AUTOMATION_REASONING_OPTIONS.map((option) => ({
+                id: option.id,
+                label: formatReasoningLabel(option.id, t),
+              }))}
+              selectedId={draft.reasoningEffort ?? ""}
+              onSelect={(value) =>
                 onDraftChange((current) =>
                   current && current.kind === "cron"
-                    ? { ...current, reasoningEffort: event.target.value || null }
+                    ? { ...current, reasoningEffort: value || null }
                     : current,
                 )
               }
-              className="app-input h-11 rounded-[12px] px-3 text-[14px]"
             />
           </FormField>
         </>
@@ -172,14 +269,63 @@ export function AutomationFormFields({
             : t("inbox.automations.repeats.label")
         }
       >
-        <input
-          value={draft.rrule}
-          onChange={(event) =>
+        <CompactScheduleEditor
+          locale={locale}
+          modeOptions={
+            draft.kind === "heartbeat"
+              ? [
+                  {
+                    id: "hourly",
+                    label: t("settings.automations.scheduleMode.interval"),
+                  },
+                  {
+                    id: "daily",
+                    label: t("settings.automations.scheduleMode.daily"),
+                  },
+                  {
+                    id: "weekdays",
+                    label: t("settings.automations.scheduleMode.weekdays"),
+                  },
+                  {
+                    id: "weekly",
+                    label: t("settings.automations.scheduleMode.weekly"),
+                  },
+                  {
+                    id: "custom",
+                    label: t("settings.automations.scheduleMode.custom"),
+                  },
+                ]
+              : [
+                  {
+                    id: "daily",
+                    label: t("settings.automations.scheduleMode.daily"),
+                  },
+                  {
+                    id: "weekdays",
+                    label: t("settings.automations.scheduleMode.weekdays"),
+                  },
+                  {
+                    id: "weekly",
+                    label: t("settings.automations.scheduleMode.weekly"),
+                  },
+                  {
+                    id: "custom",
+                    label: t("settings.automations.scheduleMode.custom"),
+                  },
+                ]
+          }
+          scheduleConfig={scheduleConfig}
+          t={t}
+          onChange={(nextConfig) =>
             onDraftChange((current) =>
-              current ? { ...current, rrule: event.target.value } : current,
+              current
+                ? {
+                    ...current,
+                    rrule: scheduleConfigToRrule(nextConfig),
+                  }
+                : current,
             )
           }
-          className="app-input h-11 rounded-[12px] px-3 text-[14px]"
         />
       </FormField>
     </div>

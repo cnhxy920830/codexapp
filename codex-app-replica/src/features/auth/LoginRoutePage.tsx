@@ -8,6 +8,7 @@ import { LoginSnakeGame } from "./LoginSnakeGame";
 import { LoginRouteView } from "./LoginRouteView";
 
 type LoginMode = "signin" | "signup";
+type LoginProvider = "chatgpt" | "google" | "microsoft";
 
 export function LoginRoutePage({
   authSnapshot,
@@ -70,18 +71,20 @@ export function LoginRoutePage({
       onApiKeySubmit={() => void handleApiKeySubmit()}
       onApiKeyValueChange={setApiKeyValue}
       onCancelSignIn={() => void handleCancelSignIn()}
-      onChatGptSignIn={() => void handleChatGptSignIn("signin")}
+      onChatGptSignIn={() => void handleChatGptSignIn("signin", "chatgpt")}
+      onGoogleSignIn={() => void handleChatGptSignIn("signin", "google")}
+      onMicrosoftSignIn={() => void handleChatGptSignIn("signin", "microsoft")}
       onPlaySnake={() => setIsSnakeVisible(true)}
       onShowApiKeyEntry={() => {
         setIsApiKeyEntryVisible(true);
         setIsSnakeVisible(false);
       }}
-      onSignUp={() => void handleChatGptSignIn("signup")}
+      onSignUp={() => void handleChatGptSignIn("signup", "chatgpt")}
       snakeGame={<LoginSnakeGame onExit={() => setIsSnakeVisible(false)} />}
     />
   );
 
-  async function handleChatGptSignIn(mode: LoginMode) {
+  async function handleChatGptSignIn(mode: LoginMode, provider: LoginProvider = "chatgpt") {
     if (authSnapshot.activeLoginId) {
       await handleCancelSignIn();
       return;
@@ -92,7 +95,7 @@ export function LoginRoutePage({
     setIsApiKeyEntryVisible(false);
     try {
       const result = await loginChatGpt();
-      await open(buildChatGptAuthUrl(result.authUrl, mode));
+      await open(buildChatGptAuthUrl(result.authUrl, mode, provider));
     } catch (error) {
       browserLoginRequestedRef.current = false;
       showLoginError(error);
@@ -149,14 +152,15 @@ export function LoginRoutePage({
   }
 }
 
-function buildChatGptAuthUrl(authUrl: string, mode: LoginMode) {
-  if (mode === "signin") {
-    return authUrl;
-  }
-
+function buildChatGptAuthUrl(authUrl: string, mode: LoginMode, provider: LoginProvider) {
   try {
     const url = new URL(authUrl);
-    url.searchParams.set("screen_hint", "signup");
+    if (mode === "signup") {
+      url.searchParams.set("screen_hint", "signup");
+    }
+    if (provider !== "chatgpt") {
+      url.searchParams.set("connection", provider);
+    }
     return url.toString();
   } catch {
     return authUrl;

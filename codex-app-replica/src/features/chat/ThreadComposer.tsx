@@ -9,6 +9,7 @@ import {
   FullAccessPermissionsIcon,
   GuardianApprovalsIcon,
   PlusIcon,
+  SearchIcon,
   SettingsCogIcon,
 } from "../../components/AppShellIcons";
 import type { AppToast } from "../../components/AppToastRegion";
@@ -821,6 +822,16 @@ export function ThreadComposer({
                   </div>
                 ) : null}
               </div>
+              {onOpenWorkspaceFileSearch !== null ? (
+                <button
+                  type="button"
+                  onClick={onOpenWorkspaceFileSearch}
+                  className="app-thread-composer-footer-pill inline-flex items-center gap-1.5"
+                >
+                  <SearchIcon className="h-3.5 w-3.5 shrink-0" />
+                  <span>{t("thread.sidePanel.openFile")}</span>
+                </button>
+              ) : null}
               {placement === "main" && threadGitRoot !== null ? (
                 <ThreadComposerBranchSwitcher
                   fallbackBranchLabel={normalizedThreadBranchLabel}

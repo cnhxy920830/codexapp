@@ -258,6 +258,7 @@ function buildPendingPdfCommentAttachment(): PendingPdfCommentAttachment {
 }
 
 function renderComposer(options?: {
+  onOpenWorkspaceFileSearch?: (() => void) | null;
   pendingPdfCommentCount?: number;
   pendingPdfComments?: PendingPdfCommentAttachment[];
 }) {
@@ -278,6 +279,7 @@ function renderComposer(options?: {
       onClearPendingPdfComments={() => undefined}
       onComposerDraftChange={() => undefined}
       onComposerPermissionModeChange={() => undefined}
+      onOpenWorkspaceFileSearch={options?.onOpenWorkspaceFileSearch ?? null}
       onStopTurn={() => undefined}
       onSubmitTurn={() => undefined}
       pendingPdfComments={pendingPdfComments}
@@ -414,13 +416,17 @@ test("ThreadComposer renders pending PDF annotations in the upper attachment str
 });
 
 test("ThreadComposer keeps permissions and footer status text without replica-only status chips", () => {
-  const markup = renderComposer({ pendingPdfCommentCount: 0 });
+  const markup = renderComposer({
+    onOpenWorkspaceFileSearch: () => undefined,
+    pendingPdfCommentCount: 0,
+  });
   const permissionsIndex = markup.indexOf("Default permissions");
   const triggerTooltipIndex = markup.indexOf("Change permissions");
   const queueIndex = markup.indexOf("Queue");
   const inlineIndex = markup.indexOf("Inline");
   const legacyTriggerTitleIndex = markup.indexOf('title="Change permissions"');
   const workspaceIndex = markup.indexOf(">workspace<");
+  const openFileIndex = markup.indexOf(">Open file<");
   const footerTextClassIndex = markup.indexOf("app-text-subtle min-h-[20px]");
 
   assert.notEqual(permissionsIndex, -1);
@@ -429,7 +435,7 @@ test("ThreadComposer keeps permissions and footer status text without replica-on
   assert.equal(queueIndex, -1);
   assert.equal(inlineIndex, -1);
   assert.equal(workspaceIndex, -1);
-  assert.equal(markup.includes(">Open file<"), false);
+  assert.notEqual(openFileIndex, -1);
   assert.equal(markup.includes(">Open side chat<"), false);
   assert.notEqual(footerTextClassIndex, -1);
   assert.ok(markup.includes("group-hover:block"));

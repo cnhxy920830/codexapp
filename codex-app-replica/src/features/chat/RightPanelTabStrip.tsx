@@ -18,6 +18,7 @@ type RightPanelQuickOpenActionsProps = {
   activeStaticTabId: "browser" | "review" | null;
   onOpenBrowserTab: () => void;
   onOpenReviewTab: () => void;
+  onOpenWorkspaceFileSearch: () => void;
   t: Translate;
 };
 
@@ -49,6 +50,7 @@ export function RightPanelCollapsedRail({
   onActivateTab,
   onOpenBrowserTab,
   onOpenReviewTab,
+  onOpenWorkspaceFileSearch,
   t,
 }: RightPanelCollapsedRailProps) {
   return (
@@ -57,6 +59,7 @@ export function RightPanelCollapsedRail({
         activeStaticTabId={activeStaticTabId}
         onOpenBrowserTab={onOpenBrowserTab}
         onOpenReviewTab={onOpenReviewTab}
+        onOpenWorkspaceFileSearch={onOpenWorkspaceFileSearch}
         t={t}
         buttonClassName="app-topbar-button flex h-8 w-8 items-center justify-center rounded-[10px]"
       />
@@ -92,6 +95,7 @@ export function RightPanelTabStrip({
   onTogglePanel,
   onOpenBrowserTab,
   onOpenReviewTab,
+  onOpenWorkspaceFileSearch,
   openTabs,
   rightPanelWidthMode,
   t,
@@ -369,6 +373,7 @@ export function RightPanelTabStrip({
               activeStaticTabId={activeStaticTabId}
               onOpenBrowserTab={onOpenBrowserTab}
               onOpenReviewTab={onOpenReviewTab}
+              onOpenWorkspaceFileSearch={onOpenWorkspaceFileSearch}
               t={t}
               buttonClassName="app-topbar-button no-drag flex h-7 w-7 items-center justify-center rounded-[8px] text-[12px]"
             />
@@ -429,6 +434,7 @@ function RightPanelQuickOpenActions({
   activeStaticTabId,
   onOpenBrowserTab,
   onOpenReviewTab,
+  onOpenWorkspaceFileSearch,
   t,
   buttonClassName,
 }: RightPanelQuickOpenActionsProps & {
@@ -436,6 +442,13 @@ function RightPanelQuickOpenActions({
 }) {
   return (
     <>
+      <IconActionButton
+        className={buttonClassName}
+        label={t("thread.sidePanel.openFile")}
+        onClick={onOpenWorkspaceFileSearch}
+      >
+        <WorkspaceFileIcon className="h-4 w-4" />
+      </IconActionButton>
       <IconActionButton
         className={joinClassNames(
           buttonClassName,

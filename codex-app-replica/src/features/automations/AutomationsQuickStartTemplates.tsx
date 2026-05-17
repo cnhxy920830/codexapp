@@ -6,7 +6,7 @@ import {
   buildQuickStartAutomationDraft,
   getAutomationQuickStartSectionTemplates,
 } from "./automationQuickStartTemplates";
-import { SectionedPage, SectionedPageSection } from "./SectionedPage";
+import { SectionedPage, SectionedPageSection, type SectionedPageSection as SectionedPageSectionConfig } from "./SectionedPage";
 import type { TranslateFn } from "./automationsPageUtils";
 
 const LEARN_MORE_URL = "https://developers.openai.com/codex/app/automations";
@@ -46,6 +46,11 @@ export function AutomationsQuickStartTemplates({
   onSelectAction,
   t,
 }: Props) {
+  const sections: SectionedPageSectionConfig[] = AUTOMATION_QUICK_START_SECTIONS.map((section) => ({
+    id: section.id,
+    title: t(section.titleKey),
+  }));
+
   return (
     <div className={className ?? "mt-2"}>
       {hideLearnMore ? null : (
@@ -60,7 +65,8 @@ export function AutomationsQuickStartTemplates({
         ariaLabel={t("inbox.automations.sectionsNav")}
         className="[--sectioned-page-leading-inset:0]"
         contentInnerClassName={hideLearnMore ? "flex flex-col gap-8 pb-2" : "flex flex-col gap-9 pb-2"}
-        showNav={false}
+        sections={sections}
+        showNav={sections.length > 1}
       >
         {AUTOMATION_QUICK_START_SECTIONS.map((section) => (
           <SectionedPageSection

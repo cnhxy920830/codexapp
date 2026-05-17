@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { AppToast } from "../../components/AppToastRegion";
 import {
   BackNavigationIcon,
@@ -1047,6 +1048,9 @@ export function AutomationsRoutePage({
           }
           draft={createDraft}
           isSaving={isCreateSaving}
+          heartbeatThreadOptions={heartbeatThreadOptions}
+          locale={locale}
+          modelOptions={modelOptions}
           quickStartBaseDraft={quickStartBaseDraft}
           localEnvironmentState={localEnvironmentState}
           onCancel={() => showOverview()}
@@ -1057,46 +1061,165 @@ export function AutomationsRoutePage({
             setCreateDraft(copyAutomation(draft));
           }}
           onOpenLocalEnvironmentsSettings={onOpenLocalEnvironmentsSettings}
-          heartbeatThreadOptions={heartbeatThreadOptions}
+          workspaceRootLabels={workspaceRootLabels}
+          workspaceRootOptions={workspaceRootOptions}
           t={t}
         />
       ) : null}
 
       {deleteCandidate ? (
-        <div className="fixed inset-0 z-20 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
-          <div className="app-card w-full max-w-[420px] rounded-[18px] px-5 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
-            <div className="app-title text-[15px] font-medium">
-              {t("inbox.automations.deleteConfirm.title", {
-                name:
-                  deleteCandidate.name.trim() ||
-                  t("settings.automations.dialog.newTitle"),
-              })}
-            </div>
-            <div className="app-text-muted mt-2 text-[13px] leading-6">
-              {t("inbox.automations.deleteConfirm.description")}
-            </div>
-            <div className="mt-5 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setDeleteCandidateId(null)}
-                className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
-              >
-                {t("inbox.automations.deleteConfirm.cancel")}
-              </button>
-              <button
-                type="button"
-                disabled={isDeleting}
-                onClick={() => void removeSelected()}
-                className="app-card-error rounded-[11px] px-3 py-1.5 text-[12px] disabled:cursor-default disabled:opacity-60"
-              >
-                {isDeleting
-                  ? t("general.saving")
-                  : t("inbox.automations.deleteConfirm.confirm")}
-              </button>
-            </div>
-          </div>
-        </div>
+        <AutomationDeleteConfirmDialog
+          isDeleting={isDeleting}
+          name={deleteCandidate.name.trim()}
+          fallbackName={t("settings.automations.dialog.newTitle")}
+          titleTemplate={t("inbox.automations.deleteConfirm.title", {
+            name: "{{__NAME__}}",
+          })}
+          description={t("inbox.automations.deleteConfirm.description")}
+          cancelLabel={t("inbox.automations.deleteConfirm.cancel")}
+          confirmLabel={t("inbox.automations.deleteConfirm.confirm")}
+          savingLabel={t("general.saving")}
+          onCancel={() => setDeleteCandidateId(null)}
+          onConfirm={() => void removeSelected()}
+        />
       ) : null}
     </>
+  );
+}
+
+function AutomationDeleteConfirmDialog({
+  cancelLabel,
+  confirmLabel,
+  description,
+  fallbackName,
+  isDeleting,
+  name,
+  onCancel,
+  onConfirm,
+  savingLabel,
+  titleTemplate,
+}: {
+  cancelLabel: string;
+  confirmLabel: string;
+  description: string;
+  fallbackName: string;
+  isDeleting: boolean;
+  name: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+  savingLabel: string;
+  titleTemplate: string;
+}) {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const cancelButtonRef = useRef<HTMLButtonElement | null>(null);
+  const previousFocusedRef = useRef<HTMLElement | null>(null);
+  const displayName = name.length > 0 ? name : fallbackName;
+  const titleParts = titleTemplate.split("{{__NAME__}}");
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+    previousFocusedRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    cancelButtonRef.current?.focus();
+
+    return () => {
+      previousFocusedRef.current?.focus?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCancel();
+        return;
+      }
+      if (event.key !== "Tab") {
+        return;
+      }
+      const dialogElement = dialogRef.current;
+      if (dialogElement == null) {
+        return;
+      }
+      const focusable = Array.from(
+        dialogElement.querySelectorAll<HTMLElement>(
+          "button:not([disabled]),[tabindex]:not([tabindex='-1'])",
+        ),
+      );
+      if (focusable.length === 0) {
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+        return;
+      }
+      if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onCancel]);
+
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      <div
+        className="absolute inset-0 bg-[rgba(0,0,0,0.24)]"
+        aria-hidden="true"
+        onClick={onCancel}
+      />
+      <div
+        ref={dialogRef}
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="automation-delete-confirm-title"
+        aria-describedby="automation-delete-confirm-description"
+        className="app-card relative z-10 w-full max-w-[420px] rounded-[18px] px-5 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]"
+      >
+        <div id="automation-delete-confirm-title" className="app-title text-[15px] font-medium">
+          {titleParts[0]}
+          <strong className="font-semibold">{displayName}</strong>
+          {titleParts[1] ?? ""}
+        </div>
+        <div
+          id="automation-delete-confirm-description"
+          className="app-text-muted mt-2 text-[13px] leading-6"
+        >
+          {description}
+        </div>
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            ref={cancelButtonRef}
+            onClick={onCancel}
+            className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            type="button"
+            disabled={isDeleting}
+            onClick={onConfirm}
+            className="app-card-error rounded-[11px] px-3 py-1.5 text-[12px] disabled:cursor-default disabled:opacity-60"
+          >
+            {isDeleting ? savingLabel : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }

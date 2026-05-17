@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { CheckIcon, ChevronDownIcon } from "../../components/AppShellIcons";
 import type { MessageKey } from "../../i18n/messages";
 import {
@@ -15,6 +15,7 @@ import {
 
 type PdbPreviewProps = {
   contents: string;
+  filePath?: string;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
 };
 
@@ -49,7 +50,7 @@ const SELECTED_STYLE = { cartoon: { color: "#f97316" }, stick: { color: "#f97316
 
 let createViewerPromise: Promise<Pdb3DmolCreateViewer> | null = null;
 
-export function PdbPreview({ contents, t }: PdbPreviewProps) {
+export function PdbPreview({ contents, filePath, t }: PdbPreviewProps) {
   const data = useMemo(() => parsePdbPreviewData(contents), [contents]);
   const viewerContainerRef = useRef<HTMLDivElement | null>(null);
   const viewerRef = useRef<PdbViewer | null>(null);
@@ -177,11 +178,13 @@ export function PdbPreview({ contents, t }: PdbPreviewProps) {
 
   if (data.models.length === 0 || activeModel == null) {
     return (
-      <div className="flex h-full min-h-0 items-center justify-center bg-token-main-surface-primary">
-        <div className="text-[13px] leading-6 text-token-text-secondary">
-          {t("codex.filePreview.pdb.empty")}
+      <PdbPreviewShell filePath={filePath}>
+        <div className="flex h-full min-h-0 items-center justify-center">
+          <div className="text-[13px] leading-6 text-token-text-secondary">
+            {t("codex.filePreview.pdb.empty")}
+          </div>
         </div>
-      </div>
+      </PdbPreviewShell>
     );
   }
 
@@ -190,7 +193,7 @@ export function PdbPreview({ contents, t }: PdbPreviewProps) {
   const meanScoreLabel = t("codex.filePreview.pdb.scoreSummary", { mean: formatScore(activeModel.stats.meanScore) });
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-token-main-surface-primary">
+    <PdbPreviewShell filePath={filePath}>
       <div className="flex flex-wrap items-center gap-2 border-b border-token-border px-3 py-2">
         {data.models.length > 1 ? (
           <ChoiceMenu
@@ -318,8 +321,29 @@ export function PdbPreview({ contents, t }: PdbPreviewProps) {
         <LegendItem className="bg-[#ff7d45]">{t("codex.filePreview.pdb.legendVeryLow")}</LegendItem>
         <span className="ml-auto">{t("codex.filePreview.pdb.interactionHint")}</span>
       </div>
+    </PdbPreviewShell>
+  );
+}
+
+function PdbPreviewShell({ children, filePath }: { children: ReactNode; filePath?: string }) {
+  const fileName = resolvePdbFileName(filePath);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-token-main-surface-primary">
+      {fileName == null ? null : (
+        <div className="border-b border-token-border px-3 py-2 text-sm font-medium text-token-text-primary">{fileName}</div>
+      )}
+      {children}
     </div>
   );
+}
+
+function resolvePdbFileName(filePath?: string): string | null {
+  if (filePath == null || filePath.length === 0) {
+    return null;
+  }
+
+  return filePath.split(/[/\\]+/).at(-1) ?? filePath;
 }
 
 function ChainSequenceSection({

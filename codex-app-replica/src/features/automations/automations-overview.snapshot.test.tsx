@@ -175,6 +175,7 @@ function renderSnapshot(element: ReactElement) {
 function normalizeMarkup(markup: string) {
   return markup
     .replace(/\sd="[^"]*"/g, ' d="[path]"')
+    .replace(/src="data:image\/svg\+xml,[^"]*"/g, 'src="[asset]"')
     .replace(/>\s+</g, "><")
     .replace(/\s{2,}/g, " ")
     .trim();
