@@ -6834,6 +6834,7 @@ function App() {
   if (currentRoute === "welcome") {
     return (
       <WelcomePage
+        isWelcomeTarget={loginRouteOverride === "welcome"}
         onCompleteToHome={() => {
           if (typeof window !== "undefined") {
             window.history.replaceState(
@@ -6845,17 +6846,12 @@ function App() {
           openNewConversation({ focusComposerNonce: Date.now() });
         }}
         onContinueToWorkspace={() => {
-          setLoginRouteOverride("workspace");
-          setPostLoginWelcomePending(false);
-          void Promise.all([
-            setGlobalState("electron:onboarding-override", "workspace"),
-            setGlobalState("electron:onboarding-welcome-pending", false),
-          ]).catch(() => undefined);
           if (typeof window !== "undefined") {
             window.history.replaceState(window.history.state, "", SELECT_WORKSPACE_ROUTE_PATH);
           }
           setCurrentRoute("select-workspace");
         }}
+        workspaceOnboardingExperimentAssignment={workspaceOnboardingExperimentAssignment}
       />
     );
   }

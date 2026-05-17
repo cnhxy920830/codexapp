@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useI18n } from "../../../i18n/i18n";
 import { importExternalAgentItems } from "../../../services/externalAgentImport";
-import { setGlobalState } from "../../../services/settings";
+import {
+  readComposerPermissionModeVisibility,
+  setGlobalState,
+  updateComposerPermissionModeVisibility,
+} from "../../../services/settings";
 import {
   buildExternalAgentImportSummary,
   buildSelectedExternalAgentImportItems,
@@ -341,6 +345,8 @@ export function WelcomeFlow({ mode, onCompleteToHome }: WelcomeFlowProps) {
     try {
       const workMode = nextSelection.workMode ?? deriveWorkMode(nextSelection);
       const completedAt = Math.floor(Date.now() / 1_000);
+      const personalizedSuggestionsEnabled = nextSelection.personalizedSuggestionsEnabled ?? true;
+      const showTechnicalControls = workMode !== "non_coding";
       const updates = [
         setGlobalState("conversationDetailMode", workMode === "non_coding" ? "STEPS_PROSE" : "STEPS_COMMANDS"),
         setGlobalState("electron:onboarding-override", "auto"),
@@ -351,6 +357,17 @@ export function WelcomeFlow({ mode, onCompleteToHome }: WelcomeFlowProps) {
         setGlobalState("last_completed_onboarding", completedAt),
       ];
 
+      updateComposerPermissionModeVisibility({
+        mode: "guardian-approvals",
+        settings: readComposerPermissionModeVisibility(),
+        visible: showTechnicalControls,
+      });
+      updateComposerPermissionModeVisibility({
+        mode: "full-access",
+        settings: readComposerPermissionModeVisibility(),
+        visible: showTechnicalControls,
+      });
+
       if (workMode === "non_coding") {
         updates.push(
           setGlobalState("sansFontSize", NON_CODING_SANS_FONT_SIZE),
@@ -358,10 +375,14 @@ export function WelcomeFlow({ mode, onCompleteToHome }: WelcomeFlowProps) {
         );
       }
 
+      if (personalizedSuggestionsEnabled) {
+        updates.push(setGlobalState("ambient-suggestions-enabled", true));
+      }
+
       if (mode === "role") {
         updates.push(
           setGlobalState("electron:onboarding-welcome-v2-role-state", {
-            personalizedSuggestionsEnabled: nextSelection.personalizedSuggestionsEnabled,
+            personalizedSuggestionsEnabled,
             roles: nextSelection.roles,
             workMode,
           }),
@@ -370,7 +391,7 @@ export function WelcomeFlow({ mode, onCompleteToHome }: WelcomeFlowProps) {
         updates.push(
           setGlobalState("electron:onboarding-welcome-v2-state", {
             intents: nextSelection.intents,
-            personalizedSuggestionsEnabled: nextSelection.personalizedSuggestionsEnabled,
+            personalizedSuggestionsEnabled,
             workMode,
           }),
         );

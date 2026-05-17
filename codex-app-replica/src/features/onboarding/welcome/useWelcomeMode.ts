@@ -2,7 +2,17 @@ import { useEffect, useState } from "react";
 import { getGlobalState } from "../../../services/settings";
 import type { WelcomeMode } from "./types";
 
-export function useWelcomeMode() {
+type UseWelcomeModeParams = {
+  isWelcomeTarget: boolean;
+  shouldUseWelcomeV2Onboarding: boolean;
+  welcomeV2DefaultFlowEnabled: boolean;
+};
+
+export function useWelcomeMode({
+  isWelcomeTarget,
+  shouldUseWelcomeV2Onboarding,
+  welcomeV2DefaultFlowEnabled,
+}: UseWelcomeModeParams) {
   const [mode, setMode] = useState<WelcomeMode | null>(null);
 
   useEffect(() => {
@@ -10,8 +20,7 @@ export function useWelcomeMode() {
 
     const loadMode = async () => {
       try {
-        const [welcomeOverrideResponse, debugOverrideResponse] = await Promise.all([
-          getGlobalState("electron:onboarding-override"),
+        const [debugOverrideResponse] = await Promise.all([
           getGlobalState("electron:onboarding-welcome-v2-role-selection-debug-override"),
         ]);
 
@@ -19,20 +28,23 @@ export function useWelcomeMode() {
           return;
         }
 
-        const welcomeOverride =
-          typeof welcomeOverrideResponse.value === "string" ? welcomeOverrideResponse.value : "auto";
         const debugOverride =
           typeof debugOverrideResponse.value === "string" ? debugOverrideResponse.value : "auto";
 
-        if (welcomeOverride === "welcome") {
+        if (isWelcomeTarget && !shouldUseWelcomeV2Onboarding) {
           setMode("simple");
           return;
         }
 
-        setMode(debugOverride === "on" ? "role" : "intent");
+        if (debugOverride === "on") {
+          setMode("role");
+          return;
+        }
+
+        setMode(welcomeV2DefaultFlowEnabled ? "intent" : "role");
       } catch {
         if (!cancelled) {
-          setMode("intent");
+          setMode(welcomeV2DefaultFlowEnabled ? "intent" : "role");
         }
       }
     };
@@ -42,7 +54,7 @@ export function useWelcomeMode() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isWelcomeTarget, shouldUseWelcomeV2Onboarding, welcomeV2DefaultFlowEnabled]);
 
   return mode;
 }

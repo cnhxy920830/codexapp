@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { CheckIcon, InfoIcon } from "../../../components/AppShellIcons";
 import type { MessageKey } from "../../../i18n/messages";
-import { AnimatedLogo } from "./AnimatedLogo";
 import { WelcomeHeaderIcon, WelcomeHeaderSourceIcon } from "./icons";
 
 const codexAppGaLogo = new URL("../../../assets/codex-app-ga-logo--UgmJjKM.png", import.meta.url).href;
@@ -10,9 +9,14 @@ export type Translate = (key: MessageKey, values?: Record<string, number | strin
 
 export function WelcomeShell({ children }: { children: ReactNode }) {
   return (
-    <main className="flex h-full w-full items-center justify-center overflow-auto bg-[var(--app-shell-main-surface)] text-[var(--app-shell-text)]">
-      <div className="flex w-full max-w-3xl flex-col items-center justify-start px-4 py-8">{children}</div>
-    </main>
+    <div className="fixed inset-0 overflow-hidden select-none">
+      <div className="absolute inset-0 bg-[var(--app-shell-main-surface)] electron:bg-transparent" />
+      <div className="fixed inset-0 flex items-center justify-center px-6 pb-8 pt-0">
+        <div className="flex h-full w-full items-center justify-center overflow-auto bg-[var(--app-shell-main-surface)] text-[var(--app-shell-text)]">
+          {children}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -37,7 +41,7 @@ export function WelcomeHeader({
 }) {
   return (
     <div className="flex flex-col items-center text-center">
-      <AnimatedLogo className="size-12 shrink-0" />
+      <img alt="" aria-hidden="true" className="size-12 shrink-0" draggable={false} src={codexAppGaLogo} />
       <h1
         className="mt-4 text-[28px] leading-[34px] font-normal whitespace-nowrap text-[var(--app-shell-text)] max-[540px]:whitespace-normal"
         id={titleId}

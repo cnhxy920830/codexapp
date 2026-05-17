@@ -2306,8 +2306,16 @@ export type MessageKey =
   | "auth.openBrowser"
   | "auth.copy"
   | "electron.onboarding.login.snake.start"
+  | "electron.onboarding.login.title"
+  | "electron.onboarding.login.subtitle"
+  | "electron.onboarding.login.error"
+  | "electron.onboarding.login.chatgpt.continue"
+  | "electron.onboarding.login.chatgpt.cancel"
+  | "electron.onboarding.login.apikey.open"
   | "electron.onboarding.login.welcomeV2.title"
+  | "electron.onboarding.login.welcomeV2.title.streamlined"
   | "electron.onboarding.login.chatgpt.signIn"
+  | "electron.onboarding.login.chatgpt.signIn.streamlined"
   | "electron.onboarding.login.google.signIn"
   | "electron.onboarding.login.microsoft.signIn"
   | "electron.onboarding.login.chatgpt.cancel.welcomeV2"
@@ -4870,8 +4878,16 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "auth.openBrowser": "Open browser",
     "auth.copy": "Copy",
     "electron.onboarding.login.snake.start": "Play Snake",
+    "electron.onboarding.login.title": "Welcome to Codex",
+    "electron.onboarding.login.subtitle": "The best way to build with agents",
+    "electron.onboarding.login.error": "Sign-in failed: {rawMessage}",
+    "electron.onboarding.login.chatgpt.continue": "Continue with ChatGPT",
+    "electron.onboarding.login.chatgpt.cancel": "Cancel sign-in",
+    "electron.onboarding.login.apikey.open": "Enter API key",
     "electron.onboarding.login.welcomeV2.title": "Get started with Codex",
+    "electron.onboarding.login.welcomeV2.title.streamlined": "Welcome to Codex",
     "electron.onboarding.login.chatgpt.signIn": "Sign in with ChatGPT",
+    "electron.onboarding.login.chatgpt.signIn.streamlined": "Continue with ChatGPT",
     "electron.onboarding.login.google.signIn": "Continue with Google",
     "electron.onboarding.login.microsoft.signIn": "Continue with Microsoft",
     "electron.onboarding.login.chatgpt.cancel.welcomeV2": "Cancel sign-in",
@@ -7325,8 +7341,16 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "auth.openBrowser": "打开浏览器",
     "auth.copy": "复制",
     "electron.onboarding.login.snake.start": "玩贪吃蛇",
+    "electron.onboarding.login.title": "欢迎使用 Codex",
+    "electron.onboarding.login.subtitle": "构建智能体的最佳方式",
+    "electron.onboarding.login.error": "登录失败：{rawMessage}",
+    "electron.onboarding.login.chatgpt.continue": "使用 ChatGPT 继续",
+    "electron.onboarding.login.chatgpt.cancel": "取消登录",
+    "electron.onboarding.login.apikey.open": "输入 API 密钥",
     "electron.onboarding.login.welcomeV2.title": "开始使用 Codex",
+    "electron.onboarding.login.welcomeV2.title.streamlined": "欢迎使用 Codex",
     "electron.onboarding.login.chatgpt.signIn": "使用 ChatGPT 登录",
+    "electron.onboarding.login.chatgpt.signIn.streamlined": "使用 ChatGPT 继续",
     "electron.onboarding.login.google.signIn": "使用 Google 登录",
     "electron.onboarding.login.microsoft.signIn": "使用 Microsoft 登录",
     "electron.onboarding.login.chatgpt.cancel.welcomeV2": "取消登录",

@@ -7,7 +7,12 @@ import { test } from "node:test";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { I18N_CONTEXT } from "../../i18n/i18n";
-import { MESSAGES, type LocaleCode, type MessageKey, type MessageValues } from "../../i18n/messages";
+import {
+  MESSAGES,
+  type LocaleCode,
+  type MessageKey,
+  type MessageValues,
+} from "../../i18n/messages";
 import { LoginRouteView } from "./LoginRouteView";
 
 const SNAPSHOT_PATH = path.join(
@@ -26,7 +31,9 @@ test("login route snapshots", async (t) => {
     return;
   }
 
-  const expectedSnapshots = JSON.parse(await readFile(SNAPSHOT_PATH, "utf8")) as SnapshotMap;
+  const expectedSnapshots = JSON.parse(
+    await readFile(SNAPSHOT_PATH, "utf8"),
+  ) as SnapshotMap;
 
   for (const [name, actual] of Object.entries(actualSnapshots)) {
     await t.test(name, () => {
@@ -36,16 +43,19 @@ test("login route snapshots", async (t) => {
 });
 
 type SnapshotMap = {
-  apiKeyEntry: string;
-  browserPending: string;
-  defaultState: string;
-  multiProviderState: string;
+  apiKeyEntryV1: string;
+  apiKeyEntryV2: string;
+  browserPendingV2: string;
+  defaultStateV1: string;
+  defaultStateV2: string;
+  providerStateV2: string;
   snakeState: string;
+  streamlinedStateV2: string;
 };
 
 function buildSnapshots(): SnapshotMap {
   return {
-    apiKeyEntry: renderSnapshot(
+    apiKeyEntryV1: renderSnapshot(
       <StaticI18nProvider>
         <div className="h-[720px]">
           <LoginRouteView
@@ -59,14 +69,45 @@ function buildSnapshots(): SnapshotMap {
             onApiKeyValueChange={noopString}
             onCancelSignIn={noop}
             onChatGptSignIn={noop}
+            onGoogleSignIn={noop}
+            onMicrosoftSignIn={noop}
             onPlaySnake={noop}
             onShowApiKeyEntry={noop}
             onSignUp={noop}
+            shellVariant="welcomeV1"
+            showChatGptProviderSignIn={false}
+            useStreamlinedCopy={false}
           />
         </div>
       </StaticI18nProvider>,
     ),
-    browserPending: renderSnapshot(
+    apiKeyEntryV2: renderSnapshot(
+      <StaticI18nProvider>
+        <div className="h-[720px]">
+          <LoginRouteView
+            apiKeyValue="sk-test"
+            isApiKeyEntryVisible
+            isApiKeySignInPending={false}
+            isBrowserSignInPending={false}
+            isSnakeVisible={false}
+            onApiKeyCancel={noop}
+            onApiKeySubmit={noop}
+            onApiKeyValueChange={noopString}
+            onCancelSignIn={noop}
+            onChatGptSignIn={noop}
+            onGoogleSignIn={noop}
+            onMicrosoftSignIn={noop}
+            onPlaySnake={noop}
+            onShowApiKeyEntry={noop}
+            onSignUp={noop}
+            shellVariant="welcomeV2"
+            showChatGptProviderSignIn={true}
+            useStreamlinedCopy={false}
+          />
+        </div>
+      </StaticI18nProvider>,
+    ),
+    browserPendingV2: renderSnapshot(
       <StaticI18nProvider>
         <div className="h-[720px]">
           <LoginRouteView
@@ -80,35 +121,19 @@ function buildSnapshots(): SnapshotMap {
             onApiKeyValueChange={noopString}
             onCancelSignIn={noop}
             onChatGptSignIn={noop}
+            onGoogleSignIn={noop}
+            onMicrosoftSignIn={noop}
             onPlaySnake={noop}
             onShowApiKeyEntry={noop}
             onSignUp={noop}
+            shellVariant="welcomeV2"
+            showChatGptProviderSignIn={true}
+            useStreamlinedCopy={false}
           />
         </div>
       </StaticI18nProvider>,
     ),
-    defaultState: renderSnapshot(
-      <StaticI18nProvider>
-        <div className="h-[720px]">
-          <LoginRouteView
-            apiKeyValue=""
-            isApiKeyEntryVisible={false}
-            isApiKeySignInPending={false}
-            isBrowserSignInPending={false}
-            isSnakeVisible={false}
-            onApiKeyCancel={noop}
-            onApiKeySubmit={noop}
-            onApiKeyValueChange={noopString}
-            onCancelSignIn={noop}
-            onChatGptSignIn={noop}
-            onPlaySnake={noop}
-            onShowApiKeyEntry={noop}
-            onSignUp={noop}
-          />
-        </div>
-      </StaticI18nProvider>,
-    ),
-    multiProviderState: renderSnapshot(
+    defaultStateV1: renderSnapshot(
       <StaticI18nProvider>
         <div className="h-[720px]">
           <LoginRouteView
@@ -127,6 +152,61 @@ function buildSnapshots(): SnapshotMap {
             onPlaySnake={noop}
             onShowApiKeyEntry={noop}
             onSignUp={noop}
+            shellVariant="welcomeV1"
+            showChatGptProviderSignIn={false}
+            useStreamlinedCopy={false}
+          />
+        </div>
+      </StaticI18nProvider>,
+    ),
+    defaultStateV2: renderSnapshot(
+      <StaticI18nProvider>
+        <div className="h-[720px]">
+          <LoginRouteView
+            apiKeyValue=""
+            isApiKeyEntryVisible={false}
+            isApiKeySignInPending={false}
+            isBrowserSignInPending={false}
+            isSnakeVisible={false}
+            onApiKeyCancel={noop}
+            onApiKeySubmit={noop}
+            onApiKeyValueChange={noopString}
+            onCancelSignIn={noop}
+            onChatGptSignIn={noop}
+            onGoogleSignIn={noop}
+            onMicrosoftSignIn={noop}
+            onPlaySnake={noop}
+            onShowApiKeyEntry={noop}
+            onSignUp={noop}
+            shellVariant="welcomeV2"
+            showChatGptProviderSignIn={false}
+            useStreamlinedCopy={false}
+          />
+        </div>
+      </StaticI18nProvider>,
+    ),
+    providerStateV2: renderSnapshot(
+      <StaticI18nProvider>
+        <div className="h-[720px]">
+          <LoginRouteView
+            apiKeyValue=""
+            isApiKeyEntryVisible={false}
+            isApiKeySignInPending={false}
+            isBrowserSignInPending={false}
+            isSnakeVisible={false}
+            onApiKeyCancel={noop}
+            onApiKeySubmit={noop}
+            onApiKeyValueChange={noopString}
+            onCancelSignIn={noop}
+            onChatGptSignIn={noop}
+            onGoogleSignIn={noop}
+            onMicrosoftSignIn={noop}
+            onPlaySnake={noop}
+            onShowApiKeyEntry={noop}
+            onSignUp={noop}
+            shellVariant="welcomeV2"
+            showChatGptProviderSignIn={true}
+            useStreamlinedCopy={false}
           />
         </div>
       </StaticI18nProvider>,
@@ -145,15 +225,45 @@ function buildSnapshots(): SnapshotMap {
             onApiKeyValueChange={noopString}
             onCancelSignIn={noop}
             onChatGptSignIn={noop}
+            onGoogleSignIn={noop}
+            onMicrosoftSignIn={noop}
             onPlaySnake={noop}
             onShowApiKeyEntry={noop}
             onSignUp={noop}
+            shellVariant="welcomeV2"
+            showChatGptProviderSignIn={false}
+            useStreamlinedCopy={false}
             snakeGame={<div data-snapshot="snake-game" />}
           />
         </div>
       </StaticI18nProvider>,
     ),
-
+    streamlinedStateV2: renderSnapshot(
+      <StaticI18nProvider>
+        <div className="h-[720px]">
+          <LoginRouteView
+            apiKeyValue=""
+            isApiKeyEntryVisible={false}
+            isApiKeySignInPending={false}
+            isBrowserSignInPending={false}
+            isSnakeVisible={false}
+            onApiKeyCancel={noop}
+            onApiKeySubmit={noop}
+            onApiKeyValueChange={noopString}
+            onCancelSignIn={noop}
+            onChatGptSignIn={noop}
+            onGoogleSignIn={noop}
+            onMicrosoftSignIn={noop}
+            onPlaySnake={noop}
+            onShowApiKeyEntry={noop}
+            onSignUp={noop}
+            shellVariant="welcomeV2"
+            showChatGptProviderSignIn={true}
+            useStreamlinedCopy
+          />
+        </div>
+      </StaticI18nProvider>,
+    ),
   };
 }
 
@@ -163,6 +273,10 @@ function renderSnapshot(element: ReactElement) {
 
 function normalizeMarkup(markup: string) {
   return markup
+    .replace(
+      /<link rel="preload" as="image" href="[^"]*"\/>/g,
+      "",
+    )
     .replace(/src="[^"]*codex-app-ga-logo--UgmJjKM\.png"/g, 'src="[asset]"')
     .replace(/>\s+</g, "><")
     .replace(/\s{2,}/g, " ")

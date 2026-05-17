@@ -35,6 +35,11 @@ export type ApiKeyLoginParams = {
   apiKey: string;
 };
 
+export type ChatGptLoginParams = {
+  hostId?: string | null;
+  useStreamlinedLogin?: boolean;
+};
+
 export type ChatGptLoginStart = {
   loginId: string;
   authUrl: string;
@@ -135,8 +140,13 @@ export async function loginApiKey(params: ApiKeyLoginParams) {
   });
 }
 
-export async function loginChatGpt() {
-  return invoke<ChatGptLoginStart>("login-with-chatgpt");
+export async function loginChatGpt(params: ChatGptLoginParams = {}) {
+  return invoke<ChatGptLoginStart>("login-with-chatgpt", {
+    params: {
+      hostId: normalizeHostId(params.hostId),
+      useStreamlinedLogin: params.useStreamlinedLogin === true,
+    },
+  });
 }
 
 export async function loginChatGptDeviceCode() {

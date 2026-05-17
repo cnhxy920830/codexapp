@@ -1,5 +1,4 @@
 import { ToggleSwitch } from "../../../components/ToggleSwitch";
-import { AnimatedLogo } from "./AnimatedLogo";
 import { INTENT_OPTIONS, ROLE_OPTIONS, WORK_MODE_OPTIONS } from "./constants";
 import {
   InlineTooltip,
@@ -14,6 +13,8 @@ import {
 } from "./shared";
 import type { WelcomeIntentId, WelcomeRoleId, WelcomeWorkMode } from "./types";
 
+const codexAppGaLogo = new URL("../../../assets/codex-app-ga-logo--UgmJjKM.png", import.meta.url).href;
+
 export function SimpleWelcomeCard({
   onContinue,
   t,
@@ -22,22 +23,22 @@ export function SimpleWelcomeCard({
   t: Translate;
 }) {
   return (
-    <div className="app-card w-full max-w-[360px] rounded-[20px] px-6 py-8 text-center shadow-[0_22px_60px_rgba(0,0,0,0.14)]">
-      <div className="mx-auto flex h-14 w-14 items-center justify-center text-[var(--app-shell-accent)]">
-        <AnimatedLogo className="size-14" />
-      </div>
-      <h1 className="mt-5 text-[28px] leading-[34px] font-normal whitespace-nowrap max-[540px]:whitespace-normal">
+    <div className="flex w-full max-w-3xl flex-col items-center justify-start">
+      <div className="app-card flex w-full max-w-[360px] flex-col items-center gap-3 rounded-[20px] px-6 py-8 text-center shadow-[0_22px_60px_rgba(0,0,0,0.14)]">
+        <img alt="" aria-hidden="true" className="size-[52px] shrink-0" draggable={false} src={codexAppGaLogo} />
+        <h1 className="text-[28px] leading-[34px] font-normal whitespace-nowrap text-[var(--app-shell-text)] max-[540px]:whitespace-normal">
         {t("onboarding.welcome.new.title.anon")}
-      </h1>
-      <p className="mt-3 text-[16px] leading-6 text-[var(--app-shell-subtle)]">
-        {t("onboarding.welcome.debugFallback.description")}
-      </p>
-      <PrimaryButton
-        className="mt-8 w-[168px] justify-center px-[16px] py-[8px] text-base leading-6 font-medium"
-        onClick={onContinue}
-      >
-        {t("onboarding.welcome.continue")}
-      </PrimaryButton>
+        </h1>
+        <p className="max-w-[290px] text-[16px] leading-6 text-[var(--app-shell-subtle)]">
+          {t("onboarding.welcome.debugFallback.description")}
+        </p>
+        <PrimaryButton
+          className="w-[168px] justify-center px-[16px] py-[8px] text-base leading-6 font-medium"
+          onClick={onContinue}
+        >
+          {t("onboarding.welcome.continue")}
+        </PrimaryButton>
+      </div>
     </div>
   );
 }

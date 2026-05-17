@@ -108,6 +108,13 @@ pub struct HostScopedParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct ChatGptLoginParams {
+    pub host_id: Option<String>,
+    pub use_streamlined_login: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct ForkConversationFromLatestParams {
     pub conversation_id: String,
     pub cwd: Option<String>,
@@ -1991,38 +1998,49 @@ pub async fn login_chatgpt(
     app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
 ) -> Result<ChatGptLoginStart, String> {
-    login_chatgpt_inner(&app, state.inner()).await
+    login_chatgpt_inner(&app, state.inner(), false).await
 }
 
 #[tauri::command(rename = "login-with-chatgpt")]
 pub async fn login_chatgpt_command(
     app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
-    params: HostScopedParams,
+    params: ChatGptLoginParams,
 ) -> Result<ChatGptLoginStart, String> {
-    login_chatgpt_inner_for_host(&app, state.inner(), params.host_id.as_deref()).await
+    login_chatgpt_inner_for_host(
+        &app,
+        state.inner(),
+        params.host_id.as_deref(),
+        params.use_streamlined_login,
+    )
+    .await
 }
 
 #[tauri::command(rename = "login-with-chatgpt-for-host")]
 pub async fn login_chatgpt_for_host_command(
     app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
-    params: HostScopedParams,
+    params: ChatGptLoginParams,
 ) -> Result<ChatGptLoginStart, String> {
-    login_chatgpt_inner_for_host(&app, state.inner(), params.host_id.as_deref()).await
+    login_chatgpt_inner_for_host(
+        &app,
+        state.inner(),
+        params.host_id.as_deref(),
+        params.use_streamlined_login,
+    )
+    .await
 }
 
 async fn login_chatgpt_inner(
     app: &AppHandle,
     state: &Arc<AuthBridgeState>,
+    use_streamlined_login: bool,
 ) -> Result<ChatGptLoginStart, String> {
     clear_login_error(app, state);
     let value = send_request(
         state,
         AppServerRequestKind::LoginChatGpt,
-        serde_json::json!({
-            "type": "chatgpt",
-        }),
+        build_chatgpt_login_payload(use_streamlined_login),
     )
     .await
     .map_err(|error| {
@@ -2057,18 +2075,17 @@ async fn login_chatgpt_inner_for_host(
     app: &AppHandle,
     state: &Arc<AuthBridgeState>,
     host_id: Option<&str>,
+    use_streamlined_login: bool,
 ) -> Result<ChatGptLoginStart, String> {
     if is_local_host_id(host_id) {
-        return login_chatgpt_inner(app, state).await;
+        return login_chatgpt_inner(app, state, use_streamlined_login).await;
     }
     let host_id = remote_host_id(host_id).expect("remote host id should be present");
     let value = remote_app_server_runtime::send_request(
         app,
         host_id,
         request_method(&AppServerRequestKind::LoginChatGpt),
-        serde_json::json!({
-            "type": "chatgpt",
-        }),
+        build_chatgpt_login_payload(use_streamlined_login),
     )
     .await?;
     let result = serde_json::from_value::<LoginStartResult>(value)
@@ -2079,6 +2096,16 @@ async fn login_chatgpt_inner_for_host(
         }
         _ => Err("unexpected login response type".to_string()),
     }
+}
+
+fn build_chatgpt_login_payload(use_streamlined_login: bool) -> serde_json::Value {
+    let mut payload = serde_json::json!({
+        "type": "chatgpt",
+    });
+    if use_streamlined_login {
+        payload["codexStreamlinedLogin"] = serde_json::Value::Bool(true);
+    }
+    payload
 }
 
 #[tauri::command]
