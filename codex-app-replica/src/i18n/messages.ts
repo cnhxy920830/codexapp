@@ -848,6 +848,17 @@ export type MessageKey =
   | "codex.review.switchToUnified"
   | "codex.review.refreshGitQueries"
   | "codex.unifiedDiff.reviewChanges"
+  | "worktreeInitV2.cancel"
+  | "worktreeInitV2.editEnvironment"
+  | "worktreeInitV2.output.empty"
+  | "worktreeInitV2.status.error"
+  | "worktreeInitV2.status.running"
+  | "worktreeInitV2.status.runningFork"
+  | "worktreeInitV2.status.startConversationError"
+  | "worktreeInitV2.status.startingConversation"
+  | "worktreeInitV2.status.success"
+  | "worktreeInitV2.title"
+  | "worktreeInitV2.workLocallyInstead"
   | "thread.sidePanel.browserTab"
   | "thread.sidePanel.diffTab"
   | "thread.sidePanel.empty.title"
@@ -3288,6 +3299,18 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.review.loadFullFiles.disable": "Don't load full files",
     "codex.review.diff.fullContentLoadFailed": "Full file content failed to load",
     "codex.common.retry": "Retry",
+    "worktreeInitV2.cancel": "Cancel",
+    "worktreeInitV2.editEnvironment": "Edit environment",
+    "worktreeInitV2.output.empty": "Waiting for output…",
+    "worktreeInitV2.status.error": "Worktree setup failed.",
+    "worktreeInitV2.status.running": "Creating a worktree and running setup.",
+    "worktreeInitV2.status.runningFork": "Creating a worktree to fork this conversation.",
+    "worktreeInitV2.status.startConversationError":
+      "Worktree ready, but failed to start the conversation.",
+    "worktreeInitV2.status.startingConversation": "Starting conversation.",
+    "worktreeInitV2.status.success": "Worktree ready.",
+    "worktreeInitV2.title": "Creating worktree",
+    "worktreeInitV2.workLocallyInstead": "Work locally instead",
     "dictation.error.connection": "Check your connection and try again",
     "dictation.error.microphoneMissing": "Connect a microphone to use dictation",
     "dictation.error.microphonePermissionDenied": "Allow microphone access to use dictation",
@@ -5813,6 +5836,17 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.review.loadFullFiles.disable": "不加载完整文件",
     "codex.review.diff.fullContentLoadFailed": "完整文件内容加载失败",
     "codex.common.retry": "重试",
+    "worktreeInitV2.cancel": "取消",
+    "worktreeInitV2.editEnvironment": "编辑环境",
+    "worktreeInitV2.output.empty": "正在等待输出…",
+    "worktreeInitV2.status.error": "工作树设置失败。",
+    "worktreeInitV2.status.running": "正在创建工作树并运行设置流程。",
+    "worktreeInitV2.status.runningFork": "正在创建工作树以派生此对话。",
+    "worktreeInitV2.status.startConversationError": "工作树就绪，但未能启动对话。",
+    "worktreeInitV2.status.startingConversation": "正在启动对话。",
+    "worktreeInitV2.status.success": "工作树已就绪。",
+    "worktreeInitV2.title": "正在创建工作树",
+    "worktreeInitV2.workLocallyInstead": "改为本地处理",
     "dictation.error.connection": "检查连接后重试",
     "dictation.error.microphoneMissing": "连接麦克风以使用听写功能",
     "dictation.error.microphonePermissionDenied": "要使用听写功能，请允许访问麦克风",

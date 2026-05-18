@@ -27,7 +27,7 @@ export function FilePreviewPage({ routeState, t }: FilePreviewPageProps) {
     return <div className="h-full" />;
   }
 
-  if (state.filePath.toLowerCase().endsWith(".pdf")) {
+  if (resolveFilePreviewMimeType(state.filePath) === "application/pdf") {
     return (
       <div className="flex h-full items-center justify-center text-token-text-tertiary">
         {t("wham.diff.binaryFile")}
@@ -53,10 +53,49 @@ export function FilePreviewPage({ routeState, t }: FilePreviewPageProps) {
 
   return (
     <div className="h-full overflow-auto">
-      <div className="relative w-full min-w-0 overflow-clip rounded-lg border border-token-input-background bg-token-text-code-block-background contain-inline-size border-0 shadow-none rounded-none">
-        <div className="text-size-chat overflow-auto p-2 p-panel overflow-visible" dir="ltr">
-          <code className="block whitespace-pre-wrap">{normalizedContents}</code>
-        </div>
+      <FilePreviewCodeSnippet
+        content={normalizedContents}
+        shouldWrapCode
+        showActionBar={false}
+        wrapperClassName="border-0 shadow-none rounded-none"
+        codeContainerClassName="p-panel overflow-visible"
+        codeClassName="block"
+      />
+    </div>
+  );
+}
+
+type FilePreviewCodeSnippetProps = {
+  codeClassName?: string;
+  codeContainerClassName?: string;
+  content: string;
+  shouldWrapCode?: boolean;
+  showActionBar?: boolean;
+  wrapperClassName?: string;
+};
+
+function FilePreviewCodeSnippet({
+  codeClassName = "",
+  codeContainerClassName = "",
+  content,
+  shouldWrapCode = false,
+  showActionBar = true,
+  wrapperClassName = "",
+}: FilePreviewCodeSnippetProps) {
+  return (
+    <div
+      className={joinClassNames(
+        "relative w-full min-w-0 overflow-clip rounded-lg border contain-inline-size",
+        "bg-token-text-code-block-background border-token-input-background",
+        wrapperClassName,
+      )}
+      data-theme={resolveCodeSnippetTheme()}
+    >
+      {showActionBar ? null : null}
+      <div className={joinClassNames("text-size-chat overflow-auto p-2", codeContainerClassName)} dir="ltr">
+        <code className={joinClassNames(codeClassName, shouldWrapCode ? "whitespace-pre-wrap" : "whitespace-pre")}>
+          {content}
+        </code>
       </div>
     </div>
   );
@@ -95,4 +134,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function resolveFilePreviewMimeType(filePath: string) {
+  return /\.pdf$/i.test(filePath.trim()) ? "application/pdf" : null;
+}
+
+function resolveCodeSnippetTheme() {
+  if (typeof document === "undefined") {
+    return "light";
+  }
+
+  return document.documentElement.classList.contains("dark") || document.documentElement.dataset.theme === "dark"
+    ? "dark"
+    : "light";
+}
+
+function joinClassNames(...values: Array<string | false | null | undefined>) {
+  return values.filter((value): value is string => Boolean(value)).join(" ");
 }

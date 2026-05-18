@@ -1,24 +1,31 @@
-import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-  ChevronDownIcon,
   DiffSplitIcon,
   DiffUnifiedIcon,
   RichPreviewDisabledIcon,
   RichPreviewEnabledIcon,
 } from "../../components/AppShellIcons";
-import { DiffPreviewShell, RichDiffPreview, SplitDiffPreview } from "../../components/DiffPreview";
 import { useI18n } from "../../i18n/i18n";
 import type { MessageKey } from "../../i18n/messages";
 import {
   buildPullRequestUnifiedDiffSummary,
   parsePullRequestUnifiedDiff,
-  type PullRequestDiffFile,
 } from "../../lib/unifiedDiff";
+import {
+  getGlobalState,
+  onGlobalStateUpdated,
+  setGlobalState,
+} from "../../services/settings";
+import {
+  onActiveWorkspaceRootsUpdated,
+  readActiveWorkspaceRoots,
+} from "../../services/workspaceRoots";
+import { EditorDiffFileSurface } from "./EditorDiffFileSurface";
 
 const DEFAULT_OPEN_FILE_COUNT = 25;
 const DEFAULT_OPEN_LINE_COUNT = 2000;
-const EDITOR_DIFF_VIEW_MODE_STORAGE_KEY = "codex-app-replica.editor-diff.view-mode";
-const EDITOR_DIFF_RICH_PREVIEW_STORAGE_KEY = "codex-app-replica.editor-diff.rich-preview";
+const EDITOR_DIFF_VIEW_MODE_KEY = "editorDiffViewMode";
+const DIFF_RICH_PREVIEW_KEY = "diffRichPreview";
 
 type DiffViewMode = "split" | "unified";
 
@@ -34,10 +41,14 @@ type EditorDiffPageProps = {
 
 export function EditorDiffPage({ routeState }: EditorDiffPageProps) {
   const { t } = useI18n();
-  const [viewMode, setViewMode] = useState<DiffViewMode>(() => readStoredViewMode());
-  const [richPreviewEnabled, setRichPreviewEnabled] = useState<boolean>(() => readStoredRichPreviewEnabled());
+  const [viewMode, setViewMode] = useState<DiffViewMode>("unified");
+  const [richPreviewEnabled, setRichPreviewEnabled] = useState(false);
+  const [workspaceRootCwd, setWorkspaceRootCwd] = useState<string | null>(null);
 
-  const resolvedRouteState = useMemo(() => resolveEditorDiffRouteState(routeState), [routeState]);
+  const resolvedRouteState = useMemo(
+    () => resolveEditorDiffRouteState(routeState),
+    [routeState],
+  );
   const diffFiles = useMemo(
     () =>
       resolvedRouteState.type === "ready"
@@ -45,21 +56,127 @@ export function EditorDiffPage({ routeState }: EditorDiffPageProps) {
         : [],
     [resolvedRouteState],
   );
-  const summary = useMemo(() => buildPullRequestUnifiedDiffSummary(diffFiles), [diffFiles]);
-  const defaultOpen = summary.fileCount <= DEFAULT_OPEN_FILE_COUNT && summary.linesAdded + summary.linesDeleted <= DEFAULT_OPEN_LINE_COUNT;
+  const summary = useMemo(
+    () => buildPullRequestUnifiedDiffSummary(diffFiles),
+    [diffFiles],
+  );
+  const defaultOpen =
+    summary.fileCount <= DEFAULT_OPEN_FILE_COUNT &&
+    summary.linesAdded + summary.linesDeleted <= DEFAULT_OPEN_LINE_COUNT;
   const defaultExpandedPaths = useMemo(
-    () => (defaultOpen ? new Set(diffFiles.map((file) => file.path)) : new Set<string>()),
+    () =>
+      defaultOpen
+        ? new Set(
+            diffFiles
+              .filter((file) => file.status !== "deleted")
+              .map((file) => file.path),
+          )
+        : new Set<string>(),
     [defaultOpen, diffFiles],
   );
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set(defaultExpandedPaths));
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(
+    () => new Set(defaultExpandedPaths),
+  );
 
   useEffect(() => {
-    persistStoredViewMode(viewMode);
-  }, [viewMode]);
+    let cancelled = false;
+
+    const loadViewMode = async () => {
+      try {
+        const response = await getGlobalState(EDITOR_DIFF_VIEW_MODE_KEY);
+        if (cancelled) {
+          return;
+        }
+        setViewMode(response.value === "split" ? "split" : "unified");
+      } catch {
+        if (!cancelled) {
+          setViewMode("unified");
+        }
+      }
+    };
+
+    void loadViewMode();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
-    persistStoredRichPreviewEnabled(richPreviewEnabled);
-  }, [richPreviewEnabled]);
+    let cancelled = false;
+
+    const loadRichPreview = async () => {
+      try {
+        const response = await getGlobalState(DIFF_RICH_PREVIEW_KEY);
+        if (cancelled) {
+          return;
+        }
+        setRichPreviewEnabled(response.value === true);
+      } catch {
+        if (!cancelled) {
+          setRichPreviewEnabled(false);
+        }
+      }
+    };
+
+    void loadRichPreview();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const disposePromise = onGlobalStateUpdated((notification) => {
+      if (notification.keys.includes(EDITOR_DIFF_VIEW_MODE_KEY)) {
+        void getGlobalState(EDITOR_DIFF_VIEW_MODE_KEY).then((response) => {
+          setViewMode(response.value === "split" ? "split" : "unified");
+        }).catch(() => undefined);
+      }
+
+      if (notification.keys.includes(DIFF_RICH_PREVIEW_KEY)) {
+        void getGlobalState(DIFF_RICH_PREVIEW_KEY).then((response) => {
+          setRichPreviewEnabled(response.value === true);
+        }).catch(() => undefined);
+      }
+    });
+
+    return () => {
+      void disposePromise.then((dispose) => dispose());
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const reloadWorkspaceRoots = async () => {
+      try {
+        const response = await readActiveWorkspaceRoots();
+        if (cancelled) {
+          return;
+        }
+        const root = response.roots[0];
+        setWorkspaceRootCwd(
+          typeof root === "string" && root.trim().length > 0 ? root.trim() : null,
+        );
+      } catch {
+        if (!cancelled) {
+          setWorkspaceRootCwd(null);
+        }
+      }
+    };
+
+    void reloadWorkspaceRoots();
+
+    const disposePromise = onActiveWorkspaceRootsUpdated(() => {
+      void reloadWorkspaceRoots();
+    });
+
+    return () => {
+      cancelled = true;
+      void disposePromise.then((dispose) => dispose());
+    };
+  }, []);
 
   useEffect(() => {
     setExpandedPaths(new Set(defaultExpandedPaths));
@@ -68,11 +185,17 @@ export function EditorDiffPage({ routeState }: EditorDiffPageProps) {
   if (resolvedRouteState.type === "error" || !summary.hasChanges) {
     return (
       <div className="p-4 text-[var(--app-shell-error-text)]">
-        {t(resolvedRouteState.type === "error" ? resolvedRouteState.errorKey : "codex.diffView.noDiffData")}
+        {t(
+          resolvedRouteState.type === "error"
+            ? resolvedRouteState.errorKey
+            : "codex.diffView.noDiffData",
+        )}
       </div>
     );
   }
 
+  const effectiveCwd = resolvedRouteState.state.cwd ?? workspaceRootCwd;
+  void effectiveCwd;
   const richPreviewToggleLabel = t("codex.diffView.richPreviewToggle");
 
   return (
@@ -82,13 +205,17 @@ export function EditorDiffPage({ routeState }: EditorDiffPageProps) {
           <span className="text-[var(--app-shell-text)]">
             {t("codex.diffView.filesChanged", { fileCount: summary.fileCount })}
           </span>
-          {(summary.linesAdded > 0 || summary.linesDeleted > 0) ? (
+          {summary.linesAdded > 0 || summary.linesDeleted > 0 ? (
             <div className="flex items-center gap-1">
               <span className="text-emerald-700 dark:text-emerald-300">
-                {t("codex.diffView.linesAdded", { linesAdded: summary.linesAdded })}
+                {t("codex.diffView.linesAdded", {
+                  linesAdded: summary.linesAdded,
+                })}
               </span>
               <span className="text-red-700 dark:text-red-300">
-                {t("codex.diffView.linesDeleted", { linesDeleted: summary.linesDeleted })}
+                {t("codex.diffView.linesDeleted", {
+                  linesDeleted: summary.linesDeleted,
+                })}
               </span>
             </div>
           ) : null}
@@ -98,7 +225,12 @@ export function EditorDiffPage({ routeState }: EditorDiffPageProps) {
             <ViewModeButton
               active={viewMode === "unified"}
               ariaLabel={t("codex.diffView.switchToUnified")}
-              onClick={() => setViewMode("unified")}
+              onClick={() => {
+                setViewMode("unified");
+                void setGlobalState(EDITOR_DIFF_VIEW_MODE_KEY, "unified").catch(
+                  () => undefined,
+                );
+              }}
               title={t("codex.diffView.switchToUnified")}
             >
               <DiffUnifiedIcon className="h-4 w-4" />
@@ -106,7 +238,12 @@ export function EditorDiffPage({ routeState }: EditorDiffPageProps) {
             <ViewModeButton
               active={viewMode === "split"}
               ariaLabel={t("codex.diffView.switchToSplit")}
-              onClick={() => setViewMode("split")}
+              onClick={() => {
+                setViewMode("split");
+                void setGlobalState(EDITOR_DIFF_VIEW_MODE_KEY, "split").catch(
+                  () => undefined,
+                );
+              }}
               title={t("codex.diffView.switchToSplit")}
             >
               <DiffSplitIcon className="h-4 w-4" />
@@ -117,7 +254,13 @@ export function EditorDiffPage({ routeState }: EditorDiffPageProps) {
             aria-label={richPreviewToggleLabel}
             aria-pressed={richPreviewEnabled}
             title={richPreviewToggleLabel}
-            onClick={() => setRichPreviewEnabled((value) => !value)}
+            onClick={() => {
+              const nextValue = !richPreviewEnabled;
+              setRichPreviewEnabled(nextValue);
+              void setGlobalState(DIFF_RICH_PREVIEW_KEY, nextValue).catch(
+                () => undefined,
+              );
+            }}
             className={[
               "app-topbar-button flex h-8 w-8 items-center justify-center rounded-[10px] border border-transparent transition-colors",
               richPreviewEnabled ? "app-nav-item-active" : "app-nav-item-idle",
@@ -131,79 +274,84 @@ export function EditorDiffPage({ routeState }: EditorDiffPageProps) {
           </button>
         </div>
       </div>
+
       <div className="flex flex-1 flex-col gap-1 overflow-y-auto p-[var(--padding-panel)] pt-0">
-        {diffFiles.map((file) => {
-          const isExpanded = expandedPaths.has(file.path);
-          return (
-            <section
-              key={file.path}
-              className="overflow-hidden rounded-[14px] border border-[var(--app-shell-border)] bg-[var(--app-shell-card-bg-weak)]"
-            >
-              <button
-                type="button"
-                onClick={() => toggleExpandedPath(file.path, setExpandedPaths)}
-                className="flex w-full items-center gap-3 border-b border-[var(--app-shell-border)] px-4 py-3 text-left"
-              >
-                <ChevronDownIcon className={["h-4 w-4 shrink-0 transition-transform", isExpanded ? "" : "-rotate-90"].join(" ")} />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-medium text-[var(--app-shell-text)]">{file.path}</div>
-                  <div className="mt-1 text-[12px] leading-5 text-[var(--app-shell-subtle)]">
-                    +{file.additions} / -{file.deletions}
-                  </div>
-                </div>
-              </button>
-              {isExpanded ? (
-                <div className="p-4">
-                  {renderDiffFilePreview(file, {
-                    richPreviewEnabled,
-                    viewMode,
-                  })}
-                </div>
-              ) : null}
-            </section>
-          );
-        })}
+        {diffFiles.map((file) => (
+          <EditorDiffFileSurface
+            key={file.path}
+            file={file}
+            isOpen={expandedPaths.has(file.path)}
+            onToggleOpen={() => {
+              setExpandedPaths((current) => {
+                const next = new Set(current);
+                if (next.has(file.path)) {
+                  next.delete(file.path);
+                } else {
+                  next.add(file.path);
+                }
+                return next;
+              });
+            }}
+            viewMode={viewMode}
+          />
+        ))}
       </div>
     </div>
   );
 }
 
-function renderDiffFilePreview(
-  file: PullRequestDiffFile,
-  options: {
-    richPreviewEnabled: boolean;
-    viewMode: DiffViewMode;
-  },
-) {
-  if (options.viewMode === "split") {
-    return (
-      <SplitDiffPreview
-        file={file}
-        isWhitespaceHidden={false}
-        isWordDiffsEnabled={false}
-        isWrapEnabled={false}
-      />
-    );
+function resolveEditorDiffRouteState(routeState: unknown) {
+  if (routeState == null || typeof routeState !== "object") {
+    return {
+      errorKey: "codex.diffView.noDiffData" as MessageKey,
+      type: "error" as const,
+    };
   }
 
-  if (options.richPreviewEnabled) {
-    return (
-      <RichDiffPreview
-        file={file}
-        isWhitespaceHidden={false}
-        isWordDiffsEnabled={false}
-        isWrapEnabled={false}
-      />
-    );
-  }
+  try {
+    const record = routeState as Record<string, unknown>;
+    const rawConversationId = record.conversationId;
+    const rawUnifiedDiff = record.unifiedDiff;
+    const rawCwd = record.cwd;
 
-  return (
-    <DiffPreviewShell isWrapEnabled={false}>
-      <pre className="whitespace-pre px-4 py-3 text-[12px] leading-6">
-        <code>{file.patch}</code>
-      </pre>
-    </DiffPreviewShell>
-  );
+    if (
+      typeof rawConversationId !== "string" ||
+      typeof rawUnifiedDiff !== "string"
+    ) {
+      return {
+        errorKey: "codex.diffView.noDiffData" as MessageKey,
+        type: "error" as const,
+      };
+    }
+
+    const conversationId = rawConversationId.trim();
+    const unifiedDiff = rawUnifiedDiff;
+    const cwd =
+      typeof rawCwd === "string" && rawCwd.trim().length > 0
+        ? rawCwd.trim()
+        : null;
+
+    if (conversationId.length === 0 || unifiedDiff.trim().length === 0) {
+      return {
+        errorKey: "codex.diffView.noDiffData" as MessageKey,
+        type: "error" as const,
+      };
+    }
+
+    return {
+      state: {
+        conversationId,
+        cwd,
+        unifiedDiff,
+      } satisfies NormalizedEditorDiffRouteState,
+      type: "ready" as const,
+    };
+  } catch {
+    return {
+      errorKey: "codex.diffView.failedToDecodeBase64Diff" as MessageKey,
+      type: "error" as const,
+    };
+  }
 }
 
 function ViewModeButton({
@@ -234,94 +382,4 @@ function ViewModeButton({
       {children}
     </button>
   );
-}
-
-function resolveEditorDiffRouteState(routeState: unknown) {
-  if (routeState == null || typeof routeState !== "object") {
-    return {
-      type: "error" as const,
-      errorKey: "codex.diffView.noDiffData" as MessageKey,
-    };
-  }
-
-  const record = routeState as Record<string, unknown>;
-  const rawConversationId = record.conversationId;
-  const rawUnifiedDiff = record.unifiedDiff;
-  const rawCwd = record.cwd;
-
-  if (typeof rawConversationId !== "string" || typeof rawUnifiedDiff !== "string") {
-    return {
-      type: "error" as const,
-      errorKey: "codex.diffView.noDiffData" as MessageKey,
-    };
-  }
-
-  const conversationId = rawConversationId.trim();
-  const unifiedDiff = rawUnifiedDiff;
-  const cwd = typeof rawCwd === "string" && rawCwd.trim().length > 0 ? rawCwd.trim() : null;
-
-  if (conversationId.length === 0 || unifiedDiff.trim().length === 0) {
-    return {
-      type: "error" as const,
-      errorKey: "codex.diffView.noDiffData" as MessageKey,
-    };
-  }
-
-  return {
-    type: "ready" as const,
-    state: {
-      conversationId,
-      cwd,
-      unifiedDiff,
-    } satisfies NormalizedEditorDiffRouteState,
-  };
-}
-
-function toggleExpandedPath(
-  path: string,
-  setExpandedPaths: Dispatch<SetStateAction<Set<string>>>,
-) {
-  setExpandedPaths((current) => {
-    const next = new Set(current);
-    if (next.has(path)) {
-      next.delete(path);
-    } else {
-      next.add(path);
-    }
-    return next;
-  });
-}
-
-function readStoredViewMode(): DiffViewMode {
-  if (typeof window === "undefined") {
-    return "unified";
-  }
-
-  const stored = window.localStorage.getItem(EDITOR_DIFF_VIEW_MODE_STORAGE_KEY);
-  return stored === "split" ? "split" : "unified";
-}
-
-function readStoredRichPreviewEnabled() {
-  if (typeof window === "undefined") {
-    return true;
-  }
-
-  const stored = window.localStorage.getItem(EDITOR_DIFF_RICH_PREVIEW_STORAGE_KEY);
-  return stored == null ? true : stored === "true";
-}
-
-function persistStoredViewMode(viewMode: DiffViewMode) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(EDITOR_DIFF_VIEW_MODE_STORAGE_KEY, viewMode);
-}
-
-function persistStoredRichPreviewEnabled(enabled: boolean) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(EDITOR_DIFF_RICH_PREVIEW_STORAGE_KEY, enabled ? "true" : "false");
 }

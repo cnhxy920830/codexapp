@@ -6,6 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { AppShellRightPanelLayout } from "../../components/AppShellRightPanelLayout";
 import { I18N_CONTEXT } from "../../i18n/i18n";
 import { MESSAGES, type LocaleCode, type MessageKey, type MessageValues } from "../../i18n/messages";
 import type {
@@ -15,6 +16,7 @@ import type {
   PullRequestStatusSuccess,
 } from "../../services/pullRequests";
 import { groupPullRequestBoardItems } from "./pullRequestsPageModel";
+import { PullRequestDetailPane } from "./PullRequestDetailPane";
 import { PullRequestsPageView } from "./PullRequestsPageView";
 import type { PullRequestDiffFile } from "./pullRequestDiffModel";
 
@@ -68,39 +70,19 @@ function buildSnapshots(): SnapshotMap {
             boardItems={[]}
             boardLoading={false}
             boardSections={[]}
-            codeReviewError={null}
-            cwd={null}
-            detail={null}
-            detailError={null}
-            detailKey="none"
-            detailLoading={false}
-            diffFiles={[]}
-            hostId={null}
-            isCodeReviewLoading={false}
             isWorkspaceMetadataLoading={false}
             noRepos
-            onCloseDetail={noop}
-            onCopyGitApplyCommand={null}
             onCopyPullRequestUrl={noopBoard}
-            onMarkAsDraft={noop}
-            onMarkAsReady={noop}
             onMergePullRequest={noopBoard}
-            onOpenCommentUrl={noopUrl}
             onOpenPullRequestInBrowser={noopBoard}
-            onPostComment={noopText}
-            onPostReply={noopReply}
-            onRefreshCodeReview={noop}
             onSelectBoardItem={noopBoard}
             onSelectFilterView={noopFilter}
             onSelectRepo={noopRepo}
-            onSelectTab={noopTab}
-            onToggleAutoMerge={noop}
             pageError={null}
             pageErrorDetail={null}
             repoOptions={[]}
             selectedBoardItem={null}
             selectedRepoKey={null}
-            selectedTab="pullRequest"
             selectedView="authored"
           />
         </div>
@@ -109,41 +91,10 @@ function buildSnapshots(): SnapshotMap {
     boardDetail: renderSnapshot(
       <StaticI18nProvider>
         <div className="h-[900px]">
-          <PullRequestsPageView
-            boardItems={[boardItem]}
-            boardLoading={false}
-            boardSections={groupPullRequestBoardItems([boardItem])}
-            codeReviewError={null}
-            cwd={boardItem.cwd}
+          <PullRequestsShellSnapshot
+            boardItem={boardItem}
             detail={detail}
-            detailError={null}
-            detailKey="board-item"
-            detailLoading={false}
             diffFiles={[]}
-            hostId={boardItem.hostId}
-            isCodeReviewLoading={false}
-            isWorkspaceMetadataLoading={false}
-            noRepos={false}
-            onCloseDetail={noop}
-            onCopyGitApplyCommand={null}
-            onCopyPullRequestUrl={noopBoard}
-            onMarkAsDraft={noop}
-            onMarkAsReady={noop}
-            onMergePullRequest={noopBoard}
-            onOpenCommentUrl={noopUrl}
-            onOpenPullRequestInBrowser={noopBoard}
-            onPostComment={noopText}
-            onPostReply={noopReply}
-            onRefreshCodeReview={noop}
-            onSelectBoardItem={noopBoard}
-            onSelectFilterView={noopFilter}
-            onSelectRepo={noopRepo}
-            onSelectTab={noopTab}
-            onToggleAutoMerge={noop}
-            pageError={null}
-            pageErrorDetail={null}
-            repoOptions={[{ cwd: boardItem.cwd, hostId: null, label: "openai/codex", originUrl: null, repo: "openai/codex", key: "openai/codex" }]}
-            selectedBoardItem={boardItem}
             selectedRepoKey="all"
             selectedTab="pullRequest"
             selectedView="authored"
@@ -154,41 +105,10 @@ function buildSnapshots(): SnapshotMap {
     codeReview: renderSnapshot(
       <StaticI18nProvider>
         <div className="h-[900px]">
-          <PullRequestsPageView
-            boardItems={[boardItem]}
-            boardLoading={false}
-            boardSections={groupPullRequestBoardItems([boardItem])}
-            codeReviewError={null}
-            cwd={boardItem.cwd}
+          <PullRequestsShellSnapshot
+            boardItem={boardItem}
             detail={detail}
-            detailError={null}
-            detailKey="code-review"
-            detailLoading={false}
             diffFiles={DIFF_FILES}
-            hostId={boardItem.hostId}
-            isCodeReviewLoading={false}
-            isWorkspaceMetadataLoading={false}
-            noRepos={false}
-            onCloseDetail={noop}
-            onCopyGitApplyCommand={null}
-            onCopyPullRequestUrl={noopBoard}
-            onMarkAsDraft={noop}
-            onMarkAsReady={noop}
-            onMergePullRequest={noopBoard}
-            onOpenCommentUrl={noopUrl}
-            onOpenPullRequestInBrowser={noopBoard}
-            onPostComment={noopText}
-            onPostReply={noopReply}
-            onRefreshCodeReview={noop}
-            onSelectBoardItem={noopBoard}
-            onSelectFilterView={noopFilter}
-            onSelectRepo={noopRepo}
-            onSelectTab={noopTab}
-            onToggleAutoMerge={noop}
-            pageError={null}
-            pageErrorDetail={null}
-            repoOptions={[{ cwd: boardItem.cwd, hostId: null, label: "openai/codex", originUrl: null, repo: "openai/codex", key: "openai/codex" }]}
-            selectedBoardItem={boardItem}
             selectedRepoKey="openai/codex"
             selectedTab="codeReview"
             selectedView="review"
@@ -222,6 +142,78 @@ function StaticI18nProvider({ children }: { children: ReactElement }) {
     >
       {children}
     </I18N_CONTEXT.Provider>
+  );
+}
+
+function PullRequestsShellSnapshot({
+  boardItem,
+  detail,
+  diffFiles,
+  selectedRepoKey,
+  selectedTab,
+  selectedView,
+}: {
+  boardItem: PullRequestBoardItem;
+  detail: PullRequestStatusSuccess;
+  diffFiles: PullRequestDiffFile[];
+  selectedRepoKey: string;
+  selectedTab: "pullRequest" | "codeReview";
+  selectedView: "authored" | "review";
+}) {
+  return (
+    <AppShellRightPanelLayout
+      isRightPanelOpen
+      isRightPanelResizing={false}
+      rightPanelWidth={Math.min(512, 900 * 0.45)}
+      separatorAriaLabel="Toggle side panel"
+    >
+      <PullRequestsPageView
+        boardItems={[boardItem]}
+        boardLoading={false}
+        boardSections={groupPullRequestBoardItems([boardItem])}
+        isWorkspaceMetadataLoading={false}
+        noRepos={false}
+        onCopyPullRequestUrl={noopBoard}
+        onMergePullRequest={noopBoard}
+        onOpenPullRequestInBrowser={noopBoard}
+        onSelectBoardItem={noopBoard}
+        onSelectFilterView={noopFilter}
+        onSelectRepo={noopRepo}
+        pageError={null}
+        pageErrorDetail={null}
+        repoOptions={[{ cwd: boardItem.cwd, hostId: null, label: "openai/codex", originUrl: null, repo: "openai/codex", key: "openai/codex" }]}
+        selectedBoardItem={boardItem}
+        selectedRepoKey={selectedRepoKey}
+        selectedView={selectedView}
+      />
+      <PullRequestDetailPane
+        boardItem={boardItem}
+        codeReviewError={null}
+        commentAttachments={detail.commentAttachments}
+        cwd={boardItem.cwd}
+        detail={detail}
+        detailError={null}
+        detailKey={selectedTab}
+        detailLoading={false}
+        diffFiles={diffFiles}
+        hostId={boardItem.hostId}
+        isCodeReviewLoading={false}
+        onClose={noop}
+        onCopyGitApplyCommand={null}
+        onCopyUrl={noop}
+        onMarkAsDraft={noop}
+        onMarkAsReady={noop}
+        onMerge={noop}
+        onOpenCommentUrl={noopUrl}
+        onOpenInBrowser={noop}
+        onPostComment={noopText}
+        onPostReply={noopReply}
+        onRefreshCodeReview={noop}
+        onSelectTab={noopTab}
+        onToggleAutoMerge={noop}
+        selectedTab={selectedTab}
+      />
+    </AppShellRightPanelLayout>
   );
 }
 

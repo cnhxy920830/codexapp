@@ -77,9 +77,6 @@ export function HotkeyWindowWorktreeInitPage({
               );
             }}
             onEditEnvironment={onEditEnvironment}
-            onNavigateHome={() => {
-              onNavigateToPath(HOTKEY_HOME_ROUTE_PATH);
-            }}
             onNavigateToNewConversation={({ prefillPrompt }) => {
               const path = prefillPrompt.trim().length > 0
                 ? `${HOTKEY_NEW_THREAD_ROUTE_PATH}?prefillPrompt=${encodeURIComponent(prefillPrompt)}`

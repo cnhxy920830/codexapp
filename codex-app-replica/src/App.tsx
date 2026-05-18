@@ -113,6 +113,7 @@ import {
   SplitterGripIcon,
 } from "./components/AppShellIcons";
 import { AppToastRegion, type AppToast } from "./components/AppToastRegion";
+import { AppShellRightPanelLayout } from "./components/AppShellRightPanelLayout";
 import { ConfigScopeMenu } from "./components/ConfigScopeMenu";
 import { DataControlsSettings } from "./components/DataControlsSettings";
 import { GitSettings } from "./components/GitSettings";
@@ -188,6 +189,11 @@ import {
 } from "./features/statsig/replicaStatsig";
 import { WorktreesSettingsPage } from "./features/worktrees/WorktreesSettingsPage";
 import { WorktreeInitV2Page } from "./features/worktreeInit/WorktreeInitV2Page";
+import { PendingWorktreeConversationStartManager } from "./features/worktreeInit/PendingWorktreeConversationStartManager";
+import {
+  addPendingWorktreeConversationStart,
+} from "./features/worktreeInit/pendingWorktreeConversationStart";
+import { HotkeyWindowWorktreeInitPage } from "./features/hotkeyWindow/HotkeyWindowWorktreeInitPage";
 import {
   buildTurnStartPermissionOverrides,
   resolveHotkeyPermissionsState,
@@ -1269,6 +1275,9 @@ function App() {
   const [openRightPanelTabs, setOpenRightPanelTabs] = useState<RightPanelTab[]>([]);
   const [activeRightPanelStaticTabId, setActiveRightPanelStaticTabId] = useState<StaticRightPanelTabId | null>(null);
   const [activeRightPanelTabId, setActiveRightPanelTabId] = useState<string | null>(null);
+  const [pageRightPanelVisible, setPageRightPanelVisible] = useState(false);
+  const [pageRightPanelCloseAction, setPageRightPanelCloseAction] = useState<(() => void) | null>(null);
+  const pageRightPanelContentRef = useRef<HTMLDivElement | null>(null);
   const [pinnedThreadIds, setPinnedThreadIds] = useState<string[]>([]);
   const [browserSidebarTarget, setBrowserSidebarTarget] = useState<BrowserSidebarTarget | null>(null);
   const [sideChatConversationsById, setSideChatConversationsById] = useState<Record<string, ThreadConversation>>({});
@@ -2442,6 +2451,14 @@ function App() {
       window.clearTimeout(timeout);
     };
   }, [appToast]);
+
+  useEffect(() => {
+    if (!pageRightPanelVisible) {
+      return;
+    }
+
+    setIsRightPanelOpen(true);
+  }, [pageRightPanelVisible]);
 
   useEffect(() => {
     openRightPanelTabsRef.current = openRightPanelTabs;
@@ -3963,7 +3980,10 @@ function App() {
 
     if (matchingCommandId === "closeTabOrWindow") {
       event.preventDefault();
-      if (isRightPanelOpen && (activeRightPanelStaticTabId !== null || activeRightPanelDynamicTab !== null)) {
+      if (
+        isRightPanelOpen
+        && (activeRightPanelStaticTabId !== null || activeRightPanelDynamicTab !== null || pageRightPanelVisible)
+      ) {
         closeActiveRightPanelView();
         return;
       }
@@ -4800,6 +4820,7 @@ function App() {
         targetTurnId: null,
       },
     });
+    addPendingWorktreeConversationStart(params.id);
 
     await openInHotkeyWindow(buildWorktreeInitV2RoutePath(params.id, "hotkey"));
   });
@@ -4931,6 +4952,12 @@ function App() {
 
     if (activeRightPanelDynamicTab !== null) {
       closeRightPanelTab(activeRightPanelDynamicTab.id);
+      return;
+    }
+
+    if (pageRightPanelVisible) {
+      pageRightPanelCloseAction?.();
+      setIsRightPanelOpen(false);
     }
   };
 
@@ -5034,6 +5061,7 @@ function App() {
           targetTurnId: null,
         },
       });
+      addPendingWorktreeConversationStart(pendingWorktreeId);
       setIsThreadActionsMenuOpen(false);
       if (typeof window !== "undefined") {
         window.history.pushState(window.history.state, "", buildWorktreeInitV2RoutePath(pendingWorktreeId));
@@ -6773,50 +6801,65 @@ function App() {
 
     return (
       <>
-        <WorktreeInitV2Page
-          pendingWorktreeId={worktreeInitRoute.pendingWorktreeId}
-          shell={worktreeInitRoute.shell}
-          onEditEnvironment={({ workspaceRoot, configPath, mode }) => {
-            const searchParams = new URLSearchParams({ workspaceRoot, mode });
-            if (configPath !== null) {
-              searchParams.set("configPath", configPath);
-            }
-            const nextPath = `/settings/local-environments?${searchParams.toString()}`;
-            if (typeof window !== "undefined" && window.location.pathname + window.location.search !== nextPath) {
-              window.history.replaceState(window.history.state, "", nextPath);
-            }
-            setThreadShellVariant("default");
-            setWorktreeInitRoute(null);
-            setSelectedSettingsHostId(LOCAL_SETTINGS_HOST_ID);
-            setSettingsSection("local-environments");
-            setSettingsSectionState({ localEnvironmentRouteSearch: `?${searchParams.toString()}` });
-            setCurrentRoute("settings");
-          }}
-          onNavigateHome={() => {
-            if (typeof window !== "undefined" && window.location.pathname !== "/") {
-              window.history.replaceState(window.history.state, "", "/");
-            }
-            openNewConversation();
-          }}
-          onOpenConversation={(conversationId, shell) => {
-            const nextPath = buildLocalThreadRoutePath(conversationId, shell);
-            if (typeof window !== "undefined" && window.location.pathname !== nextPath) {
-              window.history.replaceState(window.history.state, "", nextPath);
-            }
-            setWorktreeInitRoute(null);
-            return selectThread(conversationId, shell);
-          }}
-          onShowToast={(toast) => setAppToast(toast)}
-          onStartNewConversation={({ prefillPrompt }) => {
-            if (typeof window !== "undefined" && window.location.pathname !== "/") {
-              window.history.replaceState(window.history.state, "", "/");
-            }
-            openNewConversation({
-              focusComposerNonce: Date.now(),
-              prefillPrompt,
-            });
-          }}
-        />
+        {worktreeInitRoute.shell === "hotkey" ? (
+          <HotkeyWindowWorktreeInitPage
+            pendingWorktreeId={worktreeInitRoute.pendingWorktreeId}
+            onEditEnvironment={({ workspaceRoot, configPath, mode }) => {
+              const searchParams = new URLSearchParams({ workspaceRoot, mode });
+              if (configPath !== null) {
+                searchParams.set("configPath", configPath);
+              }
+              const nextPath = `/settings/local-environments?${searchParams.toString()}`;
+              if (typeof window !== "undefined" && window.location.pathname + window.location.search !== nextPath) {
+                window.history.replaceState(window.history.state, "", nextPath);
+              }
+              setThreadShellVariant("default");
+              setWorktreeInitRoute(null);
+              setSelectedSettingsHostId(LOCAL_SETTINGS_HOST_ID);
+              setSettingsSection("local-environments");
+              setSettingsSectionState({ localEnvironmentRouteSearch: `?${searchParams.toString()}` });
+              setCurrentRoute("settings");
+            }}
+            onNavigateToPath={(path) => {
+              void handleNavigateToRoute(path, null);
+            }}
+          />
+        ) : (
+          <WorktreeInitV2Page
+            pendingWorktreeId={worktreeInitRoute.pendingWorktreeId}
+            conversationPathBuilder={(conversationId) => buildLocalThreadRoutePath(conversationId, "default")}
+            homePath="/"
+            onNavigateToPath={(path) => {
+              void handleNavigateToRoute(path, null);
+            }}
+            onEditEnvironment={({ workspaceRoot, configPath, mode }) => {
+              const searchParams = new URLSearchParams({ workspaceRoot, mode });
+              if (configPath !== null) {
+                searchParams.set("configPath", configPath);
+              }
+              const nextPath = `/settings/local-environments?${searchParams.toString()}`;
+              if (typeof window !== "undefined" && window.location.pathname + window.location.search !== nextPath) {
+                window.history.replaceState(window.history.state, "", nextPath);
+              }
+              setThreadShellVariant("default");
+              setWorktreeInitRoute(null);
+              setSelectedSettingsHostId(LOCAL_SETTINGS_HOST_ID);
+              setSettingsSection("local-environments");
+              setSettingsSectionState({ localEnvironmentRouteSearch: `?${searchParams.toString()}` });
+              setCurrentRoute("settings");
+            }}
+            onShowToast={(toast) => setAppToast(toast)}
+            onNavigateToNewConversation={({ prefillPrompt }) => {
+              if (typeof window !== "undefined" && window.location.pathname !== "/") {
+                window.history.replaceState(window.history.state, "", "/");
+              }
+              openNewConversation({
+                focusComposerNonce: Date.now(),
+                prefillPrompt,
+              });
+            }}
+          />
+        )}
         <AppToastRegion toast={appToast} onDismiss={() => setAppToast(null)} />
       </>
     );
@@ -7563,9 +7606,21 @@ function App() {
                   />
                 </div>
               ) : currentRoute === "pull-requests" ? (
-                <div className="min-h-0 flex-1 overflow-hidden">
-                  <PullRequestsRoutePage onShowToast={(toast) => setAppToast(toast)} />
-                </div>
+                <AppShellRightPanelLayout
+                  isRightPanelOpen={pageRightPanelVisible && isRightPanelOpen}
+                  isRightPanelResizing={isRightPanelResizing}
+                  onRightPanelResizePointerDown={handleRightPanelResizePointerDown}
+                  rightPanelContentRef={pageRightPanelContentRef}
+                  rightPanelWidth={rightPanelWidth}
+                  separatorAriaLabel={t("thread.sidePanel.toggle")}
+                >
+                  <PullRequestsRoutePage
+                    onSetRightPanelCloseAction={setPageRightPanelCloseAction}
+                    onSetRightPanelVisible={setPageRightPanelVisible}
+                    rightPanelHost={pageRightPanelContentRef}
+                    onShowToast={(toast) => setAppToast(toast)}
+                  />
+                </AppShellRightPanelLayout>
               ) : currentRoute === "automations" ? (
                 <div className="min-h-0 flex-1 overflow-hidden">
                   <AutomationsRoutePage
@@ -7740,6 +7795,7 @@ function App() {
         </div>
       ) : null}
       <AppToastRegion toast={appToast} onDismiss={() => setAppToast(null)} />
+      <PendingWorktreeConversationStartManager />
     </main>
   );
 }

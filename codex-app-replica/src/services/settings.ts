@@ -199,6 +199,8 @@ const GPU_TEARING_DEBUG_FORCE_OPAQUE_RENDERER_BACKGROUND_CLASS =
 let removeSystemAppearanceThemeListener: (() => void) | null = null;
 
 export type GlobalStateKey =
+  | "editorDiffViewMode"
+  | "diffRichPreview"
   | "usePointerCursors"
   | "sansFontSize"
   | "codeFontSize"

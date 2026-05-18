@@ -152,7 +152,7 @@ export function PullRequestDetailPane({
   const isRefreshing = detailLoading && currentPullRequest != null;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-l border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)]">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="border-b border-[var(--app-shell-border)] px-5 py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">

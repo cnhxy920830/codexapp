@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { Button } from "../../components/Button";
 import { CheckIcon, ChevronDownIcon } from "../../components/AppShellIcons";
+import { Spinner } from "../../components/Spinner";
 import type { MessageKey } from "../../i18n/messages";
 import {
   buildPdbSelectionQuery,
@@ -57,21 +59,11 @@ export function PdbPreview({ contents, filePath, t }: PdbPreviewProps) {
   const highlightRangeRef = useRef<PdbSelection | null>(null);
   const selectionStartIndexRef = useRef<number | null>(null);
   const [activeModelIndex, setActiveModelIndex] = useState(0);
+  const [viewerStatus, setViewerStatus] = useState<ViewerStatus>("idle");
+  const [viewerResetToken, setViewerResetToken] = useState(0);
   const [activeChainId, setActiveChainId] = useState<string | null>(null);
   const [highlightRange, setHighlightRange] = useState<PdbSelection | null>(null);
   const [zoomRange, setZoomRange] = useState<PdbSelection | null>(null);
-  const [viewerStatus, setViewerStatus] = useState<ViewerStatus>("idle");
-  const [viewerResetToken, setViewerResetToken] = useState(0);
-
-  useEffect(() => {
-    setActiveModelIndex(0);
-    setActiveChainId(null);
-    highlightRangeRef.current = null;
-    selectionStartIndexRef.current = null;
-    setHighlightRange(null);
-    setZoomRange(null);
-    setViewerResetToken((value) => value + 1);
-  }, [contents]);
 
   useEffect(() => {
     if (activeModelIndex >= data.models.length) {
@@ -86,7 +78,7 @@ export function PdbPreview({ contents, filePath, t }: PdbPreviewProps) {
   const zoomedResidues = getSelectedResidues(activeChain, zoomRange?.modelIndex === activeModelIndex ? zoomRange : null);
   const highlightQuery = buildPdbSelectionQuery(highlightedResidues);
   const zoomQuery = buildPdbSelectionQuery(zoomedResidues);
-  const applyHighlightRange = (selection: PdbSelection | null) => {
+  const setSelection = (selection: PdbSelection | null) => {
     highlightRangeRef.current = selection;
     setHighlightRange(selection);
   };
@@ -198,7 +190,6 @@ export function PdbPreview({ contents, filePath, t }: PdbPreviewProps) {
         {data.models.length > 1 ? (
           <ChoiceMenu
             ariaLabel={t("codex.filePreview.pdb.modelSelectLabel")}
-            buttonClassName="!h-6 shrink-0 gap-1 rounded-md px-1.5 text-sm text-token-text-tertiary hover:text-token-text-primary"
             options={data.models.map((model, index) => ({
               label: t("codex.filePreview.pdb.modelOption", { modelNumber: model.modelNumber }),
               value: String(index),
@@ -210,27 +201,27 @@ export function PdbPreview({ contents, filePath, t }: PdbPreviewProps) {
                 return;
               }
               setActiveModelIndex(nextIndex);
-              setActiveChainId(data.models[nextIndex]?.residueChains[0]?.chainId ?? null);
-              selectionStartIndexRef.current = null;
-              applyHighlightRange(null);
-              setZoomRange(null);
             }}
+            align="end"
+            labelClassName="text-token-text-primary tabular-nums"
+            menuClassName="min-w-[160px]"
             selectedLabel={t("codex.filePreview.pdb.modelOption", { modelNumber: activeModel.modelNumber })}
-            widthClassName="w-[150px]"
+            triggerClassName="text-sm text-token-text-tertiary hover:text-token-text-primary"
           />
         ) : null}
-        <button
-          type="button"
+        <Button
           onClick={() => {
             selectionStartIndexRef.current = null;
-            applyHighlightRange(null);
+            setSelection(null);
             setZoomRange(null);
             setViewerResetToken((value) => value + 1);
           }}
-          className="!h-6 shrink-0 rounded-md !border border-token-border-default bg-token-main-surface-primary px-2 text-sm text-token-text-primary hover:text-token-text-primary"
+          className="!h-6 shrink-0 rounded-md !border-token-border-default bg-token-main-surface-primary text-sm text-token-text-primary hover:text-token-text-primary"
+          color="outline"
+          size="toolbar"
         >
           {t("codex.filePreview.pdb.resetView")}
-        </button>
+        </Button>
         <div className="ml-auto flex flex-wrap gap-x-4 gap-y-1 text-xs text-token-text-secondary">
           <span>{residueCountLabel}</span>
           <span>{atomCountLabel}</span>
@@ -248,7 +239,7 @@ export function PdbPreview({ contents, filePath, t }: PdbPreviewProps) {
           onChainChange={(chainId) => {
             setActiveChainId(chainId);
             selectionStartIndexRef.current = null;
-            applyHighlightRange(null);
+            setSelection(null);
             setZoomRange(null);
           }}
           onResidueSelectionCommit={() => {
@@ -260,10 +251,10 @@ export function PdbPreview({ contents, filePath, t }: PdbPreviewProps) {
           }}
           onResidueSelectionMove={(index) => {
             const startIndex = selectionStartIndexRef.current;
-            if (startIndex == null) {
+            if (startIndex == null || activeChain == null) {
               return;
             }
-            applyHighlightRange({
+            setSelection({
               chainId: activeChain.chainId,
               endIndex: Math.max(startIndex, index),
               modelIndex: activeModelIndex,
@@ -278,7 +269,7 @@ export function PdbPreview({ contents, filePath, t }: PdbPreviewProps) {
               startIndex: index,
             };
             selectionStartIndexRef.current = null;
-            applyHighlightRange(selection);
+            setSelection(selection);
             setZoomRange(selection);
           }}
           onResidueSelectionStart={(index) => {
@@ -289,7 +280,7 @@ export function PdbPreview({ contents, filePath, t }: PdbPreviewProps) {
               modelIndex: activeModelIndex,
               startIndex: index,
             };
-            applyHighlightRange(selection);
+            setSelection(selection);
             setZoomRange(null);
           }}
           t={t}
@@ -441,12 +432,14 @@ function ChainSelector({
   return (
     <ChoiceMenu
       ariaLabel={t("codex.filePreview.pdb.chainSelectLabel")}
-      buttonClassName="!h-6 shrink-0 gap-1 rounded-md px-1.5 text-xs text-token-text-tertiary hover:text-token-text-primary"
+      align="start"
+      labelClassName="text-token-text-primary"
+      menuClassName="min-w-[160px]"
       onChange={onChainChange}
       options={options}
       selectedLabel={t("codex.filePreview.pdb.chainLabel", { chainId: formatPdbChainId(activeChainId) })}
+      triggerClassName="text-xs text-token-text-tertiary hover:text-token-text-primary"
       value={activeChainId}
-      widthClassName="w-[180px]"
     />
   );
 }
@@ -485,7 +478,7 @@ function ResidueSequenceStrip({
     return Number.isInteger(index) ? index : null;
   };
 
-  const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     const index = getResidueIndex(event.target);
     if (index == null) {
       return;
@@ -497,7 +490,7 @@ function ResidueSequenceStrip({
     onResidueSelectionStart(index);
   };
 
-  const handlePointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (dragPointerIdRef.current !== event.pointerId) {
       return;
     }
@@ -508,7 +501,7 @@ function ResidueSequenceStrip({
     }
   };
 
-  const handlePointerUp = (event: ReactPointerEvent<HTMLButtonElement>) => {
+  const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (dragPointerIdRef.current !== event.pointerId) {
       return;
     }
@@ -536,15 +529,15 @@ function ResidueSequenceStrip({
           residueNumber: formatPdbResidueId(residue),
         })}
         aria-pressed={isSelected}
-        className={[
+        className={joinClassNames(
           "cursor-interaction inline-flex h-5 min-w-[1.35ch] select-none items-center justify-center rounded-none px-0 text-token-text-secondary",
           "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-token-text-primary",
-          !isSelected ? "hover:rounded-sm hover:bg-token-main-surface-secondary hover:text-token-text-primary" : "",
-          isSelected ? "bg-orange-100 text-orange-800" : "",
-          isSelectionStart ? "rounded-l-sm" : "",
-          isSelectionEnd ? "rounded-r-sm" : "",
-          isSelectionStart && isSelectionEnd ? "rounded-sm ring-1 ring-orange-300" : "",
-        ].join(" ")}
+          !isSelected && "hover:rounded-sm hover:bg-token-main-surface-secondary hover:text-token-text-primary",
+          isSelected && "bg-orange-100 text-orange-800",
+          isSelectionStart && "rounded-l-sm",
+          isSelectionEnd && "rounded-r-sm",
+          isSelectionStart && isSelectionEnd && "rounded-sm ring-1 ring-orange-300",
+        )}
         onKeyDown={(event) => {
           if (event.key !== "Enter" && event.key !== " ") {
             return;
@@ -552,10 +545,6 @@ function ResidueSequenceStrip({
           event.preventDefault();
           onResidueSelectionSelect(index);
         }}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
         title={t("codex.filePreview.pdb.residueTitle", {
           residueName: residue.residueName,
           residueNumber: formatPdbResidueId(residue),
@@ -571,6 +560,10 @@ function ResidueSequenceStrip({
       ref={containerRef}
       aria-label={t("codex.filePreview.pdb.sequenceLabel")}
       className="max-h-24 overflow-auto border-t border-token-border px-3 py-2 font-mono text-[11px] leading-5"
+      onPointerCancel={handlePointerUp}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
     >
       {residueButtons}
     </div>
@@ -578,23 +571,27 @@ function ResidueSequenceStrip({
 }
 
 function ChoiceMenu({
+  align = "end",
   ariaLabel,
-  buttonClassName,
   disabled,
+  labelClassName = "",
+  menuClassName = "",
   onChange,
   options,
   selectedLabel,
+  triggerClassName = "",
   value,
-  widthClassName,
 }: {
+  align?: "end" | "start";
   ariaLabel: string;
-  buttonClassName: string;
   disabled?: boolean;
+  labelClassName?: string;
+  menuClassName?: string;
   onChange: (value: string) => void;
   options: ChoiceMenuOption[];
   selectedLabel: string;
+  triggerClassName?: string;
   value: string;
-  widthClassName: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -611,51 +608,81 @@ function ChoiceMenu({
       setIsOpen(false);
     };
 
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    };
+
     document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [isOpen]);
 
   return (
-    <div ref={containerRef} className={`relative ${widthClassName} max-w-full`}>
-      <button
-        type="button"
+    <div ref={containerRef} className="relative shrink-0">
+      <Button
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
         aria-label={ariaLabel}
+        className={joinClassNames("!h-6 shrink-0 gap-1 rounded-md px-1.5", triggerClassName)}
+        color="ghost"
+        data-state={isOpen ? "open" : "closed"}
         disabled={disabled}
+        size="toolbar"
         onClick={() => setIsOpen((open) => !open)}
-        className={`app-control flex w-full items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-[13px] ${buttonClassName}`}
+        onKeyDown={(event) => {
+          if (disabled) {
+            return;
+          }
+
+          if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setIsOpen(true);
+          }
+        }}
       >
-        <span className="truncate text-left">{selectedLabel || value}</span>
-        <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
-      </button>
+        <span className={joinClassNames("min-w-0 truncate", labelClassName)}>{selectedLabel || value}</span>
+        <ChevronDownIcon className="icon-2xs opacity-65" />
+      </Button>
       {isOpen ? (
-        <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-full rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
-          <div className="max-h-80 overflow-y-auto">
-            {options.map((option) => {
-              const isSelected = option.value === value;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => {
-                    setIsOpen(false);
-                    onChange(option.value);
-                  }}
-                  className={[
-                    "flex w-full items-start justify-between gap-3 rounded-[10px] px-3 py-2 text-left",
-                    isSelected ? "app-nav-item-active" : "app-nav-item-idle",
-                  ].join(" ")}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[13px]">{option.label}</span>
-                  </span>
-                  {isSelected ? <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" /> : null}
-                </button>
-              );
-            })}
-          </div>
+        <div
+          role="menu"
+          className={joinClassNames(
+            "absolute top-[calc(100%+4px)] z-20 m-px flex max-h-[min(350px,calc(100vh-16px))] select-none flex-col overflow-y-auto rounded-xl bg-token-dropdown-background/90 px-1 py-1 text-token-foreground shadow-xl-spread ring-[0.5px] ring-token-border backdrop-blur-sm",
+            align === "end" ? "right-0" : "left-0",
+            menuClassName,
+          )}
+        >
+          {options.map((option) => {
+            const isSelected = option.value === value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="menuitemradio"
+                aria-checked={isSelected}
+                disabled={disabled}
+                className={joinClassNames(
+                  "flex w-full items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-token-foreground outline-hidden",
+                  disabled ? "cursor-default opacity-50" : "cursor-interaction hover:bg-token-list-hover-background focus:bg-token-list-hover-background",
+                )}
+                onClick={() => {
+                  if (disabled) {
+                    return;
+                  }
+                  setIsOpen(false);
+                  onChange(option.value);
+                }}
+              >
+                <span className="min-w-0 flex-1 truncate text-left">{option.label}</span>
+                {isSelected ? <CheckIcon className="icon-xs shrink-0 opacity-75" /> : null}
+              </button>
+            );
+          })}
         </div>
       ) : null}
     </div>
@@ -665,7 +692,7 @@ function ChoiceMenu({
 function LegendItem({ children, className }: { children: string; className: string }) {
   return (
     <span className="inline-flex items-center gap-1">
-      <span className={`h-2.5 w-2.5 rounded-sm ${className}`} />
+      <span className={joinClassNames("h-2.5 w-2.5 rounded-sm", className)} />
       {children}
     </span>
   );
@@ -726,7 +753,11 @@ function formatScore(score: number | null) {
 export function PdbPreviewLoadingOverlay() {
   return (
     <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-white/70">
-      <div className="h-4 w-4 animate-spin rounded-full border-2 border-token-text-secondary border-t-transparent" />
+      <Spinner className="text-sm" />
     </div>
   );
+}
+
+function joinClassNames(...values: Array<string | false | null | undefined>) {
+  return values.filter((value): value is string => Boolean(value)).join(" ");
 }

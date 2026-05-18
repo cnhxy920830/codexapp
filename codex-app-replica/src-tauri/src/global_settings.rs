@@ -82,7 +82,9 @@ pub fn wsl_bash_availability() -> Result<WslBashAvailabilityResponse, String> {
 
 fn ensure_supported_key(key: &str) -> Result<(), String> {
     match key {
-        "usePointerCursors"
+        "editorDiffViewMode"
+        | "diffRichPreview"
+        | "usePointerCursors"
         | "sansFontSize"
         | "codeFontSize"
         | "localeOverride"
@@ -289,6 +291,8 @@ mod tests {
     #[test]
     fn general_settings_keys_are_supported() {
         for key in [
+            "editorDiffViewMode",
+            "diffRichPreview",
             "useFontSmoothing",
             "mac-menu-bar-enabled",
             "dictationDictionary",

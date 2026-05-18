@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import type { AppToast } from "../../components/AppToastRegion";
 import { useI18n } from "../../i18n/i18n";
 import type {
@@ -16,8 +17,11 @@ import {
   updatePullRequest,
   pullRequestSearchQueryForView,
 } from "../../services/pullRequests";
-import { readActiveWorkspaceRoots, readWorkspaceRootOptions } from "../../services/workspaceRoots";
+import { readWorkspaceRootOptions } from "../../services/workspaceRoots";
 import { readGitOrigins, type GitOrigin } from "../../services/gitOrigins";
+import { getCodexHomePath } from "../../services/codexHome";
+import { readGitSettingsSnapshot, type GitMergeMethod } from "../../services/gitSettings";
+import { onGlobalStateUpdated } from "../../services/settings";
 import { buildPullRequestGitApplyCommand, parsePullRequestUnifiedDiff } from "./pullRequestDiffModel";
 import {
   PULL_REQUEST_BOARD_LAST_SELECTED_REPO_KEY,
@@ -33,21 +37,30 @@ import {
   type PullRequestRepoOption,
   type PullRequestsRouteState,
 } from "./pullRequestsPageModel";
+import { PullRequestDetailPane } from "./PullRequestDetailPane";
 import { PullRequestsPageView } from "./PullRequestsPageView";
 
 type PullRequestsRoutePageProps = {
+  onSetRightPanelCloseAction: (action: (() => void) | null) => void;
+  onSetRightPanelVisible: (visible: boolean) => void;
+  rightPanelHost: RefObject<HTMLDivElement | null>;
   onShowToast: (toast: AppToast) => void;
 };
 
-export function PullRequestsRoutePage({ onShowToast }: PullRequestsRoutePageProps) {
+export function PullRequestsRoutePage({
+  onSetRightPanelCloseAction,
+  onSetRightPanelVisible,
+  rightPanelHost,
+  onShowToast,
+}: PullRequestsRoutePageProps) {
   const { t } = useI18n();
   const [routeState, setRouteState] = useState<PullRequestsRouteState>(() =>
     parsePullRequestsRouteState(getWindowSearch(), readStoredRepoKey()),
   );
   const [workspaceRoots, setWorkspaceRoots] = useState<string[]>([]);
-  const [workspaceRootLabels, setWorkspaceRootLabels] = useState<Record<string, string>>({});
-  const [activeWorkspaceRoots, setActiveWorkspaceRoots] = useState<string[]>([]);
   const [gitOrigins, setGitOrigins] = useState<GitOrigin[]>([]);
+  const [codexHome, setCodexHome] = useState<string | null>(null);
+  const [mergeMethod, setMergeMethod] = useState<GitMergeMethod>("merge");
   const [isWorkspaceMetadataLoading, setIsWorkspaceMetadataLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
   const [pageErrorDetail, setPageErrorDetail] = useState<string | null>(null);
@@ -79,16 +92,22 @@ export function PullRequestsRoutePage({ onShowToast }: PullRequestsRoutePageProp
     setPageError(null);
     setPageErrorDetail(null);
 
-    void Promise.all([readWorkspaceRootOptions(), readActiveWorkspaceRoots(), readGitOrigins()])
-      .then(([rootOptions, activeRoots, origins]) => {
+    void Promise.all([
+      readWorkspaceRootOptions(),
+      readGitOrigins(),
+      getCodexHomePath().catch(() => null),
+      readGitSettingsSnapshot().catch(() => null),
+    ]).then(([rootOptions, origins, nextCodexHome, gitSettings]) => {
         if (cancelled || requestId !== metadataRequestIdRef.current) {
           return;
         }
 
         setWorkspaceRoots(rootOptions.roots);
-        setWorkspaceRootLabels(rootOptions.labels);
-        setActiveWorkspaceRoots(activeRoots.roots);
         setGitOrigins(origins.origins);
+        setCodexHome(nextCodexHome);
+        if (gitSettings != null) {
+          setMergeMethod(gitSettings.pullRequestMergeMethod);
+        }
       })
       .catch((error) => {
         if (cancelled || requestId !== metadataRequestIdRef.current) {
@@ -111,6 +130,37 @@ export function PullRequestsRoutePage({ onShowToast }: PullRequestsRoutePageProp
   }, []);
 
   useEffect(() => {
+    let disposed = false;
+    let unlistenGlobalState: (() => void) | undefined;
+
+    void onGlobalStateUpdated((notification) => {
+      if (!notification.keys.includes("git-pull-request-merge-method")) {
+        return;
+      }
+
+      void readGitSettingsSnapshot()
+        .then((snapshot) => {
+          if (!disposed) {
+            setMergeMethod(snapshot.pullRequestMergeMethod);
+          }
+        })
+        .catch(() => undefined);
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+
+      unlistenGlobalState = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      void unlistenGlobalState?.();
+    };
+  }, []);
+
+  useEffect(() => {
     const handlePopState = () => {
       setRouteState(parsePullRequestsRouteState(getWindowSearch(), readStoredRepoKey()));
     };
@@ -124,12 +174,11 @@ export function PullRequestsRoutePage({ onShowToast }: PullRequestsRoutePageProp
   const repoOptions = useMemo(
     () =>
       buildPullRequestRepoOptions({
-        activeWorkspaceRoots,
+        codexHome,
         gitOrigins,
-        workspaceRootLabels,
         workspaceRoots,
       }),
-    [activeWorkspaceRoots, gitOrigins, workspaceRootLabels, workspaceRoots],
+    [codexHome, gitOrigins, workspaceRoots],
   );
 
   const selectedRepoKey = useMemo(
@@ -499,7 +548,7 @@ export function PullRequestsRoutePage({ onShowToast }: PullRequestsRoutePageProp
       const result = await mergePullRequest({
         cwd: item.cwd,
         hostId: item.hostId,
-        mergeMethod: "merge",
+        mergeMethod,
         number: item.number,
         repo: resolveItemRepo(item, selectedRepoOption),
       });
@@ -589,46 +638,73 @@ export function PullRequestsRoutePage({ onShowToast }: PullRequestsRoutePageProp
     });
   };
 
-  return (
-    <PullRequestsPageView
-      boardItems={boardItems}
-      boardLoading={boardLoading}
-      boardSections={groupPullRequestBoardItems(boardItems)}
+  const detailPane = selectedBoardItem == null ? null : (
+    <PullRequestDetailPane
+      boardItem={selectedBoardItem}
       codeReviewError={codeReviewError}
+      commentAttachments={detail?.commentAttachments ?? []}
       cwd={selectedBoardItemContext?.cwd ?? null}
       detail={detail}
       detailError={detailError}
       detailKey={detailKey}
       detailLoading={detailLoading}
       diffFiles={diffFiles}
+      hostId={selectedBoardItemContext?.hostId ?? null}
       isCodeReviewLoading={isCodeReviewLoading}
-      noRepos={noRepos}
-      onCloseDetail={handleCloseDetail}
+      onClose={handleCloseDetail}
       onCopyGitApplyCommand={unifiedDiff == null ? null : handleCopyGitApplyCommand}
-      onCopyPullRequestUrl={handleCopyPullRequestUrl}
+      onCopyUrl={() => void handleCopyPullRequestUrl(selectedBoardItem)}
       onMarkAsDraft={handleMarkAsDraft}
       onMarkAsReady={handleMarkAsReady}
-      onMergePullRequest={handleMergePullRequest}
-      onOpenCommentUrl={handleOpenCommentUrl}
-      onOpenPullRequestInBrowser={handleOpenPullRequestInBrowser}
+      onMerge={() => void handleMergePullRequest(selectedBoardItem)}
+      onOpenCommentUrl={(url) => void handleOpenCommentUrl(url)}
+      onOpenInBrowser={() => void handleOpenPullRequestInBrowser(selectedBoardItem)}
       onPostComment={handlePostComment}
       onPostReply={handlePostReply}
       onRefreshCodeReview={refreshDiff}
-      onSelectBoardItem={selectPullRequest}
-      onSelectFilterView={handleSelectView}
-      onSelectRepo={handleSelectRepo}
       onSelectTab={setSelectedTab}
       onToggleAutoMerge={handleToggleAutoMerge}
-      hostId={selectedBoardItemContext?.hostId ?? null}
-      pageError={pageError}
-      pageErrorDetail={pageErrorDetail}
-      repoOptions={repoOptions}
-      selectedBoardItem={selectedBoardItem}
-      selectedRepoKey={selectedRepoKey}
       selectedTab={selectedTab}
-      selectedView={routeState.view}
-      isWorkspaceMetadataLoading={isWorkspaceMetadataLoading}
     />
+  );
+
+  useEffect(() => {
+    onSetRightPanelVisible(detailPane !== null);
+    return () => {
+      onSetRightPanelVisible(false);
+    };
+  }, [detailPane, onSetRightPanelVisible]);
+
+  useEffect(() => {
+    onSetRightPanelCloseAction(selectedBoardItem == null ? null : handleCloseDetail);
+    return () => {
+      onSetRightPanelCloseAction(null);
+    };
+  }, [onSetRightPanelCloseAction, selectedBoardItem, selectedRepoKey, routeState.view]);
+
+  return (
+    <>
+      <PullRequestsPageView
+        boardItems={boardItems}
+        boardLoading={boardLoading}
+        boardSections={groupPullRequestBoardItems(boardItems)}
+        noRepos={noRepos}
+        onCopyPullRequestUrl={handleCopyPullRequestUrl}
+        onMergePullRequest={handleMergePullRequest}
+        onOpenPullRequestInBrowser={handleOpenPullRequestInBrowser}
+        onSelectBoardItem={selectPullRequest}
+        onSelectFilterView={handleSelectView}
+        onSelectRepo={handleSelectRepo}
+        pageError={pageError}
+        pageErrorDetail={pageErrorDetail}
+        repoOptions={repoOptions}
+        selectedBoardItem={selectedBoardItem}
+        selectedRepoKey={selectedRepoKey}
+        selectedView={routeState.view}
+        isWorkspaceMetadataLoading={isWorkspaceMetadataLoading}
+      />
+      {detailPane && rightPanelHost.current ? createPortal(detailPane, rightPanelHost.current) : null}
+    </>
   );
 
   async function runUpdateAction({
@@ -655,7 +731,7 @@ export function PullRequestsRoutePage({ onShowToast }: PullRequestsRoutePageProp
         hostId: item.hostId,
         number: item.number,
         repo: resolveItemRepoByContext(item),
-        mergeMethod: "merge",
+        mergeMethod,
       });
 
       if (result.status !== "success") {

@@ -1,4 +1,5 @@
 import type { GitOrigin } from "../../services/gitOrigins";
+import { isWithinCodexWorktrees } from "../../services/codexHome";
 import type {
   PullRequestBoardColumnKey,
   PullRequestBoardItem,
@@ -67,14 +68,12 @@ export function serializePullRequestsRouteState(state: PullRequestsRouteState) {
 }
 
 export function buildPullRequestRepoOptions({
-  activeWorkspaceRoots,
+  codexHome,
   gitOrigins,
-  workspaceRootLabels,
   workspaceRoots,
 }: {
-  activeWorkspaceRoots: string[];
+  codexHome: string | null;
   gitOrigins: GitOrigin[];
-  workspaceRootLabels: Record<string, string>;
   workspaceRoots: string[];
 }) {
   const originsByRoot = new Map<string, GitOrigin>();
@@ -85,8 +84,7 @@ export function buildPullRequestRepoOptions({
     originsByRoot.set(normalizePath(origin.dir), origin);
   }
 
-  const activeRoots = new Set(activeWorkspaceRoots.map(normalizePath));
-  const optionsByKey = new Map<string, PullRequestRepoOption & { isActive: boolean }>();
+  const optionsByKey = new Map<string, PullRequestRepoOption & { isCodexWorktree: boolean }>();
 
   for (const workspaceRoot of workspaceRoots) {
     const origin = originsByRoot.get(normalizePath(workspaceRoot));
@@ -99,15 +97,15 @@ export function buildPullRequestRepoOptions({
       continue;
     }
 
-    const option: PullRequestRepoOption & { isActive: boolean } = {
+    const option: PullRequestRepoOption & { isCodexWorktree: boolean } = {
       cwd: workspaceRoot,
       hostId: null,
       key: parsed.repoKey,
       label: parsed.label,
       originUrl: origin.originUrl,
       repo: parsed.repoKey,
-      isActive: activeRoots.has(normalizePath(workspaceRoot)),
-    } as PullRequestRepoOption & { isActive: boolean };
+      isCodexWorktree: isWithinCodexWorktrees(workspaceRoot, codexHome),
+    };
 
     const current = optionsByKey.get(option.key);
     if (current == null || isBetterRepoOption(current, option)) {
@@ -117,7 +115,7 @@ export function buildPullRequestRepoOptions({
 
   return Array.from(optionsByKey.values())
     .sort((left, right) => left.label.localeCompare(right.label))
-    .map(({ isActive: _isActive, ...option }) => option);
+    .map(({ isCodexWorktree: _isCodexWorktree, ...option }) => option);
 }
 
 export function resolvePullRequestRepoOption(
@@ -295,11 +293,11 @@ function buildParsedRepoKey(host: string, owner: string, repo: string) {
 }
 
 function isBetterRepoOption(
-  current: PullRequestRepoOption & { isActive: boolean },
-  next: PullRequestRepoOption & { isActive: boolean },
+  current: PullRequestRepoOption & { isCodexWorktree: boolean },
+  next: PullRequestRepoOption & { isCodexWorktree: boolean },
 ) {
-  if (current.isActive !== next.isActive) {
-    return next.isActive;
+  if (current.isCodexWorktree !== next.isCodexWorktree) {
+    return current.isCodexWorktree && !next.isCodexWorktree;
   }
 
   const currentPath = normalizePath(current.cwd);

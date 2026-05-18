@@ -1,0 +1,677 @@
+import { useMemo } from "react";
+import { ChevronDownIcon } from "../../components/AppShellIcons";
+import { useI18n } from "../../i18n/i18n";
+import {
+  pairDiffBlock,
+  type PullRequestDiffFragment,
+} from "../../lib/diffPreviewModel";
+import type { PullRequestDiffFile } from "../../lib/unifiedDiff";
+
+type DiffViewMode = "split" | "unified";
+
+type EditorDiffFileSurfaceProps = {
+  file: PullRequestDiffFile;
+  isOpen: boolean;
+  onToggleOpen: () => void;
+  viewMode: DiffViewMode;
+};
+
+type UnifiedDiffRow =
+  | {
+      kind: "header" | "meta";
+      text: string;
+    }
+  | {
+      kind: "hunk";
+      text: string;
+      oldStart: number | null;
+      newStart: number | null;
+    }
+  | {
+      fragments: PullRequestDiffFragment[];
+      kind: "addition" | "context" | "deletion";
+      newLineNumber: number | null;
+      oldLineNumber: number | null;
+      prefix: " " | "+" | "-";
+      text: string;
+    };
+
+type UnifiedCodeRow = Extract<
+  UnifiedDiffRow,
+  { kind: "addition" | "context" | "deletion" }
+>;
+
+type SplitDiffRow =
+  | {
+      kind: "header" | "meta";
+      text: string;
+    }
+  | {
+      kind: "hunk";
+      text: string;
+      oldStart: number | null;
+      newStart: number | null;
+    }
+  | {
+      kind: "addition" | "context" | "deletion" | "paired";
+      leftFragments: PullRequestDiffFragment[];
+      leftLineNumber: number | null;
+      leftText: string | null;
+      rightFragments: PullRequestDiffFragment[];
+      rightLineNumber: number | null;
+      rightText: string | null;
+    };
+
+type SplitCodeRow = Extract<
+  SplitDiffRow,
+  { kind: "addition" | "context" | "deletion" | "paired" }
+>;
+
+type PatchEntry =
+  | {
+      kind: "header" | "hunk" | "meta";
+      text: string;
+    }
+  | {
+      kind: "addition" | "context" | "deletion";
+      text: string;
+    };
+
+type NumberedPatchLine = {
+  lineNumber: number;
+  text: string;
+};
+
+const PREVIEW_OPTIONS = {
+  hideWhitespace: false,
+  wordDiffsEnabled: false,
+} as const;
+
+export function EditorDiffFileSurface({
+  file,
+  isOpen,
+  onToggleOpen,
+  viewMode,
+}: EditorDiffFileSurfaceProps) {
+  const { t } = useI18n();
+  const unifiedRows = useMemo(() => buildUnifiedDiffRows(file), [file]);
+  const splitRows = useMemo(() => buildSplitDiffRows(file), [file]);
+
+  return (
+    <section className="group/file-diff overflow-hidden rounded-[14px] border border-[var(--app-shell-border)] bg-[var(--app-shell-surface)]">
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        onClick={onToggleOpen}
+        className="sticky top-0 z-10 flex w-full items-center gap-3 border-b border-[var(--app-shell-border)] bg-[color:color-mix(in_srgb,var(--app-shell-card-bg-weak)_92%,transparent)] px-4 py-3 text-left backdrop-blur"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] font-medium text-[var(--app-shell-text)]">
+            {file.path}
+          </div>
+          <div className="mt-1 text-[12px] leading-5 text-[var(--app-shell-subtle)]">
+            +{file.additions} / -{file.deletions}
+          </div>
+        </div>
+        <ChevronDownIcon
+          className={[
+            "h-4 w-4 shrink-0 text-[var(--app-shell-muted)] transition-transform",
+            isOpen ? "rotate-0" : "-rotate-90",
+          ].join(" ")}
+        />
+      </button>
+
+      {isOpen ? (
+        <div className="border-t-0">
+          {file.isBinary ? (
+            <div className="px-4 py-4 text-[13px] leading-6 text-[var(--app-shell-subtle)]">
+              {t("wham.diff.binaryFile")}
+            </div>
+          ) : viewMode === "split" ? (
+            <SplitDiffRowsView rows={splitRows} />
+          ) : (
+            <UnifiedDiffRowsView rows={unifiedRows} />
+          )}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function UnifiedDiffRowsView({ rows }: { rows: UnifiedDiffRow[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <div className="min-w-max font-mono text-[12px] leading-6">
+        {rows.map((row, index) => renderUnifiedRow(row, index))}
+      </div>
+    </div>
+  );
+}
+
+function SplitDiffRowsView({ rows }: { rows: SplitDiffRow[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <div className="min-w-max font-mono text-[12px] leading-6">
+        {rows.map((row, index) => renderSplitRow(row, index))}
+      </div>
+    </div>
+  );
+}
+
+function renderUnifiedRow(row: UnifiedDiffRow, index: number) {
+  switch (row.kind) {
+    case "header":
+    case "meta":
+      return (
+        <div
+          key={`u:${index}`}
+          className="grid grid-cols-[4.5rem_4.5rem_minmax(0,1fr)] border-b border-[var(--app-shell-border)] bg-[var(--app-shell-card-bg-weak)] text-[var(--app-shell-subtle)]"
+        >
+          <div className="border-r border-[var(--app-shell-border)] px-3 py-0.5 text-right" />
+          <div className="border-r border-[var(--app-shell-border)] px-3 py-0.5 text-right" />
+          <div className="px-4 py-0.5 whitespace-pre">{row.text}</div>
+        </div>
+      );
+    case "hunk":
+      return (
+        <div
+          key={`u:${index}`}
+          className="grid grid-cols-[4.5rem_4.5rem_minmax(0,1fr)] border-b border-[var(--app-shell-border)] bg-sky-500/10 text-sky-700 dark:text-sky-300"
+        >
+          <div className="border-r border-[var(--app-shell-border)] px-3 py-0.5 text-right tabular-nums">
+            {formatLineNumber(row.oldStart)}
+          </div>
+          <div className="border-r border-[var(--app-shell-border)] px-3 py-0.5 text-right tabular-nums">
+            {formatLineNumber(row.newStart)}
+          </div>
+          <div className="px-4 py-0.5 whitespace-pre">{row.text}</div>
+        </div>
+      );
+    case "addition":
+    case "context":
+    case "deletion": {
+      const codeRow: UnifiedCodeRow = row;
+      return (
+        <div
+          key={`u:${index}`}
+          className={[
+            "grid grid-cols-[4.5rem_4.5rem_minmax(0,1fr)] border-b border-[var(--app-shell-border)]",
+            unifiedCodeRowClassName(codeRow.kind),
+          ].join(" ")}
+        >
+          <div className="border-r border-[var(--app-shell-border)] px-3 py-0.5 text-right tabular-nums text-[var(--app-shell-muted)]">
+            {formatLineNumber(codeRow.oldLineNumber)}
+          </div>
+          <div className="border-r border-[var(--app-shell-border)] px-3 py-0.5 text-right tabular-nums text-[var(--app-shell-muted)]">
+            {formatLineNumber(codeRow.newLineNumber)}
+          </div>
+          <div className="px-4 py-0.5 whitespace-pre">
+            <span className="select-none">
+              {codeRow.prefix === " " ? "\u00a0" : codeRow.prefix}
+            </span>
+            {renderPreviewFragments(codeRow.fragments, codeRow.kind)}
+          </div>
+        </div>
+      );
+    }
+  }
+}
+
+function renderSplitRow(row: SplitDiffRow, index: number) {
+  switch (row.kind) {
+    case "header":
+    case "meta":
+      return (
+        <div
+          key={`s:${index}`}
+          className="grid grid-cols-[4.5rem_minmax(0,1fr)_4.5rem_minmax(0,1fr)] border-b border-[var(--app-shell-border)] bg-[var(--app-shell-card-bg-weak)] text-[var(--app-shell-subtle)]"
+        >
+          <div className="border-r border-[var(--app-shell-border)] px-3 py-0.5 text-right" />
+          <div className="border-r border-[var(--app-shell-border)] px-4 py-0.5 whitespace-pre" />
+          <div className="border-r border-[var(--app-shell-border)] px-3 py-0.5 text-right" />
+          <div className="px-4 py-0.5 whitespace-pre">{row.text}</div>
+        </div>
+      );
+    case "hunk":
+      return (
+        <div
+          key={`s:${index}`}
+          className="grid grid-cols-[4.5rem_minmax(0,1fr)_4.5rem_minmax(0,1fr)] border-b border-[var(--app-shell-border)] bg-sky-500/10 text-sky-700 dark:text-sky-300"
+        >
+          <div className="border-r border-[var(--app-shell-border)] px-3 py-0.5 text-right tabular-nums">
+            {formatLineNumber(row.oldStart)}
+          </div>
+          <div className="border-r border-[var(--app-shell-border)] px-4 py-0.5 whitespace-pre">
+            {row.text}
+          </div>
+          <div className="border-r border-[var(--app-shell-border)] px-3 py-0.5 text-right tabular-nums">
+            {formatLineNumber(row.newStart)}
+          </div>
+          <div className="px-4 py-0.5 whitespace-pre">{row.text}</div>
+        </div>
+      );
+    case "addition":
+    case "context":
+    case "deletion":
+    case "paired": {
+      const codeRow: SplitCodeRow = row;
+      return (
+        <div
+          key={`s:${index}`}
+          className="grid grid-cols-[4.5rem_minmax(0,1fr)_4.5rem_minmax(0,1fr)] border-b border-[var(--app-shell-border)]"
+        >
+          <div className="border-r border-[var(--app-shell-border)] px-3 py-0.5 text-right tabular-nums text-[var(--app-shell-muted)]">
+            {formatLineNumber(codeRow.leftLineNumber)}
+          </div>
+          <div
+            className={[
+              "border-r border-[var(--app-shell-border)] px-4 py-0.5 whitespace-pre",
+              splitCodeCellClassName(codeRow.kind, "left"),
+            ].join(" ")}
+          >
+            {codeRow.leftText == null ? (
+              <span className="text-[var(--app-shell-muted)]">&nbsp;</span>
+            ) : (
+              renderPreviewFragments(codeRow.leftFragments, codeRow.kind, "left")
+            )}
+          </div>
+          <div className="border-r border-[var(--app-shell-border)] px-3 py-0.5 text-right tabular-nums text-[var(--app-shell-muted)]">
+            {formatLineNumber(codeRow.rightLineNumber)}
+          </div>
+          <div
+            className={[
+              "px-4 py-0.5 whitespace-pre",
+              splitCodeCellClassName(codeRow.kind, "right"),
+            ].join(" ")}
+          >
+            {codeRow.rightText == null ? (
+              <span className="text-[var(--app-shell-muted)]">&nbsp;</span>
+            ) : (
+              renderPreviewFragments(codeRow.rightFragments, codeRow.kind, "right")
+            )}
+          </div>
+        </div>
+      );
+    }
+  }
+}
+
+function renderPreviewFragments(
+  fragments: PullRequestDiffFragment[],
+  lineKind: UnifiedCodeRow["kind"] | SplitCodeRow["kind"],
+  side?: "left" | "right",
+) {
+  return fragments.map((fragment, index) => {
+    if (!fragment.isChanged) {
+      return <span key={index}>{fragment.text || " "}</span>;
+    }
+
+    return (
+      <span
+        key={index}
+        className={[
+          "rounded-[3px] px-0.5 font-medium",
+          fragmentHighlightClassName(lineKind, side),
+        ].join(" ")}
+      >
+        {fragment.text}
+      </span>
+    );
+  });
+}
+
+function buildUnifiedDiffRows(file: PullRequestDiffFile) {
+  const entries = parsePatchEntries(file.patch);
+  const rows: UnifiedDiffRow[] = [];
+  let oldLineNumber = 0;
+  let newLineNumber = 0;
+  let index = 0;
+
+  while (index < entries.length) {
+    const entry = entries[index];
+    if (entry == null) {
+      break;
+    }
+
+    if (entry.kind === "header" || entry.kind === "meta") {
+      rows.push({
+        kind: entry.kind,
+        text: entry.text,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (entry.kind === "hunk") {
+      const hunkHeader = parseHunkHeader(entry.text);
+      oldLineNumber = hunkHeader.oldStart ?? oldLineNumber;
+      newLineNumber = hunkHeader.newStart ?? newLineNumber;
+      rows.push({
+        kind: "hunk",
+        text: entry.text,
+        oldStart: hunkHeader.oldStart,
+        newStart: hunkHeader.newStart,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (entry.kind === "context") {
+      rows.push({
+        fragments: [{ isChanged: false, text: entry.text }],
+        kind: "context",
+        newLineNumber,
+        oldLineNumber,
+        prefix: " ",
+        text: entry.text,
+      });
+      oldLineNumber += 1;
+      newLineNumber += 1;
+      index += 1;
+      continue;
+    }
+
+    const {
+      additions,
+      deletions,
+      nextIndex,
+    } = collectNumberedChangeBlock(entries, index, oldLineNumber, newLineNumber);
+    const changes = pairDiffBlock(
+      additions.map((line) => line.text),
+      deletions.map((line) => line.text),
+      PREVIEW_OPTIONS,
+    );
+
+    changes.forEach((change, changeIndex) => {
+      const deletion = deletions[changeIndex] ?? null;
+      const addition = additions[changeIndex] ?? null;
+
+      if (change.leftText != null && deletion != null) {
+        rows.push({
+          fragments: change.leftFragments,
+          kind: "deletion",
+          newLineNumber: null,
+          oldLineNumber: deletion.lineNumber,
+          prefix: "-",
+          text: change.leftText,
+        });
+      }
+
+      if (change.rightText != null && addition != null) {
+        rows.push({
+          fragments: change.rightFragments,
+          kind: "addition",
+          newLineNumber: addition.lineNumber,
+          oldLineNumber: null,
+          prefix: "+",
+          text: change.rightText,
+        });
+      }
+    });
+
+    oldLineNumber += deletions.length;
+    newLineNumber += additions.length;
+    index = nextIndex;
+  }
+
+  return rows;
+}
+
+function buildSplitDiffRows(file: PullRequestDiffFile) {
+  const entries = parsePatchEntries(file.patch);
+  const rows: SplitDiffRow[] = [];
+  let oldLineNumber = 0;
+  let newLineNumber = 0;
+  let index = 0;
+
+  while (index < entries.length) {
+    const entry = entries[index];
+    if (entry == null) {
+      break;
+    }
+
+    if (entry.kind === "header" || entry.kind === "meta") {
+      rows.push({
+        kind: entry.kind,
+        text: entry.text,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (entry.kind === "hunk") {
+      const hunkHeader = parseHunkHeader(entry.text);
+      oldLineNumber = hunkHeader.oldStart ?? oldLineNumber;
+      newLineNumber = hunkHeader.newStart ?? newLineNumber;
+      rows.push({
+        kind: "hunk",
+        text: entry.text,
+        oldStart: hunkHeader.oldStart,
+        newStart: hunkHeader.newStart,
+      });
+      index += 1;
+      continue;
+    }
+
+    if (entry.kind === "context") {
+      rows.push({
+        kind: "context",
+        leftFragments: [{ isChanged: false, text: entry.text }],
+        leftLineNumber: oldLineNumber,
+        leftText: entry.text,
+        rightFragments: [{ isChanged: false, text: entry.text }],
+        rightLineNumber: newLineNumber,
+        rightText: entry.text,
+      });
+      oldLineNumber += 1;
+      newLineNumber += 1;
+      index += 1;
+      continue;
+    }
+
+    const {
+      additions,
+      deletions,
+      nextIndex,
+    } = collectNumberedChangeBlock(entries, index, oldLineNumber, newLineNumber);
+    const changes = pairDiffBlock(
+      additions.map((line) => line.text),
+      deletions.map((line) => line.text),
+      PREVIEW_OPTIONS,
+    );
+
+    changes.forEach((change, changeIndex) => {
+      const deletion = deletions[changeIndex] ?? null;
+      const addition = additions[changeIndex] ?? null;
+      rows.push({
+        kind:
+          change.leftText != null && change.rightText != null
+            ? "paired"
+            : change.leftText != null
+              ? "deletion"
+              : "addition",
+        leftFragments: change.leftFragments,
+        leftLineNumber: deletion?.lineNumber ?? null,
+        leftText: change.leftText,
+        rightFragments: change.rightFragments,
+        rightLineNumber: addition?.lineNumber ?? null,
+        rightText: change.rightText,
+      });
+    });
+
+    oldLineNumber += deletions.length;
+    newLineNumber += additions.length;
+    index = nextIndex;
+  }
+
+  return rows;
+}
+
+function collectNumberedChangeBlock(
+  entries: PatchEntry[],
+  startIndex: number,
+  oldLineNumber: number,
+  newLineNumber: number,
+) {
+  const deletions: NumberedPatchLine[] = [];
+  const additions: NumberedPatchLine[] = [];
+  let index = startIndex;
+  let currentOldLineNumber = oldLineNumber;
+  let currentNewLineNumber = newLineNumber;
+
+  while (entries[index]?.kind === "deletion") {
+    deletions.push({
+      lineNumber: currentOldLineNumber,
+      text: entries[index]!.text,
+    });
+    currentOldLineNumber += 1;
+    index += 1;
+  }
+
+  while (entries[index]?.kind === "addition") {
+    additions.push({
+      lineNumber: currentNewLineNumber,
+      text: entries[index]!.text,
+    });
+    currentNewLineNumber += 1;
+    index += 1;
+  }
+
+  return {
+    additions,
+    deletions,
+    nextIndex: index,
+  };
+}
+
+function parsePatchEntries(patch: string) {
+  const entries: PatchEntry[] = [];
+  let insideHunk = false;
+
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("@@")) {
+      entries.push({ kind: "hunk", text: line });
+      insideHunk = true;
+      continue;
+    }
+
+    if (isPatchHeaderLine(line)) {
+      entries.push({ kind: "header", text: line });
+      continue;
+    }
+
+    if (line.startsWith("\\ No newline at end of file")) {
+      entries.push({ kind: "meta", text: line });
+      continue;
+    }
+
+    if (insideHunk && line.startsWith("-") && !line.startsWith("---")) {
+      entries.push({ kind: "deletion", text: line.slice(1) });
+      continue;
+    }
+
+    if (insideHunk && line.startsWith("+") && !line.startsWith("+++")) {
+      entries.push({ kind: "addition", text: line.slice(1) });
+      continue;
+    }
+
+    if (insideHunk) {
+      entries.push({
+        kind: "context",
+        text: line.startsWith(" ") ? line.slice(1) : line,
+      });
+      continue;
+    }
+
+    entries.push({ kind: "header", text: line });
+  }
+
+  return entries;
+}
+
+function isPatchHeaderLine(line: string) {
+  return (
+    line.startsWith("diff --git") ||
+    line.startsWith("index ") ||
+    line.startsWith("--- ") ||
+    line.startsWith("+++ ") ||
+    line.startsWith("rename from ") ||
+    line.startsWith("rename to ") ||
+    line.startsWith("new file mode ") ||
+    line.startsWith("deleted file mode ") ||
+    line.startsWith("similarity index ") ||
+    line.startsWith("dissimilarity index ") ||
+    line.startsWith("Binary files ")
+  );
+}
+
+function parseHunkHeader(text: string) {
+  const match = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(text);
+  if (match == null) {
+    return {
+      newStart: null,
+      oldStart: null,
+    };
+  }
+
+  return {
+    newStart: Number(match[2]),
+    oldStart: Number(match[1]),
+  };
+}
+
+function formatLineNumber(value: number | null) {
+  return value == null ? "" : String(value);
+}
+
+function unifiedCodeRowClassName(kind: "addition" | "context" | "deletion") {
+  if (kind === "addition") {
+    return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  }
+
+  if (kind === "deletion") {
+    return "bg-red-500/10 text-red-700 dark:text-red-300";
+  }
+
+  return "text-[var(--app-shell-text)]";
+}
+
+function splitCodeCellClassName(
+  kind: "addition" | "context" | "deletion" | "paired",
+  side: "left" | "right",
+) {
+  if (kind === "context") {
+    return "text-[var(--app-shell-text)]";
+  }
+
+  if (kind === "paired") {
+    return side === "left"
+      ? "bg-red-500/10 text-red-700 dark:text-red-300"
+      : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  }
+
+  if (kind === "deletion") {
+    return side === "left"
+      ? "bg-red-500/10 text-red-700 dark:text-red-300"
+      : "text-[var(--app-shell-muted)]";
+  }
+
+  return side === "right"
+    ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+    : "text-[var(--app-shell-muted)]";
+}
+
+function fragmentHighlightClassName(
+  kind: UnifiedDiffRow["kind"] | SplitDiffRow["kind"],
+  side?: "left" | "right",
+) {
+  if (kind === "deletion" || (kind === "paired" && side === "left")) {
+    return "bg-red-500/20";
+  }
+
+  if (kind === "addition" || (kind === "paired" && side === "right")) {
+    return "bg-emerald-500/20";
+  }
+
+  return "";
+}
