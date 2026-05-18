@@ -22,12 +22,12 @@ export function HotkeyWindowProjectHeroPicker({
 }) {
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const preferredWorkspaceRoot = normalizeOptionalPath(initialWorkspaceRoot);
   const [workspaceRoots, setWorkspaceRoots] = useState<string[]>([]);
   const [workspaceRootLabels, setWorkspaceRootLabels] = useState<Record<string, string>>({});
-  const [selectedWorkspaceRoot, setSelectedWorkspaceRoot] = useState<string | null>(null);
+  const [selectedWorkspaceRoot, setSelectedWorkspaceRoot] = useState<string | null>(preferredWorkspaceRoot);
   const [isLoading, setIsLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
-  const preferredWorkspaceRoot = normalizeOptionalPath(initialWorkspaceRoot);
 
   useEffect(() => {
     onSelectedWorkspaceRootChange(selectedWorkspaceRoot);
@@ -153,10 +153,28 @@ export function HotkeyWindowProjectHeroPicker({
       }
       setIsOpen(false);
     };
+    const handleFocusIn = (event: FocusEvent) => {
+      if (containerRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setIsOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      setIsOpen(false);
+    };
 
     document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [isOpen]);
 
@@ -169,16 +187,19 @@ export function HotkeyWindowProjectHeroPicker({
 
   const selectedProjectLabel =
     selectedWorkspaceRoot === null
-      ? t("electron.onboarding.workspace.title")
+      ? t("composer.localCwdDropdown.newChat")
       : getWorkspaceRootLabel(selectedWorkspaceRoot, workspaceRootLabels);
 
   return (
     <div className="relative" ref={containerRef}>
       <button
         type="button"
-        aria-label={t("hotkeyWindow.home.taskMenu.project")}
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
+        aria-label={t("composer.localCwdDropdown.tooltip")}
         onClick={() => setIsOpen((open) => !open)}
         className="group inline-flex max-w-full items-center gap-2 rounded-[18px] px-5 py-3 transition-colors hover:bg-token-foreground/5"
+        title={t("composer.localCwdDropdown.tooltip")}
       >
         <span
           className={[
@@ -202,7 +223,7 @@ export function HotkeyWindowProjectHeroPicker({
             <ProjectOptionRow
               description={undefined}
               isSelected={selectedWorkspaceRoot === null}
-              label={t("electron.onboarding.workspace.title")}
+              label={t("composer.localCwdDropdown.newChat")}
               onSelect={() => {
                 setIsOpen(false);
                 setSelectedWorkspaceRoot(null);
@@ -245,7 +266,7 @@ export function HotkeyWindowProjectHeroPicker({
               }}
             >
               <PlusIcon className="icon-xs" />
-              <span>{t("electron.onboarding.workspace.openFolder")}</span>
+              <span>{t("composer.localCwdDropdown.addWorkspaceRoot")}</span>
             </button>
           </div>
         </div>

@@ -1008,24 +1008,38 @@ fn apply_layout(snapshot: &mut AvatarOverlaySnapshot, display_bounds: Rect) {
         },
         display_bounds,
     );
-    let tray_size = clamp_tray_size(
-        snapshot.tray_size.unwrap_or(default_tray_size()),
-        viewport,
-        anchor.height,
-    );
+    let tray_size = if snapshot.has_renderer_measurement {
+        snapshot
+            .tray_size
+            .map(|tray_size| clamp_tray_size(tray_size, viewport, anchor.height))
+    } else {
+        Some(clamp_tray_size(
+            snapshot.tray_size.unwrap_or(default_tray_size()),
+            viewport,
+            anchor.height,
+        ))
+    };
     let preferred_placement = preferred_placement(anchor, display_bounds);
-    let placement = choose_placement(
-        anchor,
-        display_bounds,
-        preferred_placement,
-        snapshot.placement.clone(),
-        tray_size,
-    );
-    let tray_bounds = clamp_rect_to_display(
-        tray_rect(anchor, tray_size, placement.clone()),
-        display_bounds,
-    );
-    let content_bounds = union_rects([expand_mascot_bounds(anchor), tray_bounds]);
+    let placement = tray_size
+        .map(|tray_size| {
+            choose_placement(
+                anchor,
+                display_bounds,
+                preferred_placement.clone(),
+                snapshot.placement.clone(),
+                tray_size,
+            )
+        })
+        .unwrap_or(preferred_placement);
+    let tray_bounds = tray_size.map(|tray_size| {
+        clamp_rect_to_display(
+            tray_rect(anchor, tray_size, placement.clone()),
+            display_bounds,
+        )
+    });
+    let content_bounds = tray_bounds
+        .map(|tray_bounds| union_rects([expand_mascot_bounds(anchor), tray_bounds]))
+        .unwrap_or_else(|| expand_mascot_bounds(anchor));
     let window_bounds = window_bounds(content_bounds, display_bounds, viewport);
 
     snapshot.anchor = anchor;
@@ -1033,7 +1047,7 @@ fn apply_layout(snapshot: &mut AvatarOverlaySnapshot, display_bounds: Rect) {
         anchor,
         mascot: relative_layout_rect(anchor, window_bounds),
         placement: placement.clone(),
-        tray: Some(relative_layout_rect(tray_bounds, window_bounds)),
+        tray: tray_bounds.map(|tray_bounds| relative_layout_rect(tray_bounds, window_bounds)),
         viewport: AvatarOverlayViewportSize {
             width: viewport.width.round() as u32,
             height: viewport.height.round() as u32,
@@ -1443,6 +1457,53 @@ mod tests {
                         "width": 276,
                         "height": 131
                     },
+                    "viewport": {
+                        "width": 356,
+                        "height": 320
+                    }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn layout_omits_tray_after_renderer_reports_no_tray() {
+        let display_bounds = Rect {
+            x: 0.0,
+            y: 0.0,
+            width: 356.0,
+            height: 320.0,
+        };
+        let mut snapshot = AvatarOverlaySnapshot::default();
+        snapshot.anchor = default_anchor(display_bounds, default_mascot_size());
+        snapshot.has_renderer_measurement = true;
+        snapshot.mascot_size = default_mascot_size();
+        snapshot.tray_size = None;
+
+        apply_layout(&mut snapshot, display_bounds);
+
+        let layout = snapshot.layout.expect("layout should be computed");
+        assert_eq!(layout.placement, AvatarOverlayPlacement::TopEnd);
+        assert_eq!(
+            serde_json::to_value(AvatarOverlayLayoutChangedNotification {
+                layout: super::AvatarOverlayLayoutNotification {
+                    mascot: layout.mascot,
+                    placement: layout.placement,
+                    tray: layout.tray,
+                    viewport: layout.viewport,
+                },
+            })
+            .expect("layout notification should serialize"),
+            serde_json::json!({
+                "layout": {
+                    "mascot": {
+                        "left": 244,
+                        "top": 191,
+                        "width": 112,
+                        "height": 121
+                    },
+                    "placement": "top-end",
+                    "tray": null,
                     "viewport": {
                         "width": 356,
                         "height": 320

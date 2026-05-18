@@ -20,6 +20,8 @@ const HOTKEY_REMOTE_ROUTE_PREFIX: &str = "/hotkey-window/remote/";
 const HOTKEY_WORKTREE_INIT_ROUTE_PREFIX: &str = "/hotkey-window/worktree-init-v2/";
 const HOTKEY_WINDOW_COMMAND_ID: &str = "hotkeyWindow";
 const HOTKEY_WINDOW_HOTKEY_GLOBAL_STATE_KEY: &str = "hotkeyWindowHotkey";
+const HOTKEY_WINDOW_DEV_OVERRIDE_GLOBAL_STATE_KEY: &str =
+    "hotkey-window-dev-hotkey-override-enabled";
 const NAVIGATE_TO_ROUTE_EVENT: &str = "navigate-to-route";
 
 // Extracted from the upstream hotkey-window lifecycle owner in main-Bnxe1qAn.js.
@@ -50,6 +52,12 @@ pub struct HotkeyWindowHotkeyStateResponse {
 #[serde(rename_all = "camelCase")]
 pub struct HotkeyWindowSetHotkeyParams {
     pub hotkey: Option<String>,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct HotkeyWindowSetDevHotkeyOverrideParams {
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -101,13 +109,24 @@ pub fn hotkey_window_hotkey_state(
     app: AppHandle,
     gate_state: State<'_, HotkeyWindowGateState>,
 ) -> Result<HotkeyWindowHotkeyStateResponse, String> {
+    let configured_hotkey = resolve_configured_hotkey_window_hotkey(&app)?;
+    let has_configured_hotkey = configured_hotkey.is_some();
+    let is_gate_enabled = hotkey_window_gate_enabled(&gate_state);
+    let is_dev_mode = cfg!(debug_assertions);
+    let is_dev_override_enabled = read_hotkey_window_dev_override_enabled(&app)?;
+
     Ok(HotkeyWindowHotkeyStateResponse {
         supported: true,
-        configured_hotkey: resolve_configured_hotkey_window_hotkey(&app)?,
-        is_gate_enabled: hotkey_window_gate_enabled(&gate_state),
-        is_dev_mode: cfg!(debug_assertions),
-        is_dev_override_enabled: false,
-        is_active: false,
+        configured_hotkey,
+        is_gate_enabled,
+        is_dev_mode,
+        is_dev_override_enabled,
+        is_active: hotkey_window_is_active(
+            has_configured_hotkey,
+            is_gate_enabled,
+            is_dev_mode,
+            is_dev_override_enabled,
+        ),
     })
 }
 
@@ -146,6 +165,21 @@ pub fn hotkey_window_set_hotkey(
         }
     };
 
+    let state = hotkey_window_hotkey_state(app, gate_state)?;
+    Ok(HotkeyWindowSetHotkeyResponse {
+        success: error.is_none(),
+        error,
+        state,
+    })
+}
+
+#[tauri::command(rename = "hotkey-window-set-dev-hotkey-override")]
+pub fn hotkey_window_set_dev_hotkey_override(
+    app: AppHandle,
+    gate_state: State<'_, HotkeyWindowGateState>,
+    params: HotkeyWindowSetDevHotkeyOverrideParams,
+) -> Result<HotkeyWindowSetHotkeyResponse, String> {
+    let error = write_hotkey_window_dev_override_enabled(&app, params.enabled).err();
     let state = hotkey_window_hotkey_state(app, gate_state)?;
     Ok(HotkeyWindowSetHotkeyResponse {
         success: error.is_none(),
@@ -219,6 +253,15 @@ fn hotkey_window_gate_enabled(gate_state: &HotkeyWindowGateState) -> bool {
         .expect("hotkey window gate state mutex poisoned")
 }
 
+fn hotkey_window_is_active(
+    has_configured_hotkey: bool,
+    is_gate_enabled: bool,
+    is_dev_mode: bool,
+    is_dev_override_enabled: bool,
+) -> bool {
+    has_configured_hotkey && is_gate_enabled && (!is_dev_mode || is_dev_override_enabled)
+}
+
 fn resolve_configured_hotkey_window_hotkey(app: &AppHandle) -> Result<Option<String>, String> {
     let keymap_hotkey = read_command_keybinding_lookup(app, HOTKEY_WINDOW_COMMAND_ID)?;
     let legacy_hotkey = read_legacy_hotkey_window_hotkey(app)?;
@@ -251,6 +294,27 @@ fn read_legacy_hotkey_window_hotkey(app: &AppHandle) -> Result<Option<String>, S
         .filter(|shortcut| {
             hotkey_window_hotkey_error(shortcut, cfg!(target_os = "macos")).is_none()
         }))
+}
+
+fn read_hotkey_window_dev_override_enabled(app: &AppHandle) -> Result<bool, String> {
+    let settings = read_global_settings(app)?;
+    Ok(settings
+        .get(HOTKEY_WINDOW_DEV_OVERRIDE_GLOBAL_STATE_KEY)
+        .and_then(Value::as_bool)
+        .unwrap_or(false))
+}
+
+fn write_hotkey_window_dev_override_enabled(app: &AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = read_global_settings(app)?;
+    let next_value = Value::Bool(enabled);
+    if settings.get(HOTKEY_WINDOW_DEV_OVERRIDE_GLOBAL_STATE_KEY) == Some(&next_value) {
+        return Ok(());
+    }
+    settings.insert(
+        HOTKEY_WINDOW_DEV_OVERRIDE_GLOBAL_STATE_KEY.to_string(),
+        next_value,
+    );
+    write_global_settings(app, &settings)
 }
 
 fn sync_legacy_hotkey_window_hotkey(
@@ -545,6 +609,7 @@ impl HotkeyWindowSurface {
 mod tests {
     use super::hotkey_window_gate_enabled;
     use super::hotkey_window_hotkey_error;
+    use super::hotkey_window_is_active;
     use super::resolve_hotkey_window_hotkey;
     use super::route_surface;
     use super::validated_hotkey_window_route;
@@ -553,6 +618,7 @@ mod tests {
     use super::HotkeyWindowHomePointerInteractionChangedParams;
     use super::HotkeyWindowHotkeyStateResponse;
     use super::HotkeyWindowRoute;
+    use super::HotkeyWindowSetDevHotkeyOverrideParams;
     use super::HotkeyWindowSetHotkeyParams;
     use super::HotkeyWindowSetHotkeyResponse;
     use super::HotkeyWindowSurface;
@@ -649,6 +715,20 @@ mod tests {
             HotkeyWindowSetHotkeyParams {
                 hotkey: Some("Ctrl+Alt+K".to_string()),
             }
+        );
+    }
+
+    #[test]
+    fn deserializes_set_dev_override_payload() {
+        let payload: HotkeyWindowSetDevHotkeyOverrideParams =
+            serde_json::from_value(serde_json::json!({
+                "enabled": true
+            }))
+            .expect("hotkey-window-set-dev-hotkey-override payload should deserialize");
+
+        assert_eq!(
+            payload,
+            HotkeyWindowSetDevHotkeyOverrideParams { enabled: true }
         );
     }
 
@@ -750,6 +830,15 @@ mod tests {
     fn gate_state_defaults_to_disabled() {
         let gate_state = HotkeyWindowGateState::default();
         assert!(!hotkey_window_gate_enabled(&gate_state));
+    }
+
+    #[test]
+    fn hotkey_window_active_formula_matches_dev_override_rules() {
+        assert!(!hotkey_window_is_active(false, true, false, false));
+        assert!(!hotkey_window_is_active(true, false, false, false));
+        assert!(!hotkey_window_is_active(true, true, true, false));
+        assert!(hotkey_window_is_active(true, true, true, true));
+        assert!(hotkey_window_is_active(true, true, false, false));
     }
 
     #[test]

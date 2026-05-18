@@ -5,6 +5,9 @@ import {
   useState,
   type FormEvent,
   type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
   type RefObject,
 } from "react";
 import type { MessageKey } from "../../i18n/messages";
@@ -14,19 +17,32 @@ import {
   ChevronDownIcon,
   ClockIcon,
 } from "../../components/AppShellIcons";
-import { AvatarSprite } from "../../components/appearance/AvatarSprite";
+import { Button } from "../../components/Button";
+import { AvatarSprite, type AvatarSpriteState } from "../../components/appearance/AvatarSprite";
 import type { AvatarOption } from "../../components/appearance/avatarData";
+import {
+  AvatarOverlayContextMenu,
+  type AvatarOverlayContextMenuPosition,
+} from "./AvatarOverlayContextMenu";
+import type { AvatarOverlayLayout } from "./avatarOverlayLayout";
+import { AvatarOverlayTooltip } from "./AvatarOverlayTooltip";
 import type {
   AvatarOverlayNotification,
   AvatarOverlayNotificationStatus,
 } from "./avatarOverlayNotifications";
 
+const TRAY_NOTIFICATION_PAGE_SIZE = 2;
 const TRAY_SCROLL_EPSILON = 2;
+const ROW_ENTER_STAGGER_SECONDS = 0.035;
 const COLLAPSED_BODY_MAX_HEIGHT_PX = 32;
 const EXPANDED_BODY_MAX_HEIGHT_PX = 512;
 
 const TRAY_EDGE_CONTROL_CLASSNAME =
-  "group no-drag absolute left-1/2 z-10 flex h-5 -translate-x-1/2 cursor-interaction items-center justify-center gap-0.5 rounded-full border border-token-border bg-token-main-surface-primary px-2 text-[10px] leading-none font-medium text-token-text-secondary shadow-[0px_5px_10px_-7px_rgba(0,0,0,0.22)] backdrop-blur hover:text-token-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-token-focus-border forced-colors:bg-[Canvas]";
+  "group no-drag absolute left-1/2 z-10 flex h-5 -translate-x-1/2 cursor-interaction items-center justify-center gap-0.5 rounded-full border border-token-border bg-token-main-surface-primary px-2 text-[10px] leading-none font-medium text-token-text-secondary shadow-[0px_5px_10px_-7px_rgba(0,0,0,0.22)] backdrop-blur hover:text-token-foreground hover:shadow-[0px_7px_14px_-9px_rgba(0,0,0,0.26)] focus-visible:ring-1 focus-visible:ring-token-focus-border focus-visible:outline-none forced-colors:bg-[Canvas]";
+const OVERLAY_BUTTON_SURFACE_CLASSNAME =
+  "!bg-token-main-surface-primary enabled:hover:!bg-[color-mix(in_srgb,var(--color-token-main-surface-primary)_94%,var(--color-token-foreground))]";
+
+const NOOP_POINTER_HANDLER = (_event: ReactPointerEvent<HTMLElement>) => undefined;
 
 export type AvatarOverlayTrayScrollState = {
   hasScrollableContent: boolean;
@@ -35,7 +51,9 @@ export type AvatarOverlayTrayScrollState = {
 };
 
 export type AvatarOverlayViewTestState = {
+  contextMenuPosition?: AvatarOverlayContextMenuPosition | null;
   expandedNotificationIds?: string[];
+  forceMascotHover?: boolean;
   forceControlsVisible?: boolean;
   forceExpandableNotificationIds?: string[];
   forceTrayScrollState?: AvatarOverlayTrayScrollState;
@@ -45,10 +63,20 @@ export type AvatarOverlayViewTestState = {
 export type AvatarOverlayViewProps = {
   selectedAvatar: AvatarOption;
   notifications: AvatarOverlayNotification[];
+  topNotification: AvatarOverlayNotification | null;
   isTrayOpen: boolean;
+  isDragging: boolean;
+  mascotTransientState: AvatarSpriteState | null;
+  layout: AvatarOverlayLayout;
+  hasRunningCloudSession?: boolean;
+  hasRunningLocalSession?: boolean;
   interactiveRegionRef?: RefObject<HTMLElement | null>;
-  onToggleTray: () => void;
-  onCollapseTray: () => void;
+  contextMenuPosition?: AvatarOverlayContextMenuPosition | null;
+  onCloseContextMenu?: () => void;
+  onClosePet?: () => void;
+  onOpenTray: () => void;
+  onCloseTray: () => void;
+  onContextMenu?: (event: ReactMouseEvent<HTMLElement>) => void;
   onOpenNotification: (notification: AvatarOverlayNotification) => void;
   onDismissNotification: (notification: AvatarOverlayNotification) => void;
   onNotificationReplyEditorActiveChange?: (isActive: boolean) => void;
@@ -57,90 +85,241 @@ export type AvatarOverlayViewProps = {
     notification: AvatarOverlayNotification,
     prompt: string,
   ) => Promise<unknown> | unknown;
+  onPointerDown?: (event: ReactPointerEvent<HTMLElement>) => void;
+  onPointerMove?: (event: ReactPointerEvent<HTMLElement>) => void;
+  onPointerUp?: (event: ReactPointerEvent<HTMLElement>) => void;
+  onPointerCancel?: (event: ReactPointerEvent<HTMLElement>) => void;
+  onLostPointerCapture?: (event: ReactPointerEvent<HTMLElement>) => void;
   testState?: AvatarOverlayViewTestState;
 };
 
 export function AvatarOverlayView({
   selectedAvatar,
   notifications,
+  topNotification,
   isTrayOpen,
+  isDragging,
+  mascotTransientState,
+  layout,
   interactiveRegionRef,
-  onToggleTray,
-  onCollapseTray,
+  contextMenuPosition,
+  onCloseContextMenu,
+  onClosePet,
+  onOpenTray,
+  onCloseTray,
+  onContextMenu,
   onOpenNotification,
   onDismissNotification,
   onNotificationReplyEditorActiveChange,
   onOpenNotificationReply,
   onSubmitNotificationReply,
+  onPointerDown = NOOP_POINTER_HANDLER,
+  onPointerMove = NOOP_POINTER_HANDLER,
+  onPointerUp = NOOP_POINTER_HANDLER,
+  onPointerCancel = NOOP_POINTER_HANDLER,
+  onLostPointerCapture = NOOP_POINTER_HANDLER,
   testState,
 }: AvatarOverlayViewProps) {
   const { t } = useI18n();
-  const notificationCount = notifications.length;
-  const topNotification = notifications[0] ?? null;
-  const topNotificationAppearance = getNotificationAppearance(topNotification?.status);
-  const trayAriaLabel = t("avatarOverlay.toggleNotificationTray", {
-    count: notificationCount,
-  });
-  const mascotAriaLabel = t("petOverlay.mascotLabel", { petName: selectedAvatar.displayName });
+  const topNotificationAppearance = getNotificationAppearance(topNotification);
+  const hasNotifications = notifications.length > 0;
+  const isTrayVisible = hasNotifications && isTrayOpen;
+  const trayPlacementOrigin = `${layout.placement.startsWith("top") ? "bottom" : "top"} ${
+    layout.placement.endsWith("end") ? "right" : "left"
+  }`;
+  const mascotState = topNotificationAppearance.mascotState;
+  const trayMaxHeight = layout.tray?.height;
+  const activeContextMenuPosition = testState?.contextMenuPosition ?? contextMenuPosition ?? null;
+
+  const notificationBadge = isTrayVisible
+    ? {
+        ariaLabel: t("avatarOverlay.collapseNotificationTray"),
+        backgroundColor: "var(--color-token-bg-primary)",
+        content: <ChevronDownIcon className="icon-xs opacity-80" />,
+        foregroundColor: "var(--color-token-text-secondary)",
+        isIconOnly: true,
+        onClick: onCloseTray,
+      }
+    : hasNotifications
+      ? {
+          ariaLabel: t("avatarOverlay.toggleNotificationTray", {
+            count: notifications.length,
+          }),
+          backgroundColor: topNotificationAppearance.badgeBackgroundColor,
+          content: notifications.length,
+          foregroundColor: topNotificationAppearance.badgeForegroundColor,
+          onClick: onOpenTray,
+        }
+      : null;
 
   return (
-    <main
-      ref={interactiveRegionRef as RefObject<HTMLElement> | undefined}
-      data-page="avatar-overlay"
-      className="flex h-full w-full select-none flex-col items-center justify-end overflow-hidden bg-transparent text-token-foreground"
-    >
+    <main className="relative h-screen w-screen overflow-hidden bg-transparent">
       <section
-        aria-label={t("avatarOverlay.notificationList")}
-        className="pointer-events-none flex w-full max-w-[340px] flex-col items-stretch gap-2 px-4 pb-3"
+        ref={interactiveRegionRef as RefObject<HTMLElement> | undefined}
+        data-avatar-overlay-content-frame="true"
+        className="relative h-full w-full cursor-grab active:cursor-grabbing"
+        onLostPointerCapture={onLostPointerCapture}
+        onPointerCancel={onPointerCancel}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
       >
-        {isTrayOpen ? (
-          <NotificationTray
-            notifications={notifications}
-            onCollapse={onCollapseTray}
-            onDismissNotification={onDismissNotification}
-            onNotificationReplyEditorActiveChange={onNotificationReplyEditorActiveChange}
-            onOpenNotification={onOpenNotification}
-            onOpenNotificationReply={onOpenNotificationReply}
-            onSubmitNotificationReply={onSubmitNotificationReply}
-            testState={testState}
+        {hasNotifications ? (
+          <div
+            aria-hidden={!isTrayVisible || undefined}
+            data-avatar-overlay-hit-region="notification-tray"
+            inert={!isTrayVisible ? true : undefined}
+            className="absolute cursor-interaction text-sm text-token-foreground"
+            style={{
+              height: layout.tray?.height,
+              left: layout.tray?.left,
+              pointerEvents: isTrayVisible ? undefined : "none",
+              top: layout.tray?.top,
+              visibility: layout.tray == null ? "hidden" : undefined,
+              width: layout.tray?.width,
+            }}
+          >
+            <div
+              className="relative overflow-hidden [corner-shape:superellipse(1.5)]"
+              data-avatar-overlay-size="notification-tray"
+              style={{
+                maxHeight: trayMaxHeight,
+                opacity: isTrayVisible ? 1 : 0,
+                transformOrigin: trayPlacementOrigin,
+                transform: `translateY(${isTrayVisible || testState?.forceControlsVisible ? 0 : 8}px) scale(${isTrayVisible || testState?.forceControlsVisible ? 1 : 0.97})`,
+              }}
+            >
+              <div
+                data-avatar-overlay-size="notification-tray-header"
+                className="h-0 overflow-hidden"
+              />
+              <NotificationTray
+                isTrayVisible={isTrayVisible}
+                notifications={notifications}
+                trayMaxHeight={trayMaxHeight}
+                onDismissNotification={onDismissNotification}
+                onNotificationReplyEditorActiveChange={onNotificationReplyEditorActiveChange}
+                onOpenNotification={onOpenNotification}
+                onOpenNotificationReply={onOpenNotificationReply}
+                onSubmitNotificationReply={onSubmitNotificationReply}
+                testState={testState}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        <div
+          data-avatar-overlay-hit-region="mascot"
+          className={[
+            "absolute duration-[160ms] ease-out [@media(prefers-reduced-motion:reduce)]:transition-none",
+            isDragging ? "scale-95 transition-transform" : "transition-none",
+          ].join(" ")}
+          style={{
+            height: layout.mascot.height,
+            left: layout.mascot.left,
+            top: layout.mascot.top,
+            width: layout.mascot.width,
+          }}
+        >
+          <MascotButton
+            ariaLabel={t("petOverlay.mascotLabel", { petName: selectedAvatar.displayName })}
+            avatar={selectedAvatar}
+            badge={notificationBadge}
+            forceHover={testState?.forceMascotHover === true}
+            mascotState={mascotState}
+            onContextMenu={onContextMenu}
+            transientState={mascotTransientState}
+          />
+        </div>
+        {activeContextMenuPosition != null && onCloseContextMenu != null && onClosePet != null ? (
+          <AvatarOverlayContextMenu
+            label={t("petOverlay.closePet")}
+            onClose={onCloseContextMenu}
+            onSelect={onClosePet}
+            position={activeContextMenuPosition}
           />
         ) : null}
       </section>
-      <div className="relative flex items-end gap-2 pb-3">
-        <button
-          type="button"
-          aria-label={mascotAriaLabel}
-          data-avatar-mascot="true"
-          data-testid="avatar-mascot-button"
-          className="no-drag relative flex size-20 cursor-interaction items-center justify-center rounded-full bg-transparent focus:outline-none"
-          onClick={onToggleTray}
-        >
-          <AvatarSprite avatar={selectedAvatar} size="md" />
-        </button>
-        {notificationCount > 0 ? (
-          <button
-            type="button"
-            data-avatar-overlay-hit-region="true"
-            data-testid="avatar-overlay-notification-badge"
-            aria-label={trayAriaLabel}
-            className="no-drag absolute top-0 right-0 z-20 flex min-h-7 min-w-7 cursor-interaction items-center justify-center rounded-full border border-token-border/60 px-2 py-1 text-xs leading-none font-medium shadow-sm focus:outline-none"
-            onClick={onToggleTray}
-            style={{
-              backgroundColor: topNotificationAppearance.badgeBackgroundColor,
-              color: topNotificationAppearance.badgeForegroundColor,
-            }}
-          >
-            {t("avatarOverlay.compactOlderNotificationCount", { count: notificationCount })}
-          </button>
-        ) : null}
-      </div>
     </main>
   );
 }
 
+function MascotButton({
+  ariaLabel,
+  avatar,
+  badge,
+  forceHover = false,
+  mascotState,
+  onContextMenu,
+  transientState,
+}: {
+  ariaLabel: string;
+  avatar: AvatarOption;
+  badge:
+    | {
+        ariaLabel: string;
+        backgroundColor: string;
+        content: ReactNode;
+        foregroundColor: string;
+        isIconOnly?: boolean;
+        onClick: () => void;
+      }
+    | null;
+  forceHover?: boolean;
+  mascotState: AvatarSpriteState;
+  onContextMenu?: (event: ReactMouseEvent<HTMLElement>) => void;
+  transientState: AvatarSpriteState | null;
+}) {
+  const [isHovered, setIsHovered] = useState(false);
+  const state = transientState ?? (forceHover || isHovered ? "jumping" : mascotState);
+
+  return (
+    <div
+      aria-label={ariaLabel}
+      data-avatar-mascot="true"
+      data-testid="avatar-mascot-button"
+      role={badge != null ? "group" : "img"}
+      className="relative flex size-20 cursor-interaction items-center justify-center active:cursor-grabbing"
+      onContextMenu={onContextMenu}
+      onPointerEnter={() => {
+        setIsHovered(true);
+      }}
+      onPointerLeave={() => {
+        setIsHovered(false);
+      }}
+    >
+      <AvatarSprite
+        avatar={avatar}
+        className="relative z-10"
+        size="md"
+        state={state}
+      />
+      {badge != null ? (
+        <button
+          type="button"
+          aria-label={badge.ariaLabel}
+          className={[
+            "no-drag absolute top-0 right-0 z-20 flex cursor-interaction items-center justify-center rounded-full border border-token-border/60 text-xs leading-none font-medium shadow-sm focus-visible:ring-2 focus-visible:ring-token-focus-border focus-visible:outline-none",
+            badge.isIconOnly ? "size-7 p-0" : "min-h-7 min-w-7 px-2 py-1",
+          ].join(" ")}
+          data-testid="avatar-overlay-notification-badge"
+          onClick={badge.onClick}
+          style={{
+            backgroundColor: badge.backgroundColor,
+            color: badge.foregroundColor,
+          }}
+        >
+          {badge.content}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function NotificationTray({
+  isTrayVisible,
   notifications,
-  onCollapse,
+  trayMaxHeight,
   onDismissNotification,
   onNotificationReplyEditorActiveChange,
   onOpenNotification,
@@ -148,8 +327,9 @@ function NotificationTray({
   onSubmitNotificationReply,
   testState,
 }: {
+  isTrayVisible: boolean;
   notifications: AvatarOverlayNotification[];
-  onCollapse: () => void;
+  trayMaxHeight?: number;
   onDismissNotification: (notification: AvatarOverlayNotification) => void;
   onNotificationReplyEditorActiveChange?: (isActive: boolean) => void;
   onOpenNotification: (notification: AvatarOverlayNotification) => void;
@@ -162,7 +342,7 @@ function NotificationTray({
 }) {
   const { t } = useI18n();
   const listRef = useRef<HTMLDivElement | null>(null);
-  const [replyOpenNotificationId, setReplyOpenNotificationId] = useState<string | null>(null);
+  const replyInputRef = useRef<HTMLInputElement | null>(null);
   const [scrollState, setScrollState] = useState<AvatarOverlayTrayScrollState>(
     testState?.forceTrayScrollState ?? {
       hasScrollableContent: false,
@@ -170,16 +350,31 @@ function NotificationTray({
       hiddenOlderNotificationCount: 0,
     },
   );
+  const [replyOpenNotificationId, setReplyOpenNotificationId] = useState<string | null>(null);
   const controlledReplyOpenNotificationId = testState?.replyOpenNotificationId;
   const activeReplyOpenNotificationId =
     controlledReplyOpenNotificationId === undefined
       ? replyOpenNotificationId
       : controlledReplyOpenNotificationId;
+  const hiddenOlderNotificationCount = Math.min(
+    scrollState.hiddenOlderNotificationCount,
+    Math.max(0, notifications.length - TRAY_NOTIFICATION_PAGE_SIZE),
+  );
+  const showLatestControl =
+    scrollState.hasScrollableContent &&
+    notifications.length > TRAY_NOTIFICATION_PAGE_SIZE &&
+    scrollState.hasLatestNotificationsAbove;
+  const showOlderControl =
+    scrollState.hasScrollableContent &&
+    notifications.length > TRAY_NOTIFICATION_PAGE_SIZE &&
+    hiddenOlderNotificationCount > 0;
+  const hasScrollableContent = scrollState.hasScrollableContent;
 
   useEffect(() => {
-    const isActive = activeReplyOpenNotificationId != null;
-    onNotificationReplyEditorActiveChange?.(isActive);
-  }, [activeReplyOpenNotificationId, onNotificationReplyEditorActiveChange]);
+    onNotificationReplyEditorActiveChange?.(
+      activeReplyOpenNotificationId != null && isTrayVisible,
+    );
+  }, [activeReplyOpenNotificationId, isTrayVisible, onNotificationReplyEditorActiveChange]);
 
   useEffect(() => {
     return () => {
@@ -195,170 +390,124 @@ function NotificationTray({
 
     const element = listRef.current;
     if (element == null) {
-      setScrollState({
-        hasScrollableContent: false,
-        hasLatestNotificationsAbove: false,
-        hiddenOlderNotificationCount: 0,
-      });
       return undefined;
     }
 
-    let frameId: number | null = null;
     const update = () => {
-      frameId = null;
       const next = getTrayScrollState(element);
       setScrollState((current) => (trayScrollStateEquals(current, next) ? current : next));
     };
-    const scheduleUpdate = () => {
-      if (frameId != null || typeof window === "undefined") {
-        return;
-      }
-      frameId = window.requestAnimationFrame(update);
-    };
-    const resizeObserver =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleUpdate);
 
-    element.addEventListener("scroll", scheduleUpdate);
+    const resizeObserver =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    element.addEventListener("scroll", update);
     resizeObserver?.observe(element);
-    for (const row of getTrayScrollRows(element)) {
-      resizeObserver?.observe(row);
-    }
-    scheduleUpdate();
+    update();
 
     return () => {
-      element.removeEventListener("scroll", scheduleUpdate);
+      element.removeEventListener("scroll", update);
       resizeObserver?.disconnect();
-      if (frameId != null && typeof window !== "undefined") {
-        window.cancelAnimationFrame(frameId);
-      }
     };
-  }, [
-    notifications,
-    activeReplyOpenNotificationId,
-    testState?.forceTrayScrollState,
-  ]);
-
-  const handleOpenReply = (notification: AvatarOverlayNotification) => {
-    if (notification.localConversationId == null) {
-      return;
-    }
-    onOpenNotificationReply?.(notification);
-    if (controlledReplyOpenNotificationId === undefined) {
-      setReplyOpenNotificationId(notification.id);
-    }
-  };
-
-  const handleCloseReply = () => {
-    if (controlledReplyOpenNotificationId === undefined) {
-      setReplyOpenNotificationId(null);
-    }
-  };
+  }, [notifications, activeReplyOpenNotificationId, testState?.forceTrayScrollState, trayMaxHeight]);
 
   return (
-    <div
-      data-avatar-overlay-hit-region="true"
-      data-avatar-overlay-size="notification-tray"
-      className="pointer-events-auto flex flex-col gap-2 rounded-2xl border border-token-border bg-token-main-surface-primary p-3 shadow-lg"
-    >
-      <div
-        data-avatar-overlay-size="notification-tray-header"
-        className="flex items-center justify-between"
-      >
-        <span className="text-size-chat-sm font-medium text-token-foreground">
-          {t("avatarOverlay.latestNotifications")}
-        </span>
+    <div className="relative">
+      {showLatestControl ? (
         <button
           type="button"
-          aria-label={t("avatarOverlay.collapseNotificationTray")}
-          className="flex size-6 cursor-interaction items-center justify-center rounded-md text-token-text-secondary hover:bg-token-list-hover-background focus:outline-none"
-          onClick={onCollapse}
+          aria-label={t("avatarOverlay.showLatestNotifications")}
+          data-avatar-overlay-hit-region="notification-scroll-control"
+          className={`${TRAY_EDGE_CONTROL_CLASSNAME} top-1 min-w-12`}
+          onClick={() => {
+            const element = listRef.current;
+            if (element == null) {
+              return;
+            }
+            element.scrollTo({
+              top: 0,
+              behavior: "smooth",
+            });
+            setScrollState(getTrayScrollState(element, 0));
+          }}
         >
-          <ChevronDownIcon className="icon-xs" />
+          <span>{t("avatarOverlay.latestNotifications")}</span>
+          <ChevronDownIcon className="icon-2xs hidden -rotate-90 opacity-70 group-hover:block group-focus:block" />
         </button>
+      ) : null}
+
+      <div
+        ref={listRef}
+        aria-label={t("avatarOverlay.notificationList")}
+        className={[
+          "scrollbar-on-hover flex flex-col gap-1.5 overflow-y-auto px-1.5 pt-1 pb-0 [--edge-fade-distance:0.75rem]",
+          hasScrollableContent ? "vertical-scroll-fade-mask snap-y snap-mandatory" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        data-avatar-overlay-size="notification-tray-list"
+        role="list"
+        style={{ maxHeight: trayMaxHeight }}
+      >
+        {notifications.map((notification, index) => (
+          <NotificationTrayRow
+            key={notification.id}
+            forceControlsVisible={testState?.forceControlsVisible === true}
+            forceExpandable={testState?.forceExpandableNotificationIds?.includes(notification.id)}
+            initiallyExpanded={testState?.expandedNotificationIds?.includes(notification.id)}
+            isReplyEditorOpen={activeReplyOpenNotificationId === notification.id}
+            notification={notification}
+            notificationIndex={index}
+            onCloseReply={() => {
+              setReplyOpenNotificationId((current) =>
+                current === notification.id ? null : current,
+              );
+            }}
+            onDismissNotification={onDismissNotification}
+            onOpenNotification={onOpenNotification}
+            onOpenReply={() => {
+              onOpenNotificationReply?.(notification);
+              setReplyOpenNotificationId(notification.id);
+            }}
+            onSubmitNotificationReply={onSubmitNotificationReply}
+            replyInputRef={replyInputRef}
+          />
+        ))}
       </div>
-      {notifications.length === 0 ? (
-        <p className="text-size-chat-sm text-token-text-secondary">{t("history.noMessageYet")}</p>
-      ) : (
-        <div className="relative">
-          {scrollState.hasLatestNotificationsAbove ? (
-            <button
-              type="button"
-              aria-label={t("avatarOverlay.showLatestNotifications")}
-              className={`${TRAY_EDGE_CONTROL_CLASSNAME} top-1`}
-              onClick={() => {
-                const element = listRef.current;
-                if (element == null) {
-                  return;
-                }
-                element.scrollTo({
-                  top: 0,
-                  behavior: "smooth",
-                });
-              }}
-            >
-              <ChevronDownIcon className="icon-[10px] rotate-180 opacity-70" />
-              <span>{t("avatarOverlay.latestNotifications")}</span>
-            </button>
-          ) : null}
-          <div
-            ref={listRef}
-            role="list"
-            data-avatar-overlay-size="notification-tray-list"
-            className="flex max-h-60 snap-y snap-mandatory flex-col gap-2 overflow-y-auto pr-0.5"
-          >
-            {notifications.map((notification) => (
-              <NotificationTrayRow
-                key={notification.id}
-                forceControlsVisible={testState?.forceControlsVisible === true}
-                forceExpandable={testState?.forceExpandableNotificationIds?.includes(
-                  notification.id,
-                )}
-                initiallyExpanded={testState?.expandedNotificationIds?.includes(notification.id)}
-                isReplyEditorOpen={activeReplyOpenNotificationId === notification.id}
-                notification={notification}
-                onCloseReply={handleCloseReply}
-                onDismissNotification={onDismissNotification}
-                onOpenNotification={onOpenNotification}
-                onOpenReply={handleOpenReply}
-                onSubmitNotificationReply={onSubmitNotificationReply}
-              />
-            ))}
-          </div>
-          {scrollState.hiddenOlderNotificationCount > 0 ? (
-            <button
-              type="button"
-              aria-label={t("avatarOverlay.showOlderNotifications", {
-                count: scrollState.hiddenOlderNotificationCount,
-              })}
-              className={`${TRAY_EDGE_CONTROL_CLASSNAME} bottom-1`}
-              onClick={() => {
-                const element = listRef.current;
-                if (element == null) {
-                  return;
-                }
-                const rows = getTrayScrollRows(element);
-                const currentIndex = findTrayScrollIndex(
-                  rows,
-                  getTrayTopAnchor(element, rows),
-                );
-                const nextIndex = Math.min(currentIndex + 1, rows.length - 1);
-                const anchorOffsetTop = rows[0]?.offsetTop ?? 0;
-                element.scrollTo({
-                  top: Math.max(0, rows[nextIndex]?.offsetTop - anchorOffsetTop),
-                  behavior: "smooth",
-                });
-              }}
-            >
-              <span>
-                {t("avatarOverlay.olderNotificationCount", {
-                  count: scrollState.hiddenOlderNotificationCount,
-                })}
-              </span>
-              <ChevronDownIcon className="icon-[10px] opacity-70" />
-            </button>
-          ) : null}
-        </div>
-      )}
+
+      {showOlderControl ? (
+        <button
+          type="button"
+          aria-label={t("avatarOverlay.showOlderNotifications", {
+            count: hiddenOlderNotificationCount,
+          })}
+          data-avatar-overlay-hit-region="notification-scroll-control"
+          className={`${TRAY_EDGE_CONTROL_CLASSNAME} bottom-1 min-w-9`}
+          onClick={() => {
+            const element = listRef.current;
+            if (element == null) {
+              return;
+            }
+            const nextScrollTop = getOlderNotificationScrollTop(element, hiddenOlderNotificationCount);
+            element.scrollTo({
+              top: nextScrollTop,
+              behavior: "smooth",
+            });
+            setScrollState(getTrayScrollState(element, nextScrollTop));
+          }}
+        >
+          <span className="group-hover:hidden group-focus:hidden">
+            {t("avatarOverlay.compactOlderNotificationCount", {
+              count: hiddenOlderNotificationCount,
+            })}
+          </span>
+          <span className="hidden group-hover:inline group-focus:inline">
+            {t("avatarOverlay.olderNotificationCount", {
+              count: hiddenOlderNotificationCount,
+            })}
+          </span>
+          <ChevronDownIcon className="icon-2xs hidden rotate-90 opacity-70 group-hover:block group-focus:block" />
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -369,43 +518,39 @@ function NotificationTrayRow({
   initiallyExpanded = false,
   isReplyEditorOpen,
   notification,
+  notificationIndex,
   onCloseReply,
   onDismissNotification,
   onOpenNotification,
   onOpenReply,
   onSubmitNotificationReply,
+  replyInputRef,
 }: {
   forceControlsVisible: boolean;
   forceExpandable?: boolean;
   initiallyExpanded?: boolean;
   isReplyEditorOpen: boolean;
   notification: AvatarOverlayNotification;
+  notificationIndex: number;
   onCloseReply: () => void;
   onDismissNotification: (notification: AvatarOverlayNotification) => void;
   onOpenNotification: (notification: AvatarOverlayNotification) => void;
-  onOpenReply: (notification: AvatarOverlayNotification) => void;
+  onOpenReply: () => void;
   onSubmitNotificationReply?: (
     notification: AvatarOverlayNotification,
     prompt: string,
   ) => Promise<unknown> | unknown;
+  replyInputRef: RefObject<HTMLInputElement | null>;
 }) {
   const { t } = useI18n();
-  const appearance = getNotificationAppearance(notification.status);
+  const appearance = getNotificationAppearance(notification);
   const fallbackBody = t(appearance.fallbackBodyKey);
   const body = notification.body ?? fallbackBody;
   const statusLabel = t(appearance.labelKey);
-  const trimmedStatusLabel = trimStatusBody(statusLabel);
-  const trimmedBody = trimStatusBody(body);
-  const bodyForAria =
-    notification.body == null && trimmedBody === trimmedStatusLabel ? "" : trimmedBody;
-  const ariaLabel = [
-    notification.title,
-    statusLabel,
-    bodyForAria,
-    t("avatarOverlay.openNotification"),
-  ]
-    .filter((segment) => segment.length > 0)
-    .join(". ");
+  const trimmedBody = trimStatusText(body);
+  const trimmedStatusLabel = trimStatusText(statusLabel);
+  const ariaBody = notification.body == null && trimmedBody === trimmedStatusLabel ? "" : trimmedBody;
+  const canOpen = notification.actionPath.length > 0;
   const canReply = notification.localConversationId != null && onSubmitNotificationReply != null;
   const [isExpanded, setIsExpanded] = useState(initiallyExpanded);
   const [isSubmittingReply, setIsSubmittingReply] = useState(false);
@@ -414,28 +559,27 @@ function NotificationTrayRow({
   const [isControlActive, setIsControlActive] = useState(false);
   const measureBodyRef = useRef<HTMLDivElement | null>(null);
   const [measuredBodyHeight, setMeasuredBodyHeight] = useState(0);
-  const replyInputRef = useRef<HTMLInputElement | null>(null);
 
   useLayoutEffect(() => {
-    const measureElement = measureBodyRef.current;
-    if (measureElement == null) {
+    const element = measureBodyRef.current;
+    if (element == null) {
       return undefined;
     }
 
-    const updateHeight = () => {
-      const nextHeight = measureElement.scrollHeight;
+    const update = () => {
+      const nextHeight = element.scrollHeight;
       setMeasuredBodyHeight((current) => (current === nextHeight ? current : nextHeight));
     };
 
-    updateHeight();
+    update();
     if (typeof ResizeObserver === "undefined") {
       return undefined;
     }
 
-    const resizeObserver = new ResizeObserver(updateHeight);
-    resizeObserver.observe(measureElement);
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
     return () => {
-      resizeObserver.disconnect();
+      observer.disconnect();
     };
   }, [body]);
 
@@ -447,28 +591,17 @@ function NotificationTrayRow({
     }
 
     replyInputRef.current?.focus();
-  }, [isReplyEditorOpen]);
+  }, [isReplyEditorOpen, replyInputRef]);
 
   const canExpand =
-    forceExpandable === true ||
-    measuredBodyHeight > COLLAPSED_BODY_MAX_HEIGHT_PX + 1 ||
-    body.length > 120 ||
-    body.includes("\n");
+    forceExpandable === true || measuredBodyHeight > COLLAPSED_BODY_MAX_HEIGHT_PX + 1;
   const showExpandedBody = canExpand && isExpanded && !isReplyEditorOpen;
   const showControls = forceControlsVisible || isControlActive || isReplyEditorOpen;
-
-  const handleOpen = () => {
-    onOpenNotification(notification);
-  };
-
-  const handleOpenKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "Enter" && event.key !== " ") {
-      return;
-    }
-
-    event.preventDefault();
-    handleOpen();
-  };
+  const ariaLabel = canOpen
+    ? [notification.title, statusLabel, ariaBody, t("avatarOverlay.openNotification")]
+        .filter((segment) => segment.length > 0)
+        .join(". ")
+    : undefined;
 
   const handleReplySubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -486,6 +619,7 @@ function NotificationTrayRow({
       setIsSubmittingReply(true);
       setReplyError(null);
       await onSubmitNotificationReply(notification, prompt);
+      setReplyValue("");
       onCloseReply();
     } catch {
       setReplyError(t("avatarOverlay.notificationReplyError"));
@@ -499,6 +633,10 @@ function NotificationTrayRow({
       role="listitem"
       className="group no-drag relative w-full snap-start scroll-mt-2 text-left"
       data-avatar-overlay-measure="notification-tray-row"
+      style={{
+        opacity: 1,
+        transitionDelay: `${Math.min(notificationIndex, 3) * ROW_ENTER_STAGGER_SECONDS}s`,
+      }}
       onBlurCapture={(event) => {
         const nextTarget = event.relatedTarget;
         if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
@@ -516,25 +654,47 @@ function NotificationTrayRow({
         setIsControlActive(false);
       }}
     >
-      <div className="relative z-[1] overflow-hidden rounded-[18px] border border-token-border/60 bg-token-main-surface-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.42),inset_0_-1px_0_rgba(0,0,0,0.08)]">
+      <div
+        className={[
+          "relative z-[1] overflow-hidden rounded-[18px] border border-token-border/60 bg-token-main-surface-primary shadow-[inset_0_1px_0_rgba(255,255,255,0.42),inset_0_-1px_0_rgba(0,0,0,0.08)] backdrop-blur-xl forced-colors:bg-[Canvas]",
+          canOpen
+            ? "transition-[background-color,border-color,box-shadow] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] hover:border-token-border/80 hover:bg-token-main-surface-primary hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.52),inset_0_-1px_0_rgba(0,0,0,0.1)] motion-reduce:transition-none"
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
         <div
-          role="button"
-          tabIndex={0}
+          role={canOpen ? "button" : undefined}
+          tabIndex={canOpen ? 0 : undefined}
           aria-label={ariaLabel}
-          className="block w-full min-w-0 cursor-interaction px-3 py-1.5 text-left focus:outline-none focus-visible:outline focus-visible:outline-token-focus focus-visible:outline-offset-[-2px]"
-          onClick={handleOpen}
-          onKeyDown={handleOpenKeyDown}
+          className={[
+            "block w-full min-w-0 px-3 py-1.5 text-left focus-visible:outline-token-focus focus-visible:outline focus-visible:outline-offset-[-2px]",
+            canOpen ? "cursor-interaction" : "cursor-default",
+          ].join(" ")}
+          onClick={() => {
+            if (canOpen) {
+              onOpenNotification(notification);
+            }
+          }}
+          onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
+            if (!canOpen || (event.key !== "Enter" && event.key !== " ")) {
+              return;
+            }
+            event.preventDefault();
+            onOpenNotification(notification);
+          }}
         >
-          <span className="flex min-w-0 items-center gap-2 pr-7">
-            <span className={appearance.iconClassName}>{renderNotificationIcon(notification.status)}</span>
+          <span className="flex min-w-0 items-center pr-7">
             <span className="text-size-chat min-w-0 truncate leading-[17px] font-semibold text-token-foreground">
               {notification.title}
             </span>
           </span>
           <div
-            className={`text-size-chat-sm mt-0.5 overflow-hidden leading-4 text-token-foreground ${
-              showExpandedBody ? "whitespace-pre-wrap" : "line-clamp-2"
-            }`}
+            className={[
+              "text-size-chat-sm mt-0.5 overflow-hidden leading-4 text-token-foreground",
+              showExpandedBody ? "whitespace-pre-wrap" : "line-clamp-2",
+            ].join(" ")}
             style={{
               maxHeight: showExpandedBody
                 ? `${EXPANDED_BODY_MAX_HEIGHT_PX}px`
@@ -544,6 +704,7 @@ function NotificationTrayRow({
             {body}
           </div>
         </div>
+
         <div
           ref={measureBodyRef}
           aria-hidden="true"
@@ -551,67 +712,101 @@ function NotificationTrayRow({
         >
           {body}
         </div>
+
         <span
-          className={`pointer-events-none absolute top-1 right-1 z-0 flex size-6 items-center justify-center ${
-            canExpand && showControls ? "opacity-0" : "opacity-100"
-          }`}
+          className={[
+            "pointer-events-none absolute top-1 right-1 z-0 flex size-6 items-center justify-center opacity-100",
+            canExpand && showControls ? "opacity-0 transition-opacity duration-150 motion-reduce:transition-none" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
         >
           {renderNotificationIcon(notification.status)}
         </span>
+
         {canExpand ? (
           <div
-            className={`absolute top-1 right-1 z-10 ${
-              showControls ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
-            }`}
+            className={[
+              "absolute top-1 right-1 z-10 transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
+              showControls
+                ? "pointer-events-auto translate-x-0 opacity-100"
+                : "pointer-events-none translate-x-[6px] opacity-0",
+            ].join(" ")}
+            data-avatar-overlay-control="expand"
           >
-            <button
-              type="button"
-              aria-expanded={showExpandedBody}
-              aria-label={t(
+            <AvatarOverlayTooltip
+              align="end"
+              content={t(
                 showExpandedBody
-                  ? "avatarOverlay.collapseNotification"
-                  : "avatarOverlay.expandNotification",
-                { title: notification.title },
+                  ? "avatarOverlay.collapseNotificationTooltip"
+                  : "avatarOverlay.expandNotificationTooltip",
               )}
-              className="flex size-6 cursor-interaction items-center justify-center rounded-md border border-token-border bg-token-main-surface-primary text-token-text-secondary shadow-[0px_5px_10px_-7px_rgba(0,0,0,0.22)] hover:text-token-foreground focus:outline-none"
-              onClick={(event) => {
-                event.stopPropagation();
-                setIsExpanded((current) => !current);
-              }}
+              side="top"
             >
-              <ChevronDownIcon
-                className={`icon-xs transition-transform duration-150 ${
-                  showExpandedBody ? "rotate-90" : "-rotate-90"
-                }`}
-              />
-            </button>
+              <Button
+                aria-expanded={showExpandedBody}
+                aria-label={t(
+                  showExpandedBody
+                    ? "avatarOverlay.collapseNotification"
+                    : "avatarOverlay.expandNotification",
+                  { title: notification.title },
+                )}
+                className={["size-6", OVERLAY_BUTTON_SURFACE_CLASSNAME].join(" ")}
+                color="ghost"
+                size="icon"
+                onClick={() => {
+                  setIsExpanded((current) => !current);
+                }}
+              >
+                <ChevronDownIcon
+                  className={[
+                    "icon-xs transition-transform duration-150",
+                    showExpandedBody ? "rotate-90" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                />
+              </Button>
+            </AvatarOverlayTooltip>
           </div>
         ) : null}
+
         {canReply && !isReplyEditorOpen ? (
           <div
-            className={`no-drag absolute right-2 bottom-1 z-10 ${
-              showControls ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
-            }`}
+            className={[
+              "no-drag absolute right-2 bottom-1 z-10 transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
+              showControls
+                ? "pointer-events-auto translate-x-0 opacity-100"
+                : "pointer-events-none translate-x-[6px] opacity-0",
+            ].join(" ")}
+            data-avatar-overlay-control="reply"
           >
-            <button
-              type="button"
-              aria-label={t("avatarOverlay.replyNotification", { title: notification.title })}
-              className="h-5 cursor-interaction rounded-md border border-token-border bg-token-main-surface-primary px-2 text-xs leading-none text-token-foreground shadow-[0px_5px_10px_-7px_rgba(0,0,0,0.22)] focus:outline-none"
-              onClick={(event) => {
-                event.stopPropagation();
-                setReplyError(null);
-                setReplyValue("");
-                onOpenReply(notification);
-                setIsControlActive(true);
-              }}
-              onPointerDown={(event) => {
-                event.stopPropagation();
-              }}
-            >
-              {t("avatarOverlay.replyNotificationButton")}
-            </button>
+            <div className="flex justify-end pb-1">
+              <Button
+                aria-label={t("avatarOverlay.replyNotification", { title: notification.title })}
+                className={[
+                  "h-5 px-2 text-xs leading-none text-token-foreground shadow-[0px_5px_10px_-7px_rgba(0,0,0,0.22)]",
+                  OVERLAY_BUTTON_SURFACE_CLASSNAME,
+                ].join(" ")}
+                color="outline"
+                size="default"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setReplyError(null);
+                  setReplyValue("");
+                  onOpenReply();
+                  setIsControlActive(true);
+                }}
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                }}
+              >
+                {t("avatarOverlay.replyNotificationButton")}
+              </Button>
+            </div>
           </div>
         ) : null}
+
         {isReplyEditorOpen ? (
           <form
             className="no-drag mx-3 mb-2 border-t border-token-border/60 pt-2"
@@ -646,14 +841,17 @@ function NotificationTrayRow({
                   setReplyError(null);
                 }}
               />
-              <button
-                type="submit"
+              <Button
                 aria-label={t("avatarOverlay.sendNotificationReply", { title: notification.title })}
+                className="h-6 px-2 text-xs"
+                color="primary"
                 disabled={replyValue.trim().length === 0 || isSubmittingReply}
-                className="h-6 cursor-interaction rounded-md bg-token-button-primary px-2 text-xs text-token-button-primary-label disabled:cursor-default disabled:opacity-60 focus:outline-none"
+                loading={isSubmittingReply}
+                size="default"
+                type="submit"
               >
                 {t("avatarOverlay.replyNotificationButton")}
-              </button>
+              </Button>
             </div>
             {replyError != null ? (
               <div className="mt-1 text-[11px] leading-4 text-token-error-foreground" role="alert">
@@ -662,23 +860,37 @@ function NotificationTrayRow({
             ) : null}
           </form>
         ) : null}
+
         {notification.canDismiss ? (
           <div
-            className={`absolute top-1 left-1 z-20 ${
-              showControls ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
-            }`}
+            className={[
+              "absolute top-1 left-1 z-20 transition-[opacity,transform] duration-200 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
+              showControls
+                ? "pointer-events-auto translate-x-0 opacity-100"
+                : "pointer-events-none -translate-x-[6px] opacity-0",
+            ].join(" ")}
+            data-avatar-overlay-control="dismiss"
           >
-            <button
-              type="button"
-              aria-label={t("avatarOverlay.dismissNotification", { title: notification.title })}
-              className="flex size-6 cursor-interaction items-center justify-center rounded-full border border-token-border bg-token-main-surface-primary text-token-text-secondary shadow-[0px_5px_10px_-7px_rgba(0,0,0,0.22)] hover:text-token-foreground focus:outline-none"
-              onClick={(event) => {
-                event.stopPropagation();
-                onDismissNotification(notification);
-              }}
+            <AvatarOverlayTooltip
+              align="start"
+              content={t("avatarOverlay.dismissNotificationTooltip")}
+              side="top"
             >
-              <DismissNotificationIcon className="icon-xs" />
-            </button>
+              <Button
+                aria-label={t("avatarOverlay.dismissNotification", { title: notification.title })}
+                className={[
+                  "[&>svg]:!icon-xs size-6 shadow-[0px_5px_10px_-7px_rgba(0,0,0,0.22)] enabled:hover:!text-token-foreground",
+                  OVERLAY_BUTTON_SURFACE_CLASSNAME,
+                ].join(" ")}
+                color="outline"
+                size="icon"
+                onClick={() => {
+                  onDismissNotification(notification);
+                }}
+              >
+                <DismissNotificationIcon className="icon-xs" />
+              </Button>
+            </AvatarOverlayTooltip>
           </div>
         ) : null}
       </div>
@@ -692,74 +904,88 @@ type NotificationAppearance = {
   fallbackBodyKey: MessageKey;
   iconClassName: string;
   labelKey: MessageKey;
+  mascotState: AvatarSpriteState;
 };
 
 function getNotificationAppearance(
-  status: AvatarOverlayNotificationStatus | null | undefined,
+  notification: AvatarOverlayNotification | null | undefined,
 ): NotificationAppearance {
-  if (status === "running") {
+  if (notification?.isLoading) {
     return {
       badgeBackgroundColor: "var(--color-token-activity-bar-badge-background)",
       badgeForegroundColor: "var(--color-token-activity-bar-badge-foreground)",
       fallbackBodyKey: "avatarOverlay.statusRunningSubtitle",
       iconClassName: "icon-xs shrink-0 text-token-text-secondary",
       labelKey: "avatarOverlay.statusRunning",
+      mascotState: "running",
     };
   }
 
-  if (status === "waiting") {
-    return {
-      badgeBackgroundColor: "var(--color-token-editor-warning-foreground)",
-      badgeForegroundColor: "var(--color-token-bg-primary)",
-      fallbackBodyKey: "avatarOverlay.statusWaiting",
-      iconClassName: "icon-xs shrink-0 text-token-editor-warning-foreground",
-      labelKey: "avatarOverlay.statusWaiting",
-    };
+  switch (notification?.status) {
+    case "waiting":
+      return {
+        badgeBackgroundColor: "var(--color-token-editor-warning-foreground)",
+        badgeForegroundColor: "var(--color-token-bg-primary)",
+        fallbackBodyKey: "avatarOverlay.statusWaiting",
+        iconClassName: "icon-xs shrink-0 text-token-editor-warning-foreground",
+        labelKey: "avatarOverlay.statusWaiting",
+        mascotState: "waiting",
+      };
+    case "failed":
+      return {
+        badgeBackgroundColor: "var(--color-token-error-foreground)",
+        badgeForegroundColor: "var(--color-token-bg-primary)",
+        fallbackBodyKey: "avatarOverlay.statusFailed",
+        iconClassName: "icon-xs shrink-0 text-token-error-foreground",
+        labelKey: "avatarOverlay.statusFailed",
+        mascotState: "failed",
+      };
+    case "review":
+      return {
+        badgeBackgroundColor: "var(--color-token-charts-green)",
+        badgeForegroundColor: "var(--color-token-bg-primary)",
+        fallbackBodyKey: "avatarOverlay.statusReview",
+        iconClassName: "icon-xs shrink-0 text-token-charts-green",
+        labelKey: "avatarOverlay.statusReview",
+        mascotState: "review",
+      };
+    case "running":
+      return {
+        badgeBackgroundColor: "var(--color-token-activity-bar-badge-background)",
+        badgeForegroundColor: "var(--color-token-activity-bar-badge-foreground)",
+        fallbackBodyKey: "avatarOverlay.statusRunningSubtitle",
+        iconClassName: "icon-xs shrink-0 text-token-text-secondary",
+        labelKey: "avatarOverlay.statusRunning",
+        mascotState: "running",
+      };
+    default:
+      return {
+        badgeBackgroundColor: "var(--color-token-activity-bar-badge-background)",
+        badgeForegroundColor: "var(--color-token-activity-bar-badge-foreground)",
+        fallbackBodyKey: "avatarOverlay.statusInfo",
+        iconClassName: "icon-xs shrink-0 text-token-text-secondary",
+        labelKey: "avatarOverlay.statusInfo",
+        mascotState: "idle",
+      };
   }
-
-  if (status === "failed") {
-    return {
-      badgeBackgroundColor: "var(--color-token-error-foreground)",
-      badgeForegroundColor: "var(--color-token-bg-primary)",
-      fallbackBodyKey: "avatarOverlay.statusFailed",
-      iconClassName: "icon-xs shrink-0 text-token-error-foreground",
-      labelKey: "avatarOverlay.statusFailed",
-    };
-  }
-
-  if (status === "review") {
-    return {
-      badgeBackgroundColor: "var(--color-token-charts-green)",
-      badgeForegroundColor: "var(--color-token-bg-primary)",
-      fallbackBodyKey: "avatarOverlay.statusReview",
-      iconClassName: "icon-xs shrink-0 text-token-charts-green",
-      labelKey: "avatarOverlay.statusReview",
-    };
-  }
-
-  return {
-    badgeBackgroundColor: "var(--color-token-activity-bar-badge-background)",
-    badgeForegroundColor: "var(--color-token-activity-bar-badge-foreground)",
-    fallbackBodyKey: "avatarOverlay.statusInfo",
-    iconClassName: "icon-xs shrink-0 text-token-text-secondary",
-    labelKey: "avatarOverlay.statusInfo",
-  };
 }
 
 function renderNotificationIcon(status: AvatarOverlayNotificationStatus) {
   switch (status) {
     case "waiting":
-      return <ClockIcon className="icon-xs" />;
+      return <ClockIcon className="icon-xs shrink-0 text-token-editor-warning-foreground" />;
     case "failed":
-      return <WarningTriangleIcon className="icon-xs" />;
+      return <WarningTriangleIcon className="icon-xs shrink-0 text-token-error-foreground" />;
     case "running":
-      return <RunningActivityIcon className="icon-xs animate-spin motion-reduce:animate-none" />;
+      return (
+        <RunningActivityIcon className="icon-xs shrink-0 animate-spin text-token-text-secondary motion-reduce:animate-none" />
+      );
     case "review":
-      return <CheckCircleFilledIcon className="icon-xs" />;
+      return <CheckCircleFilledIcon className="icon-xs shrink-0 text-token-charts-green" />;
   }
 }
 
-function trimStatusBody(value: string) {
+function trimStatusText(value: string) {
   return value.replace(/[.?!]+$/g, "");
 }
 
@@ -843,6 +1069,15 @@ function findTrayScrollIndex(rows: HTMLElement[], topAnchor: number) {
     }
   }
   return index;
+}
+
+function getOlderNotificationScrollTop(element: HTMLDivElement, hiddenOlderCount: number) {
+  if (hiddenOlderCount <= TRAY_NOTIFICATION_PAGE_SIZE) {
+    return element.scrollHeight;
+  }
+  const rows = getTrayScrollRows(element);
+  return rows[findTrayScrollIndex(rows, getTrayTopAnchor(element, rows)) + TRAY_NOTIFICATION_PAGE_SIZE]
+    ?.offsetTop ?? element.scrollHeight;
 }
 
 function RunningActivityIcon({ className }: { className?: string }) {

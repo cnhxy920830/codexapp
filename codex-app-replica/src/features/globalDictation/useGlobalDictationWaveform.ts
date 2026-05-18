@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const NOISE_FLOOR = 0.0025;
 const COMPACT_BAR_COUNT = 4;
@@ -13,13 +13,26 @@ const COMPACT_PHASE_STEP = 0.05;
 const COMPACT_RELEASE = 0.1;
 
 export function useGlobalDictationWaveform() {
+  const [recordingDurationMs, setRecordingDurationMs] = useState(0);
   const waveformCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const recordingStartedAtMsRef = useRef<number | null>(null);
   const barLevelsRef = useRef<number[]>([]);
-  const phaseRef = useRef(0);
-  const smoothedLevelRef = useRef(0);
+  const compactSmoothedLevelRef = useRef(0);
+  const compactPhaseRef = useRef(0);
+  const lastReportedDurationSecsRef = useRef(-1);
+
+  const initializeBars = (canvas: HTMLCanvasElement | null) => {
+    if (canvas === null) {
+      return false;
+    }
+
+    const barCount = Math.max(1, COMPACT_BAR_COUNT);
+    barLevelsRef.current = Array.from({ length: barCount }, createNoiseFloorValue);
+    return true;
+  };
 
   const drawWaveform = () => {
     const canvas = waveformCanvasRef.current;
@@ -37,6 +50,15 @@ export function useGlobalDictationWaveform() {
       return;
     }
 
+    if (barLevelsRef.current.length !== COMPACT_BAR_COUNT) {
+      initializeBars(canvas);
+    }
+
+    const bars = barLevelsRef.current;
+    if (bars.length === 0) {
+      return;
+    }
+
     const scale = window.devicePixelRatio || 1;
     canvas.width = clientWidth * scale;
     canvas.height = clientHeight * scale;
@@ -44,17 +66,17 @@ export function useGlobalDictationWaveform() {
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.save();
-    context.translate(0, canvas.height * 0.5);
-    context.fillStyle = getComputedStyle(canvas).color || "#000";
 
-    const bars = ensureBarLevels();
+    const centerHeight = canvas.height * 0.5;
+    context.translate(0, centerHeight);
+
     const slotWidth = canvas.width / bars.length;
     const barWidth = slotWidth * COMPACT_BAR_WIDTH_FACTOR;
     const gapWidth = slotWidth * COMPACT_GAP_FACTOR;
     const totalWidth = barWidth * bars.length + gapWidth * (bars.length - 1);
     const startX = (canvas.width - totalWidth) / 2;
-    const centerHeight = canvas.height * 0.5;
 
+    context.fillStyle = getComputedStyle(canvas).color || "#000";
     for (let index = 0; index < bars.length; index += 1) {
       const level = bars[index] ?? NOISE_FLOOR;
       const barHeight = Math.max(1.5 * scale, level * 10 * centerHeight);
@@ -70,22 +92,6 @@ export function useGlobalDictationWaveform() {
     context.restore();
   };
 
-  const ensureBarLevels = () => {
-    if (barLevelsRef.current.length === COMPACT_BAR_COUNT) {
-      return barLevelsRef.current;
-    }
-
-    barLevelsRef.current = Array.from({ length: COMPACT_BAR_COUNT }, () => NOISE_FLOOR);
-    return barLevelsRef.current;
-  };
-
-  const resetWaveformDisplay = () => {
-    barLevelsRef.current = [];
-    phaseRef.current = 0;
-    smoothedLevelRef.current = 0;
-    clearCanvas(waveformCanvasRef.current);
-  };
-
   const stopWaveformCapture = () => {
     if (processorRef.current !== null) {
       processorRef.current.onaudioprocess = null;
@@ -98,88 +104,112 @@ export function useGlobalDictationWaveform() {
       mediaSourceRef.current = null;
     }
 
-    const audioContext = audioContextRef.current;
-    audioContextRef.current = null;
-    if (audioContext !== null) {
-      void audioContext.close().catch(() => undefined);
+    if (audioContextRef.current !== null) {
+      void audioContextRef.current.close();
+      audioContextRef.current = null;
     }
 
-    resetWaveformDisplay();
+    recordingStartedAtMsRef.current = null;
+    barLevelsRef.current = [];
+    compactSmoothedLevelRef.current = 0;
+    compactPhaseRef.current = 0;
+    lastReportedDurationSecsRef.current = -1;
+    clearCanvas(waveformCanvasRef.current);
+  };
+
+  const resetWaveformDisplay = () => {
+    barLevelsRef.current = [];
+    compactSmoothedLevelRef.current = 0;
+    compactPhaseRef.current = 0;
+    lastReportedDurationSecsRef.current = -1;
+    setRecordingDurationMs(0);
   };
 
   const startWaveformCapture = (stream: MediaStream) => {
     stopWaveformCapture();
-    ensureBarLevels();
+    resetWaveformDisplay();
+    initializeBars(waveformCanvasRef.current);
     drawWaveform();
 
     if (typeof AudioContext === "undefined") {
       return;
     }
 
-    try {
-      const audioContext = new AudioContext();
-      audioContextRef.current = audioContext;
+    const audioContext = new AudioContext();
+    audioContextRef.current = audioContext;
 
-      const mediaSource = audioContext.createMediaStreamSource(stream);
-      mediaSourceRef.current = mediaSource;
+    const mediaSource = audioContext.createMediaStreamSource(stream);
+    mediaSourceRef.current = mediaSource;
 
-      const processor = audioContext.createScriptProcessor(2048, 1, 1);
-      processorRef.current = processor;
+    const processor = audioContext.createScriptProcessor(2048, 1, 1);
+    processorRef.current = processor;
+    recordingStartedAtMsRef.current = performance.now();
 
-      processor.onaudioprocess = (event) => {
-        const channelData = event.inputBuffer.getChannelData(0);
-        let sumSquares = 0;
+    processor.onaudioprocess = (event) => {
+      const channelData = event.inputBuffer.getChannelData(0);
+      let sumSquares = 0;
 
-        for (let index = 0; index < channelData.length; index += 1) {
-          const amplitude = Math.abs(channelData[index] ?? 0);
-          sumSquares += amplitude * amplitude;
+      for (let index = 0; index < channelData.length; index += 1) {
+        const amplitude = Math.abs(channelData[index] ?? 0);
+        sumSquares += amplitude * amplitude;
+        channelData[index] = amplitude < NOISE_FLOOR ? NOISE_FLOOR : amplitude;
+      }
+
+      if (barLevelsRef.current.length === 0) {
+        initializeBars(waveformCanvasRef.current);
+      }
+
+      const bars = barLevelsRef.current;
+      const rms = Math.sqrt(sumSquares / Math.max(1, channelData.length));
+      const adjustedLevel = Math.max(0, rms - COMPACT_LEVEL_GATE);
+      const normalizedLevel =
+        Math.min(1, adjustedLevel / (COMPACT_LEVEL_MAX - COMPACT_LEVEL_GATE)) ** 0.6 *
+        COMPACT_BAR_MAX_AMPLITUDE;
+      const previousSmoothedLevel = compactSmoothedLevelRef.current;
+      const easing =
+        normalizedLevel > previousSmoothedLevel ? COMPACT_ATTACK : COMPACT_RELEASE;
+      const smoothedLevel =
+        previousSmoothedLevel * (1 - easing) + normalizedLevel * easing;
+      compactSmoothedLevelRef.current = smoothedLevel;
+      compactPhaseRef.current += COMPACT_PHASE_STEP;
+
+      for (let index = 0; index < bars.length; index += 1) {
+        const pulse =
+          0.9 + ((Math.sin(compactPhaseRef.current - index * 0.8) + 1) * 0.5) * 0.1;
+        const levelScale = measureCompactBarScale(channelData, index, bars.length, rms);
+        const nextLevel = Math.min(
+          COMPACT_BAR_MAX_AMPLITUDE,
+          NOISE_FLOOR + smoothedLevel * pulse * levelScale,
+        );
+        const previousLevel = bars[index] ?? NOISE_FLOOR;
+        bars[index] =
+          previousLevel * (1 - COMPACT_BAR_BLEND) + nextLevel * COMPACT_BAR_BLEND;
+      }
+
+      drawWaveform();
+
+      if (recordingStartedAtMsRef.current !== null) {
+        const elapsedSecs = Math.max(
+          0,
+          Math.floor((performance.now() - recordingStartedAtMsRef.current) / 1_000),
+        );
+        if (elapsedSecs !== lastReportedDurationSecsRef.current) {
+          lastReportedDurationSecsRef.current = elapsedSecs;
+          setRecordingDurationMs(elapsedSecs * 1_000);
         }
-
-        const rms = Math.sqrt(sumSquares / Math.max(1, channelData.length));
-        const adjustedLevel = Math.max(0, rms - COMPACT_LEVEL_GATE);
-        const normalizedLevel =
-          Math.min(1, adjustedLevel / (COMPACT_LEVEL_MAX - COMPACT_LEVEL_GATE)) ** 0.6 *
-          COMPACT_BAR_MAX_AMPLITUDE;
-        const previousSmoothedLevel = smoothedLevelRef.current;
-        const easing = normalizedLevel > previousSmoothedLevel ? COMPACT_ATTACK : COMPACT_RELEASE;
-        const smoothedLevel =
-          previousSmoothedLevel * (1 - easing) + normalizedLevel * easing;
-        smoothedLevelRef.current = smoothedLevel;
-        phaseRef.current += COMPACT_PHASE_STEP;
-
-        const bars = ensureBarLevels();
-        for (let index = 0; index < bars.length; index += 1) {
-          const pulse = 0.9 + ((Math.sin(phaseRef.current - index * 0.8) + 1) * 0.5) * 0.1;
-          const levelScale = measureCompactBarScale(channelData, index, bars.length, rms);
-          const nextLevel = Math.min(
-            COMPACT_BAR_MAX_AMPLITUDE,
-            NOISE_FLOOR + smoothedLevel * pulse * levelScale,
-          );
-          const previousLevel = bars[index] ?? NOISE_FLOOR;
-          bars[index] =
-            previousLevel * (1 - COMPACT_BAR_BLEND) + nextLevel * COMPACT_BAR_BLEND;
-        }
-
-        drawWaveform();
-      };
-
-      mediaSource.connect(processor);
-      processor.connect(audioContext.destination);
-    } catch {
-      if (processorRef.current !== null) {
-        processorRef.current.disconnect();
-        processorRef.current = null;
       }
-      if (mediaSourceRef.current !== null) {
-        mediaSourceRef.current.disconnect();
-        mediaSourceRef.current = null;
-      }
-      if (audioContextRef.current !== null) {
-        void audioContextRef.current.close().catch(() => undefined);
-        audioContextRef.current = null;
-      }
-      resetWaveformDisplay();
+    };
+
+    mediaSource.connect(processor);
+    processor.connect(audioContext.destination);
+  };
+
+  const getCurrentRecordingDurationMs = () => {
+    if (recordingStartedAtMsRef.current === null) {
+      return recordingDurationMs;
     }
+
+    return Math.max(0, performance.now() - recordingStartedAtMsRef.current);
   };
 
   useEffect(() => {
@@ -189,6 +219,8 @@ export function useGlobalDictationWaveform() {
   }, []);
 
   return {
+    getCurrentRecordingDurationMs,
+    recordingDurationMs,
     waveformCanvasRef,
     startWaveformCapture,
     stopWaveformCapture,
@@ -205,7 +237,12 @@ function clearCanvas(canvas: HTMLCanvasElement | null) {
   if (context === null) {
     return;
   }
+
   context.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+function createNoiseFloorValue() {
+  return NOISE_FLOOR;
 }
 
 function measureCompactBarScale(

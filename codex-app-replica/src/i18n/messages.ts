@@ -314,6 +314,13 @@ export type MessageKey =
   | "composer.mode.worktreeSegment"
   | "composer.hotkeyWindow.modeDropdown.localProject"
   | "composer.hotkeyWindow.modeDropdown.tooltip"
+  | "composer.localCwdDropdown.newChat"
+  | "composer.localCwdDropdown.noActiveRoot"
+  | "composer.localCwdDropdown.searchPlaceholder"
+  | "composer.localCwdDropdown.noResults"
+  | "composer.localCwdDropdown.clearProject"
+  | "composer.localCwdDropdown.addWorkspaceRoot"
+  | "composer.localCwdDropdown.tooltip"
   | "composer.mode.local"
   | "composer.hotkeyWindow.modeDropdown.localOnly"
   | "composer.mode.worktree"
@@ -2736,6 +2743,13 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "composer.mode.worktreeSegment": "Worktree",
     "composer.hotkeyWindow.modeDropdown.localProject": "Local project",
     "composer.hotkeyWindow.modeDropdown.tooltip": "Select where to run the task",
+    "composer.localCwdDropdown.newChat": "New chat",
+    "composer.localCwdDropdown.noActiveRoot": "Select your project",
+    "composer.localCwdDropdown.searchPlaceholder": "Search projects",
+    "composer.localCwdDropdown.noResults": "No folders found",
+    "composer.localCwdDropdown.clearProject": "Don't work in a project",
+    "composer.localCwdDropdown.addWorkspaceRoot": "Add new project",
+    "composer.localCwdDropdown.tooltip": "Select project",
     "composer.mode.local": "Work locally",
     "composer.hotkeyWindow.modeDropdown.localOnly": "Initialize a git repo to run tasks in worktrees",
     "composer.mode.worktree": "New worktree",
@@ -3074,10 +3088,10 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "avatarOverlay.session.listedFiles": "Listed files",
     "avatarOverlay.session.listingFiles": "Listing files",
     "avatarOverlay.session.searchedFiles": "Searched files",
-    "avatarOverlay.session.searchedQuery": "Searched “{query}”",
+    "avatarOverlay.session.searchedQuery": "Searched \"{query}\"",
     "avatarOverlay.session.searchingFiles": "Searching files",
-    "avatarOverlay.session.searchingQuery": "Searching “{query}”",
-    "avatarOverlay.session.searchedWeb": "Searched the web",
+    "avatarOverlay.session.searchingQuery": "Searching \"{query}\"",
+    "avatarOverlay.session.searchedWeb": "Searched web",
     "codex.webSearch.summary": "{label}{details}",
     "codex.webSearch.summary.details": " for {query}",
     "codex.webSearch.summary.verb.completed": "Searched web",
@@ -4441,15 +4455,15 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "electron.onboarding.workspace.subtitle":
       "Codex will be able to edit files and run commands in selected folders.",
     "electron.onboarding.workspace.openFolder": "Add project",
-    "electron.onboarding.workspace.loading": "Loading projects...",
+    "electron.onboarding.workspace.loading": "Loading projects…",
     "electron.onboarding.workspace.listLabel": "Available projects",
     "electron.onboarding.workspace.selectAll": "Select all",
     "electron.onboarding.workspace.empty": "Add a project to continue.",
     "electron.onboarding.workspace.continue": "Continue",
     "electron.onboarding.workspace.skip": "Skip",
-    "electron.onboarding.workspace.skipping": "Creating a new project...",
+    "electron.onboarding.workspace.skipping": "Creating a new project…",
     "electron.onboarding.workspace.skip.playground": "Continue to playground",
-    "electron.onboarding.workspace.skipping.playground": "Opening playground...",
+    "electron.onboarding.workspace.skipping.playground": "Opening playground…",
     "electron.onboarding.workspace.skip.error": "Couldn't create a new project: {message}",
     "electron.onboarding.workspace.skip.error.unknown": "Unknown error",
     "projectSetup.addProjectMenu.startFromScratch": "Start from scratch",
@@ -4929,10 +4943,12 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "avatarOverlay.notificationList": "Activity notifications",
     "avatarOverlay.latestNotifications": "Latest",
     "avatarOverlay.showLatestNotifications": "Show latest activity",
-    "avatarOverlay.showOlderNotifications": "Show {count} older activity items",
-    "avatarOverlay.olderNotificationCount": "{count} more",
+    "avatarOverlay.showOlderNotifications":
+      "Show {count, plural, one {# older activity item} other {# older activity items}}",
+    "avatarOverlay.olderNotificationCount": "{count, plural, one {# more} other {# more}}",
     "avatarOverlay.compactOlderNotificationCount": "+{count}",
-    "avatarOverlay.toggleNotificationTray": "Open activity tray, {count} items",
+    "avatarOverlay.toggleNotificationTray":
+      "Open activity tray, {count, plural, one {# item} other {# items}}",
     "petOverlay.mascotLabel": "{petName} pet",
     "petOverlay.closePet": "Close pet",
     "history.noMessageYet": "(no message yet)",
@@ -5255,6 +5271,13 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "composer.mode.worktreeSegment": "工作树",
     "composer.hotkeyWindow.modeDropdown.localProject": "本地项目",
     "composer.hotkeyWindow.modeDropdown.tooltip": "选择任务的运行位置",
+    "composer.localCwdDropdown.newChat": "新聊天",
+    "composer.localCwdDropdown.noActiveRoot": "选择你的项目",
+    "composer.localCwdDropdown.searchPlaceholder": "搜索项目",
+    "composer.localCwdDropdown.noResults": "未找到文件夹",
+    "composer.localCwdDropdown.clearProject": "不在项目中工作",
+    "composer.localCwdDropdown.addWorkspaceRoot": "添加新项目",
+    "composer.localCwdDropdown.tooltip": "选择项目",
     "composer.mode.local": "在本地运行",
     "composer.hotkeyWindow.modeDropdown.localOnly": "初始化 Git 仓库后才能在工作树中运行任务",
     "composer.mode.worktree": "新工作树",
@@ -6912,15 +6935,15 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "electron.onboarding.workspace.title": "选择项目",
     "electron.onboarding.workspace.subtitle": "Codex 将能够在所选文件夹中编辑文件并运行命令。",
     "electron.onboarding.workspace.openFolder": "添加项目",
-    "electron.onboarding.workspace.loading": "正在加载项目...",
+    "electron.onboarding.workspace.loading": "正在加载项目…",
     "electron.onboarding.workspace.listLabel": "可用项目",
     "electron.onboarding.workspace.selectAll": "全选",
     "electron.onboarding.workspace.empty": "添加项目后即可继续。",
     "electron.onboarding.workspace.continue": "继续",
     "electron.onboarding.workspace.skip": "跳过",
-    "electron.onboarding.workspace.skipping": "正在创建新项目...",
+    "electron.onboarding.workspace.skipping": "正在创建新项目…",
     "electron.onboarding.workspace.skip.playground": "继续进入 Playground",
-    "electron.onboarding.workspace.skipping.playground": "正在打开 Playground...",
+    "electron.onboarding.workspace.skipping.playground": "正在打开 Playground…",
     "electron.onboarding.workspace.skip.error": "无法创建新项目：{message}",
     "electron.onboarding.workspace.skip.error.unknown": "未知错误",
     "projectSetup.addProjectMenu.startFromScratch": "从头开始",
@@ -7392,10 +7415,12 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "avatarOverlay.notificationList": "活动通知",
     "avatarOverlay.latestNotifications": "最新",
     "avatarOverlay.showLatestNotifications": "查看最新活动",
-    "avatarOverlay.showOlderNotifications": "查看 {count} 条较早的活动",
-    "avatarOverlay.olderNotificationCount": "还有 {count} 条",
+    "avatarOverlay.showOlderNotifications":
+      "查看 {count, plural, one {# 条较早的活动} other {# 条较早的活动}}",
+    "avatarOverlay.olderNotificationCount": "还有 {count, plural, one {# 条} other {# 条}}",
     "avatarOverlay.compactOlderNotificationCount": "+{count}",
-    "avatarOverlay.toggleNotificationTray": "打开活动栏，{count} 项",
+    "avatarOverlay.toggleNotificationTray":
+      "打开活动栏，{count, plural, one {# 项} other {# 项}}",
     "petOverlay.mascotLabel": "{petName} 宠物",
     "petOverlay.closePet": "关闭宠物",
     "history.noMessageYet": "(暂无消息)",

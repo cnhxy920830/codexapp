@@ -86,21 +86,17 @@ export function LoadingPage({
       className={joinClasses(
         "flex items-center justify-center",
         overlay
-          ? "absolute inset-0 z-10"
+          ? "absolute inset-0 z-10 bg-token-bg-primary/70"
           : fillParent
             ? "absolute inset-0 bg-transparent"
             : "relative size-full bg-transparent",
       )}
-      style={
-        overlay
-          ? {
-              backgroundColor: "color-mix(in srgb, var(--app-shell-surface) 70%, transparent)",
-            }
-          : undefined
-      }
     >
       {overlay || fillParent ? null : (
-        <div data-tauri-drag-region className="draggable absolute inset-x-0 top-0 h-[var(--app-shell-toolbar)]" />
+        <div
+          data-tauri-drag-region
+          className="draggable absolute inset-x-0 top-0 electron:h-toolbar extension:h-toolbar-sm"
+        />
       )}
       <div className="flex flex-col items-center gap-2">
         {showLogo ? <LoadingLogo className="size-14" /> : null}

@@ -205,6 +205,7 @@ export type GlobalStateKey =
   | "useFontSmoothing"
   | "pdf-preview-invert-colors"
   | "ambient-suggestions-enabled"
+  | "active-remote-project-id"
   | "conversationDetailMode"
   | "localeOverride"
   | "viewed2025-09-15-nux"
@@ -229,7 +230,9 @@ export type GlobalStateKey =
   | "chronicle-consent-accepted"
   | "chronicle-setup-completion-pending"
   | "browser-annotation-screenshots-mode"
+  | "browser-sidebar-comment-mode-coachmark-dismissed"
   | "dictationDictionary"
+  | "use-copilot-auth-if-available"
   | "electron:onboarding-override"
   | "electron:onboarding-welcome-pending"
   | "electron:onboarding-projectless-completed"
@@ -242,6 +245,10 @@ export type GlobalStateKey =
   | "electron:onboarding-welcome-v2-state"
   | "electron:onboarding-welcome-v2-role-state"
   | "electron:onboarding-welcome-v2-role-selection-debug-override"
+  | "has-seen-ambient-suggestions-connected-apps-consent"
+  | "realtime-voice-mode-debug-disabled"
+  | "global-dictation-force-lock-debug-enabled"
+  | "has-seen-remote-connections-home-announcement"
   | "has-seen-codex-mobile-home-announcement"
   | "has-completed-codex-mobile-setup"
   | "last_completed_onboarding"
@@ -667,6 +674,14 @@ export async function setHotkeyWindowHotkey(hotkey: string | null) {
   });
 }
 
+export async function setHotkeyWindowDevHotkeyOverride(enabled: boolean) {
+  return invoke<SetHotkeyWindowHotkeyResponse>("hotkey-window-set-dev-hotkey-override", {
+    params: {
+      enabled,
+    },
+  });
+}
+
 export async function readGlobalDictationHotkeyState() {
   return invoke<GlobalDictationHotkeyStateResponse>("global-dictation-hotkey-state");
 }
@@ -683,6 +698,14 @@ export async function setGlobalDictationToggleHotkey(hotkey: string | null) {
   return invoke<SetGlobalDictationHotkeyResponse>("global-dictation-set-toggle-hotkey", {
     params: {
       hotkey,
+    },
+  });
+}
+
+export async function setGlobalDictationForceLockChanged(enabled: boolean) {
+  return invoke<void>("global-dictation-force-lock-changed", {
+    params: {
+      enabled,
     },
   });
 }

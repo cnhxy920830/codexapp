@@ -13,6 +13,7 @@ import {
   resolveAvatarOption,
 } from "../../components/appearance/avatarData";
 import { AvatarOverlayView } from "./AvatarOverlayView";
+import { DEFAULT_AVATAR_OVERLAY_LAYOUT } from "./avatarOverlayLayout";
 import type { AvatarOverlayNotification } from "./avatarOverlayNotifications";
 
 const SNAPSHOT_PATH = path.join(
@@ -41,8 +42,10 @@ test("avatar overlay page snapshots", async (t) => {
 });
 
 type SnapshotMap = {
+  collapsedMascotHover: string;
   collapsedNoNotifications: string;
   collapsedWithBadge: string;
+  contextMenu: string;
   expandedTray: string;
   expandedTrayExpandedRow: string;
   expandedTrayReplyEditor: string;
@@ -53,7 +56,7 @@ function buildSnapshots(): SnapshotMap {
   const avatar = resolveAvatarOption("codex", BUILTIN_AVATARS);
   const notifications: AvatarOverlayNotification[] = [
     {
-      id: "local:thread-1",
+      id: "local:local:thread-1",
       actionPath: "/local/thread-1",
       body: "Needs approval to continue work on the repo setup",
       canDismiss: true,
@@ -68,7 +71,7 @@ function buildSnapshots(): SnapshotMap {
       updatedAtMs: 1_000,
     },
     {
-      id: "local:thread-2",
+      id: "local:local:thread-2",
       actionPath: "/local/thread-2",
       body: "Running cargo check",
       canDismiss: true,
@@ -98,7 +101,7 @@ function buildSnapshots(): SnapshotMap {
       updatedAtMs: 950,
     },
     {
-      id: "local:thread-3",
+      id: "remote-host:devbox:thread-3",
       actionPath: "/local/thread-3",
       body: null,
       canDismiss: true,
@@ -126,15 +129,41 @@ function buildSnapshots(): SnapshotMap {
   ];
 
   return {
+    collapsedMascotHover: renderSnapshot(
+      <StaticI18nProvider>
+        <div className="h-[600px] w-[420px]">
+          <AvatarOverlayView
+            layout={DEFAULT_AVATAR_OVERLAY_LAYOUT}
+            selectedAvatar={avatar}
+            notifications={[]}
+            topNotification={null}
+            isTrayOpen={false}
+            isDragging={false}
+            mascotTransientState={null}
+            onOpenTray={noop}
+            onCloseTray={noop}
+            onOpenNotification={noopNotification}
+            onDismissNotification={noopNotification}
+            testState={{
+              forceMascotHover: true,
+            }}
+          />
+        </div>
+      </StaticI18nProvider>,
+    ),
     collapsedNoNotifications: renderSnapshot(
       <StaticI18nProvider>
         <div className="h-[600px] w-[420px]">
           <AvatarOverlayView
+            layout={DEFAULT_AVATAR_OVERLAY_LAYOUT}
             selectedAvatar={avatar}
             notifications={[]}
+            topNotification={null}
             isTrayOpen={false}
-            onToggleTray={noop}
-            onCollapseTray={noop}
+            isDragging={false}
+            mascotTransientState={null}
+            onOpenTray={noop}
+            onCloseTray={noop}
             onOpenNotification={noopNotification}
             onDismissNotification={noopNotification}
           />
@@ -145,13 +174,44 @@ function buildSnapshots(): SnapshotMap {
       <StaticI18nProvider>
         <div className="h-[600px] w-[420px]">
           <AvatarOverlayView
+            layout={DEFAULT_AVATAR_OVERLAY_LAYOUT}
             selectedAvatar={avatar}
             notifications={notifications}
+            topNotification={notifications[0] ?? null}
             isTrayOpen={false}
-            onToggleTray={noop}
-            onCollapseTray={noop}
+            isDragging={false}
+            mascotTransientState={null}
+            onOpenTray={noop}
+            onCloseTray={noop}
             onOpenNotification={noopNotification}
             onDismissNotification={noopNotification}
+          />
+        </div>
+      </StaticI18nProvider>,
+    ),
+    contextMenu: renderSnapshot(
+      <StaticI18nProvider>
+        <div className="h-[600px] w-[420px]">
+          <AvatarOverlayView
+            layout={DEFAULT_AVATAR_OVERLAY_LAYOUT}
+            selectedAvatar={avatar}
+            notifications={notifications}
+            topNotification={notifications[0] ?? null}
+            isTrayOpen={false}
+            isDragging={false}
+            mascotTransientState={null}
+            onOpenTray={noop}
+            onCloseTray={noop}
+            onOpenNotification={noopNotification}
+            onDismissNotification={noopNotification}
+            onCloseContextMenu={noop}
+            onClosePet={noop}
+            testState={{
+              contextMenuPosition: {
+                x: 320,
+                y: 220,
+              },
+            }}
           />
         </div>
       </StaticI18nProvider>,
@@ -160,11 +220,15 @@ function buildSnapshots(): SnapshotMap {
       <StaticI18nProvider>
         <div className="h-[600px] w-[420px]">
           <AvatarOverlayView
+            layout={DEFAULT_AVATAR_OVERLAY_LAYOUT}
             selectedAvatar={avatar}
             notifications={notifications}
+            topNotification={notifications[0] ?? null}
             isTrayOpen
-            onToggleTray={noop}
-            onCollapseTray={noop}
+            isDragging={false}
+            mascotTransientState={null}
+            onOpenTray={noop}
+            onCloseTray={noop}
             onOpenNotification={noopNotification}
             onDismissNotification={noopNotification}
           />
@@ -175,19 +239,23 @@ function buildSnapshots(): SnapshotMap {
       <StaticI18nProvider>
         <div className="h-[600px] w-[420px]">
           <AvatarOverlayView
+            layout={DEFAULT_AVATAR_OVERLAY_LAYOUT}
             selectedAvatar={avatar}
             notifications={longBodyNotifications}
+            topNotification={longBodyNotifications[0] ?? null}
             isTrayOpen
-            onToggleTray={noop}
-            onCollapseTray={noop}
+            isDragging={false}
+            mascotTransientState={null}
+            onOpenTray={noop}
+            onCloseTray={noop}
             onOpenNotification={noopNotification}
             onDismissNotification={noopNotification}
             onOpenNotificationReply={noopNotification}
             onSubmitNotificationReply={noopReply}
             testState={{
-              expandedNotificationIds: ["local:thread-1"],
+              expandedNotificationIds: ["local:local:thread-1"],
               forceControlsVisible: true,
-              forceExpandableNotificationIds: ["local:thread-1"],
+              forceExpandableNotificationIds: ["local:local:thread-1"],
             }}
           />
         </div>
@@ -197,17 +265,21 @@ function buildSnapshots(): SnapshotMap {
       <StaticI18nProvider>
         <div className="h-[600px] w-[420px]">
           <AvatarOverlayView
+            layout={DEFAULT_AVATAR_OVERLAY_LAYOUT}
             selectedAvatar={avatar}
             notifications={notifications}
+            topNotification={notifications[0] ?? null}
             isTrayOpen
-            onToggleTray={noop}
-            onCollapseTray={noop}
+            isDragging={false}
+            mascotTransientState={null}
+            onOpenTray={noop}
+            onCloseTray={noop}
             onOpenNotification={noopNotification}
             onDismissNotification={noopNotification}
             onOpenNotificationReply={noopNotification}
             onSubmitNotificationReply={noopReply}
             testState={{
-              replyOpenNotificationId: "local:thread-1",
+              replyOpenNotificationId: "local:local:thread-1",
             }}
           />
         </div>
@@ -217,11 +289,15 @@ function buildSnapshots(): SnapshotMap {
       <StaticI18nProvider>
         <div className="h-[600px] w-[420px]">
           <AvatarOverlayView
+            layout={DEFAULT_AVATAR_OVERLAY_LAYOUT}
             selectedAvatar={avatar}
             notifications={notifications}
+            topNotification={notifications[0] ?? null}
             isTrayOpen
-            onToggleTray={noop}
-            onCollapseTray={noop}
+            isDragging={false}
+            mascotTransientState={null}
+            onOpenTray={noop}
+            onCloseTray={noop}
             onOpenNotification={noopNotification}
             onDismissNotification={noopNotification}
             testState={{
@@ -270,7 +346,22 @@ function formatMessage(template: string, values?: MessageValues) {
     return template;
   }
 
-  return template.replace(/\{(\w+)\}/g, (match, token) => {
+  const formattedPluralTemplate = template.replace(
+    /\{(\w+),\s*plural,\s*one\s*\{([^{}]*)\}\s*other\s*\{([^{}]*)\}\s*\}/g,
+    (match, token, oneVariant, otherVariant) => {
+      const rawValue = values[token];
+      const numericValue =
+        typeof rawValue === "number" ? rawValue : typeof rawValue === "string" ? Number(rawValue) : Number.NaN;
+      if (!Number.isFinite(numericValue)) {
+        return match;
+      }
+
+      const variant = numericValue === 1 ? oneVariant : otherVariant;
+      return variant.replaceAll("#", String(numericValue));
+    },
+  );
+
+  return formattedPluralTemplate.replace(/\{(\w+)\}/g, (match, token) => {
     const value = values[token];
     return value === undefined ? match : String(value);
   });

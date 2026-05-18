@@ -99,7 +99,6 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     workspaceRootOptions.map((option) => option.root),
   );
   const isSelectAllChecked = totalWorkspaceCount > 0 && selectedWorkspaceCount === totalWorkspaceCount;
-  const isSelectAllIndeterminate = selectedWorkspaceCount > 0 && selectedWorkspaceCount < totalWorkspaceCount;
   const hasPersistedOrDerivedRoots = workspaceRoots.length > 0 || inferredRoots.length > 0;
   const isLoading =
     isLoadingWorkspaceRoots ||
@@ -437,12 +436,11 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     <SelectWorkspacePageView
       hasAvailableRoots={hasAvailableRoots}
       isEmptyState={isEmptyState}
-      isLoading={isLoading}
+      isLoadingRoots={isLoading}
       isSelectAllChecked={isSelectAllChecked}
-      isSelectAllIndeterminate={isSelectAllIndeterminate}
       isSkipPending={isSkipPending}
-      selectedRootCount={selectedRootList.length}
-      selectedRoots={selectedRoots}
+      hasSelectedRoots={selectedRootList.length > 0}
+      selectedRoots={selectedRootList}
       showPlaygroundCopy={usePlaygroundCopy}
       skipErrorMessage={skipErrorMessage}
       visibleWorkspaceRootOptions={visibleWorkspaceRootOptions}
@@ -470,6 +468,7 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
       }}
       onToggleWorkspace={(root, checked) => {
         setSkipErrorMessage(null);
+        setPickedRoots((current) => dedupeWorkspaceRoots([...current, root]));
         setSelectedRoots((current) => ({
           ...current,
           [root]: checked,
@@ -511,12 +510,11 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
       : selectedRootList;
     const completedAt = Math.floor(Date.now() / 1000);
 
+    await setGlobalState("last_completed_onboarding", completedAt);
     await updateWorkspaceRootOptions(nextWorkspaceRoots);
+    await setGlobalState("electron:onboarding-override", "auto");
+    await setGlobalState("active-remote-project-id", null);
     await setActiveWorkspaceRoot(selectedRootList[0]);
-    await Promise.all([
-      setGlobalState("last_completed_onboarding", completedAt),
-      setGlobalState("electron:onboarding-override", "auto"),
-    ]);
 
     continueNonceRef.current += 1;
     if (typeof window !== "undefined") {

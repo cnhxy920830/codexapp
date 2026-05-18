@@ -226,6 +226,7 @@ pub enum ThreadConversationItem {
         arguments: serde_json::Value,
         result: Option<serde_json::Value>,
         error: Option<serde_json::Value>,
+        duration_ms: Option<i64>,
         result_summary: Option<String>,
         error_message: Option<String>,
     },
@@ -875,6 +876,7 @@ pub fn map_thread_item(
                 .unwrap_or(serde_json::Value::Null),
             result: value.get("result").cloned(),
             error: value.get("error").cloned(),
+            duration_ms: value.get("durationMs").and_then(serde_json::Value::as_i64),
             result_summary: summarize_mcp_tool_result(value.get("result")),
             error_message: value
                 .get("error")

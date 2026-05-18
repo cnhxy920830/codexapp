@@ -100,6 +100,7 @@ fn ensure_supported_key(key: &str) -> Result<(), String> {
         | "electron-avatar-overlay-open"
         | "electron-avatar-overlay-bounds"
         | "ambient-suggestions-enabled"
+        | "active-remote-project-id"
         | "composerEnterBehavior"
         | "followUpQueueMode"
         | "reviewDelivery"
@@ -113,6 +114,8 @@ fn ensure_supported_key(key: &str) -> Result<(), String> {
         | "notifications-questions-enabled"
         | "chronicle-consent-accepted"
         | "chronicle-setup-completion-pending"
+        | "use-copilot-auth-if-available"
+        | "browser-sidebar-comment-mode-coachmark-dismissed"
         | "electron:onboarding-override"
         | "electron:onboarding-welcome-pending"
         | "electron:onboarding-projectless-completed"
@@ -125,6 +128,10 @@ fn ensure_supported_key(key: &str) -> Result<(), String> {
         | "electron:onboarding-welcome-v2-state"
         | "electron:onboarding-welcome-v2-role-state"
         | "electron:onboarding-welcome-v2-role-selection-debug-override"
+        | "has-seen-ambient-suggestions-connected-apps-consent"
+        | "realtime-voice-mode-debug-disabled"
+        | "global-dictation-force-lock-debug-enabled"
+        | "has-seen-remote-connections-home-announcement"
         | "has-seen-codex-mobile-home-announcement"
         | "has-completed-codex-mobile-setup"
         | "last_completed_onboarding"
@@ -287,6 +294,7 @@ mod tests {
             "dictationDictionary",
             "conversationDetailMode",
             "ambient-suggestions-enabled",
+            "active-remote-project-id",
             "integratedTerminalShell",
             "preventSleepWhileRunning",
             "runCodexInWindowsSubsystemForLinux",
@@ -295,6 +303,8 @@ mod tests {
             "notifications-questions-enabled",
             "chronicle-consent-accepted",
             "chronicle-setup-completion-pending",
+            "use-copilot-auth-if-available",
+            "browser-sidebar-comment-mode-coachmark-dismissed",
             "electron:onboarding-override",
             "electron:onboarding-welcome-pending",
             "electron:onboarding-projectless-completed",
@@ -307,6 +317,10 @@ mod tests {
             "electron:onboarding-welcome-v2-state",
             "electron:onboarding-welcome-v2-role-state",
             "electron:onboarding-welcome-v2-role-selection-debug-override",
+            "has-seen-ambient-suggestions-connected-apps-consent",
+            "realtime-voice-mode-debug-disabled",
+            "global-dictation-force-lock-debug-enabled",
+            "has-seen-remote-connections-home-announcement",
             "has-seen-codex-mobile-home-announcement",
             "has-completed-codex-mobile-setup",
             "last_completed_onboarding",

@@ -5,10 +5,18 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react";
+import {
+  f as statsigModule,
+  type StatsigClientLike,
+} from "../../assets/mermaid/statsig-8HjEJSa2.js";
 import type { AuthSnapshot } from "../../services/auth";
+import { statsigFetchThroughTauri } from "../../services/statsig";
 
 const STATSIG_SDK_KEY =
   "client-sYWqzCYMRkUg4DqqiZcR5DGTNl2iD7zNJY0HoeDLzxR";
+const STATSIG_API_URL = "https://ab.chatgpt.com/v1";
+const STATSIG_LOG_EVENT_URL = "https://chatgpt.com/ces/v1/rgstr";
+const STATSIG_SDK_EXCEPTION_URL = "https://ab.chatgpt.com/v1/sdk_exception";
 const STATSIG_STABLE_ID_STORAGE_KEY =
   `codex-app-replica.statsig.stable-id.${STATSIG_SDK_KEY}`;
 const GATE_HOTKEY_WINDOW = "1372061905";
@@ -27,6 +35,9 @@ const GATE_REMOTE_CONNECTIONS_HOME_BANNER = "4114442250";
 const GATE_REMOTE_CONTROL_VISIBILITY = "1042620455";
 const GATE_AGENT_EXPERIMENTAL_FEATURES = "2106641128";
 const GATE_GUARDIAN_APPROVAL = "3902016271";
+const GATE_GLOBAL_DICTATION_CLEANUP = "1025755912";
+const GATE_EXTERNAL_AGENT_ONBOARDING_IMPORT = "2900529421";
+const GATE_EXTERNAL_AGENT_COWORK_MIGRATION = "816842483";
 const GATE_WORKSPACE_ONBOARDING_WELCOME_V2_FLOW = "3760797255";
 const GATE_WORKSPACE_ONBOARDING_WELCOME_V2_DEFAULT_FLOW = "3979170498";
 const STATSIG_RUNTIME_LAYER = "2096615506";
@@ -84,6 +95,17 @@ const INITIAL_STATE: ReplicaStatsigState = {
 
 let currentState: ReplicaStatsigState = INITIAL_STATE;
 const listeners = new Set<() => void>();
+let latestStatsigAuthSnapshot: AuthSnapshot | null = null;
+let productEventClient: StatsigClientLike | null = null;
+let productEventClientPromise: Promise<StatsigClientLike | null> | null = null;
+let productEventClientSignature: string | null = null;
+const queuedProductEvents: StatsigProductEvent[] = [];
+
+type StatsigProductEvent = {
+  eventName: string;
+  metadata?: Record<string, unknown>;
+  value?: number | string | null;
+};
 
 export const REPLICA_STATSIG_GATES = {
   agentExperimentalFeatures: GATE_AGENT_EXPERIMENTAL_FEATURES,
@@ -92,8 +114,11 @@ export const REPLICA_STATSIG_GATES = {
   codexMobileHomeBanner: GATE_CODEx_MOBILE_HOME_BANNER,
   dictationPrimary: GATE_DICTATION_PRIMARY,
   dictationSecondary: GATE_DICTATION_SECONDARY,
+  externalAgentCoworkMigration: GATE_EXTERNAL_AGENT_COWORK_MIGRATION,
+  externalAgentOnboardingImport: GATE_EXTERNAL_AGENT_ONBOARDING_IMPORT,
   gitHideSidebarPrIcons: GATE_GIT_HIDE_SIDEBAR_PR_ICONS,
   gitPullRequestMergeMethod: GATE_GIT_PR_MERGE_METHOD,
+  globalDictationCleanup: GATE_GLOBAL_DICTATION_CLEANUP,
   gpuTearingDebug: GATE_GPU_TEARING_DEBUG,
   guardianApproval: GATE_GUARDIAN_APPROVAL,
   hotkeyWindow: GATE_HOTKEY_WINDOW,
@@ -151,15 +176,7 @@ export function useReplicaStatsigDefaultFeatures() {
 
 export function useReplicaStatsigOwner(authSnapshot: AuthSnapshot) {
   const authSignature = useMemo(
-    () =>
-      JSON.stringify({
-        accountId: authSnapshot.authState.accountId,
-        authMethod: authSnapshot.authState.authMethod,
-        email: authSnapshot.authState.email,
-        planAtLogin: authSnapshot.authState.planAtLogin,
-        requiresAuth: authSnapshot.authState.requiresAuth,
-        userId: authSnapshot.authState.userId,
-      }),
+    () => createStatsigAuthSignature(authSnapshot),
     [
       authSnapshot.authState.accountId,
       authSnapshot.authState.authMethod,
@@ -171,6 +188,8 @@ export function useReplicaStatsigOwner(authSnapshot: AuthSnapshot) {
   );
   const latestRequestIdRef = useRef(0);
   const state = useReplicaStatsigState();
+
+  latestStatsigAuthSnapshot = authSnapshot;
 
   useEffect(() => {
     if (authSnapshot.isLoading) {
@@ -229,6 +248,14 @@ export function useReplicaStatsigOwner(authSnapshot: AuthSnapshot) {
       });
   }, [authSignature, authSnapshot.isLoading]);
 
+  useEffect(() => {
+    if (authSnapshot.isLoading) {
+      return;
+    }
+
+    void ensureStatsigProductEventClient(authSnapshot).catch(() => undefined);
+  }, [authSignature, authSnapshot.isLoading]);
+
   const globalDictationEnabled =
     state.gates[GATE_DICTATION_PRIMARY] === true &&
     state.gates[GATE_DICTATION_SECONDARY] === true;
@@ -257,6 +284,38 @@ export function useReplicaStatsigOwner(authSnapshot: AuthSnapshot) {
       },
     }).catch(() => undefined);
   }, [authSnapshot.isLoading, hotkeyWindowEnabled]);
+}
+
+export function logReplicaStatsigProductEvent({
+  eventName,
+  metadata,
+  value,
+}: StatsigProductEvent) {
+  const authSnapshot = latestStatsigAuthSnapshot;
+  if (authSnapshot == null || authSnapshot.isLoading) {
+    return;
+  }
+
+  queuedProductEvents.push({
+    eventName,
+    metadata,
+    value,
+  });
+  void ensureStatsigProductEventClient(authSnapshot)
+    .then((client) => {
+      if (client != null) {
+        flushQueuedProductEvents(client);
+      }
+    })
+    .catch(() => undefined);
+}
+
+export function readReplicaStatsigTelemetryIdentity() {
+  const authState = latestStatsigAuthSnapshot?.authState;
+  return {
+    userId: normalizeOptionalString(authState?.userId),
+    workspaceId: normalizeOptionalString(authState?.accountId),
+  };
 }
 
 function buildStatsigInitializeRequest(authSnapshot: AuthSnapshot) {
@@ -303,6 +362,109 @@ function buildStatsigUser(authSnapshot: AuthSnapshot) {
       typeof navigator === "undefined" ? "en-US" : navigator.language || "en-US",
     stableID,
   };
+}
+
+function createStatsigAuthSignature(authSnapshot: AuthSnapshot) {
+  return JSON.stringify({
+    accountId: authSnapshot.authState.accountId,
+    authMethod: authSnapshot.authState.authMethod,
+    email: authSnapshot.authState.email,
+    planAtLogin: authSnapshot.authState.planAtLogin,
+    requiresAuth: authSnapshot.authState.requiresAuth,
+    userId: authSnapshot.authState.userId,
+  });
+}
+
+async function ensureStatsigProductEventClient(authSnapshot: AuthSnapshot) {
+  const signature = createStatsigAuthSignature(authSnapshot);
+  if (productEventClient != null && productEventClientSignature === signature) {
+    return productEventClient;
+  }
+
+  if (
+    productEventClientPromise != null &&
+    productEventClientSignature === signature
+  ) {
+    return productEventClientPromise;
+  }
+
+  productEventClientSignature = signature;
+  productEventClientPromise = initializeStatsigProductEventClient(
+    authSnapshot,
+    signature,
+  ).catch((error) => {
+    if (productEventClientSignature === signature) {
+      productEventClientPromise = null;
+    }
+    throw error;
+  });
+  return productEventClientPromise;
+}
+
+async function initializeStatsigProductEventClient(
+  authSnapshot: AuthSnapshot,
+  signature: string,
+) {
+  const client = new statsigModule.StatsigClient(
+    STATSIG_SDK_KEY,
+    buildStatsigUser(authSnapshot),
+    {
+      networkConfig: {
+        api: STATSIG_API_URL,
+        logEventUrl: STATSIG_LOG_EVENT_URL,
+        networkOverrideFunc: statsigFetchThroughTauri,
+        sdkExceptionUrl: STATSIG_SDK_EXCEPTION_URL,
+      },
+    },
+  );
+
+  await client.initializeAsync();
+  if (productEventClientSignature !== signature) {
+    return productEventClient;
+  }
+
+  productEventClient = client;
+  productEventClientPromise = Promise.resolve(client);
+  flushQueuedProductEvents(client);
+  return client;
+}
+
+function flushQueuedProductEvents(client: StatsigClientLike) {
+  if (queuedProductEvents.length === 0) {
+    return;
+  }
+
+  const events = queuedProductEvents.splice(0, queuedProductEvents.length);
+  for (const event of events) {
+    client.logEvent(
+      event.eventName,
+      event.value ?? undefined,
+      sanitizeStatsigProductEventMetadata({
+        ...buildStatsigProductEventBaseMetadata(client),
+        ...event.metadata,
+      }),
+    );
+  }
+}
+
+function buildStatsigProductEventBaseMetadata(client: StatsigClientLike) {
+  const appVersion = normalizeOptionalString(client.getContext().user?.appVersion);
+  return {
+    ...(appVersion ? { app_version: appVersion } : {}),
+    origin: "codex_vscode",
+  };
+}
+
+function sanitizeStatsigProductEventMetadata(metadata: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.entries(metadata).flatMap(([key, value]) =>
+      typeof value === "boolean" ||
+      typeof value === "number" ||
+      typeof value === "string"
+        ? [[key, String(value)]]
+        : [],
+    ),
+  );
 }
 
 function getOrCreateStableId() {

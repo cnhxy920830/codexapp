@@ -11,6 +11,7 @@ use tokio::time::{sleep, Duration};
 use crate::app_state_snapshot::AppStateSnapshotState;
 use crate::automation_run_history::archive_automation_run_history_for_thread;
 use crate::automation_run_history::complete_automation_run_history_for_thread;
+use crate::debug_app_server;
 use crate::query_cache::emit_query_cache_invalidate;
 use crate::remote_app_server_runtime;
 use crate::thread_history::append_agent_message_delta;
@@ -382,6 +383,16 @@ pub struct DeviceCodeLoginStart {
 #[serde(rename_all = "camelCase")]
 struct ThreadListResponse {
     data: Vec<ThreadListItem>,
+    #[serde(default)]
+    next_cursor: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ThreadLoadedListResponse {
+    data: Vec<String>,
+    #[serde(default)]
+    next_cursor: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -444,6 +455,45 @@ pub enum ThreadUnsubscribeStatus {
     NotLoaded,
     NotSubscribed,
     Unsubscribed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DebugAppServerThreadStatusResponse {
+    pub entries: Vec<DebugAppServerThreadStatusEntry>,
+    pub titles_by_thread_id: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DebugAppServerThreadStatusEntry {
+    pub conversation_id: String,
+    pub last_turn_status: Option<String>,
+    pub resume_state: DebugAppServerThreadResumeState,
+    pub thread_runtime_status: Option<ThreadHistoryStatus>,
+    pub title: Option<String>,
+    pub updated_at: i64,
+    pub stream_role: Option<DebugAppServerThreadStreamRole>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DebugAppServerThreadResumeState {
+    Resumed,
+    Resuming,
+    NeedsResume,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DebugAppServerThreadStreamRole {
+    pub role: DebugAppServerThreadStreamRoleKind,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DebugAppServerThreadStreamRoleKind {
+    Owner,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1200,6 +1250,8 @@ struct ThreadStartThread {
 struct ThreadReadThread {
     id: String,
     preview: String,
+    updated_at: i64,
+    status: ThreadHistoryStatus,
     cwd: String,
     name: Option<String>,
     source: Option<serde_json::Value>,
@@ -1825,6 +1877,7 @@ pub(crate) enum AppServerRequestKind {
     PluginInstall,
     PluginUninstall,
     ThreadList,
+    ThreadLoadedList,
     ThreadStart,
     ThreadFork,
     ThreadArchive,
@@ -1870,6 +1923,7 @@ pub struct ClearThreadGoalParams {
 struct AppServerRequest {
     kind: AppServerRequestKind,
     payload: serde_json::Value,
+    debug_tracking: bool,
     response_tx: Option<oneshot::Sender<Result<serde_json::Value, String>>>,
 }
 
@@ -2659,6 +2713,26 @@ pub(crate) async fn send_request_for_host(
     }
 }
 
+async fn send_request_for_host_untracked(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    host_id: Option<&str>,
+    kind: AppServerRequestKind,
+    payload: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    if let Some(host_id) = remote_host_id(host_id) {
+        remote_app_server_runtime::send_request_untracked(
+            app,
+            host_id,
+            request_method(&kind),
+            payload,
+        )
+        .await
+    } else {
+        send_request_untracked(state, kind, payload).await
+    }
+}
+
 fn query_cache_invalidation_root(key_path: &str) -> Option<&'static str> {
     match key_path.split('.').next()? {
         "apps" => Some("apps"),
@@ -3385,20 +3459,199 @@ pub async fn list_archived_threads_command(
 
 #[tauri::command(rename = "unsubscribe-thread-for-host")]
 pub async fn unsubscribe_thread_for_host(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: UnsubscribeThreadForHostParams,
 ) -> Result<ThreadUnsubscribeResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "unsubscribe-thread-for-host")?;
-    let value = send_request(
+    let value = send_request_for_host(
+        &app,
         state.inner(),
+        params.host_id.as_deref(),
         AppServerRequestKind::ThreadUnsubscribe,
         serde_json::json!({
             "threadId": params.thread_id,
         }),
     )
     .await?;
-    serde_json::from_value::<ThreadUnsubscribeResponse>(value)
-        .map_err(|err| format!("failed to decode thread unsubscribe response: {err}"))
+    let response = serde_json::from_value::<ThreadUnsubscribeResponse>(value)
+        .map_err(|err| format!("failed to decode thread unsubscribe response: {err}"))?;
+    debug_app_server::mark_thread_unsubscribed(
+        &app,
+        params.host_id.as_deref().unwrap_or(LOCAL_HOST_ID),
+        &params.thread_id,
+    );
+    Ok(response)
+}
+
+#[tauri::command(rename = "debug-app-server-thread-status-for-host")]
+pub async fn debug_app_server_thread_status_for_host(
+    app: AppHandle,
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: HostScopedParams,
+) -> Result<DebugAppServerThreadStatusResponse, String> {
+    read_debug_app_server_thread_status_for_host(&app, state.inner(), params.host_id.as_deref())
+        .await
+}
+
+async fn read_debug_app_server_thread_status_for_host(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    host_id: Option<&str>,
+) -> Result<DebugAppServerThreadStatusResponse, String> {
+    let thread_summaries = list_recent_thread_summaries_for_debug(app, state, host_id).await?;
+    let loaded_thread_ids = list_loaded_thread_ids_for_debug(app, state, host_id).await?;
+    let normalized_host_id = host_id.unwrap_or(LOCAL_HOST_ID);
+    let mut titles_by_thread_id = thread_summaries
+        .iter()
+        .filter_map(|thread| {
+            normalized_thread_title(thread.name.as_deref()).map(|title| (thread.id.clone(), title))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut entries = Vec::with_capacity(loaded_thread_ids.len());
+
+    for thread_id in loaded_thread_ids {
+        let value = match send_request_for_host_untracked(
+            app,
+            state,
+            host_id,
+            AppServerRequestKind::ThreadRead,
+            serde_json::json!({
+                "threadId": thread_id,
+                "includeTurns": true,
+            }),
+        )
+        .await
+        {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let response = match serde_json::from_value::<ThreadReadResponse>(value) {
+            Ok(response) => response,
+            Err(_) => continue,
+        };
+        let title = normalized_thread_title(response.thread.name.as_deref());
+        if let Some(title) = title.as_ref() {
+            titles_by_thread_id.insert(response.thread.id.clone(), title.clone());
+        }
+        let is_subscribed =
+            debug_app_server::is_thread_subscribed(app, normalized_host_id, &response.thread.id)?;
+        entries.push(build_debug_app_server_thread_status_entry(
+            response.thread,
+            is_subscribed,
+        ));
+    }
+
+    entries.sort_by(|left, right| {
+        right
+            .updated_at
+            .cmp(&left.updated_at)
+            .then_with(|| left.conversation_id.cmp(&right.conversation_id))
+    });
+
+    Ok(DebugAppServerThreadStatusResponse {
+        entries,
+        titles_by_thread_id,
+    })
+}
+
+fn build_debug_app_server_thread_status_entry(
+    thread: ThreadReadThread,
+    is_subscribed: bool,
+) -> DebugAppServerThreadStatusEntry {
+    let resume_state = if is_subscribed {
+        if thread.turns.is_empty() {
+            DebugAppServerThreadResumeState::Resuming
+        } else {
+            DebugAppServerThreadResumeState::Resumed
+        }
+    } else {
+        DebugAppServerThreadResumeState::NeedsResume
+    };
+
+    DebugAppServerThreadStatusEntry {
+        conversation_id: thread.id,
+        last_turn_status: thread.turns.last().and_then(|turn| turn.status.clone()),
+        resume_state,
+        thread_runtime_status: Some(thread.status),
+        title: normalized_thread_title(thread.name.as_deref()),
+        updated_at: thread.updated_at,
+        stream_role: is_subscribed.then_some(DebugAppServerThreadStreamRole {
+            role: DebugAppServerThreadStreamRoleKind::Owner,
+        }),
+    }
+}
+
+fn normalized_thread_title(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+async fn list_recent_thread_summaries_for_debug(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    host_id: Option<&str>,
+) -> Result<Vec<ThreadListItem>, String> {
+    let mut data = Vec::new();
+    let mut cursor = None;
+
+    loop {
+        let value = send_request_for_host_untracked(
+            app,
+            state,
+            host_id,
+            AppServerRequestKind::ThreadList,
+            serde_json::json!({
+                "archived": false,
+                "cursor": cursor.clone(),
+                "limit": 100,
+                "sortKey": "updated_at",
+            }),
+        )
+        .await?;
+        let response = serde_json::from_value::<ThreadListResponse>(value)
+            .map_err(|err| format!("failed to decode debug thread list response: {err}"))?;
+        data.extend(response.data);
+        if response.next_cursor.is_none() {
+            break;
+        }
+        cursor = response.next_cursor;
+    }
+
+    Ok(data)
+}
+
+async fn list_loaded_thread_ids_for_debug(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    host_id: Option<&str>,
+) -> Result<Vec<String>, String> {
+    let mut data = Vec::new();
+    let mut cursor = None;
+
+    loop {
+        let value = send_request_for_host_untracked(
+            app,
+            state,
+            host_id,
+            AppServerRequestKind::ThreadLoadedList,
+            serde_json::json!({
+                "cursor": cursor.clone(),
+                "limit": 100,
+            }),
+        )
+        .await?;
+        let response = serde_json::from_value::<ThreadLoadedListResponse>(value)
+            .map_err(|err| format!("failed to decode debug loaded thread list response: {err}"))?;
+        data.extend(response.data);
+        if response.next_cursor.is_none() {
+            break;
+        }
+        cursor = response.next_cursor;
+    }
+
+    Ok(data)
 }
 
 async fn list_threads(
@@ -3608,6 +3861,11 @@ pub async fn start_conversation(
     let thread_response = serde_json::from_value::<ThreadStartResponse>(thread_value)
         .map_err(|err| format!("failed to decode thread start response: {err}"))?;
     let thread_id = thread_response.thread.id;
+    debug_app_server::mark_thread_subscribed(
+        &app,
+        host_id.as_deref().unwrap_or(LOCAL_HOST_ID),
+        &thread_id,
+    );
     let turn_value = send_request_for_host(
         &app,
         state.inner(),
@@ -3658,6 +3916,7 @@ pub async fn fork_thread(
     let response = serde_json::from_value::<ThreadStartResponse>(value)
         .map_err(|err| format!("failed to decode thread fork response: {err}"))?;
     let forked_thread_id = response.thread.id;
+    debug_app_server::mark_thread_subscribed(&app, LOCAL_HOST_ID, &forked_thread_id);
     let forked_turn_id = send_request(
         state.inner(),
         AppServerRequestKind::ThreadRead,
@@ -3734,6 +3993,7 @@ pub async fn fork_conversation_from_latest(
     let response = serde_json::from_value::<ThreadStartResponse>(value)
         .map_err(|err| format!("failed to decode side-chat thread fork response: {err}"))?;
     let forked_thread_id = response.thread.id;
+    debug_app_server::mark_thread_subscribed(&app, LOCAL_HOST_ID, &forked_thread_id);
     let forked_turn_id = send_request(
         state.inner(),
         AppServerRequestKind::ThreadRead,
@@ -3778,10 +4038,11 @@ pub async fn fork_conversation_from_latest(
 
 #[tauri::command(rename = "discard-conversation-from-cache")]
 pub async fn discard_conversation_from_cache(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: UnsubscribeThreadForHostParams,
 ) -> Result<ThreadUnsubscribeResponse, String> {
-    unsubscribe_thread_for_host(state, params).await
+    unsubscribe_thread_for_host(app, state, params).await
 }
 
 #[tauri::command]
@@ -4066,6 +4327,7 @@ pub struct StartReviewParams {
 
 #[tauri::command]
 pub async fn start_review(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     params: StartReviewParams,
 ) -> Result<ReviewStartResult, String> {
@@ -4083,6 +4345,7 @@ pub async fn start_review(
     .await?;
     let response = serde_json::from_value::<ReviewStartResponse>(value)
         .map_err(|err| format!("failed to decode review start response: {err}"))?;
+    debug_app_server::mark_thread_subscribed(&app, LOCAL_HOST_ID, &response.review_thread_id);
     Ok(ReviewStartResult {
         turn_id: response.turn.id,
         review_thread_id: response.review_thread_id,
@@ -4254,6 +4517,7 @@ pub async fn respond_to_mcp_server_elicitation_request(
 
 #[tauri::command]
 pub async fn read_thread(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
     thread_id: String,
 ) -> Result<ThreadConversation, String> {
@@ -4279,6 +4543,7 @@ pub async fn read_thread(
         .map_err(|err| format!("failed to decode thread read response: {err}"))?;
     let goal_response = serde_json::from_value::<ThreadGoalGetResponse>(goal_value)
         .map_err(|err| format!("failed to decode thread goal response: {err}"))?;
+    debug_app_server::mark_thread_subscribed(&app, LOCAL_HOST_ID, &response.thread.id);
     if let Some(latest_turn_id) = response.thread.turns.last().map(|turn| turn.id.clone()) {
         remember_latest_turn_id(state.inner(), &response.thread.id, &latest_turn_id);
     }
@@ -4325,8 +4590,10 @@ pub async fn maybe_resume_conversation(
     .await?;
     let response = serde_json::from_value::<ThreadResumeResponse>(value)
         .map_err(|err| format!("failed to decode thread resume response: {err}"))?;
-    let goal_value = send_request(
+    let goal_value = send_request_for_host(
+        &app,
         state.inner(),
+        host_id.as_deref(),
         AppServerRequestKind::ThreadGoalGet,
         serde_json::json!({
             "threadId": thread_id_for_goal,
@@ -4335,6 +4602,11 @@ pub async fn maybe_resume_conversation(
     .await?;
     let goal_response = serde_json::from_value::<ThreadGoalGetResponse>(goal_value)
         .map_err(|err| format!("failed to decode thread goal response: {err}"))?;
+    debug_app_server::mark_thread_subscribed(
+        &app,
+        host_id.as_deref().unwrap_or(LOCAL_HOST_ID),
+        &response.thread.id,
+    );
     if let Some(latest_turn_id) = response.thread.turns.last().map(|turn| turn.id.clone()) {
         remember_latest_turn_id(state.inner(), &response.thread.id, &latest_turn_id);
     }
@@ -5037,38 +5309,43 @@ async fn run_client(
 ) {
     let mut next_request_id: i64 = 1;
     let mut pending = HashMap::<JsonRpcId, AppServerRequestKind>::new();
+    let mut pending_debug_requests =
+        HashMap::<JsonRpcId, debug_app_server::DebugAppServerRequestHandle>::new();
     let mut pending_result =
         HashMap::<JsonRpcId, oneshot::Sender<Result<serde_json::Value, String>>>::new();
     let mut pending_thread_items = HashMap::<String, ThreadConversationItem>::new();
     let mut lines = BufReader::new(stdout).lines();
     let mut initialized = false;
 
+    let initialize_request_id = JsonRpcId::Integer(next_request_id);
+    let initialize_params = serde_json::json!({
+        "clientInfo": {
+            "name": CLIENT_NAME,
+            "title": "Codex App Replica",
+            "version": CLIENT_VERSION
+        },
+        "capabilities": {
+            "experimentalApi": true
+        }
+    });
+    let initialize_handle =
+        debug_app_server::request_started(&app, LOCAL_HOST_ID, "initialize", &initialize_params, 0);
+    pending_debug_requests.insert(initialize_request_id, initialize_handle.clone());
     if let Err(err) = write_json(
         &mut stdin,
         &serde_json::json!({
             "method": "initialize",
             "id": next_request_id,
-            "params": {
-                "clientInfo": {
-                    "name": CLIENT_NAME,
-                    "title": "Codex App Replica",
-                    "version": CLIENT_VERSION
-                },
-                "capabilities": {
-                    "experimentalApi": true
-                }
-            }
+            "params": initialize_params
         }),
     )
     .await
     {
+        debug_app_server::request_failed(&app, &initialize_handle, &err);
+        pending_debug_requests.remove(&JsonRpcId::Integer(next_request_id));
         set_bridge_error(&app, &state, err);
         return;
     }
-    pending.insert(
-        JsonRpcId::Integer(next_request_id),
-        AppServerRequestKind::AccountRead,
-    );
     next_request_id += 1;
 
     loop {
@@ -5088,15 +5365,30 @@ async fn run_client(
                             "id": request_id,
                             "params": request.payload,
                         });
+                        let request_handle = request.debug_tracking.then(|| {
+                            debug_app_server::request_started(
+                                &app,
+                                LOCAL_HOST_ID,
+                                method,
+                                payload.get("params").unwrap_or(&serde_json::Value::Null),
+                                0,
+                            )
+                        });
                         if let Some(response_tx) = request.response_tx {
                             pending_result.insert(request_id_value.clone(), response_tx);
                         }
                         pending.insert(request_id_value.clone(), request.kind);
+                        if let Some(request_handle) = request_handle {
+                            pending_debug_requests.insert(request_id_value.clone(), request_handle);
+                        }
                         if let Err(err) = write_json(&mut stdin, &payload).await {
                             if let Some(response_tx) = pending_result.remove(&request_id_value) {
                                 let _ = response_tx.send(Err(err.clone()));
                             }
                             pending.remove(&request_id_value);
+                            if let Some(handle) = pending_debug_requests.remove(&request_id_value) {
+                                debug_app_server::request_failed(&app, &handle, &err);
+                            }
                             set_bridge_error(&app, &state, err);
                             break;
                         }
@@ -5132,7 +5424,29 @@ async fn run_client(
                 match message {
                     JsonRpcMessage::Response { id, result, error } => {
                         let kind = pending.remove(&id);
+                        let debug_request_handle = pending_debug_requests.remove(&id);
                         if id == JsonRpcId::Integer(1) && !initialized {
+                            if let Some(handle) = debug_request_handle.as_ref() {
+                                match (&result, &error) {
+                                    (Some(value), None) => {
+                                                debug_app_server::request_completed(&app, handle, value);
+                                                debug_app_server::set_versions(
+                                                    &app,
+                                                    LOCAL_HOST_ID,
+                                                    debug_app_server::parse_app_server_version_from_initialize_result(
+                                                        value,
+                                                    ),
+                                                    None,
+                                                );
+                                            }
+                                    (_, Some(err)) => {
+                                        debug_app_server::request_failed(&app, handle, &err.message);
+                                    }
+                                    _ => {
+                                        debug_app_server::request_failed(&app, handle, "empty response");
+                                    }
+                                }
+                            }
                             initialized = true;
                             *state.is_ready.lock().expect("ready mutex poisoned") = true;
                             let _ = app.emit(
@@ -5142,7 +5456,14 @@ async fn run_client(
                                 },
                             );
                             let _ = write_json(&mut stdin, &serde_json::json!({"method":"initialized","params":{}})).await;
-                            queue_account_read(&mut stdin, &mut next_request_id, &mut pending).await;
+                            queue_account_read(
+                                &app,
+                                &mut stdin,
+                                &mut next_request_id,
+                                &mut pending,
+                                &mut pending_debug_requests,
+                            )
+                            .await;
                             continue;
                         }
                         if let Some(response_tx) = pending_result.remove(&id) {
@@ -5155,6 +5476,19 @@ async fn run_client(
                                 }
                                 _ => {
                                     let _ = response_tx.send(Err("empty response".to_string()));
+                                }
+                            }
+                        }
+                        if let Some(handle) = debug_request_handle.as_ref() {
+                            match (&result, &error) {
+                                (Some(value), None) => {
+                                    debug_app_server::request_completed(&app, handle, value);
+                                }
+                                (_, Some(err)) => {
+                                    debug_app_server::request_failed(&app, handle, &err.message);
+                                }
+                                _ => {
+                                    debug_app_server::request_failed(&app, handle, "empty response");
                                 }
                             }
                         }
@@ -5201,13 +5535,28 @@ async fn run_client(
                         }
                     }
                     JsonRpcMessage::Notification { method, params } => {
+                        debug_app_server::notification_received(&app, LOCAL_HOST_ID, &method, &params);
                         match method.as_str() {
                             "account/updated" => {
-                                queue_account_read(&mut stdin, &mut next_request_id, &mut pending).await;
+                                queue_account_read(
+                                    &app,
+                                    &mut stdin,
+                                    &mut next_request_id,
+                                    &mut pending,
+                                    &mut pending_debug_requests,
+                                )
+                                .await;
                             }
                             "account/login/completed" => {
                                 handle_login_completed(&app, &state, params);
-                                queue_account_read(&mut stdin, &mut next_request_id, &mut pending).await;
+                                queue_account_read(
+                                    &app,
+                                    &mut stdin,
+                                    &mut next_request_id,
+                                    &mut pending,
+                                    &mut pending_debug_requests,
+                                )
+                                .await;
                             }
                             "mcpServer/oauthLogin/completed" => {
                                 handle_mcp_oauth_login_completed(&app, params);
@@ -5352,6 +5701,13 @@ async fn run_client(
         }
     }
 
+    for (_, response_tx) in pending_result {
+        let _ = response_tx.send(Err("local app-server request dropped".to_string()));
+    }
+    for (_, handle) in pending_debug_requests {
+        debug_app_server::request_failed(&app, &handle, "local app-server request dropped");
+    }
+
     let is_current_generation = {
         let current_generation = *state
             .app_server_generation
@@ -5374,25 +5730,36 @@ async fn run_client(
 }
 
 async fn queue_account_read(
+    app: &AppHandle,
     stdin: &mut ChildStdin,
     next_request_id: &mut i64,
     pending: &mut HashMap<JsonRpcId, AppServerRequestKind>,
+    pending_debug_requests: &mut HashMap<JsonRpcId, debug_app_server::DebugAppServerRequestHandle>,
 ) {
     let request_id = *next_request_id;
     *next_request_id += 1;
-    pending.insert(
-        JsonRpcId::Integer(request_id),
-        AppServerRequestKind::AccountRead,
-    );
-    let _ = write_json(
+    let request_id_value = JsonRpcId::Integer(request_id);
+    pending.insert(request_id_value.clone(), AppServerRequestKind::AccountRead);
+    let params = serde_json::json!({
+        "refreshToken": false
+    });
+    let request_handle =
+        debug_app_server::request_started(app, LOCAL_HOST_ID, "account/read", &params, 0);
+    pending_debug_requests.insert(request_id_value, request_handle.clone());
+    if let Err(err) = write_json(
         stdin,
         &serde_json::json!({
             "method": "account/read",
             "id": request_id,
-            "params": { "refreshToken": false }
+            "params": params
         }),
     )
-    .await;
+    .await
+    {
+        pending.remove(&JsonRpcId::Integer(request_id));
+        pending_debug_requests.remove(&JsonRpcId::Integer(request_id));
+        debug_app_server::request_failed(app, &request_handle, &err);
+    }
 }
 
 fn handle_login_completed(
@@ -5480,6 +5847,7 @@ fn request_method(kind: &AppServerRequestKind) -> &'static str {
         AppServerRequestKind::PluginInstall => "plugin/install",
         AppServerRequestKind::PluginUninstall => "plugin/uninstall",
         AppServerRequestKind::ThreadList => "thread/list",
+        AppServerRequestKind::ThreadLoadedList => "thread/loaded/list",
         AppServerRequestKind::ThreadStart => "thread/start",
         AppServerRequestKind::ThreadFork => "thread/fork",
         AppServerRequestKind::ThreadArchive => "thread/archive",
@@ -7055,12 +7423,30 @@ async fn send_request(
     kind: AppServerRequestKind,
     payload: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
+    send_request_with_debug_tracking(state, kind, payload, true).await
+}
+
+async fn send_request_untracked(
+    state: &Arc<AuthBridgeState>,
+    kind: AppServerRequestKind,
+    payload: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    send_request_with_debug_tracking(state, kind, payload, false).await
+}
+
+async fn send_request_with_debug_tracking(
+    state: &Arc<AuthBridgeState>,
+    kind: AppServerRequestKind,
+    payload: serde_json::Value,
+    debug_tracking: bool,
+) -> Result<serde_json::Value, String> {
     let sender = wait_for_request_sender(state).await?;
     let (response_tx, response_rx) = oneshot::channel();
     sender
         .send(AppServerMessage::Request(AppServerRequest {
             kind,
             payload,
+            debug_tracking,
             response_tx: Some(response_tx),
         }))
         .map_err(|_| "auth bridge request channel closed".to_string())?;
@@ -7103,6 +7489,7 @@ async fn write_json(stdin: &mut ChildStdin, value: &serde_json::Value) -> Result
 
 #[cfg(test)]
 mod tests {
+    use super::build_debug_app_server_thread_status_entry;
     use super::build_thread_resume_payload;
     use super::build_thread_start_payload_with_overrides;
     use super::build_turn_start_payload;
@@ -7112,6 +7499,7 @@ mod tests {
     use super::map_account_info_response;
     use super::map_app_tools;
     use super::normalize_turn_input_value;
+    use super::normalized_thread_title;
     use super::plugin_list_cwds;
     use super::remote_host_id;
     use super::shared_state;
@@ -7130,6 +7518,10 @@ mod tests {
     use super::ConfigRequirements;
     use super::ConfigRequirementsReadResponse;
     use super::ConfigValueWriteParams;
+    use super::DebugAppServerThreadResumeState;
+    use super::DebugAppServerThreadStatusEntry;
+    use super::DebugAppServerThreadStreamRole;
+    use super::DebugAppServerThreadStreamRoleKind;
     use super::HookLoadErrorInfo;
     use super::HookMetadata;
     use super::HooksListEntry;
@@ -7182,6 +7574,8 @@ mod tests {
     use super::ThreadHistoryEntry;
     use super::ThreadHistorySource;
     use super::ThreadHistoryStatus;
+    use super::ThreadLoadedListResponse;
+    use super::ThreadReadThread;
     use super::ThreadUnsubscribeResponse;
     use super::ThreadUnsubscribeStatus;
     use super::UnarchiveConversationParams;
@@ -7306,6 +7700,64 @@ mod tests {
                 status: ThreadUnsubscribeStatus::NotSubscribed,
             }
         );
+    }
+
+    #[test]
+    fn thread_loaded_list_response_deserializes_upstream_shape() {
+        let response: ThreadLoadedListResponse = serde_json::from_value(json!({
+            "data": ["thr_123", "thr_456"],
+            "nextCursor": "cursor-2"
+        }))
+        .expect("response should deserialize");
+
+        assert_eq!(
+            response.data,
+            vec!["thr_123".to_string(), "thr_456".to_string()]
+        );
+        assert_eq!(response.next_cursor, Some("cursor-2".to_string()));
+    }
+
+    #[test]
+    fn build_debug_thread_status_entry_marks_resuming_for_empty_subscribed_thread() {
+        let entry = build_debug_app_server_thread_status_entry(
+            ThreadReadThread {
+                id: "thr_123".to_string(),
+                preview: "Preview".to_string(),
+                updated_at: 42,
+                status: ThreadHistoryStatus::Idle,
+                cwd: "D:/workspace".to_string(),
+                name: Some("  Debug thread  ".to_string()),
+                source: None,
+                has_unread_turn: false,
+                turns: Vec::new(),
+            },
+            true,
+        );
+
+        assert_eq!(
+            entry,
+            DebugAppServerThreadStatusEntry {
+                conversation_id: "thr_123".to_string(),
+                last_turn_status: None,
+                resume_state: DebugAppServerThreadResumeState::Resuming,
+                thread_runtime_status: Some(ThreadHistoryStatus::Idle),
+                title: Some("Debug thread".to_string()),
+                updated_at: 42,
+                stream_role: Some(DebugAppServerThreadStreamRole {
+                    role: DebugAppServerThreadStreamRoleKind::Owner,
+                }),
+            }
+        );
+    }
+
+    #[test]
+    fn normalized_thread_title_trims_blank_values() {
+        assert_eq!(
+            normalized_thread_title(Some("  Debug thread  ")),
+            Some("Debug thread".to_string())
+        );
+        assert_eq!(normalized_thread_title(Some("   ")), None);
+        assert_eq!(normalized_thread_title(None), None);
     }
 
     #[test]
@@ -7636,14 +8088,6 @@ mod tests {
             ensure_supported_host_id(Some("remote"), "logout")
                 .expect_err("non-local host id should be rejected"),
             "logout does not support host id: remote"
-        );
-
-        assert!(ensure_supported_host_id(None, "unsubscribe-thread-for-host").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "unsubscribe-thread-for-host").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "unsubscribe-thread-for-host")
-                .expect_err("non-local host id should be rejected"),
-            "unsubscribe-thread-for-host does not support host id: remote"
         );
     }
 

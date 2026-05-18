@@ -3,17 +3,15 @@ import { getGlobalState } from "../../../services/settings";
 import type { WelcomeMode } from "./types";
 
 type UseWelcomeModeParams = {
-  isWelcomeTarget: boolean;
-  shouldUseWelcomeV2Onboarding: boolean;
+  statsigIsLoading: boolean;
   welcomeV2DefaultFlowEnabled: boolean;
 };
 
 export function useWelcomeMode({
-  isWelcomeTarget,
-  shouldUseWelcomeV2Onboarding,
+  statsigIsLoading,
   welcomeV2DefaultFlowEnabled,
 }: UseWelcomeModeParams) {
-  const [mode, setMode] = useState<WelcomeMode | null>(null);
+  const [mode, setMode] = useState<Exclude<WelcomeMode, "simple"> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -31,19 +29,24 @@ export function useWelcomeMode({
         const debugOverride =
           typeof debugOverrideResponse.value === "string" ? debugOverrideResponse.value : "auto";
 
-        if (isWelcomeTarget && !shouldUseWelcomeV2Onboarding) {
-          setMode("simple");
-          return;
-        }
-
         if (debugOverride === "on") {
           setMode("role");
           return;
         }
 
+        if (debugOverride !== "auto") {
+          setMode("intent");
+          return;
+        }
+
+        if (statsigIsLoading) {
+          setMode(null);
+          return;
+        }
+
         setMode(welcomeV2DefaultFlowEnabled ? "intent" : "role");
       } catch {
-        if (!cancelled) {
+        if (!cancelled && !statsigIsLoading) {
           setMode(welcomeV2DefaultFlowEnabled ? "intent" : "role");
         }
       }
@@ -54,7 +57,7 @@ export function useWelcomeMode({
     return () => {
       cancelled = true;
     };
-  }, [isWelcomeTarget, shouldUseWelcomeV2Onboarding, welcomeV2DefaultFlowEnabled]);
+  }, [statsigIsLoading, welcomeV2DefaultFlowEnabled]);
 
   return mode;
 }

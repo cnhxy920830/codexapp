@@ -68,7 +68,7 @@ export function LoginRoutePage({
     GATE_STREAMLINED_LOGIN_COPY,
   );
   const welcomeV2DefaultFlowEnabled = useReplicaStatsigGateValue(
-    REPLICA_STATSIG_GATES.workspaceOnboardingWelcomeV2DefaultFlow,
+    REPLICA_STATSIG_GATES.workspaceOnboardingWelcomeV2Flow,
   );
 
   const refreshWorkspaceOnboardingExperimentAssignment = useEffectEvent(
@@ -120,7 +120,7 @@ export function LoginRoutePage({
   const shellVariant: LoginRouteShellVariant =
     shouldUseWelcomeV2WorkspaceOnboarding({
       assignment: workspaceOnboardingExperimentAssignment,
-      welcomeV2DefaultFlowEnabled,
+      welcomeV2FlowEnabled: welcomeV2DefaultFlowEnabled,
     })
       ? "welcomeV2"
       : "welcomeV1";

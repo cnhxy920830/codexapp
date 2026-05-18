@@ -37,7 +37,9 @@ test("select workspace page snapshots", async (t) => {
 
 type SnapshotMap = {
   emptyState: string;
+  emptyStateMenuOpen: string;
   listState: string;
+  remoteEmptyState: string;
 };
 
 function buildSnapshots(): SnapshotMap {
@@ -59,12 +61,38 @@ function buildSnapshots(): SnapshotMap {
           <SelectWorkspacePageView
             hasAvailableRoots={false}
             isEmptyState
-            isLoading={false}
+            isLoadingRoots={false}
+            isRemoteHost={false}
             isSelectAllChecked={false}
-            isSelectAllIndeterminate={false}
             isSkipPending={false}
-            selectedRootCount={0}
-            selectedRoots={{}}
+            hasSelectedRoots={false}
+            selectedRoots={[]}
+            showPlaygroundCopy={false}
+            skipErrorMessage={null}
+            visibleWorkspaceRootOptions={[]}
+            onContinue={noop}
+            onOpenFolder={noop}
+            onSkip={noop}
+            onStartFromScratch={noop}
+            onToggleSelectAll={noopBool}
+            onToggleWorkspace={noopToggleWorkspace}
+          />
+        </div>
+      </StaticI18nProvider>,
+    ),
+    emptyStateMenuOpen: renderSnapshot(
+      <StaticI18nProvider>
+        <div className="h-[720px]">
+          <SelectWorkspacePageView
+            addProjectMenuOpen
+            hasAvailableRoots={false}
+            isEmptyState
+            isLoadingRoots={false}
+            isRemoteHost={false}
+            isSelectAllChecked={false}
+            isSkipPending={false}
+            hasSelectedRoots={false}
+            selectedRoots={[]}
             showPlaygroundCopy={false}
             skipErrorMessage={null}
             visibleWorkspaceRootOptions={[]}
@@ -84,18 +112,40 @@ function buildSnapshots(): SnapshotMap {
           <SelectWorkspacePageView
             hasAvailableRoots
             isEmptyState={false}
-            isLoading={false}
+            isLoadingRoots={false}
+            isRemoteHost={false}
             isSelectAllChecked={false}
-            isSelectAllIndeterminate
             isSkipPending={false}
-            selectedRootCount={1}
-            selectedRoots={{
-              "D:\\workspace\\codex": true,
-              "D:\\workspace\\playground": false,
-            }}
+            hasSelectedRoots
+            selectedRoots={["D:\\workspace\\codex"]}
             showPlaygroundCopy
             skipErrorMessage="Could not create project"
             visibleWorkspaceRootOptions={workspaceOptions}
+            onContinue={noop}
+            onOpenFolder={noop}
+            onSkip={noop}
+            onStartFromScratch={noop}
+            onToggleSelectAll={noopBool}
+            onToggleWorkspace={noopToggleWorkspace}
+          />
+        </div>
+      </StaticI18nProvider>,
+    ),
+    remoteEmptyState: renderSnapshot(
+      <StaticI18nProvider>
+        <div className="h-[720px]">
+          <SelectWorkspacePageView
+            hasAvailableRoots={false}
+            isEmptyState
+            isLoadingRoots={false}
+            isRemoteHost
+            isSelectAllChecked={false}
+            isSkipPending={false}
+            hasSelectedRoots={false}
+            selectedRoots={[]}
+            showPlaygroundCopy={false}
+            skipErrorMessage={null}
+            visibleWorkspaceRootOptions={[]}
             onContinue={noop}
             onOpenFolder={noop}
             onSkip={noop}

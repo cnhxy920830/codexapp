@@ -43,9 +43,9 @@ export function AmbientSuggestionsDebugSection({
   const title = entries.length > 0 ? `Ambient suggestion chats (${entries.length})` : "Ambient suggestion chats";
 
   return (
-    <DebugSection storageKey={AMBIENT_SUGGESTION_DEBUG_STORAGE_KEY} title={title}>
+    <DebugSection storageKey={AMBIENT_SUGGESTION_DEBUG_STORAGE_KEY} title={title} variant="global">
       {isLoading && statuses === null && workspaceRootOptions === null ? (
-        <DebugEmptyState message="Loading ambient suggestion status..." />
+        <DebugEmptyState message="Loading ambient suggestion status…" />
       ) : entries.length === 0 ? (
         <DebugEmptyState message="No project roots" />
       ) : (

@@ -2,6 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import commandInventoryData from "../assets/keyboard-shortcuts/commandInventory.json";
 import { normalizeLocaleCode } from "../i18n/messages";
 import { scoreQueryMatch } from "../lib/scoreQueryMatch";
+import {
+  emitQueryCacheInvalidated,
+  onQueryCacheInvalidated,
+  queryKeyMatchesPrefix,
+  type QueryCacheInvalidateNotification,
+} from "./queryCache";
 
 export type CommandKeymapState = {
   bindings: CommandKeybinding[];
@@ -57,6 +63,7 @@ const DEFAULT_KEYBOARD_SHORTCUT_GATE_STATE: KeyboardShortcutGateState = {
   globalDictationEnabled: false,
   hotkeyWindowEnabled: false,
 };
+const COMMAND_KEYMAP_STATE_STALE_MS = 60_000;
 const MODIFIER_KEYS = new Set(["Meta", "Control", "Alt", "AltGraph", "Shift"]);
 const KEY_LABEL_BY_EVENT_KEY = new Map<string, string>([
   ["Escape", "Esc"],
@@ -65,22 +72,82 @@ const KEY_LABEL_BY_EVENT_KEY = new Map<string, string>([
   ["ArrowLeft", "Left"],
   ["ArrowRight", "Right"],
 ]);
+export const COMMAND_KEYMAP_STATE_QUERY_KEY = ["codex-command-keymap-state"] as const;
 
 export const KEYBOARD_SHORTCUT_COMMANDS = [...(commandInventoryData as KeyboardShortcutCommand[])].sort(
   compareKeyboardShortcutCommands,
 );
 const KEYBOARD_SHORTCUT_COMMAND_BY_ID = new Map(KEYBOARD_SHORTCUT_COMMANDS.map((command) => [command.id, command]));
+let commandKeymapStateCache:
+  | {
+      state: CommandKeymapState;
+      loadedAt: number;
+    }
+  | null = null;
+let pendingCommandKeymapStateLoad: Promise<CommandKeymapState> | null = null;
 
 export async function getCommandKeymapState() {
-  return invoke<CommandKeymapState>("get_command_keymap_state");
+  const cachedState = peekCommandKeymapState();
+  if (cachedState != null) {
+    return cachedState;
+  }
+
+  if (pendingCommandKeymapStateLoad != null) {
+    return pendingCommandKeymapStateLoad;
+  }
+
+  pendingCommandKeymapStateLoad = invoke<CommandKeymapState>("get_command_keymap_state")
+    .then((state) => {
+      setCachedCommandKeymapState(state);
+      return state;
+    })
+    .finally(() => {
+      pendingCommandKeymapStateLoad = null;
+    });
+
+  return pendingCommandKeymapStateLoad;
 }
 
 export async function setCommandKeybinding(commandId: string, update: CommandKeybindingUpdate) {
-  return invoke<CommandKeymapState>("set_command_keybinding", {
+  const nextState = await invoke<CommandKeymapState>("set_command_keybinding", {
     params: {
       commandId,
       update,
     },
+  });
+  setCachedCommandKeymapState(nextState);
+  await emitQueryCacheInvalidated(COMMAND_KEYMAP_STATE_QUERY_KEY);
+  return nextState;
+}
+
+export function peekCommandKeymapState() {
+  if (
+    commandKeymapStateCache == null ||
+    Date.now() - commandKeymapStateCache.loadedAt >= COMMAND_KEYMAP_STATE_STALE_MS
+  ) {
+    return null;
+  }
+
+  return commandKeymapStateCache.state;
+}
+
+export async function invalidateCommandKeymapState() {
+  commandKeymapStateCache = null;
+  pendingCommandKeymapStateLoad = null;
+  await emitQueryCacheInvalidated(COMMAND_KEYMAP_STATE_QUERY_KEY);
+}
+
+export function isCommandKeymapStateInvalidation(notification: QueryCacheInvalidateNotification) {
+  return queryKeyMatchesPrefix(notification.queryKey, COMMAND_KEYMAP_STATE_QUERY_KEY);
+}
+
+export function onCommandKeymapStateInvalidated(
+  handler: (notification: QueryCacheInvalidateNotification) => void,
+) {
+  return onQueryCacheInvalidated((notification) => {
+    if (isCommandKeymapStateInvalidation(notification)) {
+      handler(notification);
+    }
   });
 }
 
@@ -436,4 +503,11 @@ function compareKeyboardShortcutCommands(left: KeyboardShortcutCommand, right: K
     return left.id.localeCompare(right.id);
   }
   return normalizedLeftGroupIndex - normalizedRightGroupIndex;
+}
+
+function setCachedCommandKeymapState(state: CommandKeymapState) {
+  commandKeymapStateCache = {
+    state,
+    loadedAt: Date.now(),
+  };
 }

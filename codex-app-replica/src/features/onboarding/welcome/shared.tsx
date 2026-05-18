@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { CheckIcon, InfoIcon } from "../../../components/AppShellIcons";
 import type { MessageKey } from "../../../i18n/messages";
 import { WelcomeHeaderIcon, WelcomeHeaderSourceIcon } from "./icons";
@@ -20,10 +20,16 @@ export function WelcomeShell({ children }: { children: ReactNode }) {
   );
 }
 
-export function WelcomeFrame({ children }: { children: ReactNode }) {
+export function WelcomeFrame({
+  children,
+  panelClassName = "max-w-[400px]",
+}: {
+  children: ReactNode;
+  panelClassName?: string;
+}) {
   return (
     <div className="flex w-full max-w-3xl flex-col items-center justify-start">
-      <div className="flex w-full max-w-[400px] flex-col items-center overflow-hidden rounded-2xl p-10">
+      <div className={["flex w-full flex-col items-center overflow-hidden rounded-2xl p-10", panelClassName].join(" ")}>
         {children}
       </div>
     </div>
@@ -54,16 +60,23 @@ export function WelcomeHeader({
 }
 
 export function WelcomeImportHeader({
+  sourceIconVariant = "orange",
   subtitle,
   title,
 }: {
+  sourceIconVariant?: "neutral" | "orange";
   subtitle: string;
   title: string;
 }) {
+  const sourceIconClassName =
+    sourceIconVariant === "neutral"
+      ? "flex size-12 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--app-shell-text)_4%,transparent)] text-[var(--app-shell-subtle)]"
+      : "flex size-12 shrink-0 items-center justify-center rounded-xl bg-[#DA6A44] text-white ring-1 ring-[var(--app-shell-border)]";
+
   return (
     <div className="flex flex-col items-center text-center">
       <div aria-hidden="true" className="flex items-center gap-4">
-        <div className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-[#DA6A44] text-white ring-1 ring-[var(--app-shell-border)]">
+        <div className={sourceIconClassName}>
           <WelcomeHeaderSourceIcon className="size-6" />
         </div>
         <WelcomeHeaderIcon className="h-12 w-10 text-[var(--app-shell-text)]" />
@@ -76,12 +89,12 @@ export function WelcomeImportHeader({
 }
 
 export function OptionChip({
-  badge,
+  icon: Icon,
   label,
   onClick,
   selected,
 }: {
-  badge: string;
+  icon: ComponentType<{ className?: string }>;
   label: string;
   onClick: () => void;
   selected: boolean;
@@ -98,9 +111,11 @@ export function OptionChip({
       ].join(" ")}
       onClick={onClick}
     >
-      <MiniBadge className={selected ? "text-[var(--app-shell-text)]" : "text-[var(--app-shell-subtle)]"}>
-        {badge}
-      </MiniBadge>
+      {selected ? (
+        <CheckIcon className="h-5 w-5 shrink-0 text-[var(--app-shell-text)]" />
+      ) : (
+        <Icon className="h-5 w-5 shrink-0 text-[var(--app-shell-subtle)]" />
+      )}
       <span className="min-w-0 truncate text-[14px] leading-5 font-normal text-[var(--app-shell-text)]">
         {label}
       </span>
@@ -109,14 +124,14 @@ export function OptionChip({
 }
 
 export function WorkModeOption({
-  badge,
   description,
+  icon: Icon,
   onClick,
   selected,
   title,
 }: {
-  badge: string;
   description: string;
+  icon: ComponentType<{ className?: string }>;
   onClick: () => void;
   selected: boolean;
   title: string;
@@ -132,7 +147,7 @@ export function WorkModeOption({
       role="radio"
       onClick={onClick}
     >
-      <MiniBadge>{badge}</MiniBadge>
+      <Icon className="h-5 w-5 shrink-0 text-[var(--app-shell-subtle)]" />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="min-w-0 truncate text-[14px] leading-[18px] font-normal text-[var(--app-shell-text)]">
           {title}
@@ -173,22 +188,27 @@ export function RoleChip({
 
 export function ImportGroupRow({
   description,
+  disabled = false,
   leadingContent,
   label,
-  onClick,
+  onCheckedChange,
   state,
 }: {
   description: string;
+  disabled?: boolean;
   leadingContent?: ReactNode;
   label: string;
-  onClick: () => void;
+  onCheckedChange: (checked: boolean) => void;
   state: "all" | "none" | "partial";
 }) {
+  const checked = state === "all";
+
   return (
-    <button
-      type="button"
-      className="flex min-h-16 w-full items-center gap-3 border-b border-[var(--app-shell-border)] px-3 py-3 text-left last:border-b-0"
-      onClick={onClick}
+    <label
+      className={[
+        "flex min-h-16 w-full items-center gap-3 border-b border-[var(--app-shell-border)] px-3 py-3 text-left last:border-b-0",
+        disabled ? "cursor-default opacity-50" : "cursor-pointer",
+      ].join(" ")}
     >
       {leadingContent ? (
         <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--app-shell-text)_5%,transparent)] text-[var(--app-shell-subtle)]">
@@ -199,8 +219,14 @@ export function ImportGroupRow({
         <div className="text-[14px] font-medium text-[var(--app-shell-text)]">{label}</div>
         <div className="mt-1 text-[12px] leading-5 text-[var(--app-shell-subtle)]">{description}</div>
       </div>
-      <SelectionBadge isPartial={state === "partial"} isSelected={state === "all"} />
-    </button>
+      <SelectionCheckbox
+        checked={checked}
+        disabled={disabled}
+        indeterminate={state === "partial"}
+        label={label}
+        onChange={onCheckedChange}
+      />
+    </label>
   );
 }
 
@@ -271,22 +297,66 @@ export function PrimaryButton({
 
 export function SecondaryTextButton({
   children,
+  className = "",
   disabled = false,
   onClick,
 }: {
   children: ReactNode;
+  className?: string;
   disabled?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
-      className="inline-flex items-center justify-center px-2 py-2 text-[14px] font-medium text-[var(--app-shell-subtle)] transition hover:text-[var(--app-shell-text)] disabled:cursor-default disabled:opacity-40"
+      className={[
+        "inline-flex items-center justify-center text-[14px] font-medium text-[var(--app-shell-subtle)] transition hover:text-[var(--app-shell-text)] disabled:cursor-default disabled:opacity-40",
+        className || "px-2 py-2",
+      ].join(" ")}
       disabled={disabled}
       onClick={onClick}
     >
       {children}
     </button>
+  );
+}
+
+export function SelectionCheckbox({
+  checked,
+  className = "ml-3",
+  disabled = false,
+  indeterminate = false,
+  label,
+  onChange,
+}: {
+  checked: boolean;
+  className?: string;
+  disabled?: boolean;
+  indeterminate?: boolean;
+  label: string;
+  onChange: (checked: boolean) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (inputRef.current != null) {
+      inputRef.current.indeterminate = indeterminate;
+    }
+  }, [indeterminate]);
+
+  return (
+    <span className={[className, "inline-flex items-center"].filter(Boolean).join(" ")}>
+      <input
+        ref={inputRef}
+        aria-label={label}
+        checked={checked}
+        className="sr-only"
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+        type="checkbox"
+      />
+      <SelectionBadge isPartial={indeterminate} isSelected={checked} />
+    </span>
   );
 }
 

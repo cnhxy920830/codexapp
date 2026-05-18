@@ -254,6 +254,7 @@ import {
   buildAcceleratorFromKeyboardEvent,
   getCommandKeymapState,
   getCommandShortcutAccelerators,
+  onCommandKeymapStateInvalidated,
   type CommandKeymapState,
 } from "./services/keyboardShortcuts";
 import {
@@ -315,6 +316,7 @@ import {
 import {
   onActiveWorkspaceRootsUpdated,
   onOnboardingPickWorkspaceOrCreateDefaultResult,
+  clearActiveWorkspaceRoot,
   pickWorkspaceOrCreateDefault,
   readActiveWorkspaceRoots,
 } from "./services/workspaceRoots";
@@ -579,27 +581,42 @@ function parseThreadShellRoute(path: string): ThreadShellRoute | null {
   const normalizedPath = stripRouteSearchAndHash(path);
   const defaultMatch = /^\/(local|remote)\/([A-Za-z0-9._~%-]+)$/.exec(normalizedPath);
   if (defaultMatch) {
+    const decodedThreadId = decodeRouteSegment(defaultMatch[2]);
+    if (decodedThreadId === null) {
+      return null;
+    }
+
     return {
       kind: defaultMatch[1] as ThreadShellRoute["kind"],
-      threadId: defaultMatch[2],
+      threadId: decodedThreadId,
       shell: "default",
     };
   }
 
   const hotkeyThreadMatch = /^\/hotkey-window\/thread\/([A-Za-z0-9._~%-]+)$/.exec(normalizedPath);
   if (hotkeyThreadMatch) {
+    const decodedThreadId = decodeRouteSegment(hotkeyThreadMatch[1]);
+    if (decodedThreadId === null) {
+      return null;
+    }
+
     return {
       kind: "local",
-      threadId: hotkeyThreadMatch[1],
+      threadId: decodedThreadId,
       shell: "hotkey",
     };
   }
 
   const hotkeyRemoteMatch = /^\/hotkey-window\/remote\/([A-Za-z0-9._~%-]+)$/.exec(normalizedPath);
   if (hotkeyRemoteMatch) {
+    const decodedThreadId = decodeRouteSegment(hotkeyRemoteMatch[1]);
+    if (decodedThreadId === null) {
+      return null;
+    }
+
     return {
       kind: "remote",
-      threadId: hotkeyRemoteMatch[1],
+      threadId: decodedThreadId,
       shell: "hotkey",
     };
   }
@@ -1282,10 +1299,9 @@ function App() {
   const [threadHeartbeatAutomationDialogMode, setThreadHeartbeatAutomationDialogMode] =
     useState<"create" | "edit">("create");
   useReplicaStatsigOwner(authSnapshot);
-  const workspaceOnboardingWelcomeV2DefaultFlowEnabled =
-    useReplicaStatsigGateValue(
-      REPLICA_STATSIG_GATES.workspaceOnboardingWelcomeV2DefaultFlow,
-    );
+  const workspaceOnboardingWelcomeV2FlowEnabled = useReplicaStatsigGateValue(
+    REPLICA_STATSIG_GATES.workspaceOnboardingWelcomeV2Flow,
+  );
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general-settings");
   const [settingsSectionState, setSettingsSectionState] = useState<SettingsSectionState>(null);
   const [settingsRemoteConnections, setSettingsRemoteConnections] = useState<RemoteConnection[]>([]);
@@ -1325,7 +1341,7 @@ function App() {
   );
   const shouldUseWelcomeV2Onboarding = shouldUseWelcomeV2WorkspaceOnboarding({
     assignment: workspaceOnboardingExperimentAssignment,
-    welcomeV2DefaultFlowEnabled: workspaceOnboardingWelcomeV2DefaultFlowEnabled,
+    welcomeV2FlowEnabled: workspaceOnboardingWelcomeV2FlowEnabled,
   });
   const baseLoginOnboardingRouteTarget = resolveLoginOnboardingRouteTarget({
     activeWorkspaceRootCount,
@@ -2349,25 +2365,43 @@ function App() {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadCommandKeymapState = useEffectEvent(async () => {
+    try {
+      setCommandKeymapState(await getCommandKeymapState());
+    } catch {
+      setCommandKeymapState(null);
+    }
+  });
 
-    void getCommandKeymapState()
-      .then((state) => {
-        if (!cancelled) {
-          setCommandKeymapState(state);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setCommandKeymapState(null);
-        }
-      });
+  useEffect(() => {
+    void loadCommandKeymapState();
+  }, [loadCommandKeymapState]);
+
+  const handleCommandKeymapStateInvalidated = useEffectEvent(() => {
+    void loadCommandKeymapState();
+  });
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void onCommandKeymapStateInvalidated(() => {
+      if (!disposed) {
+        handleCommandKeymapStateInvalidated();
+      }
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+      unlisten = dispose;
+    });
 
     return () => {
-      cancelled = true;
+      disposed = true;
+      unlisten?.();
     };
-  }, []);
+  }, [handleCommandKeymapStateInvalidated]);
 
   useEffect(() => {
     if (!isThreadActionsMenuOpen) {
@@ -4599,6 +4633,9 @@ function App() {
 
     await selectThread(threadRoute.threadId, threadRoute.shell);
   });
+  const navigateHotkeyThreadPage = useEffectEvent((path: string) => {
+    void handleNavigateToRoute(path);
+  });
 
   const handleToggleDiffPanel = useEffectEvent((open: boolean) => {
     if (open) {
@@ -6283,18 +6320,10 @@ function App() {
     }
 
     if (settingsSection === "open-source-licenses") {
-      const backPath =
-        settingsSectionState != null &&
-        typeof settingsSectionState === "object" &&
-        !Array.isArray(settingsSectionState) &&
-        "licensesBackPath" in settingsSectionState &&
-        typeof settingsSectionState.licensesBackPath === "string" &&
-        settingsSectionState.licensesBackPath.startsWith("/settings/")
-          ? settingsSectionState.licensesBackPath
-          : "/settings/general";
       return (
         <OpenSourceLicensesPage
-          onBack={() => {
+          licensesBackPath={settingsSectionState?.licensesBackPath ?? null}
+          onNavigateBack={(backPath) => {
             setSettingsSection(backPath === "/settings/agent" ? "agent" : "general-settings");
             setSettingsSectionState(null);
           }}
@@ -6645,6 +6674,7 @@ function App() {
       <>
         <HotkeyWindowThreadPage
           conversationId={selectedThreadId ?? currentThreadShellRoute?.threadId ?? null}
+          onNavigateToPath={navigateHotkeyThreadPage}
           threadConversation={threadConversation}
         >
           {isThreadConversationLoading ? (
@@ -6707,9 +6737,31 @@ function App() {
   if (currentRoute === "hotkey-new-thread") {
     return (
       <HotkeyWindowNewThreadPage
+        codexHome={codexHome}
         composerEnterBehavior={composerEnterBehavior}
+        guardianApprovalEnabledByStatsig={defaultFeatures.guardian_approval}
         initialWorkspaceRoot={openProjectPath}
-        onSubmit={startHotkeyNewThread}
+        onOpenLocalEnvironmentsSettings={({ configPath, workspaceRoot }) => {
+          const searchParams = new URLSearchParams({
+            mode: configPath === null ? "edit" : "preview",
+            workspaceRoot,
+          });
+          if (configPath !== null) {
+            searchParams.set("configPath", configPath);
+          }
+          const nextPath = `/settings/local-environments?${searchParams.toString()}`;
+          if (typeof window !== "undefined" && window.location.pathname + window.location.search !== nextPath) {
+            window.history.replaceState(window.history.state, "", nextPath);
+          }
+          setThreadShellVariant("default");
+          setSelectedSettingsHostId(LOCAL_SETTINGS_HOST_ID);
+          setSettingsSection("local-environments");
+          setSettingsSectionState({ localEnvironmentRouteSearch: `?${searchParams.toString()}` });
+          setCurrentRoute("settings");
+        }}
+        onStartCloudConversation={startHotkeyHomeCloudConversation}
+        onStartLocalConversation={startHotkeyHomeLocalConversation}
+        onStartWorktreeConversation={startHotkeyHomeWorktreeConversation}
       />
     );
   }
@@ -6776,6 +6828,7 @@ function App() {
         conversationId={selectedThreadId}
         isLoading={isThreadConversationLoading}
         onClose={() => void appWindow.close()}
+        onOpenConversation={(threadId, hostId) => void viewConversationForHost(threadId, hostId)}
         threadConversation={threadConversation}
       />
     );
@@ -6834,7 +6887,26 @@ function App() {
   if (currentRoute === "welcome") {
     return (
       <WelcomePage
-        isWelcomeTarget={loginRouteOverride === "welcome"}
+        isWelcomeTarget={baseLoginOnboardingRouteTarget === "welcome"}
+        onAutoCompleteToHome={() => {
+          const completedAt = Math.floor(Date.now() / 1_000);
+          void Promise.all([
+            setGlobalState("conversationDetailMode", "STEPS_COMMANDS"),
+            setGlobalState("electron:onboarding-welcome-pending", false),
+            setGlobalState("electron:onboarding-projectless-completed", true),
+            setGlobalState("electron:onboarding-hide-first-new-thread-promos", true),
+            setGlobalState("last_completed_onboarding", completedAt),
+            setGlobalState("active-remote-project-id", null),
+            clearActiveWorkspaceRoot(),
+          ])
+            .catch(() => undefined)
+            .finally(() => {
+              if (typeof window !== "undefined") {
+                window.history.replaceState(window.history.state, "", "/");
+              }
+              openNewConversation({ focusComposerNonce: Date.now() });
+            });
+        }}
         onCompleteToHome={() => {
           if (typeof window !== "undefined") {
             window.history.replaceState(
@@ -6846,6 +6918,10 @@ function App() {
           openNewConversation({ focusComposerNonce: Date.now() });
         }}
         onContinueToWorkspace={() => {
+          void Promise.all([
+            setGlobalState("electron:onboarding-override", "workspace"),
+            setGlobalState("electron:onboarding-welcome-pending", false),
+          ]).catch(() => undefined);
           if (typeof window !== "undefined") {
             window.history.replaceState(window.history.state, "", SELECT_WORKSPACE_ROUTE_PATH);
           }
@@ -7672,14 +7748,24 @@ function DebugWindowPage({
   conversationId,
   isLoading,
   onClose,
+  onOpenConversation,
   threadConversation,
 }: {
   conversationId: string | null;
   isLoading: boolean;
   onClose: () => void;
+  onOpenConversation?: (threadId: string, hostId: string) => void;
   threadConversation: ThreadConversation | null;
 }) {
-  return <DebugWindowPageContent conversationId={conversationId} isLoading={isLoading} threadConversation={threadConversation} onClose={onClose} />;
+  return (
+    <DebugWindowPageContent
+      conversationId={conversationId}
+      isLoading={isLoading}
+      onClose={onClose}
+      onOpenConversation={onOpenConversation}
+      threadConversation={threadConversation}
+    />
+  );
 }
 
 function isExplicitLoginRouteOverride(value: string | null) {

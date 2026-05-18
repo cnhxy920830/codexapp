@@ -589,6 +589,7 @@ export type ThreadConversationMcpToolCall = {
   arguments: unknown;
   result: unknown | null;
   error: unknown | null;
+  durationMs: number | null;
   resultSummary: string | null;
   errorMessage: string | null;
 };
@@ -1665,6 +1666,13 @@ export function normalizeThreadConversationItem(item: ThreadConversationItem): T
     return {
       ...item,
       commandActions: Array.isArray(item.commandActions) ? item.commandActions : [],
+    };
+  }
+
+  if (item.type === "mcpToolCall") {
+    return {
+      ...item,
+      durationMs: typeof item.durationMs === "number" ? item.durationMs : null,
     };
   }
 

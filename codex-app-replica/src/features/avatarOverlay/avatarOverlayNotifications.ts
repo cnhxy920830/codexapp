@@ -10,6 +10,7 @@ const RUNNING_NOTIFICATION_EXPIRY_MS = 180_000;
 const FAILED_NOTIFICATION_EXPIRY_MS = 3_600_000;
 const WAITING_NOTIFICATION_EXPIRY_MS = 86_400_000;
 const REVIEW_NOTIFICATION_EXPIRY_MS = 604_800_000;
+const LOCAL_HOST_ID = "local";
 
 type Translate = (key: MessageKey, values?: MessageValues) => string;
 
@@ -21,7 +22,7 @@ export type AvatarOverlayNotificationStatus =
 
 export type AvatarOverlayNotificationLevel = "info" | "warning" | "danger" | "success";
 
-export type AvatarOverlayNotificationSource = "local" | "cloud";
+export type AvatarOverlayNotificationSource = "local" | "remote-host" | "cloud";
 
 export type AvatarOverlayNotification = {
   id: string;
@@ -55,6 +56,27 @@ type AvatarOverlaySession =
       task: RemoteTask;
     };
 
+type DerivedSession = {
+  actionPath: string;
+  hostId: string | null;
+  key: string;
+  localConversationId: string | null;
+  source: AvatarOverlayNotificationSource;
+  status: AvatarOverlayNotificationStatus | "idle";
+  subtitle: string | null;
+  title: string;
+  turnKey: string | null;
+  updatedAtMs: number;
+};
+
+type DerivedNotification = {
+  expiresAtMs: number | null;
+  key: string;
+  notification: AvatarOverlayNotification;
+  notificationPriority: number;
+  updatedAtMs: number;
+};
+
 export function deriveAvatarOverlayNotifications(options: {
   conversationsByThreadId: ReadonlyMap<string, ThreadConversation>;
   dismissedNotificationTurnKeys?: ReadonlyMap<string, string | null>;
@@ -63,44 +85,33 @@ export function deriveAvatarOverlayNotifications(options: {
   remoteTasks: RemoteTask[];
   translate: Translate;
 }): AvatarOverlayNotificationSnapshot {
-  const { conversationsByThreadId, recentThreads, remoteTasks, translate } = options;
   const nowMs = options.nowMs ?? Date.now();
-  const dismissedNotificationTurnKeys = options.dismissedNotificationTurnKeys;
-  const notifications: AvatarOverlayNotification[] = [];
+  const sessions = buildSessions(options);
+  const notifications: DerivedNotification[] = [];
   let nextExpiresAtMs: number | null = null;
-  const keys = new Set<string>();
 
-  for (const session of buildSessions({ conversationsByThreadId, recentThreads, remoteTasks })) {
-    const notification = deriveNotification(session, translate);
-    if (notification == null) {
+  for (const session of sessions) {
+    const derived = deriveNotification(session, nowMs, options.translate);
+    if (derived == null) {
       continue;
     }
-
-    if (dismissedNotificationTurnKeys?.get(notification.id) === notification.turnKey) {
+    if (
+      options.dismissedNotificationTurnKeys?.get(derived.notification.id) ===
+      derived.notification.turnKey
+    ) {
       continue;
     }
-
-    if (nowMs >= notification.expiresAtMs) {
-      continue;
+    if (derived.expiresAtMs != null && (nextExpiresAtMs == null || derived.expiresAtMs < nextExpiresAtMs)) {
+      nextExpiresAtMs = derived.expiresAtMs;
     }
-
-    if (keys.has(notification.id)) {
-      continue;
-    }
-    keys.add(notification.id);
-
-    if (nextExpiresAtMs == null || notification.expiresAtMs < nextExpiresAtMs) {
-      nextExpiresAtMs = notification.expiresAtMs;
-    }
-
-    notifications.push(notification);
+    notifications.push(derived);
   }
 
   notifications.sort(compareNotifications);
 
   return {
     nextExpiresAtMs,
-    notifications,
+    notifications: notifications.map((entry) => entry.notification),
   };
 }
 
@@ -134,55 +145,76 @@ function buildSessions(options: {
 
 function deriveNotification(
   session: AvatarOverlaySession,
+  nowMs: number,
   translate: Translate,
-): AvatarOverlayNotification | null {
-  if (session.kind === "local") {
-    const status = deriveLocalNotificationStatus(session.entry, session.conversation);
-    if (status === "idle") {
-      return null;
-    }
-
-    const updatedAtMs = session.entry.updatedAt * 1000;
-    return {
-      id: `local:${session.entry.id}`,
-      actionPath: `/local/${session.entry.id}`,
-      body: deriveLocalNotificationBody(session.conversation, translate),
-      canDismiss: true,
-      expiresAtMs: getNotificationExpiresAtMs(status, updatedAtMs),
-      isLoading: status === "running",
-      level: getNotificationLevel(status),
-      localConversationId: session.entry.id,
-      source: "local",
-      status,
-      title: deriveLocalNotificationTitle(session.entry, session.conversation, translate),
-      turnKey: String(session.conversation?.turns.length ?? 0),
-      updatedAtMs,
-    };
-  }
-
-  const status = deriveRemoteTaskNotificationStatus(session.task);
-  if (status === "idle") {
+): DerivedNotification | null {
+  const derivedSession = deriveSession(session, translate);
+  if (derivedSession == null || derivedSession.status === "idle") {
     return null;
   }
 
-  const updatedAtMs = (session.task.updated_at ?? session.task.created_at ?? 0) * 1000;
-  const turnKey = session.task.task_status_display?.latest_turn_status_display?.turn_id ?? null;
+  const expiresAtMs = getNotificationExpiresAtMs(derivedSession.status, derivedSession.updatedAtMs);
+  if (expiresAtMs != null && nowMs >= expiresAtMs) {
+    return null;
+  }
 
   return {
-    id: `cloud:${session.task.id}`,
+    expiresAtMs,
+    key: derivedSession.key,
+    notification: {
+      id: derivedSession.key,
+      actionPath: derivedSession.actionPath,
+      body: derivedSession.subtitle,
+      canDismiss: true,
+      expiresAtMs: expiresAtMs ?? Number.MAX_SAFE_INTEGER,
+      isLoading: derivedSession.status === "running",
+      level: getNotificationLevel(derivedSession.status),
+      localConversationId: derivedSession.localConversationId,
+      source: derivedSession.source,
+      status: derivedSession.status,
+      title: derivedSession.title,
+      turnKey: derivedSession.turnKey,
+      updatedAtMs: derivedSession.updatedAtMs,
+    },
+    notificationPriority: getNotificationPriority(derivedSession.status),
+    updatedAtMs: derivedSession.updatedAtMs,
+  };
+}
+
+function deriveSession(
+  session: AvatarOverlaySession,
+  translate: Translate,
+): DerivedSession | null {
+  if (session.kind === "local") {
+    const hostId = normalizeHostId(session.conversation?.hostId);
+    const source = hostId === LOCAL_HOST_ID ? "local" : "remote-host";
+    const status = deriveLocalNotificationStatus(session.entry, session.conversation);
+
+    return {
+      actionPath: `/local/${session.entry.id}`,
+      hostId,
+      key: `${source}:${hostId}:${session.entry.id}`,
+      localConversationId: session.entry.id,
+      source,
+      status,
+      subtitle: deriveLocalNotificationBody(session.conversation, translate),
+      title: deriveLocalNotificationTitle(session.entry, session.conversation, translate),
+      turnKey: String(session.conversation?.turns.length ?? 0),
+      updatedAtMs: session.entry.updatedAt * 1000,
+    };
+  }
+
+  return {
     actionPath: `/remote/${session.task.id}`,
-    body: null,
-    canDismiss: true,
-    expiresAtMs: getNotificationExpiresAtMs(status, updatedAtMs),
-    isLoading: status === "running",
-    level: getNotificationLevel(status),
+    hostId: null,
+    key: `cloud:${session.task.id}`,
     localConversationId: null,
     source: "cloud",
-    status,
-    title:
-      session.task.title?.trim() || translate("avatarOverlay.session.newThread"),
-    turnKey,
-    updatedAtMs,
+    status: deriveRemoteTaskNotificationStatus(session.task),
+    subtitle: null,
+    title: session.task.title?.trim() || translate("avatarOverlay.session.newThread"),
+    turnKey: session.task.task_status_display?.latest_turn_status_display?.turn_id ?? null,
+    updatedAtMs: (session.task.updated_at ?? session.task.created_at ?? 0) * 1000,
   };
 }
 
@@ -194,20 +226,19 @@ function deriveLocalNotificationStatus(
   entry: ThreadHistoryEntry,
   conversation: ThreadConversation | undefined,
 ): AvatarOverlayNotificationStatus | "idle" {
-  switch (entry.status.type) {
-    case "systemError":
-      return "failed";
-    case "active":
-      return entry.status.activeFlags.some(
+  if (entry.status.type === "systemError") {
+    return "failed";
+  }
+
+  if (entry.status.type === "active") {
+    if (
+      entry.status.activeFlags.some(
         (flag) => flag === "waitingOnApproval" || flag === "waitingOnUserInput",
       )
-        ? "waiting"
-        : "running";
-    case "idle":
-    case "notLoaded":
-      break;
-    default:
-      return "idle";
+    ) {
+      return "waiting";
+    }
+    return "running";
   }
 
   if (conversation == null) {
@@ -218,17 +249,17 @@ function deriveLocalNotificationStatus(
   if (latestTurnStatus === "failed") {
     return "failed";
   }
-
   if (hasPendingRequest(conversation.items)) {
     return "waiting";
   }
-
   if (latestTurnStatus === "inProgress") {
     return "running";
   }
-
   if (conversation.items.some(isFailureItem)) {
     return "failed";
+  }
+  if (conversation.hasUnreadTurn === true || entry.hasUnreadTurn === true) {
+    return "review";
   }
 
   return "idle";
@@ -251,6 +282,7 @@ function deriveRemoteTaskNotificationStatus(
   if (task.has_unread_turn === true) {
     return "review";
   }
+
   return "idle";
 }
 
@@ -302,13 +334,30 @@ function getNotificationLevel(
   }
 }
 
+function getNotificationPriority(status: AvatarOverlayNotificationStatus) {
+  switch (status) {
+    case "waiting":
+      return 0;
+    case "failed":
+      return 1;
+    case "review":
+      return 2;
+    case "running":
+      return 3;
+  }
+}
+
 function deriveLocalNotificationTitle(
   entry: ThreadHistoryEntry,
   conversation: ThreadConversation | undefined,
   translate: Translate,
 ) {
-  const title = conversation?.title?.trim() || entry.name?.trim() || entry.preview.trim();
-  return title.length > 0 ? title : translate("avatarOverlay.session.newThread");
+  return (
+    conversation?.title?.trim() ||
+    entry.name?.trim() ||
+    entry.preview.trim() ||
+    translate("avatarOverlay.session.newThread")
+  ).trim();
 }
 
 function deriveLocalNotificationBody(
@@ -391,7 +440,6 @@ function describeConversationItem(
               ? translate("avatarOverlay.session.searchingFiles")
               : translate("avatarOverlay.session.searchedFiles");
           }
-
           return isRunning
             ? translate("avatarOverlay.session.searchingQuery", {
                 query: cleanedQuery,
@@ -423,7 +471,6 @@ function describeConversationItem(
           ? translate("avatarOverlay.session.callingTool")
           : translate("avatarOverlay.session.calledTool");
       }
-
       return isRunning
         ? translate("avatarOverlay.session.callingToolName", {
             toolName,
@@ -445,12 +492,8 @@ function describeConversationItem(
   }
 }
 
-function compareNotifications(
-  left: AvatarOverlayNotification,
-  right: AvatarOverlayNotification,
-) {
-  const priorityDelta =
-    getNotificationPriority(left.status) - getNotificationPriority(right.status);
+function compareNotifications(left: DerivedNotification, right: DerivedNotification) {
+  const priorityDelta = left.notificationPriority - right.notificationPriority;
   if (priorityDelta !== 0) {
     return priorityDelta;
   }
@@ -460,20 +503,7 @@ function compareNotifications(
     return updatedAtDelta;
   }
 
-  return left.id.localeCompare(right.id);
-}
-
-function getNotificationPriority(status: AvatarOverlayNotificationStatus) {
-  switch (status) {
-    case "waiting":
-      return 0;
-    case "failed":
-      return 1;
-    case "review":
-      return 2;
-    case "running":
-      return 3;
-  }
+  return left.key.localeCompare(right.key);
 }
 
 function cleanActivityText(value: string) {
@@ -489,4 +519,9 @@ function cleanActivityText(value: string) {
     .trim();
 
   return cleaned.length > 0 ? cleaned : null;
+}
+
+function normalizeHostId(hostId: string | null | undefined) {
+  const trimmed = hostId?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : LOCAL_HOST_ID;
 }

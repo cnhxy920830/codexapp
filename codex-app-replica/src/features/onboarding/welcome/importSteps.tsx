@@ -15,6 +15,7 @@ import {
   PrimaryButton,
   SecondaryTextButton,
   SelectionBadge,
+  SelectionCheckbox,
   WelcomeFrame,
   WelcomeImportHeader,
   type Translate,
@@ -43,8 +44,9 @@ export function ExternalAgentImportProviderStep({
   t: Translate;
 }) {
   return (
-    <WelcomeFrame>
+    <WelcomeFrame panelClassName="max-w-lg">
       <WelcomeImportHeader
+        sourceIconVariant="neutral"
         subtitle={t("onboarding.welcomeV2.externalAgentImport.providers.subtitle")}
         title={t("onboarding.welcomeV2.externalAgentImport.providers.title")}
       />
@@ -75,7 +77,9 @@ export function ExternalAgentImportProviderStep({
         <PrimaryButton className="w-full" onClick={onContinue}>
           {t("onboarding.welcome.continue")}
         </PrimaryButton>
-        <SecondaryTextButton onClick={onSkip}>{t("onboarding.welcomeV2.skip")}</SecondaryTextButton>
+        <SecondaryTextButton className="h-12 w-full rounded-full px-4 py-3" onClick={onSkip}>
+          {t("onboarding.welcomeV2.skip")}
+        </SecondaryTextButton>
       </div>
     </WelcomeFrame>
   );
@@ -111,7 +115,7 @@ export function ExternalAgentImportItemsStep({
   const chatsSelected = summary.chatChoiceKey != null && selection[summary.chatChoiceKey] === true;
 
   return (
-    <WelcomeFrame>
+    <WelcomeFrame panelClassName="max-w-lg">
       <WelcomeImportHeader
         subtitle={t("onboarding.welcomeV2.externalAgentImport.items.subtitle")}
         title={t("onboarding.welcomeV2.externalAgentImport.items.title")}
@@ -124,29 +128,32 @@ export function ExternalAgentImportItemsStep({
           {summary.toolsAndSetupCount > 0 ? (
             <ImportGroupRow
               description={t("onboarding.welcomeV2.externalAgentImport.toolsAndSetup.description")}
+              disabled={isPending}
               leadingContent={<WelcomeImportSettingsIcon className="size-5" />}
               label={t("onboarding.welcomeV2.externalAgentImport.toolsAndSetup.title")}
-              onClick={() => onToggleGroup("toolsAndSetup")}
+              onCheckedChange={(checked) => handleGroupSelection("toolsAndSetup", checked)}
               state={toolsState}
             />
           ) : null}
           {summary.projectCount > 0 ? (
             <ImportGroupRow
               description={t("onboarding.welcomeV2.externalAgentImport.projects.description")}
+              disabled={isPending}
               leadingContent={<WelcomeImportProjectsIcon className="size-5" />}
               label={t("onboarding.welcomeV2.externalAgentImport.projects.title", { count: summary.projectCount })}
-              onClick={() => onToggleGroup("projects")}
+              onCheckedChange={(checked) => handleGroupSelection("projects", checked)}
               state={projectState}
             />
           ) : null}
           {summary.recentChatCount > 0 ? (
             <ImportGroupRow
               description={t("onboarding.welcomeV2.externalAgentImport.recentChats.description")}
+              disabled={isPending}
               leadingContent={<WelcomeImportChatsIcon className="size-5" />}
               label={t("onboarding.welcomeV2.externalAgentImport.recentChats.title", {
                 count: summary.recentChatCount,
               })}
-              onClick={onToggleChats}
+              onCheckedChange={(checked) => onToggleChatsWithValue(checked)}
               state={chatsSelected ? "all" : "none"}
             />
           ) : null}
@@ -172,12 +179,30 @@ export function ExternalAgentImportItemsStep({
         <PrimaryButton className="w-full max-w-xs" disabled={isPending || isContinueDisabled} onClick={onContinue}>
           {t("onboarding.welcome.continue")}
         </PrimaryButton>
-        <SecondaryTextButton disabled={isPending} onClick={onSkip}>
+        <SecondaryTextButton className="h-8 w-full px-3" disabled={isPending} onClick={onSkip}>
           {t("onboarding.welcomeV2.skip")}
         </SecondaryTextButton>
       </div>
     </WelcomeFrame>
   );
+
+  function handleGroupSelection(group: WelcomeImportGroup, checked: boolean) {
+    const nextState = checked ? "all" : "none";
+    const currentState = group === "toolsAndSetup" ? toolsState : projectState;
+    if (currentState === nextState) {
+      return;
+    }
+
+    onToggleGroup(group);
+  }
+
+  function onToggleChatsWithValue(checked: boolean) {
+    if (checked === chatsSelected) {
+      return;
+    }
+
+    onToggleChats();
+  }
 }
 
 export function ExternalAgentImportCustomizeDialog({
@@ -216,17 +241,8 @@ export function ExternalAgentImportCustomizeDialog({
             const checked = draftSelectedIds[item.id] === true;
 
             return (
-              <div key={item.id} className="relative flex h-12 items-center">
-                <button
-                  type="button"
-                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
-                  onClick={() =>
-                    setDraftSelectedIds((current) => ({
-                      ...current,
-                      [item.id]: !(current[item.id] === true),
-                    }))
-                  }
-                >
+              <label key={item.id} className="relative flex h-12 cursor-pointer items-center">
+                <div className="flex min-w-0 flex-1 items-center gap-3 text-left">
                   <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--app-shell-text)_5%,transparent)] text-[var(--app-shell-subtle)]">
                     <WelcomeImportChoiceGlyph className="size-5" icon={item.icon} />
                   </div>
@@ -238,11 +254,21 @@ export function ExternalAgentImportCustomizeDialog({
                       {item.description}
                     </div>
                   </div>
-                </button>
-                <div className="ml-3">
-                  <SelectionBadge isSelected={checked} />
                 </div>
-              </div>
+                <div className="ml-3">
+                  <SelectionCheckbox
+                    checked={checked}
+                    className=""
+                    label={item.title}
+                    onChange={(isChecked) =>
+                      setDraftSelectedIds((current) => ({
+                        ...current,
+                        [item.id]: isChecked,
+                      }))
+                    }
+                  />
+                </div>
+              </label>
             );
           })}
         </div>

@@ -1,3 +1,4 @@
+import { HelloLogo } from "../../../components/HelloLogo";
 import { ToggleSwitch } from "../../../components/ToggleSwitch";
 import { INTENT_OPTIONS, ROLE_OPTIONS, WORK_MODE_OPTIONS } from "./constants";
 import {
@@ -13,8 +14,6 @@ import {
 } from "./shared";
 import type { WelcomeIntentId, WelcomeRoleId, WelcomeWorkMode } from "./types";
 
-const codexAppGaLogo = new URL("../../../assets/codex-app-ga-logo--UgmJjKM.png", import.meta.url).href;
-
 export function SimpleWelcomeCard({
   onContinue,
   t,
@@ -24,14 +23,16 @@ export function SimpleWelcomeCard({
 }) {
   return (
     <div className="flex w-full max-w-3xl flex-col items-center justify-start">
-      <div className="app-card flex w-full max-w-[360px] flex-col items-center gap-3 rounded-[20px] px-6 py-8 text-center shadow-[0_22px_60px_rgba(0,0,0,0.14)]">
-        <img alt="" aria-hidden="true" className="size-[52px] shrink-0" draggable={false} src={codexAppGaLogo} />
-        <h1 className="text-[28px] leading-[34px] font-normal whitespace-nowrap text-[var(--app-shell-text)] max-[540px]:whitespace-normal">
-        {t("onboarding.welcome.new.title.anon")}
-        </h1>
-        <p className="max-w-[290px] text-[16px] leading-6 text-[var(--app-shell-subtle)]">
-          {t("onboarding.welcome.debugFallback.description")}
-        </p>
+      <div className="flex w-full max-w-[360px] flex-col items-center gap-6">
+        <HelloLogo className="size-[52px]" />
+        <div className="flex w-full flex-col items-center gap-3 px-6 pt-2 text-center">
+          <h1 className="text-[28px] leading-[34px] font-normal whitespace-nowrap text-[var(--app-shell-text)] max-[540px]:whitespace-normal">
+            {t("onboarding.welcome.new.title.anon")}
+          </h1>
+          <p className="max-w-[290px] text-[16px] leading-6 text-[var(--app-shell-subtle)]">
+            {t("onboarding.welcome.debugFallback.description")}
+          </p>
+        </div>
         <PrimaryButton
           className="w-[168px] justify-center px-[16px] py-[8px] text-base leading-6 font-medium"
           onClick={onContinue}
@@ -61,7 +62,7 @@ export function IntentSelectionStep({
   t: Translate;
 }) {
   return (
-    <WelcomeFrame>
+    <WelcomeFrame panelClassName="max-w-lg">
       <WelcomeHeader
         subtitle={t("onboarding.welcomeV2.intent.subtitle")}
         title={t("onboarding.welcomeV2.intent.title")}
@@ -70,10 +71,10 @@ export function IntentSelectionStep({
         {INTENT_OPTIONS.map((option) => (
           <OptionChip
             key={option.id}
-            badge={option.badge}
+            icon={option.icon}
             label={t(option.labelKey)}
-            selected={selectedIntents.includes(option.id)}
             onClick={() => onToggleIntent(option.id)}
+            selected={selectedIntents.includes(option.id)}
           />
         ))}
       </div>
@@ -106,7 +107,7 @@ export function WorkModeSelectionStep({
   t: Translate;
 }) {
   return (
-    <WelcomeFrame>
+    <WelcomeFrame panelClassName="max-w-lg">
       <WelcomeHeader
         subtitle={t("onboarding.welcomeV2.workMode.subtitle")}
         title={t("onboarding.welcomeV2.workMode.title")}
@@ -120,11 +121,11 @@ export function WorkModeSelectionStep({
         {WORK_MODE_OPTIONS.map((option) => (
           <WorkModeOption
             key={option.id}
-            badge={option.badge}
             description={t(option.descriptionKey)}
+            icon={option.icon}
+            onClick={() => onChooseWorkMode(option.id)}
             selected={selectedWorkMode === option.id}
             title={t(option.titleKey)}
-            onClick={() => onChooseWorkMode(option.id)}
           />
         ))}
       </div>
@@ -132,9 +133,9 @@ export function WorkModeSelectionStep({
         <PrimaryButton className="w-full" disabled={isContinueDisabled} onClick={onContinue}>
           {t("onboarding.welcome.continue")}
         </PrimaryButton>
-        <p className="mt-1 text-center text-sm leading-normal text-[var(--app-shell-subtle)]">
-          {t("onboarding.welcomeV2.workMode.settingsHint")}
-        </p>
+      </div>
+      <div className="mt-4 text-center text-sm leading-normal text-[var(--app-shell-subtle)]">
+        {t("onboarding.welcomeV2.workMode.settingsHint")}
       </div>
     </WelcomeFrame>
   );

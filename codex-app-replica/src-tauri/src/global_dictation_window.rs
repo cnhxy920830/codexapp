@@ -156,7 +156,7 @@ pub struct GlobalDictationEnabledChangedParams {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct GlobalDictationForceLockChangedParams {
-    pub force_lock: bool,
+    pub enabled: bool,
 }
 
 #[tauri::command(rename = "global-dictation-prewarm")]
@@ -588,10 +588,10 @@ mod tests {
 
     #[test]
     fn force_lock_changed_params_roundtrip_camel_case() {
-        let raw = serde_json::json!({"forceLock": true});
+        let raw = serde_json::json!({"enabled": true});
         let parsed: GlobalDictationForceLockChangedParams =
             serde_json::from_value(raw).expect("deserialize");
-        assert!(parsed.force_lock);
+        assert!(parsed.enabled);
     }
 
     #[test]

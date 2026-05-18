@@ -1,3 +1,4 @@
+use crate::debug_app_server;
 use crate::remote_app_server_registry::{RemoteAppServerConnectionState, RemoteAppServerRegistry};
 use crate::remote_connections::RemoteConnection;
 use crate::remote_ssh::build_ssh_command_args;
@@ -73,6 +74,7 @@ struct RemoteJsonRpcError {
 struct RemoteAppServerRequest {
     method: String,
     payload: Value,
+    debug_tracking: bool,
     response_tx: Option<oneshot::Sender<Result<Value, String>>>,
 }
 
@@ -109,12 +111,32 @@ pub async fn send_request(
     method: &str,
     payload: Value,
 ) -> Result<Value, String> {
+    send_request_with_debug_tracking(app, host_id, method, payload, true).await
+}
+
+pub async fn send_request_untracked(
+    app: &AppHandle,
+    host_id: &str,
+    method: &str,
+    payload: Value,
+) -> Result<Value, String> {
+    send_request_with_debug_tracking(app, host_id, method, payload, false).await
+}
+
+async fn send_request_with_debug_tracking(
+    app: &AppHandle,
+    host_id: &str,
+    method: &str,
+    payload: Value,
+    debug_tracking: bool,
+) -> Result<Value, String> {
     let request_tx = wait_for_request_sender(app, host_id).await?;
     let (response_tx, response_rx) = oneshot::channel();
     request_tx
         .send(RemoteAppServerMessage::Request(RemoteAppServerRequest {
             method: method.to_string(),
             payload,
+            debug_tracking,
             response_tx: Some(response_tx),
         }))
         .map_err(|_| format!("remote app-server request channel closed for {host_id}"))?;
@@ -389,28 +411,37 @@ async fn run_remote_app_server_client(
     let mut initialized = false;
     let mut error_message = None;
     let mut next_request_id: i64 = 2;
+    let mut pending_debug_requests =
+        HashMap::<RemoteJsonRpcId, debug_app_server::DebugAppServerRequestHandle>::new();
     let mut pending_result =
         HashMap::<RemoteJsonRpcId, oneshot::Sender<Result<Value, String>>>::new();
 
+    let initialize_request_id = RemoteJsonRpcId::Integer(1);
+    let initialize_params = serde_json::json!({
+        "clientInfo": {
+            "name": CLIENT_NAME,
+            "title": CLIENT_TITLE,
+            "version": CLIENT_VERSION,
+        },
+        "capabilities": {
+            "experimentalApi": true,
+        }
+    });
+    let initialize_handle =
+        debug_app_server::request_started(&app, &host_id, "initialize", &initialize_params, 0);
+    pending_debug_requests.insert(initialize_request_id, initialize_handle.clone());
     if let Err(err) = write_json(
         &mut stdin,
         &serde_json::json!({
             "method": "initialize",
             "id": 1,
-            "params": {
-                "clientInfo": {
-                    "name": CLIENT_NAME,
-                    "title": CLIENT_TITLE,
-                    "version": CLIENT_VERSION,
-                },
-                "capabilities": {
-                    "experimentalApi": true,
-                }
-            }
+            "params": initialize_params,
         }),
     )
     .await
     {
+        debug_app_server::request_failed(&app, &initialize_handle, &err);
+        pending_debug_requests.remove(&RemoteJsonRpcId::Integer(1));
         error_message = Some(err);
     } else {
         loop {
@@ -428,12 +459,27 @@ async fn run_remote_app_server_client(
                                 "id": request_id,
                                 "params": request.payload,
                             });
+                            let request_handle = request.debug_tracking.then(|| {
+                                debug_app_server::request_started(
+                                    &app,
+                                    &host_id,
+                                    &request.method,
+                                    payload.get("params").unwrap_or(&Value::Null),
+                                    0,
+                                )
+                            });
                             if let Some(response_tx) = request.response_tx {
                                 pending_result.insert(request_id.clone(), response_tx);
+                            }
+                            if let Some(request_handle) = request_handle {
+                                pending_debug_requests.insert(request_id.clone(), request_handle);
                             }
                             if let Err(err) = write_json(&mut stdin, &payload).await {
                                 if let Some(response_tx) = pending_result.remove(&request_id) {
                                     let _ = response_tx.send(Err(err.clone()));
+                                }
+                                if let Some(handle) = pending_debug_requests.remove(&request_id) {
+                                    debug_app_server::request_failed(&app, &handle, &err);
                                 }
                                 error_message = Some(err);
                                 break;
@@ -452,7 +498,29 @@ async fn run_remote_app_server_client(
                             };
                             match message {
                                 RemoteJsonRpcMessage::Response { id, result, error } => {
+                                    let debug_request_handle = pending_debug_requests.remove(&id);
                                     if id == RemoteJsonRpcId::Integer(1) && !initialized {
+                                        if let Some(handle) = debug_request_handle.as_ref() {
+                                            match (&result, &error) {
+                                                (Some(value), None) => {
+                                                    debug_app_server::request_completed(&app, handle, value);
+                                                    debug_app_server::set_versions(
+                                                        &app,
+                                                        &host_id,
+                                                        debug_app_server::parse_app_server_version_from_initialize_result(
+                                                            value,
+                                                        ),
+                                                        None,
+                                                    );
+                                                }
+                                                (_, Some(err)) => {
+                                                    debug_app_server::request_failed(&app, handle, &err.message);
+                                                }
+                                                _ => {
+                                                    debug_app_server::request_failed(&app, handle, "empty response");
+                                                }
+                                            }
+                                        }
                                         if let Some(error) = error {
                                             error_message = Some(error.message);
                                             break;
@@ -490,15 +558,28 @@ async fn run_remote_app_server_client(
                                     }
 
                                     if let Some(response_tx) = pending_result.remove(&id) {
-                                        match (result, error) {
+                                        match (&result, &error) {
                                             (Some(value), None) => {
-                                                let _ = response_tx.send(Ok(value));
+                                                let _ = response_tx.send(Ok(value.clone()));
                                             }
                                             (_, Some(err)) => {
-                                                let _ = response_tx.send(Err(err.message));
+                                                let _ = response_tx.send(Err(err.message.clone()));
                                             }
                                             _ => {
                                                 let _ = response_tx.send(Err("empty response".to_string()));
+                                            }
+                                        }
+                                    }
+                                    if let Some(handle) = debug_request_handle.as_ref() {
+                                        match (&result, &error) {
+                                            (Some(value), None) => {
+                                                debug_app_server::request_completed(&app, handle, value);
+                                            }
+                                            (_, Some(err)) => {
+                                                debug_app_server::request_failed(&app, handle, &err.message);
+                                            }
+                                            _ => {
+                                                debug_app_server::request_failed(&app, handle, "empty response");
                                             }
                                         }
                                     }
@@ -507,6 +588,7 @@ async fn run_remote_app_server_client(
                                     let _ = (id, method, params);
                                 }
                                 RemoteJsonRpcMessage::Notification { method, params } => {
+                                    debug_app_server::notification_received(&app, &host_id, &method, &params);
                                     match method.as_str() {
                                         "mcpServer/oauthLogin/completed" => {
                                             handle_mcp_oauth_login_completed(&app, &host_id, params);
@@ -535,6 +617,13 @@ async fn run_remote_app_server_client(
         let _ = response_tx.send(Err(format!(
             "remote app-server request dropped for {host_id}"
         )));
+    }
+    for (_, handle) in pending_debug_requests {
+        debug_app_server::request_failed(
+            &app,
+            &handle,
+            &format!("remote app-server request dropped for {host_id}"),
+        );
     }
 
     let stderr_output = stderr_task.await.unwrap_or_default();

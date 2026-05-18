@@ -1,8 +1,11 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { RefreshIcon } from "../../components/AppShellIcons";
+import { useEffect, useEffectEvent, useRef, useState, type Ref } from "react";
+import { RefreshIcon, SearchClearIcon } from "../../components/AppShellIcons";
 import { Spinner } from "../../components/Spinner";
 import { useI18n } from "../../i18n/i18n";
-import { GLOBAL_DICTATION_ROUTE_PATH } from "../../services/windowNavigation";
+import {
+  REPLICA_STATSIG_GATES,
+  useReplicaStatsigGateValue,
+} from "../statsig/replicaStatsig";
 import {
   dismissGlobalDictation,
   notifyGlobalDictationCompleted,
@@ -21,7 +24,6 @@ import {
 } from "./globalDictationErrors";
 import { useGlobalDictationWaveform } from "./useGlobalDictationWaveform";
 
-const CLEANUP_ENABLED = false;
 const MINIMUM_RECORDING_DURATION_MS = 250;
 
 type GlobalDictationStatus = "starting" | "listening" | "transcribing" | "error";
@@ -42,6 +44,9 @@ type RetryRecordingSession = {
 
 export function GlobalDictationPage() {
   const { t } = useI18n();
+  const cleanupEnabled = useReplicaStatsigGateValue(
+    REPLICA_STATSIG_GATES.globalDictationCleanup,
+  );
   const [canRetry, setCanRetry] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -106,7 +111,7 @@ export function GlobalDictationPage() {
     const audioBytes = new Uint8Array(await audio.arrayBuffer());
     const response = await transcribeGlobalDictationAudio({
       audioBytes,
-      cleanupEnabled: CLEANUP_ENABLED,
+      cleanupEnabled,
       contentType: audio.type || null,
     });
 
@@ -142,9 +147,7 @@ export function GlobalDictationPage() {
       }
 
       retrySession = {
-        audio: new Blob(recording.chunks, {
-          type: recording.recorder.mimeType || "audio/webm",
-        }),
+        audio: new Blob(recording.chunks),
         sessionId: recording.sessionId,
       };
       retryRecordingRef.current = retrySession;
@@ -189,7 +192,7 @@ export function GlobalDictationPage() {
     let stream: MediaStream | null = null;
     try {
       pendingStartSessionIdRef.current = sessionId;
-      await requestMicrophonePermission();
+      void requestMicrophonePermission().catch(() => undefined);
       stream = await navigator.mediaDevices.getUserMedia({
         audio: { channelCount: 1 },
       });
@@ -230,11 +233,11 @@ export function GlobalDictationPage() {
       if (pendingStopSessionIdRef.current === sessionId) {
         pendingStopSessionIdRef.current = null;
       }
-      showError(sessionId, "start", error);
       void notifyGlobalDictationFailed({
         sessionId,
         stage: "recording",
       }).catch(() => undefined);
+      showError(sessionId, "start", error);
     }
   });
 
@@ -340,6 +343,59 @@ export function GlobalDictationPage() {
     };
   }, []);
 
+  const liveStatusText =
+    status === "starting" || status === "listening"
+      ? t("globalDictation.listening")
+      : status === "transcribing"
+        ? t("globalDictation.transcribing")
+        : status === "error"
+          ? errorMessage
+          : null;
+
+  return (
+    <GlobalDictationPageView
+      canRetry={canRetry}
+      errorMessage={errorMessage}
+      liveStatusText={liveStatusText}
+      onDismiss={() => void handleDismiss()}
+      onRetry={() => void handleRetry()}
+      onStop={() => void handleStopClick()}
+      retryAriaLabel={t("globalDictation.retry")}
+      dismissAriaLabel={t("globalDictation.dismissError")}
+      status={status}
+      waveformAriaLabel={t("globalDictation.waveformAriaLabel")}
+      waveformCanvasRef={waveformCanvasRef}
+    />
+  );
+}
+
+type GlobalDictationPageViewProps = {
+  canRetry: boolean;
+  dismissAriaLabel: string;
+  errorMessage: string | null;
+  liveStatusText: string | null;
+  onDismiss: () => void;
+  onRetry: () => void;
+  onStop: () => void;
+  retryAriaLabel: string;
+  status: GlobalDictationStatus;
+  waveformAriaLabel: string;
+  waveformCanvasRef?: Ref<HTMLCanvasElement>;
+};
+
+export function GlobalDictationPageView({
+  canRetry,
+  dismissAriaLabel,
+  errorMessage,
+  liveStatusText,
+  onDismiss,
+  onRetry,
+  onStop,
+  retryAriaLabel,
+  status,
+  waveformAriaLabel,
+  waveformCanvasRef,
+}: GlobalDictationPageViewProps) {
   const pillBehaviorClassName =
     status === "listening" ? "no-drag cursor-interaction" : "draggable";
   const pillSizeClassName =
@@ -349,28 +405,17 @@ export function GlobalDictationPage() {
     pillBehaviorClassName,
     pillSizeClassName,
   ].join(" ");
-  const liveStatusText =
-    status === "listening"
-      ? t("globalDictation.listening")
-      : status === "transcribing"
-        ? t("globalDictation.transcribing")
-        : status === "error"
-          ? errorMessage
-          : null;
 
   return (
-    <main
-      className="flex h-screen w-screen items-center justify-center overflow-hidden bg-transparent p-1 text-token-text-primary"
-      data-route={GLOBAL_DICTATION_ROUTE_PATH}
-    >
+    <main className="flex h-screen w-screen items-center justify-center overflow-hidden bg-transparent p-1 text-token-text-primary">
       <section
-        aria-label={t("globalDictation.waveformAriaLabel")}
+        aria-label={waveformAriaLabel}
         aria-live="polite"
         className={pillClassName}
-        onClick={() => void handleStopClick()}
+        onClick={onStop}
       >
         {status === "transcribing" ? (
-          <Spinner className="h-4 w-4 text-token-text-secondary" />
+          <Spinner className="icon-xs text-token-text-secondary" />
         ) : null}
         {status === "error" ? (
           <>
@@ -380,22 +425,20 @@ export function GlobalDictationPage() {
             {canRetry ? (
               <button
                 type="button"
-                aria-label={t("globalDictation.retry")}
+                aria-label={retryAriaLabel}
                 className="no-drag flex size-5 shrink-0 cursor-interaction items-center justify-center rounded-full text-token-text-secondary hover:bg-token-list-hover-background hover:text-token-text-primary focus:outline-none"
-                onClick={() => void handleRetry()}
+                onClick={onRetry}
               >
-                <RefreshIcon className="h-3.5 w-3.5" />
+                <RefreshIcon className="icon-2xs" />
               </button>
             ) : null}
             <button
               type="button"
-              aria-label={t("globalDictation.dismissError")}
+              aria-label={dismissAriaLabel}
               className="no-drag flex size-5 shrink-0 cursor-interaction items-center justify-center rounded-full text-token-text-secondary hover:bg-token-list-hover-background hover:text-token-text-primary focus:outline-none"
-              onClick={() => void handleDismiss()}
+              onClick={onDismiss}
             >
-              <span aria-hidden="true" className="text-sm leading-none">
-                ×
-              </span>
+              <SearchClearIcon className="icon-2xs" />
             </button>
           </>
         ) : null}

@@ -1,7 +1,12 @@
-import { LoadingPage } from "../../components/LoadingPage";
+import { useEffect } from "react";
 import { useI18n } from "../../i18n/i18n";
-import { useReplicaStatsigGateValue } from "../statsig/replicaStatsig";
-import { REPLICA_STATSIG_GATES } from "../statsig/replicaStatsig";
+import {
+  REPLICA_STATSIG_GATES,
+  logReplicaStatsigProductEvent,
+  readReplicaStatsigTelemetryIdentity,
+  useReplicaStatsigGateValue,
+  useReplicaStatsigState,
+} from "../statsig/replicaStatsig";
 import { WelcomeFlow } from "./welcome/WelcomeFlow";
 import { SimpleWelcomeCard, WelcomeShell } from "./welcome/steps";
 import {
@@ -12,6 +17,7 @@ import { useWelcomeMode } from "./welcome/useWelcomeMode";
 
 type WelcomePageProps = {
   isWelcomeTarget: boolean;
+  onAutoCompleteToHome: () => void;
   onCompleteToHome: () => void;
   onContinueToWorkspace: () => void;
   workspaceOnboardingExperimentAssignment: WorkspaceOnboardingExperimentAssignment;
@@ -19,6 +25,7 @@ type WelcomePageProps = {
 
 export function WelcomePage({
   isWelcomeTarget,
+  onAutoCompleteToHome,
   onCompleteToHome,
   onContinueToWorkspace,
   workspaceOnboardingExperimentAssignment,
@@ -27,24 +34,36 @@ export function WelcomePage({
   const welcomeV2FlowEnabled = useReplicaStatsigGateValue(
     REPLICA_STATSIG_GATES.workspaceOnboardingWelcomeV2Flow,
   );
-  const welcomeV2DefaultFlowEnabled = useReplicaStatsigGateValue(
-    REPLICA_STATSIG_GATES.workspaceOnboardingWelcomeV2DefaultFlow,
+  const statsigState = useReplicaStatsigState();
+  const externalAgentImportEnabled = useReplicaStatsigGateValue(
+    REPLICA_STATSIG_GATES.externalAgentOnboardingImport,
+  );
+  const externalAgentCoworkMigrationEnabled = useReplicaStatsigGateValue(
+    REPLICA_STATSIG_GATES.externalAgentCoworkMigration,
   );
   const shouldUseWelcomeV2Onboarding = shouldUseWelcomeV2WorkspaceOnboarding({
     assignment: workspaceOnboardingExperimentAssignment,
-    welcomeV2DefaultFlowEnabled: welcomeV2FlowEnabled,
+    welcomeV2FlowEnabled,
   });
   const mode = useWelcomeMode({
-    isWelcomeTarget,
-    shouldUseWelcomeV2Onboarding,
-    welcomeV2DefaultFlowEnabled,
+    statsigIsLoading: statsigState.isLoading,
+    welcomeV2DefaultFlowEnabled: useReplicaStatsigGateValue(
+      REPLICA_STATSIG_GATES.workspaceOnboardingWelcomeV2DefaultFlow,
+    ),
   });
 
-  if (mode === null) {
-    return <LoadingPage debugName="WelcomePage" />;
-  }
+  const experimentArm = workspaceOnboardingExperimentAssignment?.arm;
 
-  if (mode === "simple") {
+  if (!shouldUseWelcomeV2Onboarding) {
+    if (!isWelcomeTarget) {
+      return (
+        <AutoCompleteToHome
+          experimentArm={experimentArm}
+          onAutoCompleteToHome={onAutoCompleteToHome}
+        />
+      );
+    }
+
     return (
       <WelcomeShell>
         <SimpleWelcomeCard onContinue={onContinueToWorkspace} t={t} />
@@ -52,5 +71,42 @@ export function WelcomePage({
     );
   }
 
-  return <WelcomeFlow mode={mode} onCompleteToHome={onCompleteToHome} />;
+  if (mode === null) {
+    return null;
+  }
+
+  return (
+    <WelcomeFlow
+      clearActiveWorkspaceRootOnComplete={!isWelcomeTarget}
+      externalAgentImportEnabled={externalAgentImportEnabled}
+      experimentArm={experimentArm}
+      isCoworkMigrationEnabled={externalAgentCoworkMigrationEnabled}
+      mode={mode}
+      onCompleteToHome={onCompleteToHome}
+    />
+  );
+}
+
+function AutoCompleteToHome({
+  experimentArm,
+  onAutoCompleteToHome,
+}: {
+  experimentArm: string | undefined;
+  onAutoCompleteToHome: () => void;
+}) {
+  useEffect(() => {
+    const identity = readReplicaStatsigTelemetryIdentity();
+    logReplicaStatsigProductEvent({
+      eventName: "codex_onboarding_completed",
+      metadata: {
+        experiment_arm: experimentArm,
+        selected_workspaces_count: 0,
+        user_id: identity.userId,
+        workspace_id: identity.workspaceId,
+      },
+    });
+    onAutoCompleteToHome();
+  }, [experimentArm, onAutoCompleteToHome]);
+
+  return null;
 }

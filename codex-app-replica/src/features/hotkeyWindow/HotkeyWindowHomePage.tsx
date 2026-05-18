@@ -24,10 +24,10 @@ import {
   type ConfigSnapshot,
   type ConversationDetailMode,
 } from "../../services/settings";
-import { onActiveWorkspaceRootsUpdated, onWorkspaceRootOptionsUpdated, readActiveWorkspaceRoots, readWorkspaceRootOptions } from "../../services/workspaceRoots";
 import { isWithinCodexWorktrees } from "../../services/codexHome";
 import { HotkeyBranchSwitcherControl } from "./HotkeyBranchSwitcherControl";
 import { HotkeyWorktreeBranchControl } from "./HotkeyWorktreeBranchControl";
+import { HotkeyWindowProjectMenuControl } from "./HotkeyWindowProjectMenuControl";
 import {
   buildTurnStartPermissionOverrides,
   getVisibleHotkeyPermissionOptions,
@@ -42,7 +42,6 @@ import { useReplicaStatsigDefaultFeatures } from "../statsig/replicaStatsig";
 
 const appWindow = getCurrentWindow();
 const HOTKEY_WINDOW_HOME_MENU_BODY_ATTRIBUTE = "data-hotkey-window-home-composer-menu-open";
-const HOTKEY_WINDOW_PROJECTLESS_VALUE = "~";
 
 type HotkeyWindowHomeMode = "local" | "cloud" | "worktree";
 export function HotkeyWindowHomePage({
@@ -90,9 +89,9 @@ export function HotkeyWindowHomePage({
   const [isTaskMenuOpen, setIsTaskMenuOpen] = useState(false);
   const [isShellHovered, setIsShellHovered] = useState(false);
   const [isShellFocused, setIsShellFocused] = useState(false);
-  const [workspaceRoots, setWorkspaceRoots] = useState<string[]>([]);
-  const [workspaceRootLabels, setWorkspaceRootLabels] = useState<Record<string, string>>({});
-  const [selectedWorkspaceRoot, setSelectedWorkspaceRoot] = useState<string | null>(null);
+  const [selectedWorkspaceRoot, setSelectedWorkspaceRoot] = useState<string | null>(
+    normalizeOptionalPath(initialWorkspaceRoot),
+  );
   const [mode, setMode] = useState<HotkeyWindowHomeMode>("local");
   const [gitRoot, setGitRoot] = useState<string | null>(null);
   const [localEnvironments, setLocalEnvironments] = useState<LocalEnvironmentConfigEntry[]>([]);
@@ -108,139 +107,11 @@ export function HotkeyWindowHomePage({
   const [isFullAccessConfirmOpen, setIsFullAccessConfirmOpen] = useState(false);
   const [isPermissionsLoading, setIsPermissionsLoading] = useState(true);
   const defaultFeatures = useReplicaStatsigDefaultFeatures();
-  const preferredWorkspaceRoot = normalizeOptionalPath(initialWorkspaceRoot);
   const permissionsVisibility = useMemo(() => readComposerPermissionModeVisibility(), []);
 
   useEffect(() => {
     textareaRef.current?.focus();
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadWorkspaceRoots = async () => {
-      try {
-        const [workspaceRootOptionsResponse, activeWorkspaceRootsResponse] = await Promise.all([
-          readWorkspaceRootOptions(),
-          readActiveWorkspaceRoots(),
-        ]);
-        if (cancelled) {
-          return;
-        }
-
-        const nextWorkspaceRoots = dedupeWorkspaceRoots(
-          workspaceRootOptionsResponse.roots,
-          activeWorkspaceRootsResponse.roots,
-          preferredWorkspaceRoot,
-        );
-        const nextLabels = {
-          ...workspaceRootOptionsResponse.labels,
-        };
-        if (
-          preferredWorkspaceRoot !== null &&
-          !hasWorkspaceRootLabel(preferredWorkspaceRoot, nextLabels) &&
-          !workspaceRootOptionsResponse.roots.some((root) => areSamePath(root, preferredWorkspaceRoot))
-        ) {
-          nextLabels[preferredWorkspaceRoot] =
-            getLocalEnvironmentProjectName(preferredWorkspaceRoot) ?? preferredWorkspaceRoot;
-        }
-
-        setWorkspaceRoots(nextWorkspaceRoots);
-        setWorkspaceRootLabels(nextLabels);
-        setSelectedWorkspaceRoot((current) => {
-          if (current !== null && nextWorkspaceRoots.some((root) => areSamePath(root, current))) {
-            return findMatchingWorkspaceRoot(nextWorkspaceRoots, current) ?? current;
-          }
-          const preferredRoot = findMatchingWorkspaceRoot(nextWorkspaceRoots, preferredWorkspaceRoot);
-          if (preferredRoot !== null) {
-            return preferredRoot;
-          }
-          const activeRoot = findMatchingWorkspaceRoot(nextWorkspaceRoots, activeWorkspaceRootsResponse.roots[0] ?? null);
-          if (activeRoot !== null) {
-            return activeRoot;
-          }
-          return nextWorkspaceRoots[0] ?? null;
-        });
-      } catch {
-        if (!cancelled) {
-          setWorkspaceRoots(preferredWorkspaceRoot ? [preferredWorkspaceRoot] : []);
-          setWorkspaceRootLabels(
-            preferredWorkspaceRoot === null
-              ? {}
-              : {
-                  [preferredWorkspaceRoot]:
-                    getLocalEnvironmentProjectName(preferredWorkspaceRoot) ?? preferredWorkspaceRoot,
-                },
-          );
-          setSelectedWorkspaceRoot(preferredWorkspaceRoot);
-        }
-      }
-    };
-
-    void loadWorkspaceRoots();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [preferredWorkspaceRoot]);
-
-  useEffect(() => {
-    let disposed = false;
-    let cleanupOptions: (() => void) | undefined;
-    let cleanupActive: (() => void) | undefined;
-
-    const reload = () => {
-      if (disposed) {
-        return;
-      }
-      void Promise.all([readWorkspaceRootOptions(), readActiveWorkspaceRoots()])
-        .then(([workspaceRootOptionsResponse, activeWorkspaceRootsResponse]) => {
-          if (disposed) {
-            return;
-          }
-
-          const nextWorkspaceRoots = dedupeWorkspaceRoots(
-            workspaceRootOptionsResponse.roots,
-            activeWorkspaceRootsResponse.roots,
-            preferredWorkspaceRoot,
-          );
-          setWorkspaceRoots(nextWorkspaceRoots);
-          setWorkspaceRootLabels((current) => ({
-            ...current,
-            ...workspaceRootOptionsResponse.labels,
-          }));
-          setSelectedWorkspaceRoot((current) => {
-            if (current !== null && nextWorkspaceRoots.some((root) => areSamePath(root, current))) {
-              return findMatchingWorkspaceRoot(nextWorkspaceRoots, current) ?? current;
-            }
-            return findMatchingWorkspaceRoot(nextWorkspaceRoots, preferredWorkspaceRoot) ?? nextWorkspaceRoots[0] ?? null;
-          });
-        })
-        .catch(() => undefined);
-    };
-
-    void onWorkspaceRootOptionsUpdated(reload).then((cleanup) => {
-      if (disposed) {
-        cleanup();
-        return;
-      }
-      cleanupOptions = cleanup;
-    });
-
-    void onActiveWorkspaceRootsUpdated(reload).then((cleanup) => {
-      if (disposed) {
-        cleanup();
-        return;
-      }
-      cleanupActive = cleanup;
-    });
-
-    return () => {
-      disposed = true;
-      cleanupOptions?.();
-      cleanupActive?.();
-    };
-  }, [preferredWorkspaceRoot]);
 
   useEffect(() => {
     if (selectedWorkspaceRoot === null) {
@@ -446,28 +317,6 @@ export function HotkeyWindowHomePage({
     };
   }, [isTaskMenuOpen]);
 
-  const projectOptions = useMemo(() => {
-    return [
-      {
-        description: undefined,
-        label: HOTKEY_WINDOW_PROJECTLESS_VALUE,
-        value: HOTKEY_WINDOW_PROJECTLESS_VALUE,
-      },
-      ...workspaceRoots.map((workspaceRoot) => ({
-        description: workspaceRoot,
-        label: getWorkspaceRootLabel(workspaceRoot, workspaceRootLabels),
-        value: workspaceRoot,
-      })),
-    ];
-  }, [workspaceRootLabels, workspaceRoots]);
-
-  const selectedProjectLabel = useMemo(() => {
-    if (selectedWorkspaceRoot === null) {
-      return HOTKEY_WINDOW_PROJECTLESS_VALUE;
-    }
-    return getWorkspaceRootLabel(selectedWorkspaceRoot, workspaceRootLabels);
-  }, [selectedWorkspaceRoot, workspaceRootLabels]);
-
   const environmentOptions = useMemo(() => {
     return localEnvironments.map((entry) => ({
       description: entry.type === "success" ? getConfigFileName(entry.configPath) : undefined,
@@ -490,7 +339,7 @@ export function HotkeyWindowHomePage({
   }, [localEnvironments, selectedEnvironmentConfigPath]);
 
   const selectedProjectPlaceholderLabel =
-    getLocalEnvironmentProjectName(selectedWorkspaceRoot, workspaceRootLabels[selectedWorkspaceRoot ?? ""]) ??
+    getLocalEnvironmentProjectName(selectedWorkspaceRoot) ??
     t("hotkeyWindow.home.placeholder.unknownProject");
 
   const placeholderText = isProjectless
@@ -775,16 +624,10 @@ export function HotkeyWindowHomePage({
                       <div className="flex flex-col gap-4">
                         <TaskMenuRow
                           control={
-                            <SettingsChoiceMenu
-                              disabled={false}
-                              onChange={(value) => {
-                                setSelectedWorkspaceRoot(
-                                  value === HOTKEY_WINDOW_PROJECTLESS_VALUE ? null : value,
-                                );
-                              }}
-                              options={projectOptions}
-                              triggerLabel={selectedProjectLabel}
-                              value={selectedWorkspaceRoot ?? HOTKEY_WINDOW_PROJECTLESS_VALUE}
+                            <HotkeyWindowProjectMenuControl
+                              codexHome={codexHome}
+                              initialWorkspaceRoot={initialWorkspaceRoot}
+                              onSelectedWorkspaceRootChange={setSelectedWorkspaceRoot}
                             />
                           }
                           label={t("hotkeyWindow.home.taskMenu.project")}
@@ -993,47 +836,6 @@ function TaskMenuRow({
       <div className="min-w-0">{control}</div>
     </div>
   );
-}
-
-function getWorkspaceRootLabel(workspaceRoot: string, labels: Record<string, string>) {
-  const matchingLabelEntry = Object.entries(labels).find(([root]) => areSamePath(root, workspaceRoot));
-  const label = matchingLabelEntry?.[1]?.trim();
-  if (label && label.length > 0) {
-    return label;
-  }
-  return getLocalEnvironmentProjectName(workspaceRoot) ?? workspaceRoot;
-}
-
-function hasWorkspaceRootLabel(workspaceRoot: string, labels: Record<string, string>) {
-  return Object.keys(labels).some((root) => areSamePath(root, workspaceRoot));
-}
-
-function dedupeWorkspaceRoots(...groups: Array<Array<string> | string | null>) {
-  const deduped: string[] = [];
-  for (const group of groups) {
-    if (Array.isArray(group)) {
-      for (const item of group) {
-        const normalized = normalizeOptionalPath(item);
-        if (normalized && !deduped.some((existing) => areSamePath(existing, normalized))) {
-          deduped.push(normalized);
-        }
-      }
-      continue;
-    }
-
-    const normalized = normalizeOptionalPath(group);
-    if (normalized && !deduped.some((existing) => areSamePath(existing, normalized))) {
-      deduped.push(normalized);
-    }
-  }
-  return deduped;
-}
-
-function findMatchingWorkspaceRoot(workspaceRoots: string[], candidate: string | null) {
-  if (candidate === null) {
-    return null;
-  }
-  return workspaceRoots.find((workspaceRoot) => areSamePath(workspaceRoot, candidate)) ?? null;
 }
 
 function findMatchingEnvironmentConfigPath(

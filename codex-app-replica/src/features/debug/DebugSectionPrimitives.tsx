@@ -1,42 +1,87 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { ChevronDownIcon, CopyPathIcon } from "../../components/AppShellIcons";
 
 export function DebugSection({
+  actions,
+  className,
+  children,
+  onToggle,
   storageKey,
   title,
-  children,
-  defaultOpen = true,
+  unmountChildrenWhenClosed = false,
+  variant = "selection",
 }: {
+  actions?: ReactNode;
+  className?: string;
+  children: ReactNode;
+  onToggle?: (open: boolean) => void;
   storageKey: string;
   title: string;
-  children: ReactNode;
-  defaultOpen?: boolean;
+  unmountChildrenWhenClosed?: boolean;
+  variant?: "global" | "selection";
 }) {
-  const [open, setOpen] = useState(readSectionOpen(storageKey, defaultOpen));
+  const [open, setOpen] = useState(() => readSectionOpen(storageKey));
 
   useEffect(() => {
     writeSectionOpen(storageKey, open);
   }, [open, storageKey]);
 
+  const toggle = () => {
+    setOpen((current) => {
+      const next = !current;
+      onToggle?.(next);
+      return next;
+    });
+  };
+
   return (
-    <details
-      className="group rounded-xl border border-token-border bg-token-foreground/[0.03] shadow-sm"
-      open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 marker:content-none">
-        <span className="flex min-w-0 items-center gap-2">
-          <span
-            aria-hidden="true"
-            className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center text-[10px] transition-transform duration-150"
-            style={{ transform: open ? "rotate(90deg)" : "rotate(0deg)" }}
-          >
-            ▶
+    <div>
+      <div
+        className={[
+          "flex h-7 w-full items-center justify-between gap-2",
+          variant === "selection" ? "bg-token-charts-blue/10 text-token-charts-blue" : "bg-token-foreground/5 text-token-foreground",
+          className ?? "",
+        ].join(" ")}
+      >
+        <button
+          type="button"
+          className={[
+            "flex h-full min-w-0 flex-1 cursor-interaction items-center gap-2 px-3 text-left font-medium",
+            variant === "selection" ? "hover:bg-token-charts-blue/15" : "hover:bg-token-foreground/10",
+          ].join(" ")}
+          aria-expanded={open}
+          onClick={toggle}
+        >
+          <span className="icon-2xs transition-transform duration-150" style={{ transform: `rotate(${open ? 0 : -90}deg)` }}>
+            <ChevronDownIcon className="icon-2xs" />
           </span>
-          <span className="truncate font-medium text-token-foreground">{title}</span>
+          {title}
+        </button>
+        <span className="flex items-center gap-1 pr-3 text-current">
+          {actions ? (
+            <span
+              className="flex items-center gap-1"
+              onClick={(event) => {
+                event.stopPropagation();
+              }}
+            >
+              {actions}
+            </span>
+          ) : null}
+          {variant === "selection" ? <span className="ml-1 block h-2 w-2 rounded-full bg-current" /> : null}
         </span>
-      </summary>
-      <div className="border-t border-token-border px-3 pb-3">{children}</div>
-    </details>
+      </div>
+      <div
+        className="px-3"
+        data-open={open}
+        style={{
+          contentVisibility: open ? "visible" : "hidden",
+          display: open ? "block" : "none",
+        }}
+      >
+        {unmountChildrenWhenClosed && !open ? null : children}
+      </div>
+    </div>
   );
 }
 
@@ -53,6 +98,19 @@ export function DebugField({ label, value }: { label: string; value: string }) {
         {label}
       </span>
       <span className="min-w-0 flex-1 break-words pr-3 text-left">{value}</span>
+      <button
+        type="button"
+        aria-label={`Copy ${label}`}
+        className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 group-hover/line-item:opacity-100"
+        onClick={() => {
+          if (typeof navigator === "undefined" || navigator.clipboard?.writeText == null) {
+            return;
+          }
+          void navigator.clipboard.writeText(value).catch(() => {});
+        }}
+      >
+        <CopyPathIcon className="icon-2xs" />
+      </button>
     </div>
   );
 }
@@ -61,9 +119,9 @@ export function DebugEmptyState({ message }: { message: string }) {
   return <div className="px-3 py-2 text-xs text-token-foreground-secondary">{message}</div>;
 }
 
-function readSectionOpen(storageKey: string, defaultOpen: boolean) {
+function readSectionOpen(storageKey: string) {
   if (typeof window === "undefined") {
-    return defaultOpen;
+    return false;
   }
 
   try {
@@ -71,14 +129,11 @@ function readSectionOpen(storageKey: string, defaultOpen: boolean) {
     if (stored === "open") {
       return true;
     }
-    if (stored === "closed") {
-      return false;
-    }
   } catch {
-    return defaultOpen;
+    return false;
   }
 
-  return defaultOpen;
+  return false;
 }
 
 function writeSectionOpen(storageKey: string, open: boolean) {

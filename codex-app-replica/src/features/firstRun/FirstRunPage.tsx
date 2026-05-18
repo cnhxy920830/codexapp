@@ -1,4 +1,4 @@
-import { useState, type MouseEvent, type ReactNode, type SVGProps } from "react";
+import { useEffect, useState, type MouseEvent, type ReactNode, type SVGProps } from "react";
 import { MESSAGES, getMessageLocale, type LocaleCode, type MessageKey, type MessageValues } from "../../i18n/messages";
 import { setGlobalState } from "../../services/settings";
 import { FirstRunButton } from "./FirstRunButton";
@@ -9,6 +9,8 @@ const CLOUD_STEP = 1;
 const TODO_STEP = 2;
 const LEGAL_STEP = 3;
 const LAST_STEP = LEGAL_STEP;
+const TRANSITION_DURATION_MS = 400;
+const TRANSITION_ENTER_DELAY_MS = 10;
 
 const NUX_2025_09_15 = "viewed2025-09-15-nux";
 const NUX_2025_09_15_FULL_CHATGPT_AUTH_VIEWED = "viewed2025-09-15-full-chatgpt-auth-nux";
@@ -33,12 +35,13 @@ type Translate = (key: MessageKey, values?: MessageValues) => string;
 
 type FirstRunPageProps = {
   authMethod: string | null;
+  initialStepOverride?: number;
   locale: LocaleCode;
   onAccept: () => void | Promise<void>;
   t: Translate;
 };
 
-export function FirstRunPage({ authMethod, locale, onAccept, t }: FirstRunPageProps) {
+export function FirstRunPage({ authMethod, initialStepOverride, locale, onAccept, t }: FirstRunPageProps) {
   const hasCloudAccess = authMethod === "chatgpt";
   const isUsingCopilotAuth = authMethod === "copilot";
   const nuxVariant = readCurrentNuxVariant();
@@ -50,8 +53,9 @@ export function FirstRunPage({ authMethod, locale, onAccept, t }: FirstRunPagePr
         : hasCloudAccess
           ? INTRO_STEP
           : LEGAL_STEP;
-  const [step, setStep] = useState(initialStep);
-  const [isSaving, setIsSaving] = useState(false);
+  const [step, setStep] = useState(initialStepOverride ?? initialStep);
+  const [isAccepting, setIsAccepting] = useState(false);
+  const isWideViewport = useWideViewport(560);
 
   const title =
     step === INTRO_STEP
@@ -67,88 +71,93 @@ export function FirstRunPage({ authMethod, locale, onAccept, t }: FirstRunPagePr
       : step === CLOUD_STEP
         ? t("codex.legal.step.cloud.subtitle")
         : step === TODO_STEP
-          ? t("codex.legal.step.todo.subtitle")
-          : null;
+      ? t("codex.legal.step.todo.subtitle")
+      : null;
   const slideVariant = step === INTRO_STEP ? "intro" : step === CLOUD_STEP ? "cloud" : step === TODO_STEP ? "todo" : null;
+  const copyTransitionKey = step === LEGAL_STEP && isAccepting ? null : `copy-${step}`;
 
   const handleBack = () => {
     setStep((current) => Math.max(INTRO_STEP, current - 1));
   };
 
-  const handleContinue = async () => {
-    if (isSaving) {
+  const handleContinue = () => {
+    if (step === LEGAL_STEP) {
+      setIsAccepting(true);
       return;
     }
 
-    if (step !== LEGAL_STEP) {
+    if (step < LAST_STEP) {
       setStep((current) => Math.min(LAST_STEP, current + 1));
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      await setGlobalState(NUX_2025_09_15, true);
-      if (nuxVariant === "2025-09-15-full-chatgpt-auth") {
-        await setGlobalState(NUX_2025_09_15_FULL_CHATGPT_AUTH_VIEWED, true);
-      } else if (nuxVariant === "2025-09-15-apikey-auth") {
-        await setGlobalState(NUX_2025_09_15_APIKEY_AUTH_VIEWED, true);
-      }
-      await Promise.resolve(onAccept());
-    } catch {
-      setIsSaving(false);
     }
   };
 
+  async function completeAccept() {
+    await setGlobalState(NUX_2025_09_15, true);
+    if (nuxVariant === "2025-09-15-full-chatgpt-auth") {
+      await setGlobalState(NUX_2025_09_15_FULL_CHATGPT_AUTH_VIEWED, true);
+    } else if (nuxVariant === "2025-09-15-apikey-auth") {
+      await setGlobalState(NUX_2025_09_15_APIKEY_AUTH_VIEWED, true);
+    }
+    await Promise.resolve(onAccept());
+  }
+
   return (
-    <main className="relative h-full overflow-hidden bg-[var(--color-background-panel)] text-[var(--color-text-foreground)]">
-      <div data-tauri-drag-region className="absolute inset-x-0 top-0 h-[var(--app-shell-toolbar)]" />
+    <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-token-side-bar-background px-4 electron:!bg-transparent">
       <BackgroundCode />
+      <div className="pointer-events-none absolute inset-0 z-10">
+        <div className="relative h-full w-full">
+          <FadePresence
+            transitionKey={slideVariant == null ? null : `slide-${step}`}
+            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 [@media(max-height:500px)]:hidden"
+          >
+            {slideVariant ? <SlidePreview isWideViewport={isWideViewport} t={t} variant={slideVariant} /> : null}
+          </FadePresence>
+        </div>
+      </div>
 
-      <div className="relative flex h-full w-full items-center justify-center overflow-hidden px-4">
-        {slideVariant ? (
-          <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 [@media(max-height:500px)]:hidden">
-            <SlidePreview t={t} variant={slideVariant} />
-          </div>
-        ) : null}
+      <div className="absolute bottom-10 left-1/2 z-20 w-full max-w-lg -translate-x-1/2 px-6">
+        <div className="mb-2 flex items-center justify-center">
+          <h1 className="mx-auto w-full max-w-sm text-center text-base leading-tight font-medium text-token-foreground">
+            <FadePresence transitionKey={title == null ? null : `title-${step}`}>
+              {title ? <span>{title}</span> : null}
+            </FadePresence>
+          </h1>
+        </div>
 
-        <div className="absolute bottom-10 left-1/2 z-20 w-full max-w-lg -translate-x-1/2 px-6">
-          {title ? (
-            <div className="mb-2 flex items-center justify-center">
-              <h1 className="mx-auto w-full max-w-sm text-center text-base leading-tight font-medium text-[var(--color-text-foreground)]">
-                {title}
-              </h1>
-            </div>
-          ) : null}
-
-          <div className="flex justify-center px-2">
+        <div className="flex justify-center px-2">
+          <FadePresence
+            transitionKey={copyTransitionKey}
+            onExitComplete={
+              isAccepting
+                ? () => {
+                    setIsAccepting(false);
+                    void completeAccept();
+                  }
+                : undefined
+            }
+          >
             {step === LEGAL_STEP ? (
               <LegalDetails isUsingCopilotAuth={isUsingCopilotAuth} locale={locale} t={t} />
             ) : (
-              <div className="mx-auto w-full max-w-sm text-center text-base text-[var(--color-text-foreground-secondary)]">
-                {subtitle}
-              </div>
+              <div className="mx-auto w-full max-w-sm text-center text-base text-token-description-foreground">{subtitle}</div>
             )}
-          </div>
+          </FadePresence>
+        </div>
 
-          <div className="mt-10 mb-0 px-2">
-            <div className="mx-auto flex w-full max-w-[400px] items-center justify-between gap-2">
-              {hasCloudAccess ? (
-                <FirstRunButton
-                  color="outline"
-                  onClick={handleBack}
-                  disabled={step === INTRO_STEP || isSaving}
-                >
-                  {t("codex.legal.backButton")}
-                </FirstRunButton>
-              ) : null}
-              <FirstRunButton onClick={() => void handleContinue()} disabled={isSaving}>
-                {hasCloudAccess ? t("codex.legal.continueButton") : t("codex.legal.continue.apikey")}
+        <div className="mt-10 mb-0 px-2">
+          <div className="mx-auto flex w-full max-w-[400px] items-center justify-between gap-2">
+            {hasCloudAccess ? (
+              <FirstRunButton color="outline" onClick={handleBack} disabled={step === INTRO_STEP}>
+                {t("codex.legal.backButton")}
               </FirstRunButton>
-            </div>
+            ) : null}
+            <FirstRunButton onClick={handleContinue}>
+              {hasCloudAccess ? t("codex.legal.continueButton") : t("codex.legal.continue.apikey")}
+            </FirstRunButton>
           </div>
         </div>
       </div>
-    </main>
+    </div>
   );
 }
 
@@ -156,22 +165,31 @@ function BackgroundCode() {
   return <FirstRunAsciiBackground />;
 }
 
-function SlidePreview({ t, variant }: { t: Translate; variant: "intro" | "cloud" | "todo" }) {
+function SlidePreview({
+  isWideViewport,
+  t,
+  variant,
+}: {
+  isWideViewport: boolean;
+  t: Translate;
+  variant: "intro" | "cloud" | "todo";
+}) {
+  const width = isWideViewport ? 560 : 320;
+  const height = isWideViewport ? 320 : 240;
+
   if (variant === "intro") {
     return (
-      <div className="h-[240px] w-[320px] lg:h-[320px] lg:w-[560px]">
-        <div className="relative flex h-full flex-col gap-4 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-elevated-primary)] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.18)]">
-          <div className="pt-2 pl-2 text-base text-[var(--color-text-foreground-secondary)] opacity-40">
+      <div aria-hidden="true" style={{ width, height }}>
+        <div className="relative flex h-full flex-1 flex-col gap-4 overflow-y-auto rounded-2xl border border-token-border bg-token-dropdown-background p-2 shadow-2xl">
+          <div className="text-md pt-2 pl-2 text-token-description-foreground opacity-40">
             {t("composer.placeholder.newTask.doAnything")}
           </div>
-          <div className="mt-auto flex items-center justify-between">
-            <div className="flex min-w-0 items-center gap-[5px]">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-background-elevated-secondary)]">
-                <PlusIcon className="h-4 w-4" />
-              </div>
+          <div className="flex w-full items-center justify-end">
+            <div className="flex w-full min-w-0 flex-nowrap items-center justify-start gap-[5px]">
+              <PlusIcon className="size-token-button-composer rounded-full border border-token-border p-1" />
             </div>
-            <div className="flex h-8 w-[34px] items-center justify-center rounded-full bg-[var(--color-text-foreground)]">
-              <ArrowUpIcon className="h-4 w-4 text-[var(--color-background-surface)]" />
+            <div className="flex h-[32px] w-[34px] items-center justify-center rounded-full bg-token-foreground p-0">
+              <ArrowUpIcon className="text-token-dropdown-background" />
             </div>
           </div>
         </div>
@@ -181,33 +199,33 @@ function SlidePreview({ t, variant }: { t: Translate; variant: "intro" | "cloud"
 
   if (variant === "cloud") {
     return (
-      <div className="h-[240px] w-[320px] lg:h-[320px] lg:w-[560px]">
-        <div className="flex h-full flex-col items-center justify-center gap-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-background-elevated-primary)] px-4 py-4 shadow-[0_24px_60px_rgba(0,0,0,0.18)]">
-          <SendToCloudIcon className="h-8 w-8" />
+      <div aria-hidden="true" style={{ width, height }}>
+        <div className="relative flex h-full flex-col items-center justify-center gap-4 rounded-2xl border border-token-border bg-token-dropdown-background px-4 py-4 shadow-2xl">
+          <SendToCloudIcon className="size-8" />
           <CloudTaskRow
             icon={<SpinnerBadge />}
             meta={t("codex.legal.cloud.taskOne.meta")}
             title={t("codex.legal.cloud.taskOne.title")}
           />
           <CloudTaskRow
-            icon={<CheckIcon className="h-4 w-4" />}
+            icon={<CheckIcon className="size-4" />}
             meta={t("codex.legal.cloud.taskTwo.meta")}
             title={t("codex.legal.cloud.taskTwo.title")}
             trailing={
               <div className="flex items-center gap-2 text-sm font-medium">
-                <span className="text-[#179c52]">{t("codex.legal.cloud.taskTwo.stats.positive")}</span>
-                <span className="text-[#d85b59]">{t("codex.legal.cloud.taskTwo.stats.negative")}</span>
+                <span className="text-green-500">{t("codex.legal.cloud.taskTwo.stats.positive")}</span>
+                <span className="text-red-500">{t("codex.legal.cloud.taskTwo.stats.negative")}</span>
               </div>
             }
           />
           <CloudTaskRow
-            icon={<CheckIcon className="h-4 w-4" />}
+            icon={<CheckIcon className="size-4" />}
             meta={t("codex.legal.cloud.taskThree.meta")}
             title={t("codex.legal.cloud.taskThree.title")}
             trailing={
               <div className="flex items-center gap-2 text-sm font-medium">
-                <span className="text-[#179c52]">{t("codex.legal.cloud.taskThree.stats.positive")}</span>
-                <span className="text-[#d85b59]">{t("codex.legal.cloud.taskThree.stats.negative")}</span>
+                <span className="text-green-500">{t("codex.legal.cloud.taskThree.stats.positive")}</span>
+                <span className="text-red-500">{t("codex.legal.cloud.taskThree.stats.negative")}</span>
               </div>
             }
           />
@@ -217,15 +235,15 @@ function SlidePreview({ t, variant }: { t: Translate; variant: "intro" | "cloud"
   }
 
   return (
-    <div className="h-[240px] w-[320px] lg:h-[320px] lg:w-[560px]">
-      <div className="rounded-xl bg-[var(--color-background-elevated-primary)] p-2 font-mono shadow-[0_24px_60px_rgba(0,0,0,0.18)]">
-        <CodeBlock>{INTRO_SNIPPET}</CodeBlock>
-        <div className="mt-2 rounded-xl bg-[var(--color-background-elevated-primary)] p-2 pb-2.5">
-          <span className="px-2 py-1 text-xs tracking-[0.2em] text-[var(--color-text-foreground-secondary)] uppercase">
+    <div aria-hidden="true" style={{ width, height }}>
+      <div className="relative rounded-xl border-token-border bg-token-dropdown-background p-2 font-mono shadow-xl">
+        <CodeSnippetPreview content={INTRO_SNIPPET} />
+        <div className="relative rounded-xl border-token-border bg-token-dropdown-background p-2 pb-2.5 font-mono">
+          <span className="text-mono pointer-events-none px-2 py-1 text-xs tracking-[0.2em] text-token-description-foreground uppercase">
             {t("codex.legal.todo.heading")}
           </span>
         </div>
-        <CodeBlock>{`${TODO_HEADING_SNIPPET}\n${TODO_SCHEMA_SNIPPET}`}</CodeBlock>
+        <CodeSnippetPreview content={`${TODO_HEADING_SNIPPET}\n${TODO_SCHEMA_SNIPPET}`} shouldWrapCode />
       </div>
     </div>
   );
@@ -294,7 +312,7 @@ function InfoRow({ children, icon, title }: { children: ReactNode; icon: ReactNo
       {icon}
       <div className="text-sm">
         <span className="block text-sm font-medium">{title}</span>
-        <span className="block text-base text-[var(--color-text-foreground-secondary)]">{children}</span>
+        <span className="block text-base text-token-description-foreground">{children}</span>
       </div>
     </li>
   );
@@ -318,7 +336,7 @@ function InlineTemplateWithLink({
   return (
     <>
       {beforeLink}
-      <a href={href} onClick={preventNavigation} className="underline hover:no-underline">
+      <a href={href} onClick={preventNavigation} className="!text-token-description-foreground underline hover:no-underline">
         {messages[linkKeyName]}
       </a>
       {afterLink}
@@ -349,11 +367,11 @@ function InlineTemplateWithTwoLinks({
   return (
     <>
       {beforeFirst}
-      <a href={firstHref} onClick={preventNavigation} className="underline hover:no-underline">
+      <a href={firstHref} onClick={preventNavigation} className="!text-token-description-foreground underline hover:no-underline">
         {messages[firstKeyName]}
       </a>
       {betweenLinks}
-      <a href={secondHref} onClick={preventNavigation} className="underline hover:no-underline">
+      <a href={secondHref} onClick={preventNavigation} className="!text-token-description-foreground underline hover:no-underline">
         {messages[secondKeyName]}
       </a>
       {afterSecond}
@@ -375,7 +393,7 @@ function CloudTaskRow({
   return (
     <div className="flex w-full items-center justify-between gap-4">
       {icon}
-      <div className="flex flex-1 flex-col text-[var(--color-text-foreground)]">
+      <div className="flex flex-1 flex-col text-token-foreground">
         <div className="text-sm font-medium">{title}</div>
         <div className="text-sm font-medium opacity-50">{meta}</div>
       </div>
@@ -384,23 +402,150 @@ function CloudTaskRow({
   );
 }
 
-function CodeBlock({ children }: { children: string }) {
+function CodeSnippetPreview({
+  content,
+  shouldWrapCode = false,
+}: {
+  content: string;
+  shouldWrapCode?: boolean;
+}) {
   return (
-    <pre className="overflow-hidden rounded-xl bg-[var(--color-background-surface)] px-3 py-3 text-xs leading-6 whitespace-pre-wrap text-[var(--color-text-foreground)]">
-      {children}
-    </pre>
+    <div className="pointer-events-none w-full">
+      <div className="relative w-full min-w-0 overflow-clip rounded-lg border border-token-input-background bg-token-text-code-block-background">
+        <div className="pointer-events-none overflow-auto p-2 text-size-chat" dir="ltr">
+          <code
+            className={[
+              "block font-mono text-xs text-token-text-primary",
+              shouldWrapCode ? "whitespace-pre-wrap" : "whitespace-pre",
+            ].join(" ")}
+            data-language="typescript"
+          >
+            {content}
+          </code>
+        </div>
+      </div>
+    </div>
   );
 }
 
 function SpinnerBadge() {
   return (
-    <div className="h-4 w-4 animate-spin rounded-full border border-[var(--color-text-foreground-secondary)] border-r-transparent" />
+    <div className="size-4 animate-spin rounded-full border border-[var(--color-text-foreground-secondary)] border-r-transparent" />
   );
 }
 
 function readCurrentNuxVariant(): FirstRunNuxVariant {
   // Current upstream baseline `use-nux-CmT8qTYY.js` returns `none`.
   return "none";
+}
+
+function FadePresence({
+  children,
+  className = "",
+  onExitComplete,
+  transitionKey,
+}: {
+  children: ReactNode | null;
+  className?: string;
+  onExitComplete?: () => void;
+  transitionKey: string | null;
+}) {
+  const [renderedChildren, setRenderedChildren] = useState(children);
+  const [renderedKey, setRenderedKey] = useState(transitionKey);
+  const [isVisible, setIsVisible] = useState(children != null);
+
+  useEffect(() => {
+    if (transitionKey === renderedKey) {
+      return;
+    }
+
+    if (renderedChildren == null) {
+      setRenderedKey(transitionKey);
+      setRenderedChildren(children);
+      setIsVisible(false);
+
+      if (children == null) {
+        return;
+      }
+
+      const enterTimeoutId = window.setTimeout(() => {
+        setIsVisible(true);
+      }, TRANSITION_ENTER_DELAY_MS);
+
+      return () => {
+        window.clearTimeout(enterTimeoutId);
+      };
+    }
+
+    setIsVisible(false);
+
+    let enterTimeoutId: number | undefined;
+    const swapTimeoutId = window.setTimeout(() => {
+      setRenderedKey(transitionKey);
+      setRenderedChildren(children);
+      onExitComplete?.();
+
+      if (children == null) {
+        return;
+      }
+
+      enterTimeoutId = window.setTimeout(() => {
+        setIsVisible(true);
+      }, TRANSITION_ENTER_DELAY_MS);
+    }, TRANSITION_DURATION_MS);
+
+    return () => {
+      window.clearTimeout(swapTimeoutId);
+      if (enterTimeoutId !== undefined) {
+        window.clearTimeout(enterTimeoutId);
+      }
+    };
+  }, [children, onExitComplete, renderedChildren, renderedKey, transitionKey]);
+
+  if (renderedChildren == null) {
+    return null;
+  }
+
+  return (
+    <div
+      className={[
+        className,
+        "transition-opacity ease-out duration-[400ms]",
+        isVisible ? "opacity-100" : "opacity-0",
+      ].join(" ")}
+    >
+      {renderedChildren}
+    </div>
+  );
+}
+
+function useWideViewport(minWidth: number) {
+  const [isWideViewport, setIsWideViewport] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    return window.innerWidth > minWidth;
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const handleResize = () => {
+      setIsWideViewport(window.innerWidth > minWidth);
+    };
+
+    window.addEventListener("resize", handleResize);
+    handleResize();
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [minWidth]);
+
+  return isWideViewport;
 }
 
 function preventNavigation(event: MouseEvent<HTMLAnchorElement>) {

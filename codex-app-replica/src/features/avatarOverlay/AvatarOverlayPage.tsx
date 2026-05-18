@@ -1,15 +1,33 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState, type RefObject } from "react";
 import {
-  BUILTIN_AVATARS,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+} from "react";
+import {
   DEFAULT_AVATAR_ID,
+  buildAvatarOptions,
   resolveAvatarOption,
   type AvatarOption,
 } from "../../components/appearance/avatarData";
+import type { AvatarSpriteState } from "../../components/appearance/AvatarSprite";
 import { useI18n } from "../../i18n/i18n";
 import {
+  endAvatarOverlayDrag,
+  moveAvatarOverlayDrag,
   onAvatarOverlayKeyboardInteractionReady,
+  onAvatarOverlayLayoutChanged,
+  openCurrentMainWindow,
+  releaseAvatarOverlayDrag,
+  reportAvatarOverlayElementSizeChanged,
   setAvatarOverlayKeyboardInteractive,
   setAvatarOverlayPointerInteractive,
+  startAvatarOverlayDrag,
+  toggleAvatarOverlay,
 } from "../../services/avatarOverlay";
 import {
   getRecentThreads,
@@ -19,10 +37,19 @@ import {
   type ThreadConversation,
   type ThreadHistoryEntry,
 } from "../../services/history";
+import {
+  ensureCustomAvatarsLoaded,
+  getCustomAvatarsSnapshot,
+  refreshCustomAvatars,
+  subscribeCustomAvatars,
+  type CustomAvatarsSnapshot,
+} from "../../services/customAvatars";
 import { listRemoteTasks, type RemoteTask } from "../../services/remoteTasks";
-import { readSelectedAvatarId } from "../../services/settings";
+import { onGlobalStateUpdated, readSelectedAvatarId } from "../../services/settings";
 import { openInMainWindow } from "../../services/windowNavigation";
 import { AvatarOverlayView } from "./AvatarOverlayView";
+import { DEFAULT_AVATAR_OVERLAY_LAYOUT, type AvatarOverlayLayout } from "./avatarOverlayLayout";
+import type { AvatarOverlayContextMenuPosition } from "./AvatarOverlayContextMenu";
 import {
   deriveAvatarOverlayNotifications,
   type AvatarOverlayNotification,
@@ -33,23 +60,70 @@ const DEFAULT_ACTIVITY_POLL_INTERVAL_MS = 60_000;
 const ACTIVE_ACTIVITY_POLL_INTERVAL_MS = 15_000;
 const THREAD_EVENT_REFRESH_DEBOUNCE_MS = 300;
 const REMOTE_TASK_LIMIT = 20;
+const DRAG_THRESHOLD_PX = 4;
+const DRAG_VELOCITY_WINDOW_MS = 100;
+const DRAG_MIN_FLING_SPEED_PX_PER_SECOND = 320;
+const DRAG_MAX_FLING_SPEED_PX_PER_SECOND = 1600;
 const AVATAR_OVERLAY_REGION_SELECTORS = [
   "[data-avatar-overlay-hit-region]",
   "[data-avatar-mascot='true']",
 ];
+const AVATAR_OVERLAY_ROOT_SELECTOR = ".codex-avatar-root";
+const AVATAR_OVERLAY_MEASURE_SELECTORS = [
+  AVATAR_OVERLAY_ROOT_SELECTOR,
+  "[data-avatar-overlay-size='notification-tray']",
+  "[data-avatar-overlay-size='notification-tray-header']",
+  "[data-avatar-overlay-size='notification-tray-list']",
+  "[data-avatar-overlay-measure='notification-tray-row']",
+].join(", ");
 
 type AvatarOverlayPageProps = {
   initialAvatarId?: string | null;
 };
 
+type PointerSample = {
+  screenX: number;
+  screenY: number;
+  timeMs: number;
+};
+
+type ActiveDrag = {
+  pointerId: number;
+  startedOnMascot: boolean;
+  hasMoved: boolean;
+  screenX: number;
+  screenY: number;
+  samples: PointerSample[];
+};
+
+type MeasuredElementSize = {
+  width: number;
+  height: number;
+};
+
+type MeasuredOverlayState = {
+  isTrayVisible: boolean;
+  mascot: MeasuredElementSize;
+  tray: MeasuredElementSize | null;
+};
+
 export function AvatarOverlayPage({ initialAvatarId }: AvatarOverlayPageProps) {
   const { t } = useI18n();
+  const [customAvatarsSnapshot, setCustomAvatarsSnapshot] = useState<CustomAvatarsSnapshot>(
+    getCustomAvatarsSnapshot(),
+  );
   const [selectedAvatarId, setSelectedAvatarId] = useState<string>(
     initialAvatarId ?? DEFAULT_AVATAR_ID,
   );
-  const [isTrayOpen, setIsTrayOpen] = useState<boolean>(false);
+  const [layout, setLayout] = useState<AvatarOverlayLayout>(DEFAULT_AVATAR_OVERLAY_LAYOUT);
+  const [isTrayOpen, setIsTrayOpen] = useState<boolean>(true);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [mascotTransientState, setMascotTransientState] = useState<AvatarSpriteState | null>(null);
   const [isPointerInteractive, setIsPointerInteractive] = useState<boolean>(true);
   const [isReplyEditorActive, setIsReplyEditorActive] = useState<boolean>(false);
+  const [contextMenuPosition, setContextMenuPosition] = useState<AvatarOverlayContextMenuPosition | null>(
+    null,
+  );
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [recentThreads, setRecentThreads] = useState<ThreadHistoryEntry[]>([]);
   const [conversationsByThreadId, setConversationsByThreadId] = useState<
@@ -63,6 +137,19 @@ export function AvatarOverlayPage({ initialAvatarId }: AvatarOverlayPageProps) {
   const recentThreadIdsRef = useRef<Set<string>>(new Set());
   const hasLoadedRemoteTasksRef = useRef(false);
   const interactiveRegionRef = useRef<HTMLElement | null>(null);
+  const dragRef = useRef<ActiveDrag | null>(null);
+  const lastMeasuredOverlayRef = useRef<MeasuredOverlayState | null>(null);
+  const missingCustomAvatarRefreshIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = subscribeCustomAvatars((nextSnapshot) => {
+      setCustomAvatarsSnapshot(nextSnapshot);
+    });
+
+    void ensureCustomAvatarsLoaded();
+
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -70,19 +157,43 @@ export function AvatarOverlayPage({ initialAvatarId }: AvatarOverlayPageProps) {
     }
 
     let cancelled = false;
-    void (async () => {
+    let unlistenGlobalStateUpdated: (() => void) | null = null;
+
+    const syncSelectedAvatarId = async () => {
       try {
         const stored = await readSelectedAvatarId();
         if (!cancelled && typeof stored === "string" && stored.length > 0) {
           setSelectedAvatarId(stored);
         }
       } catch {
-        // ignore; fallback to default
+        if (!cancelled) {
+          setSelectedAvatarId(DEFAULT_AVATAR_ID);
+        }
       }
-    })();
+    };
+
+    void syncSelectedAvatarId();
+
+    void onGlobalStateUpdated((notification) => {
+      if (!notification.keys.includes("selected-avatar-id")) {
+        return;
+      }
+
+      void syncSelectedAvatarId();
+    }).then((dispose) => {
+      if (cancelled) {
+        void dispose();
+        return;
+      }
+
+      unlistenGlobalStateUpdated = () => {
+        void dispose();
+      };
+    });
 
     return () => {
       cancelled = true;
+      unlistenGlobalStateUpdated?.();
     };
   }, []);
 
@@ -228,10 +339,31 @@ export function AvatarOverlayPage({ initialAvatarId }: AvatarOverlayPageProps) {
     };
   }, [remoteTaskRefreshTick, remoteTasks]);
 
-  const selectedAvatar: AvatarOption = useMemo(
-    () => resolveAvatarOption(selectedAvatarId, BUILTIN_AVATARS),
-    [selectedAvatarId],
+  const avatarOptions = useMemo(
+    () => buildAvatarOptions(customAvatarsSnapshot.avatars),
+    [customAvatarsSnapshot.avatars],
   );
+  const selectedAvatar: AvatarOption = useMemo(
+    () => resolveAvatarOption(selectedAvatarId, avatarOptions),
+    [avatarOptions, selectedAvatarId],
+  );
+
+  useEffect(() => {
+    if (!selectedAvatarId.startsWith("custom:") || selectedAvatar.id === selectedAvatarId) {
+      missingCustomAvatarRefreshIdRef.current = null;
+      return;
+    }
+
+    if (
+      customAvatarsSnapshot.isLoading ||
+      missingCustomAvatarRefreshIdRef.current === selectedAvatarId
+    ) {
+      return;
+    }
+
+    missingCustomAvatarRefreshIdRef.current = selectedAvatarId;
+    void refreshCustomAvatars().catch(() => undefined);
+  }, [customAvatarsSnapshot.isLoading, selectedAvatar.id, selectedAvatarId]);
   const notificationState = useMemo(
     () =>
       deriveAvatarOverlayNotifications({
@@ -243,6 +375,14 @@ export function AvatarOverlayPage({ initialAvatarId }: AvatarOverlayPageProps) {
         translate: t,
       }),
     [conversationsByThreadId, dismissedNotificationTurnKeys, nowMs, recentThreads, remoteTasks, t],
+  );
+  const notifications = notificationState.notifications;
+  const topNotification = notifications[0] ?? null;
+  const hasRunningLocalSession = notifications.some(
+    (notification) => notification.source !== "cloud" && notification.status === "running",
+  );
+  const hasRunningCloudSession = notifications.some(
+    (notification) => notification.source === "cloud" && notification.status === "running",
   );
 
   useEffect(() => {
@@ -262,6 +402,7 @@ export function AvatarOverlayPage({ initialAvatarId }: AvatarOverlayPageProps) {
 
   useAvatarOverlayPointerInteractivity({
     interactiveRegionRef,
+    isPaused: () => dragRef.current != null,
     onInteractiveChange: setIsPointerInteractive,
   });
 
@@ -296,6 +437,21 @@ export function AvatarOverlayPage({ initialAvatarId }: AvatarOverlayPageProps) {
   }, [isTrayOpen]);
 
   useEffect(() => {
+    if (contextMenuPosition == null || typeof window === "undefined") {
+      return undefined;
+    }
+
+    const handleWindowBlur = () => {
+      setContextMenuPosition(null);
+    };
+
+    window.addEventListener("blur", handleWindowBlur);
+    return () => {
+      window.removeEventListener("blur", handleWindowBlur);
+    };
+  }, [contextMenuPosition]);
+
+  useEffect(() => {
     if (typeof window === "undefined") {
       return undefined;
     }
@@ -313,13 +469,84 @@ export function AvatarOverlayPage({ initialAvatarId }: AvatarOverlayPageProps) {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const unlistenPromise = onAvatarOverlayLayoutChanged((notification) => {
+      setLayout(notification.layout);
+    });
+
+    return () => {
+      void unlistenPromise.then((dispose) => dispose()).catch(() => undefined);
+    };
+  }, []);
+
+  const reportElementSizes = useEffectEvent(() => {
+    const measurement = measureOverlayState(interactiveRegionRef.current, {
+      isTrayVisible: isTrayOpen && notifications.length > 0,
+    });
+    if (measurement == null || overlayStateEquals(lastMeasuredOverlayRef.current, measurement)) {
+      return;
+    }
+
+    lastMeasuredOverlayRef.current = measurement;
+    void reportAvatarOverlayElementSizeChanged({
+      isTrayVisible: measurement.isTrayVisible,
+      mascot: measurement.mascot,
+      tray: measurement.tray,
+    });
+  });
+
+  useLayoutEffect(() => {
+    if (typeof window === "undefined" || typeof ResizeObserver === "undefined") {
+      return undefined;
+    }
+
+    let frameId: number | null = null;
+    const scheduleReport = () => {
+      if (frameId != null) {
+        return;
+      }
+      frameId = window.requestAnimationFrame(() => {
+        frameId = null;
+        reportElementSizes();
+      });
+    };
+
+    const observer = new ResizeObserver(scheduleReport);
+    const interactiveRegion = interactiveRegionRef.current;
+    if (interactiveRegion != null) {
+      observer.observe(interactiveRegion);
+      for (const element of interactiveRegion.querySelectorAll(AVATAR_OVERLAY_MEASURE_SELECTORS)) {
+        observer.observe(element);
+      }
+    }
+    window.addEventListener("resize", scheduleReport);
+    scheduleReport();
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", scheduleReport);
+      if (frameId != null) {
+        window.cancelAnimationFrame(frameId);
+      }
+    };
+  }, [layout.mascot.height, layout.mascot.width, notifications, isTrayOpen, reportElementSizes]);
+
+  useLayoutEffect(() => {
+    reportElementSizes();
+  }, [reportElementSizes, isTrayOpen, notifications.length, layout, selectedAvatar.id]);
+
   const handleOpenNotification = (notification: AvatarOverlayNotification) => {
-    setIsTrayOpen(false);
+    setContextMenuPosition(null);
     setIsReplyEditorActive(false);
     void openInMainWindow(notification.actionPath);
   };
 
   const handleDismissNotification = (notification: AvatarOverlayNotification) => {
+    setContextMenuPosition(null);
     if (!notification.canDismiss) {
       return;
     }
@@ -346,22 +573,184 @@ export function AvatarOverlayPage({ initialAvatarId }: AvatarOverlayPageProps) {
     },
   );
 
+  const releasePointer = useEffectEvent(
+    (
+      pointerId: number,
+      options: {
+        releaseSample?: PointerSample;
+        shouldOpenMainWindow: boolean;
+      },
+    ) => {
+      const currentDrag = dragRef.current;
+      if (currentDrag == null || currentDrag.pointerId !== pointerId) {
+        return;
+      }
+
+      dragRef.current = null;
+      setIsDragging(false);
+      setMascotTransientState(null);
+
+      const velocity = options.releaseSample == null
+        ? null
+        : derivePointerVelocity({
+            hasMoved: currentDrag.hasMoved,
+            samples: prunePointerSamples([...currentDrag.samples, options.releaseSample]),
+          });
+
+      if (interactiveRegionRef.current?.hasPointerCapture?.(pointerId)) {
+        interactiveRegionRef.current.releasePointerCapture(pointerId);
+      }
+
+      if (options.shouldOpenMainWindow && currentDrag.startedOnMascot && !currentDrag.hasMoved) {
+        void openCurrentMainWindow();
+      }
+
+      void endAvatarOverlayDrag();
+      if (currentDrag.hasMoved && velocity != null) {
+        void releaseAvatarOverlayDrag({
+          velocityX: velocity.x,
+          velocityY: velocity.y,
+        });
+      }
+    },
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    const handlePointerUp = (event: PointerEvent) => {
+      releasePointer(event.pointerId, {
+        releaseSample: createPointerSample(event),
+        shouldOpenMainWindow: true,
+      });
+    };
+    const handlePointerCancel = (event: PointerEvent) => {
+      releasePointer(event.pointerId, {
+        shouldOpenMainWindow: false,
+      });
+    };
+
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
+    return () => {
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+    };
+  }, [releasePointer]);
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLElement>) => {
+    if (contextMenuPosition != null) {
+      setContextMenuPosition(null);
+    }
+    if (
+      event.button !== 0 ||
+      !(event.target instanceof Element) ||
+      event.target.closest(".no-drag") != null
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    dragRef.current = {
+      startedOnMascot: event.target.closest("[data-avatar-mascot='true']") != null,
+      hasMoved: false,
+      pointerId: event.pointerId,
+      samples: [createPointerSample(event)],
+      screenX: event.screenX,
+      screenY: event.screenY,
+    };
+    void startAvatarOverlayDrag({
+      pointerWindowX: event.clientX,
+      pointerWindowY: event.clientY,
+    });
+    setIsDragging(true);
+    setMascotTransientState(null);
+  };
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLElement>) => {
+    const currentDrag = dragRef.current;
+    if (currentDrag == null || currentDrag.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const sample = createPointerSample(event);
+    currentDrag.samples = prunePointerSamples([...currentDrag.samples, sample]);
+    const deltaX = sample.screenX - currentDrag.screenX;
+    const deltaY = sample.screenY - currentDrag.screenY;
+
+    if (Math.abs(deltaX) < DRAG_THRESHOLD_PX && Math.abs(deltaY) < DRAG_THRESHOLD_PX) {
+      return;
+    }
+
+    currentDrag.hasMoved = true;
+    currentDrag.screenX = sample.screenX;
+    currentDrag.screenY = sample.screenY;
+    setMascotTransientState((currentState) => deriveTransientMascotState(currentState, deltaX));
+    void moveAvatarOverlayDrag();
+  };
+
+  const handlePointerUp = (event: ReactPointerEvent<HTMLElement>) => {
+    releasePointer(event.pointerId, {
+      releaseSample: createPointerSample(event),
+      shouldOpenMainWindow: true,
+    });
+  };
+
+  const handlePointerCancel = (event: ReactPointerEvent<HTMLElement>) => {
+    releasePointer(event.pointerId, {
+      shouldOpenMainWindow: false,
+    });
+  };
+
+  const handleLostPointerCapture = (event: ReactPointerEvent<HTMLElement>) => {
+    releasePointer(event.pointerId, {
+      shouldOpenMainWindow: false,
+    });
+  };
+
+  const handleMascotContextMenu = (event: React.MouseEvent<HTMLElement>) => {
+    if (!(event.target instanceof Element) || event.target.closest("[data-avatar-mascot='true']") == null) {
+      return;
+    }
+
+    event.preventDefault();
+    setContextMenuPosition({
+      x: event.clientX,
+      y: event.clientY,
+    });
+  };
+
+  const handleClosePet = () => {
+    setContextMenuPosition(null);
+    void toggleAvatarOverlay();
+  };
+
   return (
     <AvatarOverlayView
+      contextMenuPosition={contextMenuPosition}
       interactiveRegionRef={interactiveRegionRef}
       selectedAvatar={selectedAvatar}
-      notifications={notificationState.notifications}
+      notifications={notifications}
+      topNotification={topNotification}
       isTrayOpen={isTrayOpen}
-      onToggleTray={() => {
-        setIsTrayOpen((current) => {
-          const next = !current;
-          if (!next) {
-            setIsReplyEditorActive(false);
-          }
-          return next;
-        });
+      isDragging={isDragging}
+      mascotTransientState={mascotTransientState}
+      layout={layout}
+      hasRunningCloudSession={hasRunningCloudSession}
+      hasRunningLocalSession={hasRunningLocalSession}
+      onCloseContextMenu={() => {
+        setContextMenuPosition(null);
       }}
-      onCollapseTray={() => {
+      onClosePet={handleClosePet}
+      onOpenTray={() => {
+        setContextMenuPosition(null);
+        setIsTrayOpen(true);
+      }}
+      onCloseTray={() => {
+        setContextMenuPosition(null);
         setIsTrayOpen(false);
         setIsReplyEditorActive(false);
       }}
@@ -370,6 +759,12 @@ export function AvatarOverlayPage({ initialAvatarId }: AvatarOverlayPageProps) {
       onNotificationReplyEditorActiveChange={setIsReplyEditorActive}
       onOpenNotificationReply={() => undefined}
       onSubmitNotificationReply={handleSubmitNotificationReply}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      onLostPointerCapture={handleLostPointerCapture}
+      onContextMenu={handleMascotContextMenu}
     />
   );
 }
@@ -411,10 +806,7 @@ function useAvatarOverlayPointerInteractivity(options: {
       for (const selector of AVATAR_OVERLAY_REGION_SELECTORS) {
         const elements = interactiveRegion.querySelectorAll(selector);
         for (const element of elements) {
-          if (
-            isVisiblePointerTarget(element) &&
-            pointIntersectsElement(point, element)
-          ) {
+          if (isVisiblePointerTarget(element) && pointIntersectsElement(point, element)) {
             return true;
           }
         }
@@ -527,6 +919,167 @@ type PointerPoint = {
   y: number;
 };
 
+function createPointerSample(
+  event: Pick<PointerEvent, "screenX" | "screenY" | "timeStamp">,
+): PointerSample {
+  return {
+    screenX: event.screenX,
+    screenY: event.screenY,
+    timeMs: event.timeStamp,
+  };
+}
+
+function prunePointerSamples(samples: PointerSample[]) {
+  const latestSample = samples.at(-1);
+  if (latestSample == null) {
+    return samples;
+  }
+  return samples.filter((sample) => latestSample.timeMs - sample.timeMs <= DRAG_VELOCITY_WINDOW_MS);
+}
+
+function derivePointerVelocity(options: {
+  hasMoved: boolean;
+  samples: PointerSample[];
+}) {
+  if (!options.hasMoved) {
+    return null;
+  }
+
+  const latestSample = options.samples.at(-1);
+  if (latestSample == null) {
+    return null;
+  }
+
+  const originSample = options.samples.find((sample) => latestSample.timeMs - sample.timeMs > 16);
+  if (originSample == null) {
+    return null;
+  }
+
+  const elapsedSeconds = (latestSample.timeMs - originSample.timeMs) / 1000;
+  if (elapsedSeconds <= 0) {
+    return null;
+  }
+
+  const rawVelocity = {
+    x: (latestSample.screenX - originSample.screenX) / elapsedSeconds,
+    y: (latestSample.screenY - originSample.screenY) / elapsedSeconds,
+  };
+  const rawSpeed = Math.hypot(rawVelocity.x, rawVelocity.y);
+  if (rawSpeed < DRAG_MIN_FLING_SPEED_PX_PER_SECOND) {
+    return null;
+  }
+  if (rawSpeed <= DRAG_MAX_FLING_SPEED_PX_PER_SECOND) {
+    return rawVelocity;
+  }
+
+  const scale = DRAG_MAX_FLING_SPEED_PX_PER_SECOND / rawSpeed;
+  return {
+    x: rawVelocity.x * scale,
+    y: rawVelocity.y * scale,
+  };
+}
+
+function deriveTransientMascotState(
+  currentDragState: AvatarSpriteState | null,
+  deltaX: number,
+): AvatarSpriteState | null {
+  if (deltaX >= DRAG_THRESHOLD_PX) {
+    return "running-right";
+  }
+  if (deltaX <= -DRAG_THRESHOLD_PX) {
+    return "running-left";
+  }
+  return currentDragState;
+}
+
+function measureOverlayState(
+  element: HTMLElement | null,
+  options: { isTrayVisible: boolean },
+): MeasuredOverlayState | null {
+  if (element == null) {
+    return null;
+  }
+
+  const mascot = measureElementSize(element.querySelector(AVATAR_OVERLAY_ROOT_SELECTOR));
+  const tray = measureTraySize(
+    element.querySelector("[data-avatar-overlay-size='notification-tray']"),
+  );
+  if (mascot == null) {
+    return null;
+  }
+
+  return {
+    isTrayVisible: options.isTrayVisible,
+    mascot,
+    tray,
+  };
+}
+
+function measureElementSize(element: Element | null) {
+  if (!(element instanceof HTMLElement) || isElementDisplayNone(element)) {
+    return null;
+  }
+  const rect = element.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) {
+    return null;
+  }
+  return {
+    width: Math.ceil(rect.width),
+    height: Math.ceil(rect.height),
+  };
+}
+
+function measureTraySize(element: Element | null) {
+  if (!(element instanceof HTMLElement) || isElementDisplayNone(element)) {
+    return null;
+  }
+  const rect = element.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) {
+    return null;
+  }
+
+  const measuredWidth = Math.ceil(element.offsetWidth > 0 ? element.offsetWidth : rect.width);
+  const header = element.querySelector("[data-avatar-overlay-size='notification-tray-header']");
+  const list = element.querySelector("[data-avatar-overlay-size='notification-tray-list']");
+  if (!(header instanceof HTMLElement) || !(list instanceof HTMLElement)) {
+    return {
+      width: measuredWidth,
+      height: Math.ceil(rect.height),
+    };
+  }
+
+  return {
+    width: measuredWidth,
+    height: Math.ceil(header.getBoundingClientRect().height + list.scrollHeight),
+  };
+}
+
+function overlayStateEquals(
+  left: MeasuredOverlayState | null,
+  right: MeasuredOverlayState,
+) {
+  return (
+    left != null &&
+    left.isTrayVisible === right.isTrayVisible &&
+    left.mascot.width === right.mascot.width &&
+    left.mascot.height === right.mascot.height &&
+    elementSizeEquals(left.tray, right.tray)
+  );
+}
+
+function elementSizeEquals(
+  left: MeasuredElementSize | null,
+  right: MeasuredElementSize | null,
+) {
+  return (
+    left === right ||
+    (left != null &&
+      right != null &&
+      left.width === right.width &&
+      left.height === right.height)
+  );
+}
+
 function pointIntersectsElement(point: PointerPoint, element: Element) {
   const rect = element.getBoundingClientRect();
   if (!pointInsideRect(point, rect)) {
@@ -554,4 +1107,8 @@ function isVisiblePointerTarget(element: Element) {
 
 function pointInsideRect(point: PointerPoint, rect: DOMRect) {
   return point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom;
+}
+
+function isElementDisplayNone(element: HTMLElement) {
+  return window.getComputedStyle(element).display === "none";
 }

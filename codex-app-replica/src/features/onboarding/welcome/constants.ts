@@ -1,4 +1,16 @@
+import type { ComponentType, SVGProps } from "react";
 import type { MessageKey } from "../../../i18n/messages";
+import {
+  WelcomeAnalyzeDataIcon,
+  WelcomeCalendarIcon,
+  WelcomeDesignProductsIcon,
+  WelcomeManageProjectsIcon,
+  WelcomeNonCodingIcon,
+  WelcomeOtherIntentIcon,
+  WelcomeSearchEmailChatIcon,
+  WelcomeTerminalIcon,
+  WelcomeWorkWithDocsIcon,
+} from "./optionIcons";
 import type {
   ExternalAgentProviderId,
   WelcomeIntentId,
@@ -27,32 +39,34 @@ export const CODING_ROLE_IDS = new Set<WelcomeRoleId | typeof DEFAULT_WELCOME_RO
   "data_science",
 ]);
 
-export const INTENT_OPTIONS: Array<{ badge: string; id: WelcomeIntentId; labelKey: MessageKey }> = [
-  { badge: "</>", id: "build_software", labelKey: "onboarding.welcomeV2.intent.buildSoftware" },
-  { badge: "UI", id: "design_products", labelKey: "onboarding.welcomeV2.intent.designProducts" },
-  { badge: "PR", id: "manage_projects", labelKey: "onboarding.welcomeV2.intent.manageProjects" },
-  { badge: "IN", id: "search_email_chat", labelKey: "onboarding.welcomeV2.intent.searchEmailChat" },
-  { badge: "CA", id: "manage_calendar", labelKey: "onboarding.welcomeV2.intent.manageCalendar" },
-  { badge: "DOC", id: "work_with_docs", labelKey: "onboarding.welcomeV2.intent.workWithDocs" },
-  { badge: "DA", id: "analyze_data", labelKey: "onboarding.welcomeV2.intent.analyzeData" },
-  { badge: "?", id: "other", labelKey: "onboarding.welcomeV2.intent.other" },
+type WelcomeOptionIcon = ComponentType<SVGProps<SVGSVGElement>>;
+
+export const INTENT_OPTIONS: Array<{ icon: WelcomeOptionIcon; id: WelcomeIntentId; labelKey: MessageKey }> = [
+  { icon: WelcomeTerminalIcon, id: "build_software", labelKey: "onboarding.welcomeV2.intent.buildSoftware" },
+  { icon: WelcomeDesignProductsIcon, id: "design_products", labelKey: "onboarding.welcomeV2.intent.designProducts" },
+  { icon: WelcomeManageProjectsIcon, id: "manage_projects", labelKey: "onboarding.welcomeV2.intent.manageProjects" },
+  { icon: WelcomeSearchEmailChatIcon, id: "search_email_chat", labelKey: "onboarding.welcomeV2.intent.searchEmailChat" },
+  { icon: WelcomeCalendarIcon, id: "manage_calendar", labelKey: "onboarding.welcomeV2.intent.manageCalendar" },
+  { icon: WelcomeWorkWithDocsIcon, id: "work_with_docs", labelKey: "onboarding.welcomeV2.intent.workWithDocs" },
+  { icon: WelcomeAnalyzeDataIcon, id: "analyze_data", labelKey: "onboarding.welcomeV2.intent.analyzeData" },
+  { icon: WelcomeOtherIntentIcon, id: "other", labelKey: "onboarding.welcomeV2.intent.other" },
 ];
 
 export const WORK_MODE_OPTIONS: Array<{
-  badge: string;
   descriptionKey: MessageKey;
+  icon: WelcomeOptionIcon;
   id: WelcomeWorkMode;
   titleKey: MessageKey;
 }> = [
   {
-    badge: "</>",
     descriptionKey: "onboarding.welcomeV2.workMode.coding.description",
+    icon: WelcomeTerminalIcon,
     id: "coding",
     titleKey: "onboarding.welcomeV2.workMode.coding.title",
   },
   {
-    badge: "AA",
     descriptionKey: "onboarding.welcomeV2.workMode.nonCoding.description",
+    icon: WelcomeNonCodingIcon,
     id: "non_coding",
     titleKey: "onboarding.welcomeV2.workMode.nonCoding.title",
   },

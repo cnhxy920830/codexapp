@@ -14,7 +14,10 @@ mod codex_app_config;
 mod codex_home;
 mod computer_use_settings;
 mod custom_avatars;
+mod debug_app_server;
+mod debug_child_processes;
 mod debug_modal;
+mod debug_packaged_state;
 mod desktop_notifications;
 mod external_agent_import;
 mod fast_mode_rollout_metrics;
@@ -80,6 +83,7 @@ use auth_bridge::batch_write_config_values;
 use auth_bridge::cancel_login;
 use auth_bridge::clear_thread_goal;
 use auth_bridge::codex_app_server_restart;
+use auth_bridge::debug_app_server_thread_status_for_host;
 use auth_bridge::delete_plugin_share;
 use auth_bridge::delete_plugin_share_command;
 use auth_bridge::discard_conversation_from_cache;
@@ -228,6 +232,12 @@ use computer_use_settings::read_computer_use_approvals;
 use computer_use_settings::read_computer_use_approvals_visibility;
 use computer_use_settings::remove_computer_use_approval;
 use custom_avatars::read_custom_avatars;
+use debug_app_server::debug_app_server_clear_notifications;
+use debug_app_server::debug_app_server_clear_requests;
+use debug_app_server::debug_app_server_snapshot;
+use debug_app_server::DebugAppServerState;
+use debug_child_processes::child_processes;
+use debug_child_processes::ChildProcessMetricsState;
 use debug_modal::ambient_suggestion_set_status;
 use debug_modal::ambient_suggestions;
 use debug_modal::ambient_suggestions_generation_statuses;
@@ -236,6 +246,7 @@ use debug_modal::debug_run_app_action_request;
 use debug_modal::debug_run_app_action_response;
 use debug_modal::AmbientSuggestionsCache;
 use debug_modal::DebugActionRequestSources;
+use debug_packaged_state::is_packaged;
 use desktop_notifications::desktop_notification_hide;
 use desktop_notifications::desktop_notification_show;
 use desktop_notifications::DesktopNotificationsState;
@@ -288,6 +299,7 @@ use host_files::third_party_notices;
 use hotkey_window::hotkey_window_enabled_changed;
 use hotkey_window::hotkey_window_home_pointer_interaction_changed;
 use hotkey_window::hotkey_window_hotkey_state;
+use hotkey_window::hotkey_window_set_dev_hotkey_override;
 use hotkey_window::hotkey_window_set_hotkey;
 use hotkey_window::open_in_hotkey_window;
 use hotkey_window::HotkeyWindowGateState;
@@ -360,6 +372,7 @@ use remote_tasks::remote_task_turn_read;
 use remote_tasks::remote_task_turns_read;
 use scratchpad::generate_scratchpad_completion_summary;
 use statsig::statsig_fetch_values;
+use statsig::statsig_request;
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
@@ -481,8 +494,10 @@ pub fn run() {
         .manage(DesktopNotificationsState::default())
         .manage(RemoteAppServerRegistry::default())
         .manage(RemoteAppServerRuntimeState::default())
+        .manage(DebugAppServerState::default())
         .manage(PrimaryRuntimeState::default())
         .manage(Arc::new(PendingWorktreesState::default()))
+        .manage(ChildProcessMetricsState::default())
         .invoke_handler(tauri::generate_handler![
             get_launch_context,
             get_auth_state,
@@ -503,6 +518,12 @@ pub fn run() {
             ambient_suggestions_generation_statuses,
             debug_run_app_action_request,
             debug_run_app_action_response,
+            is_packaged,
+            child_processes,
+            debug_app_server_snapshot,
+            debug_app_server_clear_requests,
+            debug_app_server_clear_notifications,
+            debug_app_server_thread_status_for_host,
             global_dictation_prewarm,
             global_dictation_show_and_start,
             global_dictation_stop,
@@ -626,9 +647,11 @@ pub fn run() {
             open_in_hotkey_window,
             hotkey_window_hotkey_state,
             hotkey_window_set_hotkey,
+            hotkey_window_set_dev_hotkey_override,
             hotkey_window_enabled_changed,
             hotkey_window_home_pointer_interaction_changed,
             statsig_fetch_values,
+            statsig_request,
             list_mcp_server_status,
             list_mcp_server_status_command,
             list_skills,

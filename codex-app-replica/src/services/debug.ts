@@ -75,8 +75,35 @@ export type AmbientSuggestionsReadResponse = {
   file: AmbientSuggestionsFile;
 };
 
+export type PackagedStateResponse = {
+  isPackaged: boolean;
+};
+
+export type ChildProcessInfo = {
+  pid: number;
+  parentPid: number | null;
+  command: string;
+  rssKb: number | null;
+  cpuPercent: number | null;
+  ageSeconds: number | null;
+  depth: number;
+};
+
+export type ChildProcessesResponse = {
+  rootProcess: ChildProcessInfo | null;
+  processes: ChildProcessInfo[];
+};
+
 export async function readAmbientSuggestionsGenerationStatuses() {
   return invoke<AmbientSuggestionsGenerationStatusesResponse>("ambient-suggestions-generation-statuses");
+}
+
+export async function readPackagedState() {
+  return invoke<PackagedStateResponse>("is-packaged");
+}
+
+export async function readChildProcesses() {
+  return invoke<ChildProcessesResponse>("child-processes");
 }
 
 export async function readAmbientSuggestions(params: {

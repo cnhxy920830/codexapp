@@ -8,7 +8,6 @@ import {
   openInMainWindow,
 } from "../../services/windowNavigation";
 
-const appWindow = getCurrentWindow();
 const HOTKEY_DETAIL_TITLE_LEFT = 64;
 const HOTKEY_DETAIL_TITLE_RIGHT = 96;
 const HOTKEY_DETAIL_ACTION_OFFSET = 12;
@@ -41,7 +40,7 @@ export function HotkeyWindowDetailLayout({
 
       event.preventDefault();
       event.stopPropagation();
-      void appWindow.hide().catch(() => undefined);
+      hideCurrentWindow();
     };
 
     window.addEventListener("keydown", handleKeyDown);
@@ -61,7 +60,7 @@ export function HotkeyWindowDetailLayout({
             title={t("hotkeyWindow.dismiss")}
             uniform
             onClick={() => {
-              void appWindow.hide().catch(() => undefined);
+              hideCurrentWindow();
             }}
           >
             <HotkeyDismissIcon className="icon-xs" />
@@ -108,6 +107,27 @@ export function HotkeyWindowDetailLayout({
       <div className="min-h-0 flex-1">{children}</div>
     </div>
   );
+}
+
+function hideCurrentWindow() {
+  const currentWindow = getHotkeyWindow();
+  if (currentWindow === null) {
+    return;
+  }
+
+  void currentWindow.hide().catch(() => undefined);
+}
+
+function getHotkeyWindow() {
+  if (
+    typeof window === "undefined" ||
+    typeof window !== "object" ||
+    !("__TAURI_INTERNALS__" in window)
+  ) {
+    return null;
+  }
+
+  return getCurrentWindow();
 }
 
 function HotkeyDismissIcon(props: SVGProps<SVGSVGElement>) {

@@ -77,13 +77,13 @@ export function readWorkspaceOnboardingExperimentRouteArm(
 
 export function shouldUseWelcomeV2WorkspaceOnboarding({
   assignment,
-  welcomeV2DefaultFlowEnabled,
+  welcomeV2FlowEnabled,
 }: {
   assignment: WorkspaceOnboardingExperimentAssignment;
-  welcomeV2DefaultFlowEnabled: boolean;
+  welcomeV2FlowEnabled: boolean;
 }) {
   return (
-    welcomeV2DefaultFlowEnabled ||
+    welcomeV2FlowEnabled ||
     readWorkspaceOnboardingExperimentRouteArm(assignment) === "t5_onboarding_v2"
   );
 }
