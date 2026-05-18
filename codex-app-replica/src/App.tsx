@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
 import { open } from "@tauri-apps/plugin-shell";
 import {
+  clearBrowserChatGptTokenAuth,
   formatAuthDetail,
   formatAuthLabel,
   getLaunchContext,
@@ -11,6 +12,8 @@ import {
   isUsageSettingsPlanSupported,
   logout,
   onAuthSnapshotChange,
+  onBrowserAuthChanged,
+  readBrowserChatGptTokenAuth,
   type AuthSnapshot,
   type LaunchContext,
 } from "./services/auth";
@@ -128,16 +131,20 @@ import { OpenSourceLicensesPage } from "./components/OpenSourceLicensesPage";
 import { ComputerUseSettings } from "./components/ComputerUseSettings";
 import { PersonalizationSettings } from "./components/PersonalizationSettings";
 import { PluginsSettings } from "./components/PluginsSettings";
+import { RemoteConnectionsSettings } from "./components/RemoteConnectionsSettings";
 import { BackToAppIcon, SettingsSectionIcon } from "./components/SettingsSectionIcons";
 import { SkillsSettings } from "./components/SkillsSettings";
 import { UsageSettings } from "./components/UsageSettings";
 import { WorkspaceDependenciesSettings } from "./components/WorkspaceDependenciesSettings";
 import { SettingsChoiceMenu } from "./components/SettingsChoiceMenu";
 import { ToggleSwitch } from "./components/ToggleSwitch";
+import { Button } from "./components/Button";
 import { ChatConversationMainPane } from "./features/chat/ChatConversationMainPane";
 import { ChatRouteHeader } from "./features/chat/ChatRouteHeader";
+import { ThreadPageHeader } from "./features/chat/ThreadPageHeader";
 import { ChatSidePanel } from "./features/chat/ChatSidePanel";
 import { FilePreviewPage } from "./features/chat/FilePreviewPage";
+import { LocalConversationCompactComposerOverlay } from "./features/chat/LocalConversationCompactComposerOverlay";
 import { PlanSummaryPage } from "./features/chat/PlanSummaryPage";
 import { RemoteConversationHeaderActions } from "./features/chat/RemoteConversationHeaderActions";
 import { RemoteConversationPage } from "./features/chat/RemoteConversationPage";
@@ -426,6 +433,7 @@ type NavigateToRouteState = {
   initialHostId?: string;
   initialTab?: SkillsRouteInitialTab;
   pluginDeepLinkAuthBlocked?: boolean;
+  prefillCwd?: string | null;
   prefillPrompt?: string;
   unifiedDiff?: string;
 };
@@ -700,6 +708,10 @@ function isPullRequestsRoute(path: string) {
   return path === "/pull-requests";
 }
 
+function isRemoteConnectionsRoute(path: string) {
+  return stripRouteSearchAndHash(path) === "/remote-connections";
+}
+
 function readInitialAppRoute(): AppRoute {
   if (typeof window !== "undefined" && isHotkeyHomeRoute(window.location.pathname)) {
     return "hotkey-home";
@@ -745,11 +757,25 @@ function readInitialAppRoute(): AppRoute {
     return "pull-requests";
   }
 
+  if (typeof window !== "undefined" && isRemoteConnectionsRoute(window.location.pathname)) {
+    return "settings";
+  }
+
   if (typeof window !== "undefined" && isAvatarOverlayRoute(window.location.pathname)) {
     return "avatar-overlay";
   }
 
   return "chat";
+}
+
+function readInitialSettingsSection(): SettingsSection {
+  if (typeof window === "undefined") {
+    return "general-settings";
+  }
+
+  return parseSettingsRoute(window.location.pathname) ?? (isRemoteConnectionsRoute(window.location.pathname)
+    ? "connections"
+    : "general-settings");
 }
 
 // Auxiliary windows share the same native blocker and must not clear it on mount/unmount.
@@ -1197,10 +1223,11 @@ function countInProgressTurns(conversation: ThreadConversation) {
 function App() {
   const { locale, t } = useI18n();
   const [isMaximized, setIsMaximized] = useState(false);
-  const [authSnapshot, setAuthSnapshot] = useState<AuthSnapshot>(initialAuthSnapshot);
+  const [rawAuthSnapshot, setRawAuthSnapshot] = useState<AuthSnapshot>(initialAuthSnapshot);
   const [launchContext, setLaunchContext] = useState<LaunchContext | null>(null);
   const [hasLoadedAuthSnapshot, setHasLoadedAuthSnapshot] = useState(false);
   const [hasLoadedLaunchContext, setHasLoadedLaunchContext] = useState(false);
+  const [browserChatGptTokenAuth, setBrowserChatGptTokenAuth] = useState(() => readBrowserChatGptTokenAuth());
   const [loginRouteOverride, setLoginRouteOverride] = useState<string | null>("auto");
   const [postLoginWelcomePending, setPostLoginWelcomePending] = useState(false);
   const [projectlessOnboardingCompleted, setProjectlessOnboardingCompleted] = useState(false);
@@ -1217,9 +1244,28 @@ function App() {
   const [hasLoadedInitialWindowRoute, setHasLoadedInitialWindowRoute] = useState(false);
   const [hasLoadedInitialThreadSnapshot, setHasLoadedInitialThreadSnapshot] = useState(false);
   const [pendingPlanSummary, setPendingPlanSummary] = useState<PendingPlanSummaryState | null>(null);
+  const [scratchpadClearAction, setScratchpadClearAction] = useState<(() => void) | null>(null);
   const [editorDiffRouteState, setEditorDiffRouteState] = useState<unknown | null>(() =>
     typeof window === "undefined" ? null : window.history.state,
   );
+
+  const authSnapshot = useMemo<AuthSnapshot>(() => {
+    if (browserChatGptTokenAuth == null) {
+      return rawAuthSnapshot;
+    }
+
+    return {
+      ...rawAuthSnapshot,
+      authState: {
+        ...rawAuthSnapshot.authState,
+        authMethod: "chatgpt",
+        email: browserChatGptTokenAuth.email ?? rawAuthSnapshot.authState.email,
+        accountId: browserChatGptTokenAuth.accountId,
+        userId: browserChatGptTokenAuth.userId ?? rawAuthSnapshot.authState.userId,
+        planAtLogin: browserChatGptTokenAuth.planType ?? rawAuthSnapshot.authState.planAtLogin,
+      },
+    };
+  }, [browserChatGptTokenAuth, rawAuthSnapshot]);
   const [worktreeInitRoute, setWorktreeInitRoute] = useState<WorktreeInitRoute | null>(() =>
     typeof window === "undefined" ? null : parseWorktreeInitRoute(window.location.pathname),
   );
@@ -1311,7 +1357,10 @@ function App() {
   const workspaceOnboardingWelcomeV2FlowEnabled = useReplicaStatsigGateValue(
     REPLICA_STATSIG_GATES.workspaceOnboardingWelcomeV2Flow,
   );
-  const [settingsSection, setSettingsSection] = useState<SettingsSection>("general-settings");
+  const remoteConnectionsHomeBannerEnabled = useReplicaStatsigGateValue(
+    REPLICA_STATSIG_GATES.remoteConnectionsHomeBanner,
+  );
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>(readInitialSettingsSection);
   const [settingsSectionState, setSettingsSectionState] = useState<SettingsSectionState>(null);
   const [settingsRemoteConnections, setSettingsRemoteConnections] = useState<RemoteConnection[]>([]);
   const [settingsRemoteConnectionStates, setSettingsRemoteConnectionStates] = useState<
@@ -1439,12 +1488,16 @@ function App() {
   const showUsageSettings =
     authSnapshot.authState.authMethod === "chatgpt" &&
     isUsageSettingsPlanSupported(authSnapshot.authState.planAtLogin);
+  const isRemoteConnectionsSettingsVisible =
+    configSnapshot === null
+      ? remoteConnectionsHomeBannerEnabled || settingsSection === "connections"
+      : configSnapshot.features?.remote_connections === true || remoteConnectionsHomeBannerEnabled;
   const hiddenSettingsSectionIds = new Set<SettingsSection>(["account", "plugins-settings", "skills-settings"]);
   const directSettingsRouteIds = new Set<SettingsSection>(["account"]);
   const visibleSettingsNavItems = settingsNavItems.filter(
     (item) =>
       !hiddenSettingsSectionIds.has(item.id) &&
-      item.id !== "connections" &&
+      (item.id !== "connections" || isRemoteConnectionsSettingsVisible) &&
       item.id !== "hooks-settings" &&
       (item.id !== "computer-use" || hasComputerUseApprovalStore) &&
       (item.id !== "usage" || showUsageSettings),
@@ -1813,20 +1866,25 @@ function App() {
   }, []);
 
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    let authUnlisten: (() => void) | undefined;
+    let browserAuthDispose: (() => void) | undefined;
     void getAuthSnapshot()
-      .then(setAuthSnapshot)
-      .catch(() => setAuthSnapshot(initialAuthSnapshot))
+      .then(setRawAuthSnapshot)
+      .catch(() => setRawAuthSnapshot(initialAuthSnapshot))
       .finally(() => setHasLoadedAuthSnapshot(true));
     void getLaunchContext()
       .then(setLaunchContext)
       .catch(() => setLaunchContext({ openProjectPath: null }))
       .finally(() => setHasLoadedLaunchContext(true));
-    void onAuthSnapshotChange(setAuthSnapshot).then((dispose) => {
-      unlisten = dispose;
+    void onAuthSnapshotChange(setRawAuthSnapshot).then((dispose) => {
+      authUnlisten = dispose;
+    });
+    browserAuthDispose = onBrowserAuthChanged(() => {
+      setBrowserChatGptTokenAuth(readBrowserChatGptTokenAuth());
     });
     return () => {
-      unlisten?.();
+      authUnlisten?.();
+      browserAuthDispose?.();
     };
   }, []);
 
@@ -4490,9 +4548,15 @@ function App() {
     setTurnError(null);
     setPendingThreadGoalObjective(null);
     setIsThreadGoalEditorOpen(false);
-    if (state?.cwd !== undefined) {
+    const prefillCwd =
+      state?.prefillCwd !== undefined
+        ? state.prefillCwd
+        : state?.cwd !== undefined
+          ? state.cwd
+          : undefined;
+    if (prefillCwd !== undefined) {
       setLaunchContext({
-        openProjectPath: state.cwd ?? null,
+        openProjectPath: prefillCwd ?? null,
       });
     }
     setComposerDraft(state?.prefillPrompt ?? "");
@@ -4629,10 +4693,34 @@ function App() {
       return;
     }
 
+    if (isRemoteConnectionsRoute(path)) {
+      setThreadShellVariant("default");
+      setSkillsRouteState(null);
+      const nextPath = isRemoteConnectionsSettingsVisible ? "/settings/connections" : "/";
+      if (typeof window !== "undefined" && window.location.pathname !== nextPath) {
+        window.history.replaceState(window.history.state, "", nextPath);
+      }
+      if (isRemoteConnectionsSettingsVisible) {
+        setSettingsSection("connections");
+        setSettingsSectionState(null);
+        setCurrentRoute("settings");
+      } else {
+        setCurrentRoute("chat");
+      }
+      return;
+    }
+
     const settingsSection = parseSettingsRoute(path);
     if (settingsSection) {
       setThreadShellVariant("default");
       setSkillsRouteState(null);
+      if (settingsSection === "connections" && !isRemoteConnectionsSettingsVisible) {
+        if (typeof window !== "undefined" && window.location.pathname !== "/") {
+          window.history.replaceState(window.history.state, "", "/");
+        }
+        setCurrentRoute("chat");
+        return;
+      }
       setSettingsSection(settingsSection);
       setSettingsSectionState(null);
       setCurrentRoute("settings");
@@ -6072,6 +6160,7 @@ function App() {
   const signOut = async () => {
     try {
       await logout();
+      clearBrowserChatGptTokenAuth();
       navigateToLogin();
     } catch (error) {
       setAppToast({
@@ -6336,6 +6425,10 @@ function App() {
       return <GitSettings onShowToast={(toast) => setAppToast(toast)} />;
     }
 
+    if (settingsSection === "connections") {
+      return <RemoteConnectionsSettings />;
+    }
+
     if (settingsSection === "worktrees") {
       return (
         <WorktreesSettingsPage
@@ -6596,6 +6689,19 @@ function App() {
         : current,
     );
   };
+  const currentPageConversation = currentRemoteConversationBranch?.conversation ?? threadConversation;
+  const currentPageConversationHostId = currentPageConversation?.hostId ?? null;
+  const currentPageActiveCollaborationMode =
+    selectedThreadId == null
+      ? threadConversation?.latestCollaborationMode ?? null
+      : (getSelectedCollaborationModeForThread(selectedThreadId) ?? threadConversation?.latestCollaborationMode ?? null);
+  const showLocalCompactComposerOverlay =
+    currentRoute === "chat" &&
+    currentThreadShellRoute?.shell === "default" &&
+    currentThreadShellRoute.kind === "local" &&
+    isRightPanelOpen &&
+    rightPanelWidthMode === "full" &&
+    currentPageConversation !== null;
   const chatConversationMainPane = (
     <ChatConversationMainPane
       composerDraft={composerDraft}
@@ -6667,12 +6773,8 @@ function App() {
       submitButtonMode={submitButtonMode}
       t={t}
       authMethod={authSnapshot.authState.authMethod}
-      activeCollaborationMode={
-        selectedThreadId == null
-          ? threadConversation?.latestCollaborationMode ?? null
-          : (getSelectedCollaborationModeForThread(selectedThreadId) ?? threadConversation?.latestCollaborationMode ?? null)
-      }
-      threadConversation={currentRemoteConversationBranch?.conversation ?? threadConversation}
+      activeCollaborationMode={currentPageActiveCollaborationMode}
+      threadConversation={currentPageConversation}
       remoteAttemptTabsByTurnId={currentRemoteConversationBranch?.attemptTabsByTurnId ?? {}}
       remoteConversationOverridesByTurnId={currentRemoteConversationOverridesByTurnId}
       remoteCurrentAssistantTurn={remoteTaskState?.task.current_assistant_turn ?? null}
@@ -6685,13 +6787,35 @@ function App() {
           ? remoteTaskState?.task.current_assistant_turn?.turn_status === "completed"
           : undefined
       }
+      showFooter={!showLocalCompactComposerOverlay}
       isThreadGoalEditorOpen={isThreadGoalEditorOpen}
       pendingThreadGoalObjective={pendingThreadGoalObjective}
       turnError={turnError}
       workspaceRoot={openProjectPath}
-      conversationHostId={(currentRemoteConversationBranch?.conversation ?? threadConversation)?.hostId ?? null}
+      conversationHostId={currentPageConversationHostId}
     />
   );
+  const scratchpadHeader = useMemo(() => {
+    if (currentRoute !== "scratchpad") {
+      return null;
+    }
+
+    return (
+      <div className="draggable grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 py-2">
+        <ThreadPageHeader
+          compact
+          environmentType={null}
+          secondaryText={t("scratchpadPage.headerSubtitle")}
+          start={t("scratchpadPage.headerTitle")}
+          trailingActions={
+            <Button color="ghost" size="toolbar" onClick={() => scratchpadClearAction?.()}>
+              {t("scratchpadPage.clearButton")}
+            </Button>
+          }
+        />
+      </div>
+    );
+  }, [currentRoute, scratchpadClearAction, t]);
 
   if (isAppBootstrapping) {
     return <LoadingPage debugName="PersistedStateProvider" />;
@@ -7020,7 +7144,7 @@ function App() {
             >
               <ForwardNavigationIcon className="h-3.5 w-3.5" />
             </button>
-            {currentRoute === "chat" ? null : (
+            {currentRoute === "chat" || currentRoute === "scratchpad" ? null : (
               <div className="ml-2 min-w-0 max-w-[240px] truncate text-[12px] font-medium text-[var(--app-shell-muted)]">
                 {shellHeaderTitle}
               </div>
@@ -7066,6 +7190,7 @@ function App() {
                 remoteTaskId={remoteTaskState?.taskId ?? null}
                 showThreadHeader
                 t={t}
+                commandKeymapState={commandKeymapState}
                 threadActionsMenuRef={threadActionsMenuRef}
                 threadConversation={currentRemoteConversationBranch?.conversation ?? threadConversation}
                 threadHeaderStartActions={null}
@@ -7087,6 +7212,8 @@ function App() {
                 }
                 workspaceRoot={openProjectPath}
               />
+            ) : currentRoute === "scratchpad" ? (
+              scratchpadHeader
             ) : null}
           </div>
 
@@ -7373,7 +7500,15 @@ function App() {
                                 ? ""
                                 : "border-l border-[var(--app-shell-border)]",
                             ].join(" ")}
-                            style={{ width: "100%" }}
+                            style={{
+                              width: "100%",
+                              ...(showLocalCompactComposerOverlay
+                                ? {
+                                    ["--right-panel-composer-overlay-height" as string]: "118px",
+                                    ["--right-panel-composer-overlay-reserve" as string]: "118px",
+                                  }
+                                : {}),
+                            }}
                           >
                             <div className="h-full min-h-0 min-w-0 overflow-hidden [--thread-content-top-inset:calc(var(--spacing)*8)]">
                               <RightPanelTabStrip
@@ -7391,6 +7526,85 @@ function App() {
                                 t={t}
                                 rightPanelWidthMode={rightPanelWidthMode}
                               />
+                              {showLocalCompactComposerOverlay ? (
+                                <LocalConversationCompactComposerOverlay
+                                  composerDraft={composerDraft}
+                                  composerEnterBehavior={composerEnterBehavior}
+                                  composerFocusNonce={composerFocusNonce}
+                                  composerPermissionConfig={localComposerConfigWithStatsigFeatures}
+                                  composerPermissionMode={localComposerPermissionMode}
+                                  composerPermissionsState={localComposerPermissionsState}
+                                  followUpQueueMode={followUpQueueMode}
+                                  isResponseInProgress={isTurnInProgress}
+                                  isWorktreeThread={isWorktreeThread}
+                                  currentThreadApprovals={currentThreadApprovals}
+                                  currentThreadImplementPlanRequests={currentThreadImplementPlanRequests}
+                                  currentThreadMcpServerElicitationRequest={
+                                    currentThreadMcpServerElicitationRequest
+                                  }
+                                  currentThreadPermissionsRequestApproval={
+                                    currentThreadPermissionsRequestApproval
+                                  }
+                                  currentThreadToolRequestUserInput={currentThreadToolRequestUserInput}
+                                  currentThreadPendingPdfComments={currentThreadPendingPdfComments}
+                                  currentThreadPendingPdfCommentCount={currentThreadPendingPdfCommentCount}
+                                  onApprovalDecision={(approval, decision) =>
+                                    void handleApprovalDecision(approval, decision)}
+                                  onDismissImplementPlanRequest={dismissImplementPlanRequest}
+                                  onImplementPlanRequestSubmit={(request, submission) =>
+                                    void handleImplementPlanRequestSubmit(request, submission)
+                                  }
+                                  onMcpServerElicitationRequestSubmit={(request, action, content) =>
+                                    void handleMcpServerElicitationRequestSubmit(request, action, content)
+                                  }
+                                  onPermissionsRequestApprovalSubmit={(
+                                    request,
+                                    grantMode,
+                                    strictAutoReview,
+                                  ) =>
+                                    void handlePermissionsRequestApprovalSubmit(
+                                      request,
+                                      grantMode,
+                                      strictAutoReview,
+                                    )
+                                  }
+                                  onToolRequestUserInputSubmit={(request, values) =>
+                                    void handleToolRequestUserInputSubmit(request, values)}
+                                  onComposerDraftChange={setComposerDraft}
+                                  onComposerCollaborationModeChange={
+                                    selectedThreadId == null
+                                      ? undefined
+                                      : (mode) => {
+                                          setSelectedCollaborationModeForThread(selectedThreadId, mode);
+                                        }
+                                  }
+                                  onComposerPermissionModeChange={setSelectedLocalPermissionMode}
+                                  onOpenRemoteTask={openRemoteTaskFromCurrentShell}
+                                  onSelectRemoteTaskAssistantTurn={selectRemoteTaskAssistantTurn}
+                                  onOpenSideChat={
+                                    remoteTaskState === null
+                                      ? (initialPrompt) => openSideChatForSelectedThread(initialPrompt)
+                                      : undefined
+                                  }
+                                  onOpenWorkspaceFileSearch={openWorkspaceFileSearch}
+                                  onSelectThread={openThreadFromCurrentShell}
+                                  onEditUserMessage={(text) => void handleEditUserMessage(text)}
+                                  onStopTurn={() => void stopTurn()}
+                                  onSubmitTurn={(invertFollowUpAction) => void submitTurn(invertFollowUpAction)}
+                                  onShowToast={(toast) => setAppToast(toast)}
+                                  approvalActionErrors={approvalActionErrors}
+                                  reviewDelivery={reviewDelivery}
+                                  respondingApprovalKeys={respondingApprovalKeys}
+                                  submitButtonMode={submitButtonMode}
+                                  t={t}
+                                  threadConversation={currentPageConversation}
+                                  turnError={turnError}
+                                  workspaceRoot={openProjectPath}
+                                  conversationHostId={currentPageConversationHostId}
+                                  authMethod={authSnapshot.authState.authMethod}
+                                  activeCollaborationMode={currentPageActiveCollaborationMode}
+                                />
+                              ) : null}
                               <ChatSidePanel
                                 activeStaticTabId={activeRightPanelStaticTabId}
                                 activeTab={activeRightPanelTab}
@@ -7593,19 +7807,20 @@ function App() {
                 </div>
               )
             ) : currentRoute === "scratchpad" ? (
-                <div className="min-h-0 flex-1 overflow-y-auto">
-                  <ScratchpadPage
-                    onOpenConversation={(conversationId) => {
-                      const nextPath = buildLocalThreadRoutePath(conversationId, "default");
-                      if (typeof window !== "undefined" && window.location.pathname !== nextPath) {
-                        window.history.replaceState(window.history.state, "", nextPath);
-                      }
-                      void selectThread(conversationId, "default");
-                    }}
-                    onShowToast={(toast) => setAppToast(toast)}
-                  />
-                </div>
-              ) : currentRoute === "pull-requests" ? (
+                <ScratchpadPage
+                  onOpenConversation={(conversationId) => {
+                    const nextPath = buildLocalThreadRoutePath(conversationId, "default");
+                    if (typeof window !== "undefined" && window.location.pathname !== nextPath) {
+                      window.history.replaceState(window.history.state, "", nextPath);
+                    }
+                    void selectThread(conversationId, "default");
+                  }}
+                  onRegisterClearAction={(action) => {
+                    setScratchpadClearAction(() => action);
+                  }}
+                  onShowToast={(toast) => setAppToast(toast)}
+                />
+            ) : currentRoute === "pull-requests" ? (
                 <AppShellRightPanelLayout
                   isRightPanelOpen={pageRightPanelVisible && isRightPanelOpen}
                   isRightPanelResizing={isRightPanelResizing}

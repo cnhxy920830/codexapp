@@ -59,6 +59,46 @@ type SaveRemoteProjectResponse = {
   project: RemoteProject;
 };
 
+export type SavedRemoteConnectionInput = {
+  hostId?: string | null;
+  displayName: string;
+  source?: string | null;
+  alias?: string | null;
+  hostname?: string | null;
+  sshPort?: number | null;
+  identity?: string | null;
+  sshAlias?: string | null;
+  sshHost?: string | null;
+};
+
+export type DiscoverRemoteSshConnectionsResponse = {
+  discoveredRemoteConnections: RemoteConnection[];
+};
+
+export type RefreshRemoteConnectionsResponse = {
+  remoteConnections: RemoteConnection[];
+};
+
+export type SavedRemoteConnection = {
+  hostId: string;
+  displayName: string;
+  source: string;
+  alias: string | null;
+  hostname: string | null;
+  sshPort: number | null;
+  identity: string | null;
+};
+
+export type SaveCodexManagedRemoteSshConnectionsResponse = {
+  remoteConnections: SavedRemoteConnection[];
+};
+
+export type SetRemoteConnectionAutoConnectResponse = {
+  remoteConnections: RemoteConnection[];
+  state: AppServerConnectionState;
+  error: unknown | null;
+};
+
 export async function readSettingsRemoteConnectionsSnapshot() {
   return readSharedObjectSnapshot(
     REMOTE_CONNECTIONS_SHARED_OBJECT_KEY,
@@ -103,6 +143,33 @@ export async function saveRemoteProject(params: { hostId: string; remotePath: st
     params: {
       hostId: normalizeRequiredString(params.hostId),
       remotePath: normalizeRequiredString(params.remotePath),
+    },
+  });
+}
+
+export async function discoverRemoteSshConnections() {
+  return invoke<DiscoverRemoteSshConnectionsResponse>("discover-remote-ssh-connections");
+}
+
+export async function refreshRemoteConnections() {
+  return invoke<RefreshRemoteConnectionsResponse>("refresh-remote-connections");
+}
+
+export async function saveCodexManagedRemoteSshConnections(
+  remoteConnections: SavedRemoteConnectionInput[],
+) {
+  return invoke<SaveCodexManagedRemoteSshConnectionsResponse>("save-codex-managed-remote-ssh-connections", {
+    params: {
+      remoteConnections,
+    },
+  });
+}
+
+export async function setRemoteConnectionAutoConnect(hostId: string, autoConnect: boolean) {
+  return invoke<SetRemoteConnectionAutoConnectResponse>("set-remote-connection-auto-connect", {
+    params: {
+      hostId: normalizeRequiredString(hostId),
+      autoConnect,
     },
   });
 }

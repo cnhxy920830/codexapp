@@ -1,4 +1,3 @@
-import { renderInlineLinkMessage } from "../../i18n/renderInlineLinkMessage";
 import type { CronAutomationRecord } from "../../services/automations";
 import { resolveAutomationQuickStartIcon } from "./automationQuickStartIcons";
 import {
@@ -9,13 +8,10 @@ import {
 import { SectionedPage, SectionedPageSection, type SectionedPageSection as SectionedPageSectionConfig } from "./SectionedPage";
 import type { TranslateFn } from "./automationsPageUtils";
 
-const LEARN_MORE_URL = "https://developers.openai.com/codex/app/automations";
-
 type Props = {
   baseDraft: CronAutomationRecord;
   className?: string;
-  columns?: "one" | "two";
-  hideLearnMore?: boolean;
+  columns?: "responsive" | "one" | "two";
   onSelectAction: (draft: CronAutomationRecord) => void;
   t: TranslateFn;
 };
@@ -41,8 +37,7 @@ function renderTokenBold(text: string) {
 export function AutomationsQuickStartTemplates({
   baseDraft,
   className,
-  columns = "two",
-  hideLearnMore = false,
+  columns = "responsive",
   onSelectAction,
   t,
 }: Props) {
@@ -53,20 +48,12 @@ export function AutomationsQuickStartTemplates({
 
   return (
     <div className={className ?? "mt-2"}>
-      {hideLearnMore ? null : (
-        <div className="app-text-muted text-[14px] leading-6">
-          {renderInlineLinkMessage(
-            t("inbox.automations.emptySubtitle.learnMore"),
-            LEARN_MORE_URL,
-          )}
-        </div>
-      )}
       <SectionedPage
         ariaLabel={t("inbox.automations.sectionsNav")}
         className="[--sectioned-page-leading-inset:0]"
-        contentInnerClassName={hideLearnMore ? "flex flex-col gap-8 pb-2" : "flex flex-col gap-9 pb-2"}
+        contentInnerClassName="flex flex-col gap-9 pb-2"
         sections={sections}
-        showNav={sections.length > 1}
+        showNav={false}
       >
         {AUTOMATION_QUICK_START_SECTIONS.map((section) => (
           <SectionedPageSection
@@ -77,7 +64,9 @@ export function AutomationsQuickStartTemplates({
             <div
               className={[
                 "grid w-full gap-4",
-                columns === "two" ? "md:grid-cols-2" : "",
+                columns === "responsive" || columns === "two"
+                  ? "md:grid-cols-2"
+                  : "",
               ]
                 .filter(Boolean)
                 .join(" ")}

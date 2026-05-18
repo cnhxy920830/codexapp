@@ -8,6 +8,17 @@ import {
 import type { MessageKey } from "../../i18n/messages";
 import type { ThreadHistoryEntrySource } from "../../services/history";
 
+const SUBAGENT_TITLE_COLOR_TOKENS = [
+  "--vscode-charts-red",
+  "--vscode-charts-blue",
+  "--vscode-charts-orange",
+  "--vscode-charts-green",
+  "--vscode-charts-purple",
+] as const;
+
+const subagentTitleColorByConversationId = new Map<string, string>();
+let nextSubagentTitleColorIndex = 0;
+
 type LocalConversationPageHeaderProps = {
   conversationId: string | null;
   cwd: string | null;
@@ -264,6 +275,7 @@ function buildLocalConversationTitleSuffix(params: {
   }
 
   const nickname = formatSubagentNickname(params.source?.agentNickname ?? null, params.conversationId);
+  const nicknameColor = getSubagentTitleColor(params.conversationId);
   const role =
     typeof params.source?.agentRole === "string" &&
     params.source.agentRole.trim().length > 0 &&
@@ -286,7 +298,10 @@ function buildLocalConversationTitleSuffix(params: {
   return (
     <>
       {nickname ? (
-        <span className="ml-1 shrink-0 font-medium text-[var(--vscode-charts-blue)]">
+        <span
+          className="ml-1 shrink-0 font-medium"
+          style={nicknameColor == null ? undefined : { color: nicknameColor }}
+        >
           {nickname}
         </span>
       ) : null}
@@ -342,10 +357,11 @@ function formatSubagentNickname(
   conversationId: string | null,
 ) {
   const trimmedNickname = agentNickname?.trim() ?? "";
-  if (trimmedNickname.length > 0) {
-    return trimmedNickname.startsWith("@")
-      ? trimmedNickname.slice(1)
-      : trimmedNickname;
+  const normalizedNickname = trimmedNickname.startsWith("@")
+    ? trimmedNickname.slice(1).trim()
+    : trimmedNickname;
+  if (normalizedNickname.length > 0) {
+    return `@${normalizedNickname}`;
   }
 
   const trimmedConversationId = conversationId?.trim() ?? "";
@@ -353,5 +369,23 @@ function formatSubagentNickname(
     return null;
   }
 
-  return `agent-${trimmedConversationId.slice(0, 8)}`;
+  return `@agent-${trimmedConversationId.slice(0, 8)}`;
+}
+
+function getSubagentTitleColor(conversationId: string | null) {
+  const trimmedConversationId = conversationId?.trim() ?? "";
+  if (trimmedConversationId.length === 0) {
+    return null;
+  }
+
+  const cachedColorToken = subagentTitleColorByConversationId.get(trimmedConversationId);
+  if (cachedColorToken != null) {
+    return `var(${cachedColorToken})`;
+  }
+
+  const colorToken = SUBAGENT_TITLE_COLOR_TOKENS[nextSubagentTitleColorIndex];
+  nextSubagentTitleColorIndex =
+    (nextSubagentTitleColorIndex + 1) % SUBAGENT_TITLE_COLOR_TOKENS.length;
+  subagentTitleColorByConversationId.set(trimmedConversationId, colorToken);
+  return `var(${colorToken})`;
 }

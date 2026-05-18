@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { AppToast } from "../../components/AppToastRegion";
 import {
-  BackNavigationIcon,
   ForwardNavigationIcon,
   PauseCircleIcon,
   PlayOutlineIcon,
@@ -10,6 +9,7 @@ import {
   ResumeCircleIcon,
   TrashIcon,
 } from "../../components/AppShellIcons";
+import { Button } from "../../components/Button";
 import { useI18n } from "../../i18n/i18n";
 import {
   AUTOMATION_UPDATE_MISSING_MESSAGE,
@@ -150,18 +150,19 @@ function Toolbar({
       <div className="min-w-0 text-base">
         {isDetailVisible && automationName ? (
           <div className="flex min-w-0 items-center gap-1 text-[var(--app-shell-muted)]">
-            <button
-              type="button"
-              onClick={onBackToAutomations}
-              className="app-control-weak no-drag inline-flex items-center gap-1.5 rounded-[10px] px-2 py-1 text-[13px]"
-            >
-              <BackNavigationIcon className="h-4 w-4" />
+            <Button color="ghost" size="toolbar" onClick={onBackToAutomations}>
               {t("inbox.automations.header.root")}
-            </button>
+            </Button>
             <ForwardNavigationIcon className="h-3.5 w-3.5 shrink-0" />
-            <div className="truncate text-[13px] text-[var(--app-shell-title)]">
-              {automationName}
-            </div>
+            <Button
+              aria-hidden="true"
+              className="pointer-events-none min-w-0 bg-transparent text-token-foreground hover:bg-transparent"
+              color="ghost"
+              size="toolbar"
+              tabIndex={-1}
+            >
+              <span className="block min-w-0 truncate">{automationName}</span>
+            </Button>
           </div>
         ) : null}
       </div>
@@ -170,68 +171,71 @@ function Toolbar({
         {isDetailVisible ? (
           <>
             {isSaveRetryVisible ? (
-              <button
-                type="button"
+              <Button
+                color="primary"
                 disabled={isRetrySavePending}
+                loading={isRetrySavePending}
                 onClick={onRetrySave}
-                className="app-button-primary rounded-[11px] px-3 py-1.5 text-[12px] disabled:cursor-default disabled:opacity-60"
+                size="toolbar"
               >
-                {isRetrySavePending
-                  ? t("general.saving")
-                  : t("settings.automations.saveRetry")}
-              </button>
+                {isRetrySavePending ? t("general.saving") : t("settings.automations.saveRetry")}
+              </Button>
             ) : null}
             {detailIsPaused ? (
-              <button
-                type="button"
+              <Button
                 aria-label={t("settings.automations.resumeAria")}
+                color="ghost"
                 onClick={onResumeAutomation}
-                className="app-control flex h-9 w-9 items-center justify-center rounded-[11px]"
+                size="toolbar"
+                uniform={true}
               >
                 <ResumeCircleIcon className="h-4 w-4" />
-              </button>
+              </Button>
             ) : (
-              <button
-                type="button"
+              <Button
                 aria-label={t("settings.automations.pauseAria")}
+                color="ghost"
                 onClick={onPauseAutomation}
-                className="app-control flex h-9 w-9 items-center justify-center rounded-[11px]"
+                size="toolbar"
+                uniform={true}
               >
                 <PauseCircleIcon className="h-4 w-4" />
-              </button>
+              </Button>
             )}
-            <button
-              type="button"
+            <Button
               aria-label={t("settings.automations.deleteAria")}
+              className="text-[var(--app-shell-danger)]"
+              color="ghost"
               disabled={isDeleting}
               onClick={onDeleteAutomation}
-              className="app-control flex h-9 w-9 items-center justify-center rounded-[11px] text-[var(--app-shell-danger)] disabled:cursor-default disabled:opacity-60"
+              size="toolbar"
+              uniform={true}
             >
-              <TrashIcon className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
+              {isDeleting ? (
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current/30 border-t-current" />
+              ) : (
+                <TrashIcon className="h-4 w-4" />
+              )}
+            </Button>
+            <Button
+              color="primary"
               disabled={isRunNowPending}
               onClick={onRunNow}
-              className="app-button-primary inline-flex items-center gap-2 rounded-[11px] px-3 py-1.5 text-[12px] disabled:cursor-default disabled:opacity-60"
+              size="toolbar"
             >
               {isRunNowPending ? (
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current/30 border-t-current" />
               ) : (
                 <PlayOutlineIcon className="h-4 w-4" />
               )}
               {t("settings.automations.runNow")}
-            </button>
+            </Button>
           </>
         ) : (
-          <button
-            type="button"
-            onClick={onCreateAutomationClick}
-            className="app-button-primary inline-flex items-center gap-2 rounded-[11px] px-3 py-1.5 text-[12px]"
-          >
+          <Button color="primary" onClick={onCreateAutomationClick} size="toolbar">
             <PlusIcon className="h-4 w-4" />
             {t("inbox.automations.new")}
-          </button>
+          </Button>
         )}
       </div>
     </div>
@@ -253,13 +257,9 @@ function MissingAutomationPane({
       <div className="app-text-muted">
         {t("inbox.automations.missingSubtitle")}
       </div>
-      <button
-        type="button"
-        onClick={onBackToAutomations}
-        className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
-      >
+      <Button color="outline" onClick={onBackToAutomations} size="toolbar">
         {t("inbox.automations.missingBack")}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -291,7 +291,6 @@ export function AutomationsRoutePage({
   const [isRetrySaving, setIsRetrySaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRunningNowId, setIsRunningNowId] = useState<string | null>(null);
-  const [openRowMenuId, setOpenRowMenuId] = useState<string | null>(null);
   const [failedAutoSaveDraft, setFailedAutoSaveDraft] =
     useState<AutomationRecord | null>(null);
   const [workspaceRootLabels, setWorkspaceRootLabels] = useState<
@@ -625,31 +624,6 @@ export function AutomationsRoutePage({
   }, [selectedHostId]);
 
   useEffect(() => {
-    if (!openRowMenuId) {
-      return;
-    }
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!(event.target instanceof Element)) {
-        return;
-      }
-
-      if (
-        event.target.closest(`[data-automation-menu-root="${openRowMenuId}"]`)
-      ) {
-        return;
-      }
-
-      setOpenRowMenuId(null);
-    };
-
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-    };
-  }, [openRowMenuId]);
-
-  useEffect(() => {
     if (!isCreateMode) {
       setCreateDraft(null);
       return;
@@ -684,7 +658,6 @@ export function AutomationsRoutePage({
   };
 
   const showCreate = (prefilledDraft?: CronAutomationRecord) => {
-    setOpenRowMenuId(null);
     setDeleteCandidateId(null);
     if (prefilledDraft) {
       setCreateDraft(copyAutomation(prefilledDraft));
@@ -699,7 +672,6 @@ export function AutomationsRoutePage({
   };
 
   const showOverview = (options?: { replace?: boolean; clearFeedback?: boolean }) => {
-    setOpenRowMenuId(null);
     setDeleteCandidateId(null);
     setFailedAutoSaveDraft(null);
     setCreateDraft(null);
@@ -714,7 +686,6 @@ export function AutomationsRoutePage({
   };
 
   const selectAutomation = (automation: AutomationRecord) => {
-    setOpenRowMenuId(null);
     setDeleteCandidateId(null);
     setFailedAutoSaveDraft(null);
     setDetailDraft(copyAutomation(automation));
@@ -859,7 +830,6 @@ export function AutomationsRoutePage({
     automation: AutomationRecord,
     status: "ACTIVE" | "PAUSED",
   ) => {
-    setOpenRowMenuId(null);
     try {
       const updated = await setAutomationStatus(automation.id, status);
       setItems((current) =>
@@ -999,6 +969,7 @@ export function AutomationsRoutePage({
               onOpenLocalEnvironmentsSettings={onOpenLocalEnvironmentsSettings}
               threadTitleById={threadNameById}
               modelOptions={modelOptions}
+              selectedHostId={selectedHostId}
               workspaceRootOptions={workspaceRootOptions}
               workspaceRootLabels={workspaceRootLabels}
               t={t}
@@ -1014,14 +985,12 @@ export function AutomationsRoutePage({
               isRunningNowId={isRunningNowId}
               items={sortedItems}
               locale={locale}
-              openRowMenuId={openRowMenuId}
               quickStartBaseDraft={quickStartBaseDraft}
               selectedId={effectiveSelectedAutomationId}
               threadNameById={threadNameById}
               workspaceRootLabels={workspaceRootLabels}
               onDeleteAutomation={(automation) => {
                 setDeleteCandidateId(automation.id);
-                setOpenRowMenuId(null);
               }}
               onPauseAutomation={(automation) =>
                 void updateStatus(automation, "PAUSED")
@@ -1034,7 +1003,6 @@ export function AutomationsRoutePage({
               }
               onRunAutomationNow={(automation) => void handleRunNow(automation)}
               onSelectAutomation={selectAutomation}
-              onToggleMenu={setOpenRowMenuId}
               t={t}
             />
           )}

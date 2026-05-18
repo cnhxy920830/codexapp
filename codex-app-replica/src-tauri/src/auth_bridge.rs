@@ -2021,8 +2021,23 @@ pub async fn login_api_key_for_host_command(
     state: State<'_, Arc<AuthBridgeState>>,
     params: ApiKeyLoginParams,
 ) -> Result<(), String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "login-with-api-key-for-host")?;
-    login_api_key_inner(&app, state.inner(), params.api_key).await
+    clear_login_error(&app, state.inner());
+    send_request_for_host(
+        &app,
+        state.inner(),
+        params.host_id.as_deref(),
+        AppServerRequestKind::LoginApiKey,
+        serde_json::json!({
+            "type": "apiKey",
+            "apiKey": params.api_key,
+        }),
+    )
+    .await
+    .map(|_| ())
+    .map_err(|error| {
+        set_login_error(&app, state.inner(), error.clone());
+        error
+    })
 }
 
 async fn login_api_key_inner(
@@ -8048,11 +8063,6 @@ mod tests {
         assert!(ensure_supported_host_id(None, "login-with-api-key-for-host").is_ok());
         assert!(ensure_supported_host_id(Some(""), "login-with-api-key-for-host").is_ok());
         assert!(ensure_supported_host_id(Some("local"), "login-with-api-key-for-host").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "login-with-api-key-for-host")
-                .expect_err("non-local host id should be rejected"),
-            "login-with-api-key-for-host does not support host id: remote"
-        );
 
         assert!(ensure_supported_host_id(None, "login-with-chatgpt").is_ok());
         assert!(ensure_supported_host_id(Some(""), "login-with-chatgpt").is_ok());
@@ -8066,11 +8076,6 @@ mod tests {
         assert!(ensure_supported_host_id(None, "login-with-chatgpt-for-host").is_ok());
         assert!(ensure_supported_host_id(Some(""), "login-with-chatgpt-for-host").is_ok());
         assert!(ensure_supported_host_id(Some("local"), "login-with-chatgpt-for-host").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "login-with-chatgpt-for-host")
-                .expect_err("non-local host id should be rejected"),
-            "login-with-chatgpt-for-host does not support host id: remote"
-        );
 
         assert!(ensure_supported_host_id(None, "login-with-chatgpt-device-code").is_ok());
         assert!(ensure_supported_host_id(Some(""), "login-with-chatgpt-device-code").is_ok());
@@ -8089,6 +8094,8 @@ mod tests {
                 .expect_err("non-local host id should be rejected"),
             "logout does not support host id: remote"
         );
+
+        assert_eq!(remote_host_id(Some("remote")), Some("remote"));
     }
 
     #[test]

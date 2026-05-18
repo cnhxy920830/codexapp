@@ -1,6 +1,6 @@
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 
-type SettingsContentLayoutProps = ComponentPropsWithoutRef<"div"> & {
+type SettingsContentLayoutProps = Omit<ComponentPropsWithoutRef<"div">, "title"> & {
   action?: ReactNode;
   backSlot?: ReactNode;
   children: ReactNode;

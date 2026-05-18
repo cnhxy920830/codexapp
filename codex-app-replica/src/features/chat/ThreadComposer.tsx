@@ -45,6 +45,7 @@ import { ThreadComposerBranchSwitcher } from "./ThreadComposerBranchSwitcher";
 
 type ThreadComposerProps = {
   activeCollaborationMode?: string | null;
+  aboveComposerHeaderContent?: ReactNode;
   composerDraft: string;
   composerEnterBehavior: ComposerEnterBehavior;
   conversationId?: string | null;
@@ -57,6 +58,7 @@ type ThreadComposerProps = {
   isWorktreeThread: boolean;
   authMethod?: string | null;
   latestTokenUsageInfo?: ThreadConversationTokenUsageInfo | null;
+  layoutMode?: "multiline" | "auto-single-line";
   pendingPdfComments?: PendingPdfCommentAttachment[];
   pendingPdfCommentCount?: number;
   pendingThreadGoalObjective?: string | null;
@@ -288,6 +290,7 @@ function getThreadComposerSuggestionStorage() {
 
 export function ThreadComposer({
   activeCollaborationMode = null,
+  aboveComposerHeaderContent = null,
   composerDraft,
   composerEnterBehavior,
   conversationId = null,
@@ -298,6 +301,7 @@ export function ThreadComposer({
   isResponseInProgress = false,
   authMethod = null,
   latestTokenUsageInfo = null,
+  layoutMode = "multiline",
   pendingPdfComments = [],
   pendingPdfCommentCount = 0,
   pendingThreadGoalObjective = null,
@@ -333,6 +337,7 @@ export function ThreadComposer({
     ),
   );
   const composerModifierLabel = getComposerModifierLabel();
+  const isAutoSingleLineLayout = layoutMode === "auto-single-line";
   const helperText =
     composerEnterBehavior === "cmdIfMultiline"
       ? t("general.enterBehaviorDescription", { modifierSymbol: composerModifierLabel })
@@ -562,6 +567,21 @@ export function ThreadComposer({
   }, [focusComposerNonce]);
 
   useEffect(() => {
+    const textarea = textareaRef.current;
+    if (textarea === null) {
+      return;
+    }
+
+    if (!isAutoSingleLineLayout) {
+      textarea.style.removeProperty("height");
+      return;
+    }
+
+    textarea.style.height = "0px";
+    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 44), 144)}px`;
+  }, [composerDraft, isAutoSingleLineLayout]);
+
+  useEffect(() => {
     if (!isPermissionMenuOpen) {
       return;
     }
@@ -610,6 +630,12 @@ export function ThreadComposer({
           />
         ) : null}
 
+        {aboveComposerHeaderContent ? (
+          <div className="px-3 pt-3 pb-1.5">
+            {aboveComposerHeaderContent}
+          </div>
+        ) : null}
+
         <div className={shouldShowAttachmentStrip ? "px-4 pt-2.5 pb-2.5" : "px-4 pt-3 pb-2.5"}>
           <textarea
             ref={textareaRef}
@@ -656,11 +682,15 @@ export function ThreadComposer({
                 });
               }
             }}
-            rows={4}
+            rows={isAutoSingleLineLayout ? 1 : 4}
             placeholder={t("app.chat.composePlaceholder")}
             className={[
               "app-text-input w-full resize-none border-0 bg-transparent text-[14px] leading-6 outline-none disabled:cursor-not-allowed",
-              isSidePlacement ? "min-h-[104px]" : "min-h-[112px]",
+              isAutoSingleLineLayout
+                ? "min-h-[44px] overflow-y-auto"
+                : isSidePlacement
+                  ? "min-h-[104px]"
+                  : "min-h-[112px]",
             ].join(" ")}
           />
           {shouldShowPlanKeywordSuggestion ? (

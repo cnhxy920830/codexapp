@@ -348,7 +348,6 @@ export const AUTOMATION_QUICK_START_SECTIONS: AutomationQuickStartSection[] = [
     titleKey: "inbox.rightPanel.quickStart.section.incidentsAndTriage",
     templateIds: [
       "nightly-ci-report",
-      "daily-classic-game",
       "ci-monitor",
       "issue-triage",
     ],

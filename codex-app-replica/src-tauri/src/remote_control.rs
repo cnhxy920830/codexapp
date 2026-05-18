@@ -96,9 +96,13 @@ pub struct RemoteControlClientsListParams {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct RemoteControlClient {
-    pub id: String,
+    pub client_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    pub display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device_model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -377,8 +381,10 @@ mod tests {
         let payload = serde_json::json!({
             "items": [
                 {
-                    "id": "c-1",
-                    "name": "iPhone",
+                    "client_id": "c-1",
+                    "display_name": "iPhone",
+                    "device_model": "iPhone 15 Pro",
+                    "platform": "ios",
                     "status": "active",
                     "enrollment_status": "approved",
                     "created_at": "2026-05-10T00:00:00Z"
@@ -389,8 +395,13 @@ mod tests {
         let parsed: RemoteControlClientsListResponse =
             serde_json::from_value(payload).expect("decode");
         assert_eq!(parsed.items.len(), 1);
-        assert_eq!(parsed.items[0].id, "c-1");
-        assert_eq!(parsed.items[0].name.as_deref(), Some("iPhone"));
+        assert_eq!(parsed.items[0].client_id, "c-1");
+        assert_eq!(parsed.items[0].display_name.as_deref(), Some("iPhone"));
+        assert_eq!(
+            parsed.items[0].device_model.as_deref(),
+            Some("iPhone 15 Pro")
+        );
+        assert_eq!(parsed.items[0].platform.as_deref(), Some("ios"));
         assert_eq!(
             parsed.items[0].enrollment_status.as_deref(),
             Some("approved")

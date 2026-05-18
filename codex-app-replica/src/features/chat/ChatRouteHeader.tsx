@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode, type RefObject } from "react";
 import type { MessageKey } from "../../i18n/messages";
 import type { ThreadConversation } from "../../services/history";
+import type { CommandKeymapState } from "../../services/keyboardShortcuts";
 import { readGitOrigins } from "../../services/gitOrigins";
 import { listenGitStateChanged } from "../../services/gitStateEvents";
 import { LocalConversationPageHeader } from "./LocalConversationPageHeader";
@@ -39,6 +40,7 @@ type ChatRouteHeaderProps = {
   remoteTaskId?: string | null;
   showThreadHeader?: boolean;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
+  commandKeymapState?: CommandKeymapState | null;
   threadActionsMenuRef: RefObject<HTMLDivElement | null>;
   threadConversation: ThreadConversation | null;
   threadHeaderStartActions?: ReactNode;
@@ -74,6 +76,7 @@ export function ChatRouteHeader({
   remoteTaskId = null,
   showThreadHeader = true,
   t,
+  commandKeymapState = null,
   threadActionsMenuRef,
   threadConversation,
   threadHeaderStartActions,
@@ -158,6 +161,7 @@ export function ChatRouteHeader({
       actionsMenuRef={threadActionsMenuRef}
       canPinThread={isLocalConversationHeader ? canPinLocalConversationThread : true}
       canCopyWorkingDirectory={canCopyWorkingDirectory}
+      commandKeymapState={commandKeymapState}
       hasAttachedHeartbeatAutomation={hasAttachedHeartbeatAutomation}
       heartbeatAutomationActionLabelKey={heartbeatAutomationActionLabelKey}
       heartbeatAutomationButtonTooltip={heartbeatAutomationButtonTooltip}
@@ -205,6 +209,7 @@ export function ChatRouteHeader({
           actionsMenuRef={threadActionsMenuRef}
           canPinThread={canPinLocalConversationThread}
           canCopyWorkingDirectory={canCopyWorkingDirectory}
+          commandKeymapState={commandKeymapState}
           heartbeatAutomationActionLabelKey={heartbeatAutomationActionLabelKey}
           isThreadActionsMenuOpen={isThreadActionsMenuOpen}
           isThreadHeartbeatAutomationActionDisabled={isThreadHeartbeatAutomationActionDisabled}

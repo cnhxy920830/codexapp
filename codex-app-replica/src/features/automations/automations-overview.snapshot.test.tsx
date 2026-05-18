@@ -61,7 +61,7 @@ function buildSnapshots(): SnapshotMap {
             isRunningNowId={null}
             items={[]}
             locale="en-US"
-            openRowMenuId={null}
+            defaultOpenRowMenuId={null}
             quickStartBaseDraft={createBaseDraft()}
             selectedId={null}
             threadNameById={new Map()}
@@ -72,7 +72,6 @@ function buildSnapshots(): SnapshotMap {
             onResumeAutomation={noopAutomation}
             onRunAutomationNow={noopAutomation}
             onSelectAutomation={noopAutomation}
-            onToggleMenu={noopMenu}
             t={translate}
           />
         </div>
@@ -86,7 +85,7 @@ function buildSnapshots(): SnapshotMap {
             isRunningNowId="current-1"
             items={[createCurrentAutomation(), createPausedAutomation()]}
             locale="en-US"
-            openRowMenuId="paused-1"
+            defaultOpenRowMenuId="paused-1"
             quickStartBaseDraft={createBaseDraft()}
             selectedId="current-1"
             threadNameById={new Map()}
@@ -99,7 +98,6 @@ function buildSnapshots(): SnapshotMap {
             onResumeAutomation={noopAutomation}
             onRunAutomationNow={noopAutomation}
             onSelectAutomation={noopAutomation}
-            onToggleMenu={noopMenu}
             t={translate}
           />
         </div>
@@ -232,4 +230,3 @@ function formatMessage(template: string, values?: MessageValues) {
 const noopLocale = async (_locale: LocaleCode) => {};
 const noopAutomation = (_automation: AutomationRecord) => {};
 const noopCronDraft = (_draft: CronAutomationRecord) => {};
-const noopMenu = (_automationId: string | null) => {};

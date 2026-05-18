@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { Spinner } from "../../components/Spinner";
 import type { AppToast } from "../../components/AppToastRegion";
 import { useI18n } from "../../i18n/i18n";
@@ -27,9 +27,11 @@ const INITIAL_ROW_ID = "scratchpad-0";
 
 export function ScratchpadPage({
   onOpenConversation,
+  onRegisterClearAction,
   onShowToast,
 }: {
   onOpenConversation?: (conversationId: string) => void;
+  onRegisterClearAction?: (action: (() => void) | null) => void;
   onShowToast?: (toast: AppToast) => void;
 }) {
   const { t } = useI18n();
@@ -214,7 +216,7 @@ export function ScratchpadPage({
     }
   }, [rows, summaryByRowId, threadConversationsById]);
 
-  const clearRows = () => {
+  const clearRows = useEffectEvent(() => {
     drainingConversationIdsRef.current.clear();
     summaryRequestsRef.current.clear();
     nextRowNumberRef.current = 1;
@@ -222,7 +224,14 @@ export function ScratchpadPage({
     setThreadRuntimeById({});
     setSummaryByRowId({});
     setRows([createDraftRow(INITIAL_ROW_ID)]);
-  };
+  });
+
+  useEffect(() => {
+    onRegisterClearAction?.(clearRows);
+    return () => {
+      onRegisterClearAction?.(null);
+    };
+  }, [clearRows, onRegisterClearAction]);
 
   const handleDraftChange = (rowId: string, text: string) => {
     setRows((current) =>
@@ -376,66 +385,32 @@ export function ScratchpadPage({
     }
   };
 
-  const draftPlaceholderKey = rows.some((row) => row.state !== "draft")
+  const defaultDraftPlaceholder = t(
+    rows.some((row) => row.state !== "draft")
     ? "scratchpadPage.inputPlaceholder.followUpHint"
-    : "scratchpadPage.inputPlaceholder.initial";
-
+    : "scratchpadPage.inputPlaceholder.initial",
+  );
+  const followUpDraftPlaceholder = t("scratchpadPage.inputPlaceholder.followUp");
   const focusedDraftRowId = rows.find((row) => row.state === "draft")?.id ?? null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="draggable grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-b border-[var(--app-shell-border)] px-5 electron:h-toolbar">
-        <div className="min-w-0">
-          <div className="text-md flex min-w-0 items-center gap-2 truncate text-base electron:font-medium">
-            <span className="app-title truncate">{t("scratchpadPage.headerTitle")}</span>
-            <span className="app-text-muted shrink-0 text-[12px] font-normal leading-[18px]">
-              {t("scratchpadPage.headerSubtitle")}
-            </span>
-          </div>
-        </div>
-        <div className="flex items-center justify-end gap-1.5">
-          <button
-            type="button"
-            onClick={clearRows}
-            className="app-control rounded-full px-3 py-1 text-[12px]"
-          >
-            {t("scratchpadPage.clearButton")}
-          </button>
-        </div>
-      </div>
-
-      <div className="mx-auto flex min-h-0 w-full max-w-[var(--thread-composer-max-width)] flex-1 overflow-x-visible overflow-y-auto pt-panel pr-panel pb-panel pl-20">
-        <div className="flex w-full flex-col">
-          {rows.map((row) => {
-            const placeholderKey =
-              row.isIndented && row.state === "draft"
-                ? "scratchpadPage.inputPlaceholder.followUp"
-                : draftPlaceholderKey;
-            const thread = row.conversationId ? threadConversationsById[row.conversationId] ?? null : null;
-            const runtime = row.conversationId ? threadRuntimeById[row.conversationId] ?? null : null;
-            return (
-              <ScratchpadRowItem
-                key={row.id}
-                row={row}
-                thread={thread}
-                runtime={runtime}
-                summaryState={summaryByRowId[row.id] ?? null}
-                isFocused={focusedDraftRowId === row.id}
-                placeholder={t(placeholderKey)}
-                apps={apps}
-                skills={skills}
-                onDraftChange={handleDraftChange}
-                onDraftIndent={handleDraftIndent}
-                onDraftOutdent={handleDraftOutdent}
-                onDraftSubmit={handleDraftSubmit}
-                onOpenConversation={onOpenConversation}
-                t={t}
-              />
-            );
-          })}
-        </div>
-      </div>
-    </div>
+    <ScratchpadPagePreview
+      apps={apps}
+      defaultDraftPlaceholder={defaultDraftPlaceholder}
+      followUpDraftPlaceholder={followUpDraftPlaceholder}
+      focusedDraftRowId={focusedDraftRowId}
+      onDraftChange={handleDraftChange}
+      onDraftIndent={handleDraftIndent}
+      onDraftOutdent={handleDraftOutdent}
+      onDraftSubmit={handleDraftSubmit}
+      onOpenConversation={onOpenConversation}
+      rows={rows}
+      skills={skills}
+      summaryByRowId={summaryByRowId}
+      t={t}
+      threadConversationsById={threadConversationsById}
+      threadRuntimeById={threadRuntimeById}
+    />
   );
 
   async function handleThreadEvent(event: ThreadEvent) {
@@ -643,6 +618,84 @@ export function ScratchpadPage({
   }
 }
 
+type ScratchpadPagePreviewProps = {
+  apps?: AppInfo[];
+  defaultDraftPlaceholder?: string;
+  followUpDraftPlaceholder?: string;
+  focusedDraftRowId?: string | null;
+  onDraftChange?: (rowId: string, text: string) => void;
+  onDraftIndent?: (rowId: string) => void;
+  onDraftOutdent?: (rowId: string) => void;
+  onDraftSubmit?: (rowId: string) => void | Promise<void>;
+  onOpenConversation?: (conversationId: string) => void;
+  rows: ScratchpadRow[];
+  skills?: SkillSummary[];
+  summaryByRowId?: Record<string, RowSummaryState>;
+  t: ReturnType<typeof useI18n>["t"];
+  threadConversationsById?: Record<string, ThreadConversation>;
+  threadRuntimeById?: Record<string, ThreadRuntimeState>;
+};
+
+export function ScratchpadPagePreview({
+  apps = [],
+  defaultDraftPlaceholder,
+  followUpDraftPlaceholder,
+  focusedDraftRowId = null,
+  onDraftChange,
+  onDraftIndent,
+  onDraftOutdent,
+  onDraftSubmit,
+  onOpenConversation,
+  rows,
+  skills = [],
+  summaryByRowId = {},
+  t,
+  threadConversationsById = {},
+  threadRuntimeById = {},
+}: ScratchpadPagePreviewProps) {
+  const resolvedDefaultDraftPlaceholder =
+    defaultDraftPlaceholder ??
+    t(
+      rows.some((row) => row.state !== "draft")
+        ? "scratchpadPage.inputPlaceholder.followUpHint"
+        : "scratchpadPage.inputPlaceholder.initial",
+    );
+  const resolvedFollowUpDraftPlaceholder =
+    followUpDraftPlaceholder ?? t("scratchpadPage.inputPlaceholder.followUp");
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="mx-auto flex min-h-0 w-full max-w-[var(--thread-composer-max-width)] flex-1 overflow-x-visible overflow-y-auto pt-panel pr-panel pb-panel pl-20">
+        <div className="flex w-full flex-col">
+          {rows.map((row) => (
+            <ScratchpadRowItem
+              key={row.id}
+              apps={apps}
+              isFocused={focusedDraftRowId === row.id}
+              onDraftChange={(rowId, text) => onDraftChange?.(rowId, text)}
+              onDraftIndent={(rowId) => onDraftIndent?.(rowId)}
+              onDraftOutdent={(rowId) => onDraftOutdent?.(rowId)}
+              onDraftSubmit={(rowId) => onDraftSubmit?.(rowId)}
+              onOpenConversation={onOpenConversation}
+              placeholder={
+                row.isIndented && row.state === "draft"
+                  ? resolvedFollowUpDraftPlaceholder
+                  : resolvedDefaultDraftPlaceholder
+              }
+              row={row}
+              runtime={row.conversationId ? threadRuntimeById[row.conversationId] ?? null : null}
+              skills={skills}
+              summaryState={summaryByRowId[row.id] ?? null}
+              t={t}
+              thread={row.conversationId ? threadConversationsById[row.conversationId] ?? null : null}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ScratchpadRowItem({
   row,
   thread,
@@ -691,7 +744,7 @@ function ScratchpadRowItem({
         <div className="flex shrink-0 pt-1.5">{derived.icon}</div>
         {row.state === "draft" ? (
           <ScratchpadPromptInput
-            ariaLabel={t("scratchpadPage.headerTitle")}
+            ariaLabel={placeholder}
             autoFocus={isFocused}
             isIndented={row.isIndented}
             value={row.text}
@@ -705,20 +758,14 @@ function ScratchpadRowItem({
           />
         ) : (
           <div className="inline-flex max-w-full min-w-0 items-baseline gap-2 py-1.5">
-            {row.state === "started" && !row.isIndented && row.conversationId ? (
-              <button
-                type="button"
-                className="min-w-0 cursor-interaction truncate text-left text-base text-token-foreground hover:underline"
-                onClick={() => onOpenConversation?.(row.conversationId!)}
-                title={row.text}
-              >
-                <ScratchpadPromptContent text={row.text} apps={apps} skills={skills} />
-              </button>
-            ) : (
-              <div className="min-w-0 text-base text-token-foreground" title={row.text}>
-                <ScratchpadPromptContent text={row.text} apps={apps} skills={skills} />
-              </div>
-            )}
+            <ScratchpadPromptRowText
+              apps={apps}
+              conversationId={row.state === "started" && !row.isIndented ? row.conversationId : null}
+              hostId={thread?.hostId ?? null}
+              onOpenConversation={onOpenConversation}
+              skills={skills}
+              text={row.text}
+            />
             {derived.trailingContent}
           </div>
         )}
@@ -750,7 +797,7 @@ function deriveRowPresentation(
     return {
       icon: <Spinner className="icon-sm shrink-0 text-token-description-foreground" />,
       timestampMs: null,
-      trailingContent: <ThinkingLabel />,
+      trailingContent: <ThinkingLabel label={t("thinkingShimmer.default")} />,
     };
   }
 
@@ -766,9 +813,7 @@ function deriveRowPresentation(
     return {
       icon: <ErrorIcon className="icon-sm shrink-0 text-token-error-foreground" />,
       timestampMs: null,
-      trailingContent: row.error ? (
-        <TrailingSummaryLabel label={row.error} tone="error" />
-      ) : null,
+      trailingContent: null,
     };
   }
 
@@ -808,7 +853,7 @@ function deriveRowPresentation(
       }
     } else {
       const progressLabel = row.turnId ? findReasoningProgressLabel(thread?.items ?? [], row.turnId) : null;
-      trailingContent = progressLabel ? <ThinkingLabel label={progressLabel} /> : <ThinkingLabel />;
+      trailingContent = <ThinkingLabel label={progressLabel ?? t("thinkingShimmer.default")} />;
     }
   }
 
@@ -817,6 +862,78 @@ function deriveRowPresentation(
     timestampMs,
     trailingContent,
   };
+}
+
+function ScratchpadPromptRowText({
+  apps,
+  conversationId,
+  hostId,
+  onOpenConversation,
+  skills,
+  text,
+}: {
+  apps: AppInfo[];
+  conversationId: string | null;
+  hostId: string | null;
+  onOpenConversation?: (conversationId: string) => void;
+  skills: SkillSummary[];
+  text: string;
+}) {
+  const textRef = useRef<HTMLElement | null>(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+
+  useEffect(() => {
+    const element = textRef.current;
+    if (element == null) {
+      return;
+    }
+
+    const updateTruncation = () => {
+      setIsTruncated(element.scrollWidth > element.clientWidth);
+    };
+
+    updateTruncation();
+
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateTruncation();
+    });
+    resizeObserver.observe(element);
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [text]);
+
+  if (conversationId) {
+    return (
+      <button
+        ref={(element) => {
+          textRef.current = element;
+        }}
+        type="button"
+        className="min-w-0 cursor-interaction truncate text-left text-base text-token-foreground hover:underline"
+        onClick={() => onOpenConversation?.(conversationId)}
+        title={isTruncated ? text : undefined}
+      >
+        <ScratchpadPromptContent apps={apps} hostId={hostId} skills={skills} text={text} />
+      </button>
+    );
+  }
+
+  return (
+    <div
+      ref={(element) => {
+        textRef.current = element;
+      }}
+      className="min-w-0 truncate text-base text-token-foreground"
+      title={isTruncated ? text : undefined}
+    >
+      <ScratchpadPromptContent apps={apps} hostId={hostId} skills={skills} text={text} />
+    </div>
+  );
 }
 
 function createDraftRow(id: string): ScratchpadRow {
@@ -1120,27 +1237,19 @@ function formatHoverTimestamp(timestampMs: number) {
 
 function ThinkingLabel({ label }: { label?: string }) {
   return (
-    <span className="inline-flex items-center truncate text-base text-token-text-tertiary">
-      <Spinner className="icon-sm shrink-0 text-token-text-tertiary" />
-      {label ? <span className="ml-2 max-w-[12rem] truncate">{label}</span> : null}
+    <span className="loading-shimmer-pure-text max-w-[12rem] min-w-0 cursor-default truncate text-base text-token-text-tertiary select-none">
+      {label}
     </span>
   );
 }
 
 function TrailingSummaryLabel({
   label,
-  tone = "default",
 }: {
   label: string;
-  tone?: "default" | "error";
 }) {
   return (
-    <span
-      className={[
-        "max-w-[12rem] min-w-0 cursor-default truncate text-base",
-        tone === "error" ? "text-token-error-foreground" : "text-token-text-tertiary",
-      ].join(" ")}
-    >
+    <span className="max-w-[12rem] min-w-0 cursor-default truncate text-base text-token-text-tertiary">
       {label}
     </span>
   );

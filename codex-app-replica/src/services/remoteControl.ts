@@ -18,8 +18,10 @@ export type RemoteControlClientsListParams = {
 };
 
 export type RemoteControlClient = {
-  id: string;
-  name: string | null;
+  client_id: string;
+  display_name: string | null;
+  device_model: string | null;
+  platform: string | null;
   status: string | null;
   enrollment_status: string | null;
   created_at: string | null;

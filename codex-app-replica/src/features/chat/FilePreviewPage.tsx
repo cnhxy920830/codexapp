@@ -91,7 +91,6 @@ function FilePreviewCodeSnippet({
       )}
       data-theme={resolveCodeSnippetTheme()}
     >
-      {showActionBar ? null : null}
       <div className={joinClassNames("text-size-chat overflow-auto p-2", codeContainerClassName)} dir="ltr">
         <code className={joinClassNames(codeClassName, shouldWrapCode ? "whitespace-pre-wrap" : "whitespace-pre")}>
           {content}

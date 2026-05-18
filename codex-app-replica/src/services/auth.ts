@@ -1,6 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { MessageKey, MessageValues } from "../i18n/messages";
+import {
+  emitQueryCacheInvalidated,
+  onQueryCacheInvalidated,
+  queryKeyMatchesPrefix,
+  type QueryCacheInvalidateNotification,
+} from "./queryCache";
 
 export type AuthState = {
   authMethod: string | null;
@@ -87,6 +93,9 @@ export type SaveBrowserChatGptTokenAuthParams = {
   chatgptPlanType?: string | null;
 };
 
+export const ACCOUNT_INFO_QUERY_KEY = ["account-info"] as const;
+export const ENVIRONMENTS_QUERY_KEY = ["environments"] as const;
+
 const DEFAULT_AUTH_STATE: AuthState = {
   authMethod: null,
   openAIAuth: null,
@@ -131,11 +140,44 @@ export async function readAccountInfo(): Promise<AccountInfoResponse> {
   return invoke<AccountInfoResponse>("account-info");
 }
 
+export async function invalidateAccountSettingsQueries() {
+  await Promise.all([
+    emitQueryCacheInvalidated(ACCOUNT_INFO_QUERY_KEY),
+    emitQueryCacheInvalidated(ENVIRONMENTS_QUERY_KEY),
+  ]);
+}
+
+export function isAccountSettingsQueryInvalidation(notification: QueryCacheInvalidateNotification) {
+  return (
+    queryKeyMatchesPrefix(notification.queryKey, ACCOUNT_INFO_QUERY_KEY) ||
+    queryKeyMatchesPrefix(notification.queryKey, ENVIRONMENTS_QUERY_KEY)
+  );
+}
+
+export function onAccountSettingsQueriesInvalidated(
+  handler: (notification: QueryCacheInvalidateNotification) => void,
+) {
+  return onQueryCacheInvalidated((notification) => {
+    if (isAccountSettingsQueryInvalidation(notification)) {
+      handler(notification);
+    }
+  });
+}
+
 export async function loginApiKey(params: ApiKeyLoginParams) {
   return invoke<void>("login-with-api-key", {
     params: {
       hostId: null,
       apiKey: params.apiKey,
+    },
+  });
+}
+
+export async function loginApiKeyForHost(hostId: string | null, apiKey: string) {
+  return invoke<void>("login-with-api-key-for-host", {
+    params: {
+      hostId: normalizeHostId(hostId),
+      apiKey,
     },
   });
 }

@@ -80,22 +80,28 @@ function useDismissOnOutsidePointerDown(
 }
 
 export function CompactRailSelect({
+  align = "start",
   ariaLabel,
+  className,
   emptyLabel,
   icon,
   menuTitle,
   onSelect,
   options,
   selectedId,
+  showIcon = true,
   triggerLabel,
 }: {
+  align?: "end" | "start";
   ariaLabel: string;
+  className?: string;
   emptyLabel?: string;
   icon?: ReactNode;
   menuTitle?: string;
   onSelect: (id: string) => void;
   options: CompactRailOption[];
   selectedId: string;
+  showIcon?: boolean;
   triggerLabel: string;
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -114,10 +120,15 @@ export function CompactRailSelect({
         type="button"
         aria-label={ariaLabel}
         onClick={() => setIsOpen((current) => !current)}
-        className="app-control flex min-w-[160px] max-w-[220px] items-center justify-between gap-2 rounded-[10px] px-3 py-2 text-[13px]"
+        className={[
+          "app-control flex min-w-[160px] max-w-[220px] items-center justify-between gap-2 rounded-[10px] px-3 py-2 text-[13px]",
+          className,
+        ]
+          .filter(Boolean)
+          .join(" ")}
       >
         <span className="flex min-w-0 items-center gap-2">
-          {icon}
+          {showIcon ? icon : null}
           <span className="truncate text-left text-[var(--app-shell-title)]">
             {resolvedTriggerLabel}
           </span>
@@ -125,7 +136,12 @@ export function CompactRailSelect({
         <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
       </button>
       {isOpen ? (
-        <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-64 rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+        <div
+          className={[
+            "app-card absolute top-[calc(100%+8px)] z-20 w-64 rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]",
+            align === "end" ? "right-0" : "left-0",
+          ].join(" ")}
+        >
           {menuTitle ? (
             <div className="px-3 py-2 text-[12px] font-medium text-[var(--app-shell-title)]">
               {menuTitle}
@@ -189,16 +205,22 @@ export function CompactRailSelect({
 }
 
 export function CompactScheduleEditor({
+  align = "start",
+  className,
   locale,
   modeOptions,
   onChange,
   scheduleConfig,
+  showIcon = true,
   t,
 }: {
+  align?: "end" | "start";
+  className?: string;
   locale: string;
   modeOptions: Array<{ id: ScheduleConfig["mode"]; label: string }>;
   onChange: (nextConfig: ScheduleConfig) => void;
   scheduleConfig: ScheduleConfig;
+  showIcon?: boolean;
   t: TranslateFn;
 }) {
   const selectedModeLabel =
@@ -219,22 +241,37 @@ export function CompactScheduleEditor({
   return (
     <div className="flex max-w-[260px] flex-col items-end gap-2">
       <CompactRailSelect
+        align={align}
         ariaLabel={t("settings.automations.scheduleModeLabel")}
+        className={className}
         emptyLabel={t("settings.automations.scheduleMode.custom")}
         icon={<ClockIcon className="h-4 w-4 shrink-0" />}
         triggerLabel={selectedModeLabel}
         options={modeOptions}
         selectedId={scheduleConfig.mode}
+        showIcon={showIcon}
         onSelect={(value) =>
           onChange(transitionScheduleMode(scheduleConfig, value as ScheduleConfig["mode"]))
         }
       />
       {scheduleConfig.mode === "hourly" ? (
-        <label className="flex w-full items-center justify-end gap-2 text-[12px] app-text-muted">
+        <label
+          className={[
+            "flex w-full items-center justify-end gap-2 text-[12px] app-text-muted",
+            className,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
           <span>{t("settings.automations.scheduleIntervalLabel")}</span>
           <input
             aria-label={t("settings.automations.scheduleIntervalLabel")}
-            className="app-input h-9 w-20 rounded-[10px] px-2 text-[13px]"
+            className={[
+              "app-input h-9 w-20 rounded-[10px] px-2 text-[13px]",
+              className,
+            ]
+              .filter(Boolean)
+              .join(" ")}
             defaultValue={String(intervalValue)}
             inputMode="numeric"
             onBlur={(event) => {
@@ -280,13 +317,16 @@ export function CompactScheduleEditor({
       ) : null}
       {scheduleConfig.mode === "weekly" ? (
         <CompactRailSelect
+          align={align}
           ariaLabel={t("settings.automations.scheduleWeekday")}
+          className={className}
           triggerLabel={selectedWeekdayLabel}
           options={WEEKDAY_OPTIONS.map((option) => ({
             id: option.id,
             label: t(option.key),
           }))}
           selectedId={selectedWeekdayId}
+          showIcon={false}
           onSelect={(value) =>
             onChange({
               ...scheduleConfig,
@@ -297,6 +337,7 @@ export function CompactScheduleEditor({
       ) : null}
       {scheduleConfig.mode !== "custom" && scheduleConfig.mode !== "hourly" ? (
         <CompactTimePicker
+          className={className}
           locale={locale}
           value={scheduleConfig.time}
           t={t}
@@ -319,11 +360,23 @@ export function CompactScheduleEditor({
             })
           }
           placeholder={t("settings.automations.scheduleCustomPlaceholder")}
-          className="app-input h-9 w-full rounded-[10px] px-2 text-[12px] font-mono"
+          className={[
+            "app-input h-9 w-full rounded-[10px] px-2 text-[12px] font-mono",
+            className,
+          ]
+            .filter(Boolean)
+            .join(" ")}
           spellCheck={false}
         />
       ) : (
-        <div className="app-text-muted max-w-[220px] text-right text-[12px] leading-5">
+        <div
+          className={[
+            "app-text-muted max-w-[220px] text-right text-[12px] leading-5",
+            className,
+          ]
+            .filter(Boolean)
+            .join(" ")}
+        >
           {scheduleSummary}
         </div>
       )}
@@ -332,11 +385,13 @@ export function CompactScheduleEditor({
 }
 
 function CompactTimePicker({
+  className,
   locale,
   onChange,
   t,
   value,
 }: {
+  className?: string;
   locale: string;
   onChange: (value: string) => void;
   t: TranslateFn;
@@ -367,7 +422,12 @@ function CompactTimePicker({
       <div className="relative w-full">
         <input
           aria-label={timeInputLabel}
-          className="app-input h-9 w-full min-w-[110px] rounded-[10px] px-2 pr-8 text-[13px] [&::-webkit-calendar-picker-indicator]:hidden"
+          className={[
+            "app-input h-9 w-full min-w-[110px] rounded-[10px] px-2 pr-8 text-[13px] [&::-webkit-calendar-picker-indicator]:hidden",
+            className,
+          ]
+            .filter(Boolean)
+            .join(" ")}
           type="time"
           value={value}
           onChange={(event) => {

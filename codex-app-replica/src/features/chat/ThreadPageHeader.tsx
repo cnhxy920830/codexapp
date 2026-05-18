@@ -17,6 +17,10 @@ import {
   ForkedConversationIcon,
 } from "../../components/AppShellIcons";
 import type { MessageKey } from "../../i18n/messages";
+import {
+  getCommandShortcutEntries,
+  type CommandKeymapState,
+} from "../../services/keyboardShortcuts";
 
 type ThreadHeaderEnvironment = "cloud" | "local" | "worktree" | null;
 
@@ -36,6 +40,7 @@ type ThreadHeaderActionMenuProps = {
   actionsMenuRef: RefObject<HTMLDivElement | null>;
   canPinThread?: boolean;
   canCopyWorkingDirectory: boolean;
+  commandKeymapState?: CommandKeymapState | null;
   hasAttachedHeartbeatAutomation: boolean;
   heartbeatAutomationActionLabelKey: MessageKey;
   heartbeatAutomationButtonTooltip: string;
@@ -200,6 +205,7 @@ export function ThreadHeaderActionMenu({
   actionsMenuRef,
   canPinThread = true,
   canCopyWorkingDirectory,
+  commandKeymapState = null,
   hasAttachedHeartbeatAutomation,
   heartbeatAutomationActionLabelKey,
   heartbeatAutomationButtonTooltip,
@@ -241,6 +247,7 @@ export function ThreadHeaderActionMenu({
         actionsMenuRef={actionsMenuRef}
         canPinThread={canPinThread}
         canCopyWorkingDirectory={canCopyWorkingDirectory}
+        commandKeymapState={commandKeymapState}
         heartbeatAutomationActionLabelKey={heartbeatAutomationActionLabelKey}
         isOpenInNewWindowDisabled={isOpenInNewWindowDisabled}
         isThreadActionsMenuOpen={isThreadActionsMenuOpen}
@@ -304,6 +311,7 @@ export function ThreadHeaderOverflowMenu({
   actionsMenuRef,
   canPinThread = true,
   canCopyWorkingDirectory,
+  commandKeymapState = null,
   heartbeatAutomationActionLabelKey,
   isOpenInNewWindowDisabled = false,
   isThreadActionsMenuOpen,
@@ -336,6 +344,38 @@ export function ThreadHeaderOverflowMenu({
   const shouldShowForkSection =
     onOpenSideChat !== undefined || isThreadHeartbeatAutomationActionVisible || !isOpenInNewWindowDisabled;
   const shouldShowOpenInNewWindow = !isOpenInNewWindowDisabled;
+  const pinShortcutLabel =
+    canPinThread && variant === "localConversation"
+      ? getCommandShortcutEntries("toggleThreadPin", commandKeymapState)[0]?.label ?? null
+      : null;
+  const renameShortcutLabel =
+    variant === "localConversation"
+      ? getCommandShortcutEntries("renameThread", commandKeymapState)[0]?.label ?? null
+      : null;
+  const archiveShortcutLabel =
+    variant === "localConversation"
+      ? getCommandShortcutEntries("archiveThread", commandKeymapState)[0]?.label ?? null
+      : null;
+  const copyWorkingDirectoryShortcutLabel =
+    variant === "localConversation"
+      ? getCommandShortcutEntries("copyWorkingDirectory", commandKeymapState)[0]?.label ?? null
+      : null;
+  const copySessionIdShortcutLabel =
+    variant === "localConversation"
+      ? getCommandShortcutEntries("copySessionId", commandKeymapState)[0]?.label ?? null
+      : null;
+  const copyDeeplinkShortcutLabel =
+    variant === "localConversation"
+      ? getCommandShortcutEntries("copyDeeplink", commandKeymapState)[0]?.label ?? null
+      : null;
+  const copyConversationMarkdownShortcutLabel =
+    variant === "localConversation"
+      ? getCommandShortcutEntries("copyConversationMarkdown", commandKeymapState)[0]?.label ?? null
+      : null;
+  const openSideChatShortcutLabel =
+    variant === "localConversation"
+      ? getCommandShortcutEntries("openSideChat", commandKeymapState)[0]?.label ?? null
+      : null;
 
   return (
     <>
@@ -363,7 +403,10 @@ export function ThreadHeaderOverflowMenu({
                 ) : (
                   <PinIcon className="h-4 w-4 shrink-0" />
                 )}
-                {isThreadPinned ? t("sidebarElectron.unpinThread") : t("sidebarElectron.pinThread")}
+                <span className="min-w-0 flex-1 truncate">
+                  {isThreadPinned ? t("sidebarElectron.unpinThread") : t("sidebarElectron.pinThread")}
+                </span>
+                <ThreadHeaderShortcutLabel label={pinShortcutLabel} />
               </button>
             ) : null}
             <button
@@ -375,7 +418,8 @@ export function ThreadHeaderOverflowMenu({
               ].join(" ")}
             >
               <PencilIcon className="h-4 w-4 shrink-0" />
-              {t("sidebarElectron.renameThread")}
+              <span className="min-w-0 flex-1 truncate">{t("sidebarElectron.renameThread")}</span>
+              <ThreadHeaderShortcutLabel label={renameShortcutLabel} />
             </button>
             <button
               type="button"
@@ -383,16 +427,17 @@ export function ThreadHeaderOverflowMenu({
               className="app-nav-item-idle mt-1 flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
             >
               <ArchiveIcon className="h-4 w-4 shrink-0" />
-              {t("sidebarElectron.archiveThread")}
+              <span className="min-w-0 flex-1 truncate">{t("sidebarElectron.archiveThread")}</span>
+              <ThreadHeaderShortcutLabel label={archiveShortcutLabel} />
             </button>
-            {onMarkUnread ? (
+            {!isLocalConversation && onMarkUnread ? (
               <button
                 type="button"
                 onClick={onMarkUnread}
                 className="app-nav-item-idle mt-1 flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
               >
                 <MarkUnreadIcon className="h-4 w-4 shrink-0" />
-                {t("sidebarElectron.markThreadUnread")}
+                <span className="min-w-0 flex-1 truncate">{t("sidebarElectron.markThreadUnread")}</span>
               </button>
             ) : null}
             <div className="my-1 h-px bg-[var(--app-shell-border)]" />
@@ -403,7 +448,8 @@ export function ThreadHeaderOverflowMenu({
               className="app-nav-item-idle flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
             >
               <CopyPathIcon className="h-4 w-4 shrink-0" />
-              {t("threadHeader.copyWorkingDirectory")}
+              <span className="min-w-0 flex-1 truncate">{t("threadHeader.copyWorkingDirectory")}</span>
+              <ThreadHeaderShortcutLabel label={copyWorkingDirectoryShortcutLabel} />
             </button>
             <button
               type="button"
@@ -411,7 +457,8 @@ export function ThreadHeaderOverflowMenu({
               className="app-nav-item-idle mt-1 flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
             >
               <CopyPathIcon className="h-4 w-4 shrink-0" />
-              {t("threadHeader.copySessionId")}
+              <span className="min-w-0 flex-1 truncate">{t("threadHeader.copySessionId")}</span>
+              <ThreadHeaderShortcutLabel label={copySessionIdShortcutLabel} />
             </button>
             <button
               type="button"
@@ -419,7 +466,8 @@ export function ThreadHeaderOverflowMenu({
               className="app-nav-item-idle mt-1 flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
             >
               <CopyPathIcon className="h-4 w-4 shrink-0" />
-              {t("threadHeader.copyAppLink")}
+              <span className="min-w-0 flex-1 truncate">{t("threadHeader.copyAppLink")}</span>
+              <ThreadHeaderShortcutLabel label={copyDeeplinkShortcutLabel} />
             </button>
             <button
               type="button"
@@ -427,7 +475,8 @@ export function ThreadHeaderOverflowMenu({
               className="app-nav-item-idle mt-1 flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
             >
               <CopyPathIcon className="h-4 w-4 shrink-0" />
-              {t("threadHeader.copyConversationMarkdown")}
+              <span className="min-w-0 flex-1 truncate">{t("threadHeader.copyConversationMarkdown")}</span>
+              <ThreadHeaderShortcutLabel label={copyConversationMarkdownShortcutLabel} />
             </button>
             {shouldShowForkSection ? (
               <div className="my-1 h-px bg-[var(--app-shell-border)]" />
@@ -439,7 +488,8 @@ export function ThreadHeaderOverflowMenu({
                 className="app-nav-item-idle flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
               >
                 <OpenSideChatIcon className="h-4 w-4 shrink-0" />
-                {t("threadHeader.openSideChat")}
+                <span className="min-w-0 flex-1 truncate">{t("threadHeader.openSideChat")}</span>
+                <ThreadHeaderShortcutLabel label={openSideChatShortcutLabel} />
               </button>
             ) : null}
             <button
@@ -452,13 +502,15 @@ export function ThreadHeaderOverflowMenu({
                   ? "mt-1"
                   : "",
               ].join(" ")}
-            >
-              {isWorktreeThread ? (
-                <MacbookIcon className="h-4 w-4 shrink-0" />
-              ) : (
-                <ForkedConversationIcon className="h-4 w-4 shrink-0" />
-              )}
-              {t(isWorktreeThread ? "threadHeader.forkIntoSameWorktree" : "threadHeader.forkIntoLocal")}
+              >
+                {isWorktreeThread ? (
+                  <MacbookIcon className="h-4 w-4 shrink-0" />
+                ) : (
+                  <ForkedConversationIcon className="h-4 w-4 shrink-0" />
+                )}
+              <span className="min-w-0 flex-1 truncate">
+                {t(isWorktreeThread ? "threadHeader.forkIntoSameWorktree" : "threadHeader.forkIntoLocal")}
+              </span>
             </button>
             <button
               type="button"
@@ -467,7 +519,7 @@ export function ThreadHeaderOverflowMenu({
               className="app-nav-item-idle mt-1 flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
             >
               <WorktreeIcon className="h-4 w-4 shrink-0" />
-              {t("threadHeader.forkIntoWorktree")}
+              <span className="min-w-0 flex-1 truncate">{t("threadHeader.forkIntoWorktree")}</span>
             </button>
             {isThreadHeartbeatAutomationActionVisible ? (
               <button
@@ -477,7 +529,7 @@ export function ThreadHeaderOverflowMenu({
                 className="app-nav-item-idle mt-1 flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-60"
               >
                 <ClockIcon className="h-4 w-4 shrink-0" />
-                {t(heartbeatAutomationActionLabelKey)}
+                <span className="min-w-0 flex-1 truncate">{t(heartbeatAutomationActionLabelKey)}</span>
               </button>
             ) : null}
             {shouldShowOpenInNewWindow ? <div className="my-1 h-px bg-[var(--app-shell-border)]" /> : null}
@@ -488,7 +540,7 @@ export function ThreadHeaderOverflowMenu({
                 className="app-nav-item-idle flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
               >
                 <OpenInNewWindowIcon className="h-4 w-4 shrink-0" />
-                {t("threadHeader.openInNewWindow")}
+                <span className="min-w-0 flex-1 truncate">{t("threadHeader.openInNewWindow")}</span>
               </button>
             ) : null}
           </div>
@@ -517,4 +569,16 @@ function ThreadHeaderTooltip({
 
 function normalizeThreadHeaderActions(actions: ReactNode) {
   return Children.toArray(actions);
+}
+
+function ThreadHeaderShortcutLabel({ label }: { label: string | null }) {
+  if (label == null || label.trim().length === 0) {
+    return null;
+  }
+
+  return (
+    <span className="shrink-0 rounded-[6px] border border-[var(--app-shell-border)] px-1.5 py-0.5 text-[11px] leading-4 text-[var(--app-shell-subtle)]">
+      {label}
+    </span>
+  );
 }

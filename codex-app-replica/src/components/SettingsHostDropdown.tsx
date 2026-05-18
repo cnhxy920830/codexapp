@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import {
   CheckIcon,
   ChevronDownIcon,
-  SettingsCogIcon,
 } from "./AppShellIcons";
+import { Button } from "./Button";
 import type { MessageKey, MessageValues } from "../i18n/messages";
 import {
   getSettingsRemoteHostColor,
@@ -12,19 +12,28 @@ import {
 } from "../services/settingsHosts";
 
 type SettingsHostDropdownProps = {
+  align?: "center" | "end" | "start";
   connectedRemoteConnections: RemoteConnection[];
+  contentWidth?: "icon" | "menuWide" | "workspace";
+  disabled?: boolean;
   onSelectHost: (hostId: string) => void;
   remoteConnectionHostIds: string[];
   selectedHostId: string;
   t: (key: MessageKey, values?: MessageValues) => string;
+  triggerClassName?: string;
+  triggerColor?: "ghost" | "ghostActive" | "ghostMuted" | "outline" | "outlineActive" | "primary" | "secondary";
 };
 
 export function SettingsHostDropdown({
+  align = "end",
   connectedRemoteConnections,
+  contentWidth = "menuWide",
   onSelectHost,
   remoteConnectionHostIds,
   selectedHostId,
   t,
+  triggerClassName,
+  triggerColor = "outline",
 }: SettingsHostDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -60,11 +69,15 @@ export function SettingsHostDropdown({
 
   return (
     <div className="relative shrink-0" ref={containerRef}>
-      <button
-        type="button"
+      <Button
         aria-label={t("settings.hostDropdown.title")}
+        className={
+          triggerClassName ??
+          "h-7 w-auto max-w-[160px] px-2 text-[13px]"
+        }
+        color={triggerColor}
         onClick={() => setIsOpen((open) => !open)}
-        className="app-control flex h-7 w-auto max-w-[160px] items-center gap-2 rounded-[10px] px-2 text-[13px]"
+        size="composerSm"
       >
         {selectedRemoteConnection === null ? (
           <SettingsLocalHostIcon className="h-4 w-4 shrink-0 text-[var(--app-shell-text)]" />
@@ -77,9 +90,23 @@ export function SettingsHostDropdown({
         )}
         <span className="truncate text-left text-[var(--app-shell-text)]">{selectedHostLabel}</span>
         <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
-      </button>
+      </Button>
       {isOpen ? (
-        <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-[220px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+        <div
+          className={[
+            "app-card absolute top-[calc(100%+8px)] z-20 rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]",
+            align === "start"
+              ? "left-0"
+              : align === "center"
+                ? "left-1/2 -translate-x-1/2"
+                : "right-0",
+            contentWidth === "workspace"
+              ? "w-[260px]"
+              : contentWidth === "icon"
+                ? "w-[220px]"
+                : "w-[220px]",
+          ].join(" ")}
+        >
           <div className="px-3 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--app-shell-subtle)]">
             {t("settings.hostDropdown.title")}
           </div>

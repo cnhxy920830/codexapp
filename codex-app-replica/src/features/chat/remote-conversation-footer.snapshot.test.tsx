@@ -22,9 +22,8 @@ test("remote conversation footer snapshot", async (t) => {
       showRemoteApplyFooter: false,
       showRemoteFailedFooter: false,
     }),
-    localComposerWithLatestTurnAndScrollButton: renderFooter({
+    localComposerWithScrollButton: renderFooter({
       composer: <div className="composer-marker">app.chat.composePlaceholder</div>,
-      latestTurnPreview: <div className="latest-turn-marker">Latest turn preview</div>,
       onScrollToBottom: () => undefined,
       showComposerFooter: true,
       showRemoteApplyFooter: false,
@@ -70,10 +69,10 @@ test("remote conversation footer snapshot", async (t) => {
     assert.match(actual, /app\.chat\.composePlaceholder/);
   });
 
-  await t.test("local footer shows latest-turn preview and scroll button when requested", () => {
-    const actual = actualSnapshots.localComposerWithLatestTurnAndScrollButton;
-    assert.equal(actual, expectedSnapshots.localComposerWithLatestTurnAndScrollButton);
-    assert.match(actual, /Latest turn preview/);
+  await t.test("local footer shows scroll button without latest-turn preview branch", () => {
+    const actual = actualSnapshots.localComposerWithScrollButton;
+    assert.equal(actual, expectedSnapshots.localComposerWithScrollButton);
+    assert.doesNotMatch(actual, /Latest turn preview/);
     assert.match(actual, /Scroll to bottom/);
   });
 
@@ -88,7 +87,7 @@ test("remote conversation footer snapshot", async (t) => {
 
 type SnapshotMap = {
   localComposer: string;
-  localComposerWithLatestTurnAndScrollButton: string;
+  localComposerWithScrollButton: string;
   remoteApplyFooter: string;
   remoteFailedFooter: string;
 };

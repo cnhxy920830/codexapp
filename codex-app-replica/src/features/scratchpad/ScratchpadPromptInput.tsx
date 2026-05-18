@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { WorkspaceFileIcon } from "../../components/AppShellIcons";
 import type { AppInfo } from "../../services/apps";
 import type { SkillSummary } from "../../services/skills";
+import { searchWorkspaceFiles } from "../../services/workspaceFiles";
+import {
+  onActiveWorkspaceRootsUpdated,
+  readActiveWorkspaceRoots,
+} from "../../services/workspaceRoots";
+import { classifyPromptLink } from "../../lib/promptLinks";
 import {
   buildScratchpadAppPromptLink,
   buildScratchpadPromptMentionTitle,
@@ -9,6 +16,11 @@ import {
   parseScratchpadPromptSegments,
   type ScratchpadPromptMentionSegment,
 } from "./scratchpadPromptLinks";
+import {
+  buildScratchpadFileMentionCandidate,
+  dedupeScratchpadFileMentionCandidates,
+  type ScratchpadFileMentionCandidate,
+} from "./scratchpadFileMentions";
 
 type ScratchpadPromptInputProps = {
   ariaLabel: string;
@@ -33,6 +45,7 @@ type MentionCandidate =
       insertText: string;
       detail: string | null;
     }
+  | ScratchpadFileMentionCandidate
   | {
       id: string;
       kind: "skill";
@@ -69,14 +82,20 @@ export function ScratchpadPromptInput({
   const [selectedCandidateIndex, setSelectedCandidateIndex] = useState(0);
   const [mentionState, setMentionState] = useState<MentionState | null>(null);
   const [dismissedMentionSignature, setDismissedMentionSignature] = useState<string | null>(null);
+  const [activeWorkspaceRoots, setActiveWorkspaceRoots] = useState<string[]>([]);
+  const [fileCandidates, setFileCandidates] = useState<ScratchpadFileMentionCandidate[]>([]);
   const mentionSignature = useMemo(() => getMentionSignature(mentionState), [mentionState]);
-  const mentionCandidates = useMemo(
-    () =>
-      mentionSignature !== null && mentionSignature === dismissedMentionSignature
-        ? []
-        : buildMentionCandidates(mentionState, apps, skills),
-    [apps, dismissedMentionSignature, mentionSignature, mentionState, skills],
-  );
+  const mentionCandidates = useMemo(() => {
+    if (mentionSignature !== null && mentionSignature === dismissedMentionSignature) {
+      return [];
+    }
+    return buildMentionCandidates({
+      mentionState,
+      apps,
+      skills,
+      fileCandidates,
+    });
+  }, [apps, dismissedMentionSignature, fileCandidates, mentionSignature, mentionState, skills]);
 
   useEffect(() => {
     if (!autoFocus) {
@@ -95,6 +114,88 @@ export function ScratchpadPromptInput({
     }
     setDismissedMentionSignature(null);
   }, [dismissedMentionSignature, mentionSignature]);
+
+  useEffect(() => {
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+
+    const refreshActiveRoots = async () => {
+      try {
+        const response = await readActiveWorkspaceRoots();
+        if (!disposed) {
+          setActiveWorkspaceRoots(response.roots);
+        }
+      } catch {
+        if (!disposed) {
+          setActiveWorkspaceRoots([]);
+        }
+      }
+    };
+
+    void refreshActiveRoots();
+
+    void onActiveWorkspaceRootsUpdated(() => {
+      void refreshActiveRoots();
+    }).then((dispose) => {
+      if (disposed) {
+        dispose();
+        return;
+      }
+      cleanup = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    const currentMentionState = mentionState;
+    if (currentMentionState?.symbol !== "@") {
+      setFileCandidates([]);
+      return;
+    }
+
+    if (activeWorkspaceRoots.length === 0) {
+      setFileCandidates([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    void Promise.all(
+      activeWorkspaceRoots.map(async (workspaceRoot) => {
+        const results = await searchWorkspaceFiles({
+          workspaceRoot,
+          query: currentMentionState.query,
+        });
+        return results.map((result) =>
+          buildScratchpadFileMentionCandidate({
+            result,
+            workspaceRoot,
+          }),
+        );
+      }),
+    )
+      .then((candidateGroups) => {
+        if (cancelled) {
+          return;
+        }
+        setFileCandidates(
+          dedupeScratchpadFileMentionCandidates(candidateGroups.flat()).slice(0, 8),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFileCandidates([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceRoots, mentionState]);
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -191,7 +292,9 @@ export function ScratchpadPromptInput({
 
           if (event.key === "Tab") {
             event.preventDefault();
-            onIndent();
+            if (!isIndented) {
+              onIndent();
+            }
             return;
           }
 
@@ -238,9 +341,13 @@ export function ScratchpadPromptInput({
                     applyCandidate(candidate);
                   }}
                 >
-                  <span className="mt-0.5 shrink-0 text-[12px] text-token-text-secondary">
-                    {candidate.kind === "app" ? "@" : "$"}
-                  </span>
+                  {candidate.kind === "file" ? (
+                    <WorkspaceFileIcon className="mt-0.5 h-4 w-4 shrink-0 text-token-text-secondary" />
+                  ) : (
+                    <span className="mt-0.5 shrink-0 text-[12px] text-token-text-secondary">
+                      {candidate.kind === "skill" ? "$" : "@"}
+                    </span>
+                  )}
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] text-token-foreground">
                       {candidate.displayLabel}
@@ -310,9 +417,17 @@ function readMentionState(editor: HTMLDivElement | null): MentionState | null {
 }
 
 function buildMentionCandidates(
-  mentionState: MentionState | null,
-  apps: AppInfo[],
-  skills: SkillSummary[],
+  {
+    mentionState,
+    apps,
+    skills,
+    fileCandidates,
+  }: {
+    mentionState: MentionState | null;
+    apps: AppInfo[];
+    skills: SkillSummary[];
+    fileCandidates: ScratchpadFileMentionCandidate[];
+  },
 ): MentionCandidate[] {
   if (mentionState === null) {
     return [];
@@ -320,7 +435,7 @@ function buildMentionCandidates(
 
   const normalizedQuery = mentionState.query.trim().toLowerCase();
   if (mentionState.symbol === "@") {
-    return apps
+    const appCandidates = apps
       .filter((app) => app.isAccessible)
       .filter((app) => {
         if (normalizedQuery.length === 0) {
@@ -340,6 +455,8 @@ function buildMentionCandidates(
         insertText: buildScratchpadAppPromptLink(app),
         detail: app.description ?? null,
       }));
+
+    return [...appCandidates, ...fileCandidates].slice(0, 8);
   }
 
   return skills
@@ -472,6 +589,11 @@ function renderPromptEditorValue(
       continue;
     }
 
+    if (segment.type === "file") {
+      fragment.append(createPromptFileNode(documentRef, segment));
+      continue;
+    }
+
     fragment.append(documentRef.createTextNode(segment.raw));
   }
 
@@ -500,6 +622,25 @@ function createPromptMentionNode(documentRef: Document, segment: ScratchpadPromp
   label.textContent = segment.displayLabel;
 
   token.append(prefix, label);
+  return token;
+}
+
+function createPromptFileNode(
+  documentRef: Document,
+  segment: Extract<ReturnType<typeof classifyPromptLink>, { type: "file" }>,
+) {
+  const token = documentRef.createElement("span");
+  token.contentEditable = "false";
+  token.dataset.scratchpadPromptRaw = segment.raw;
+  token.className =
+    "inline-flex max-w-full items-center gap-1 rounded-full border border-token-border bg-token-bg-tertiary px-2 py-0.5 align-baseline text-[0.95em] leading-[1.35] text-token-foreground";
+  token.title = segment.href;
+
+  const label = documentRef.createElement("span");
+  label.className = "min-w-0 truncate";
+  label.textContent = segment.locationSuffix ? `${segment.label}${segment.locationSuffix}` : segment.label;
+
+  token.append(label);
   return token;
 }
 
@@ -603,22 +744,31 @@ function replaceVisibleRangeWithMention(
 
   const fragment = editor.ownerDocument.createDocumentFragment();
   fragment.append(
-    createPromptMentionNode(editor.ownerDocument, {
-      type: candidate.kind,
-      raw: candidate.insertText,
-      label: candidate.kind === "app" ? `@${candidate.label}` : `$${candidate.label}`,
-      href: candidate.insertText,
-      displayLabel: candidate.displayLabel,
-      detail: candidate.detail,
-      ...(candidate.kind === "app"
-        ? {
-            appId: candidate.id.replace(/^app:/u, ""),
-          }
-        : {
-            path: "",
-            brandColor: candidate.brandColor,
-          }),
-    } as ScratchpadPromptMentionSegment),
+    candidate.kind === "file"
+      ? createPromptFileNode(
+          editor.ownerDocument,
+          classifyPromptLink({
+            raw: candidate.insertText,
+            label: candidate.label,
+            href: decodeInsertedFileHref(candidate.insertText),
+          }) as Extract<ReturnType<typeof classifyPromptLink>, { type: "file" }>,
+        )
+      : createPromptMentionNode(editor.ownerDocument, {
+          type: candidate.kind,
+          raw: candidate.insertText,
+          label: candidate.kind === "app" ? `@${candidate.label}` : `$${candidate.label}`,
+          href: candidate.kind === "skill" ? decodeInsertedFileHref(candidate.insertText) : candidate.insertText,
+          displayLabel: candidate.displayLabel,
+          detail: candidate.detail,
+          ...(candidate.kind === "app"
+            ? {
+                appId: candidate.id.replace(/^app:/u, ""),
+              }
+            : {
+                path: "",
+                brandColor: candidate.brandColor,
+              }),
+        } as ScratchpadPromptMentionSegment),
   );
 
   const space = editor.ownerDocument.createTextNode(" ");
@@ -635,4 +785,9 @@ function replaceVisibleRangeWithMention(
   nextRange.collapse(true);
   selection.removeAllRanges();
   selection.addRange(nextRange);
+}
+
+function decodeInsertedFileHref(insertText: string) {
+  const match = /\(([^)\n]+)\)/u.exec(insertText);
+  return match?.[1] ?? insertText;
 }

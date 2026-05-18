@@ -10,7 +10,6 @@ import { ScrollToBottomButton } from "./ScrollToBottomButton";
 type RemoteConversationFooterProps = {
   aboveComposerContent?: ReactNode;
   composer: ReactNode;
-  latestTurnPreview?: ReactNode;
   onScrollToBottom?: (() => void) | null;
   onShowToast?: (toast: AppToast) => void;
   remoteApplyDiff: string | null;
@@ -29,7 +28,6 @@ type RemoteConversationFooterProps = {
 export function RemoteConversationFooter({
   aboveComposerContent = null,
   composer,
-  latestTurnPreview = null,
   onScrollToBottom = null,
   onShowToast,
   remoteApplyDiff,
@@ -58,7 +56,6 @@ export function RemoteConversationFooter({
               show={showScrollToBottomButton}
             />
           </div>
-          {latestTurnPreview ? <div>{latestTurnPreview}</div> : null}
           {showRemoteApplyFooter ? (
             <div>
               <RemoteDiffApplyControl

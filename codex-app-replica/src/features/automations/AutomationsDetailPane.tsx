@@ -15,7 +15,6 @@ import {
 import type { AutomationInboxItem, AutomationRecord } from "../../services/automations";
 import type { ModelListEntry } from "../../services/settings";
 import { SettingsHostDropdown } from "../../components/SettingsHostDropdown";
-import { LOCAL_SETTINGS_HOST_ID } from "../../services/settingsHosts";
 import { AutomationLocalEnvironmentSelector } from "./AutomationLocalEnvironmentSelector";
 import {
   CompactRailSelect,
@@ -27,7 +26,6 @@ import { AutomationFormFields } from "./AutomationFormFields";
 import { AutomationPreviousRunsList } from "./AutomationPreviousRunsList";
 import type { FeedbackState, TranslateFn } from "./automationsPageUtils";
 import {
-  describeScheduleConfig,
   getScheduleConfigForAutomation,
   formatStatusLabel,
   formatWorkspaceRootsLabel,
@@ -58,6 +56,7 @@ type AutomationsDetailPaneProps = {
   }) => void;
   modelOptions: ModelListEntry[];
   locale: string;
+  selectedHostId: string;
   threadTitleById: ReadonlyMap<string, string>;
   workspaceRootOptions: string[];
   workspaceRootLabels: Record<string, string>;
@@ -71,39 +70,72 @@ function StatusBadge({
   status: AutomationRecord["status"];
   t: TranslateFn;
 }) {
+  const toneClassName =
+    status === "ACTIVE"
+      ? "bg-token-charts-green/15 text-token-charts-green"
+      : status === "PAUSED"
+        ? "bg-token-charts-orange/15 text-token-charts-orange"
+        : "bg-token-charts-red/15 text-token-charts-red";
   const dotClassName =
     status === "ACTIVE"
-      ? "bg-[#2c9f5f]"
+      ? "bg-token-charts-green"
       : status === "PAUSED"
-        ? "bg-[#c98a1c]"
-        : "bg-[var(--app-shell-danger)]";
+        ? "bg-token-charts-orange"
+        : "bg-token-charts-red";
 
   return (
-    <span className="app-badge inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[12px]">
+    <span
+      className={[
+        "inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-base",
+        toneClassName,
+      ].join(" ")}
+    >
       <span className={["h-2 w-2 rounded-full", dotClassName].join(" ")} />
       {formatStatusLabel(status, t)}
     </span>
   );
 }
 
-function RailRow({
+function RailPill({ children }: { children: ReactNode }) {
+  return (
+    <span className="app-badge inline-flex max-w-full items-center truncate rounded-full px-2.5 py-1 text-base">
+      {children}
+    </span>
+  );
+}
+
+function CompactRailRow({
   label,
-  value,
+  children,
 }: {
   label: string;
-  value: ReactNode;
+  children: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-2 text-[13px]">
-      <span className="app-text-muted">{label}</span>
-      <div className="min-w-0 text-right">{value}</div>
+    <div className="grid items-center h-[1.875rem] w-full grid-cols-[auto_minmax(0,1fr)] gap-x-6 overflow-x-hidden rounded-lg text-base leading-[18px] text-token-foreground electron:opacity-75">
+      <div className="min-w-0 flex items-center pr-2 pl-1 text-left">{label}</div>
+      <div className="min-w-0 flex items-center justify-end justify-self-stretch overflow-hidden">
+        {children}
+      </div>
     </div>
   );
 }
 
-function SectionLabel({ children }: { children: ReactNode }) {
+function CompactSectionLabel({
+  children,
+  topPadding = false,
+}: {
+  children: ReactNode;
+  topPadding?: boolean;
+}) {
   return (
-    <div className="px-1 pb-2 text-[13px] font-medium tracking-[0.08em] text-[var(--app-shell-subtle)] uppercase">
+    <div
+      className={
+        topPadding
+          ? "px-1 pt-6 pb-2 text-base text-token-input-placeholder-foreground opacity-75"
+          : "px-1 py-2 text-base text-token-input-placeholder-foreground opacity-75"
+      }
+    >
       {children}
     </div>
   );
@@ -127,6 +159,7 @@ export function AutomationsDetailPane({
   onOpenLocalEnvironmentsSettings,
   modelOptions,
   locale,
+  selectedHostId,
   threadTitleById,
   workspaceRootOptions,
   workspaceRootLabels,
@@ -259,315 +292,340 @@ export function AutomationsDetailPane({
           <aside className="flex shrink-0 flex-col border-t border-[var(--app-shell-border)] bg-[var(--app-shell-right)] lg:w-96 lg:border-t-0 lg:border-l">
             <div className="flex min-h-0 flex-1 flex-col p-panel">
               <div className="flex flex-col">
-                <SectionLabel>{t("inbox.automations.statusSection")}</SectionLabel>
-                <RailRow
+                <CompactSectionLabel>{t("inbox.automations.statusSection")}</CompactSectionLabel>
+                <CompactRailRow
                   label={t("inbox.automations.status.label")}
-                  value={<StatusBadge status={draft.status} t={t} />}
-                />
-                <RailRow
+                >
+                  <StatusBadge status={draft.status} t={t} />
+                </CompactRailRow>
+                <CompactRailRow
                   label={t("inbox.automations.nextRun.label")}
-                  value={nextRunLabel}
-                />
-                <RailRow
+                >
+                  <RailPill>{nextRunLabel}</RailPill>
+                </CompactRailRow>
+                <CompactRailRow
                   label={t("inbox.automations.lastRun.label")}
-                  value={lastRunLabel}
-                />
+                >
+                  <RailPill>{lastRunLabel}</RailPill>
+                </CompactRailRow>
               </div>
 
-              <div className="mt-6 flex flex-col">
-                <SectionLabel>{t("inbox.automations.details")}</SectionLabel>
+              <div className="flex flex-col">
+                <CompactSectionLabel topPadding>
+                  {t("inbox.automations.details")}
+                </CompactSectionLabel>
                 {draft.kind === "cron" ? (
-                  <RailRow
+                  <CompactRailRow
                     label={t("inbox.automations.executionEnvironment.label")}
-                    value={
-                      <CompactRailSelect
-                        ariaLabel={t("settings.automations.executionEnvironment.ariaLabel")}
-                        icon={
-                          draft.executionEnvironment === "worktree" ? (
-                            <WorkspaceFileIcon className="h-4 w-4 shrink-0" />
-                          ) : (
-                            <FolderIcon className="h-4 w-4 shrink-0" />
-                          )
-                        }
-                        menuTitle={t("settings.automations.executionEnvironment.menuTitle")}
-                        triggerLabel={
-                          draft.executionEnvironment === "worktree"
-                            ? t("settings.automations.executionEnvironment.worktree")
-                            : t("settings.automations.executionEnvironment.local")
-                        }
-                        options={[
-                          {
-                            id: "local",
-                            label: t("settings.automations.executionEnvironment.local"),
-                            description: t("settings.automations.executionEnvironment.local.help"),
-                          },
-                          {
-                            id: "worktree",
-                            label: t("settings.automations.executionEnvironment.worktree"),
-                            description: t(
-                              "settings.automations.executionEnvironment.worktree.help",
-                            ),
-                          },
-                        ]}
-                        selectedId={draft.executionEnvironment}
-                        onSelect={(value) =>
-                          onDraftChange((current) =>
-                            current && current.kind === "cron"
-                              ? {
-                                  ...current,
-                                  executionEnvironment: value,
-                                  localEnvironmentConfigPath:
-                                    value === "worktree"
-                                      ? current.localEnvironmentConfigPath
-                                      : null,
-                                }
-                              : current,
-                          )
-                        }
-                      />
-                    }
-                  />
+                  >
+                    <CompactRailSelect
+                      align="end"
+                      ariaLabel={t("settings.automations.executionEnvironment.ariaLabel")}
+                      className="!text-base"
+                      icon={
+                        draft.executionEnvironment === "worktree" ? (
+                          <WorkspaceFileIcon className="h-4 w-4 shrink-0" />
+                        ) : (
+                          <FolderIcon className="h-4 w-4 shrink-0" />
+                        )
+                      }
+                      menuTitle={t("settings.automations.executionEnvironment.menuTitle")}
+                      triggerLabel={
+                        draft.executionEnvironment === "worktree"
+                          ? t("settings.automations.executionEnvironment.worktree")
+                          : t("settings.automations.executionEnvironment.local")
+                      }
+                      options={[
+                        {
+                          id: "local",
+                          label: t("settings.automations.executionEnvironment.local"),
+                          description: t("settings.automations.executionEnvironment.local.help"),
+                        },
+                        {
+                          id: "worktree",
+                          label: t("settings.automations.executionEnvironment.worktree"),
+                          description: t(
+                            "settings.automations.executionEnvironment.worktree.help",
+                          ),
+                        },
+                      ]}
+                      selectedId={draft.executionEnvironment}
+                      showIcon={false}
+                      onSelect={(value) =>
+                        onDraftChange((current) =>
+                          current && current.kind === "cron"
+                            ? {
+                                ...current,
+                                executionEnvironment: value,
+                                localEnvironmentConfigPath:
+                                  value === "worktree"
+                                    ? current.localEnvironmentConfigPath
+                                    : null,
+                              }
+                            : current,
+                        )
+                      }
+                    />
+                  </CompactRailRow>
                 ) : null}
                 {draft.kind === "cron" && hasConnectedRemoteConnections ? (
-                  <RailRow
+                  <CompactRailRow
                     label={t("inbox.automations.host.label")}
-                    value={
-                      <SettingsHostDropdown
-                        connectedRemoteConnections={[]}
-                        onSelectHost={() => {}}
-                        remoteConnectionHostIds={[]}
-                        selectedHostId={LOCAL_SETTINGS_HOST_ID}
-                        t={t}
-                      />
-                    }
-                  />
+                  >
+                    <SettingsHostDropdown
+                      align="end"
+                      connectedRemoteConnections={[]}
+                      contentWidth="menuWide"
+                      onSelectHost={() => {}}
+                      remoteConnectionHostIds={[]}
+                      selectedHostId={selectedHostId}
+                      triggerClassName="!w-auto max-w-full !text-base"
+                      triggerColor="ghost"
+                      t={t}
+                    />
+                  </CompactRailRow>
                 ) : null}
                 {draft.kind === "cron" && localEnvironmentState.visible ? (
-                  <RailRow
+                  <CompactRailRow
                     label={t("inbox.automations.localEnvironment.label")}
-                    value={
-                      <AutomationLocalEnvironmentSelector
-                        align="end"
-                        className="min-w-[160px] justify-end"
-                        fullWidth={false}
-                        labelClassName="text-[var(--app-shell-title)]"
-                        onOpenSettings={onOpenLocalEnvironmentsSettings}
-                        showIcon={false}
-                        state={localEnvironmentState}
-                        t={t}
-                      />
-                    }
-                  />
+                  >
+                    <AutomationLocalEnvironmentSelector
+                      align="end"
+                      className="min-w-[160px] justify-end !text-base"
+                      fullWidth={false}
+                      labelClassName="text-token-foreground"
+                      onOpenSettings={onOpenLocalEnvironmentsSettings}
+                      showIcon={false}
+                      state={localEnvironmentState}
+                      t={t}
+                    />
+                  </CompactRailRow>
                 ) : null}
-                <RailRow
+                <CompactRailRow
                   label={
                     draft.kind === "heartbeat"
                       ? t("inbox.automations.targetThread.label")
                       : t("inbox.automations.folder.label")
                   }
-                  value={
-                    draft.kind === "heartbeat" ? (
-                      <CompactRailSelect
-                        ariaLabel={t("settings.automations.heartbeatThread.ariaLabel")}
-                        icon={<BrowserTabIcon className="h-4 w-4 shrink-0" />}
-                        menuTitle={t("settings.automations.heartbeatThread.title")}
-                        triggerLabel={
-                          selectedHeartbeatThread?.title ??
-                          t("settings.automations.heartbeatThread.placeholder")
-                        }
-                        emptyLabel={t("settings.automations.heartbeatThread.empty")}
-                        options={heartbeatThreadOptions.map((thread) => ({
-                          description:
-                            thread.createdAt !== null && thread.createdAt > 0
-                              ? heartbeatThreadDateFormatter.format(
-                                  new Date(thread.createdAt * 1000),
-                                )
-                              : undefined,
-                          disabled: thread.unavailable,
-                          id: thread.id,
-                          label: thread.title,
-                          secondaryLabel: thread.isPinned
-                            ? undefined
-                            : t("settings.automations.heartbeatThread.unpinned"),
-                        }))}
-                        selectedId={draft.targetThreadId}
-                        onSelect={(value) =>
-                          onDraftChange((current) =>
-                            current && current.kind === "heartbeat"
-                              ? { ...current, targetThreadId: value }
-                              : current,
-                          )
-                        }
-                      />
-                    ) : (
-                      <CompactRailSelect
-                        ariaLabel={t("settings.automations.projectDropdown.placeholder")}
-                        icon={<FolderIcon className="h-4 w-4 shrink-0" />}
-                        menuTitle={t("inbox.automations.folder.label")}
-                        triggerLabel={selectedWorkspaceRootLabel}
-                        options={workspaceRootOptions.map((root) => ({
-                          id: root,
-                          label: formatWorkspaceRootsLabel(
-                            [root],
-                            locale,
-                            workspaceRootLabels,
-                            t,
-                          ),
-                        }))}
-                        selectedId={selectedWorkspaceRootId}
-                        onSelect={(value) =>
-                          onDraftChange((current) =>
-                            current && current.kind === "cron"
-                              ? { ...current, cwds: value ? [value] : [] }
-                              : current,
-                          )
-                        }
-                      />
-                    )
-                  }
-                />
-                <RailRow
+                >
+                  {draft.kind === "heartbeat" ? (
+                    <CompactRailSelect
+                      align="end"
+                      ariaLabel={t("settings.automations.heartbeatThread.ariaLabel")}
+                      className="!text-base"
+                      icon={<BrowserTabIcon className="h-4 w-4 shrink-0" />}
+                      menuTitle={t("settings.automations.heartbeatThread.title")}
+                      triggerLabel={
+                        selectedHeartbeatThread?.title ??
+                        t("settings.automations.heartbeatThread.placeholder")
+                      }
+                      emptyLabel={t("settings.automations.heartbeatThread.empty")}
+                      options={heartbeatThreadOptions.map((thread) => ({
+                        description:
+                          thread.createdAt !== null && thread.createdAt > 0
+                            ? heartbeatThreadDateFormatter.format(
+                                new Date(thread.createdAt * 1000),
+                              )
+                            : undefined,
+                        disabled: thread.unavailable,
+                        id: thread.id,
+                        label: thread.title,
+                        secondaryLabel: thread.isPinned
+                          ? undefined
+                          : t("settings.automations.heartbeatThread.unpinned"),
+                      }))}
+                      selectedId={draft.targetThreadId}
+                      showIcon={false}
+                      onSelect={(value) =>
+                        onDraftChange((current) =>
+                          current && current.kind === "heartbeat"
+                            ? { ...current, targetThreadId: value }
+                            : current,
+                        )
+                      }
+                    />
+                  ) : (
+                    <CompactRailSelect
+                      align="end"
+                      ariaLabel={t("settings.automations.projectDropdown.placeholder")}
+                      className="!text-base"
+                      icon={<FolderIcon className="h-4 w-4 shrink-0" />}
+                      menuTitle={t("inbox.automations.folder.label")}
+                      triggerLabel={selectedWorkspaceRootLabel}
+                      options={workspaceRootOptions.map((root) => ({
+                        id: root,
+                        label: formatWorkspaceRootsLabel(
+                          [root],
+                          locale,
+                          workspaceRootLabels,
+                          t,
+                        ),
+                      }))}
+                      selectedId={selectedWorkspaceRootId}
+                      showIcon={false}
+                      onSelect={(value) =>
+                        onDraftChange((current) =>
+                          current && current.kind === "cron"
+                            ? { ...current, cwds: value ? [value] : [] }
+                            : current,
+                        )
+                      }
+                    />
+                  )}
+                </CompactRailRow>
+                <CompactRailRow
                   label={
                     draft.kind === "heartbeat"
                       ? t("inbox.automations.interval.label")
                       : t("inbox.automations.repeats.label")
                   }
-                  value={
-                    draft.kind === "heartbeat" ? (
-                      <CompactScheduleEditor
-                        locale={locale}
-                        modeOptions={[
-                          {
-                            id: "hourly",
-                            label: t("settings.automations.scheduleMode.interval"),
-                          },
-                          {
-                            id: "daily",
-                            label: t("settings.automations.scheduleMode.daily"),
-                          },
-                          {
-                            id: "weekdays",
-                            label: t("settings.automations.scheduleMode.weekdays"),
-                          },
-                          {
-                            id: "weekly",
-                            label: t("settings.automations.scheduleMode.weekly"),
-                          },
-                          {
-                            id: "custom",
-                            label: t("settings.automations.scheduleMode.custom"),
-                          },
-                        ]}
-                        scheduleConfig={
-                          effectiveHeartbeatScheduleConfig ??
-                          getScheduleConfigForAutomation(draft)
-                        }
-                        t={t}
-                        onChange={(nextConfig) => {
-                          setHeartbeatScheduleConfig(nextConfig);
-                          onDraftChange((current) =>
-                            current && current.kind === "heartbeat"
-                              ? {
-                                  ...current,
-                                  rrule: scheduleConfigToRrule(nextConfig),
-                                }
-                              : current,
-                          );
-                        }}
-                      />
-                    ) : (
-                      <CompactScheduleEditor
-                        locale={locale}
-                        modeOptions={[
-                          {
-                            id: "daily",
-                            label: t("settings.automations.scheduleMode.daily"),
-                          },
-                          {
-                            id: "weekdays",
-                            label: t("settings.automations.scheduleMode.weekdays"),
-                          },
-                          {
-                            id: "weekly",
-                            label: t("settings.automations.scheduleMode.weekly"),
-                          },
-                          {
-                            id: "custom",
-                            label: t("settings.automations.scheduleMode.custom"),
-                          },
-                        ]}
-                        scheduleConfig={
-                          effectiveCronScheduleConfig ??
-                          getScheduleConfigForAutomation(draft)
-                        }
-                        t={t}
-                        onChange={(nextConfig) => {
-                          setCronScheduleConfig(nextConfig);
-                          onDraftChange((current) =>
-                            current && current.kind === "cron"
-                              ? {
-                                  ...current,
-                                  rrule: scheduleConfigToRrule(nextConfig),
-                                }
-                              : current,
-                          );
-                        }}
-                      />
-                    )
-                  }
-                />
+                >
+                  {draft.kind === "heartbeat" ? (
+                    <CompactScheduleEditor
+                      align="end"
+                      className="!text-base"
+                      locale={locale}
+                      modeOptions={[
+                        {
+                          id: "hourly",
+                          label: t("settings.automations.scheduleMode.interval"),
+                        },
+                        {
+                          id: "daily",
+                          label: t("settings.automations.scheduleMode.daily"),
+                        },
+                        {
+                          id: "weekdays",
+                          label: t("settings.automations.scheduleMode.weekdays"),
+                        },
+                        {
+                          id: "weekly",
+                          label: t("settings.automations.scheduleMode.weekly"),
+                        },
+                        {
+                          id: "custom",
+                          label: t("settings.automations.scheduleMode.custom"),
+                        },
+                      ]}
+                      scheduleConfig={
+                        effectiveHeartbeatScheduleConfig ??
+                        getScheduleConfigForAutomation(draft)
+                      }
+                      showIcon={false}
+                      t={t}
+                      onChange={(nextConfig) => {
+                        setHeartbeatScheduleConfig(nextConfig);
+                        onDraftChange((current) =>
+                          current && current.kind === "heartbeat"
+                            ? {
+                                ...current,
+                                rrule: scheduleConfigToRrule(nextConfig),
+                              }
+                            : current,
+                        );
+                      }}
+                    />
+                  ) : (
+                    <CompactScheduleEditor
+                      align="end"
+                      className="!text-base"
+                      locale={locale}
+                      modeOptions={[
+                        {
+                          id: "daily",
+                          label: t("settings.automations.scheduleMode.daily"),
+                        },
+                        {
+                          id: "weekdays",
+                          label: t("settings.automations.scheduleMode.weekdays"),
+                        },
+                        {
+                          id: "weekly",
+                          label: t("settings.automations.scheduleMode.weekly"),
+                        },
+                        {
+                          id: "custom",
+                          label: t("settings.automations.scheduleMode.custom"),
+                        },
+                      ]}
+                      scheduleConfig={
+                        effectiveCronScheduleConfig ??
+                        getScheduleConfigForAutomation(draft)
+                      }
+                      showIcon={false}
+                      t={t}
+                      onChange={(nextConfig) => {
+                        setCronScheduleConfig(nextConfig);
+                        onDraftChange((current) =>
+                          current && current.kind === "cron"
+                            ? {
+                                ...current,
+                                rrule: scheduleConfigToRrule(nextConfig),
+                              }
+                            : current,
+                        );
+                      }}
+                    />
+                  )}
+                </CompactRailRow>
                 {draft.kind === "cron" ? (
                   <>
-                    <RailRow
+                    <CompactRailRow
                       label={t("inbox.automations.model.label")}
-                      value={
-                        <CompactRailSelect
-                          ariaLabel={t("settings.automations.model.ariaLabel")}
-                          icon={<SettingsCogIcon className="h-4 w-4 shrink-0" />}
-                          menuTitle={t("settings.automations.model.title")}
-                          triggerLabel={selectedModelLabel}
-                          emptyLabel={t("settings.automations.model.loading")}
-                          options={modelOptions.map((modelOption) => ({
-                            id: modelOption.id,
-                            label: modelOption.id,
-                          }))}
-                          selectedId={draft.model ?? ""}
-                          onSelect={(value) =>
-                            onDraftChange((current) =>
-                              current && current.kind === "cron"
-                                ? { ...current, model: value || null }
-                                : current,
-                            )
-                          }
-                        />
-                      }
-                    />
-                    <RailRow
+                    >
+                      <CompactRailSelect
+                        align="end"
+                        ariaLabel={t("settings.automations.model.ariaLabel")}
+                        className="!text-base"
+                        icon={<SettingsCogIcon className="h-4 w-4 shrink-0" />}
+                        menuTitle={t("settings.automations.model.title")}
+                        triggerLabel={selectedModelLabel}
+                        emptyLabel={t("settings.automations.model.loading")}
+                        options={modelOptions.map((modelOption) => ({
+                          id: modelOption.id,
+                          label: modelOption.id,
+                        }))}
+                        selectedId={draft.model ?? ""}
+                        showIcon={false}
+                        onSelect={(value) =>
+                          onDraftChange((current) =>
+                            current && current.kind === "cron"
+                              ? { ...current, model: value || null }
+                              : current,
+                          )
+                        }
+                      />
+                    </CompactRailRow>
+                    <CompactRailRow
                       label={t("inbox.automations.reasoning.label")}
-                      value={
-                        <CompactRailSelect
-                          ariaLabel={t("settings.automations.reasoning.ariaLabel")}
-                          icon={<SettingsCogIcon className="h-4 w-4 shrink-0" />}
-                          menuTitle={t("settings.automations.reasoning.title")}
-                          triggerLabel={selectedReasoningLabel}
-                          emptyLabel={t("settings.automations.reasoning.loading")}
-                          options={AUTOMATION_REASONING_OPTIONS.map((option) => ({
-                            id: option.id,
-                            label: formatReasoningLabel(option.id, t),
-                          }))}
-                          selectedId={draft.reasoningEffort ?? ""}
-                          onSelect={(value) =>
-                            onDraftChange((current) =>
-                              current && current.kind === "cron"
-                                ? { ...current, reasoningEffort: value || null }
-                                : current,
-                            )
-                          }
-                        />
-                      }
-                    />
-                    <div className="mt-6 min-h-0 flex-1">
-                      <SectionLabel>{t("inbox.automations.history")}</SectionLabel>
+                    >
+                      <CompactRailSelect
+                        align="end"
+                        ariaLabel={t("settings.automations.reasoning.ariaLabel")}
+                        className="!text-base"
+                        icon={<SettingsCogIcon className="h-4 w-4 shrink-0" />}
+                        menuTitle={t("settings.automations.reasoning.title")}
+                        triggerLabel={selectedReasoningLabel}
+                        emptyLabel={t("settings.automations.reasoning.loading")}
+                        options={AUTOMATION_REASONING_OPTIONS.map((option) => ({
+                          id: option.id,
+                          label: formatReasoningLabel(option.id, t),
+                        }))}
+                        selectedId={draft.reasoningEffort ?? ""}
+                        showIcon={false}
+                        onSelect={(value) =>
+                          onDraftChange((current) =>
+                            current && current.kind === "cron"
+                              ? { ...current, reasoningEffort: value || null }
+                              : current,
+                          )
+                        }
+                      />
+                    </CompactRailRow>
+                    <div className="min-h-0 flex-1">
+                      <CompactSectionLabel topPadding>
+                        {t("inbox.automations.history")}
+                      </CompactSectionLabel>
                       <div className="min-h-0 flex-1">
                         <AutomationPreviousRunsList
                           automationId={draft.id}
@@ -593,4 +651,3 @@ export function AutomationsDetailPane({
     </div>
   );
 }
-

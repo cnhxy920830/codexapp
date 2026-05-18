@@ -80,6 +80,7 @@ function buildSnapshots(): SnapshotMap {
             onOpenThread={noopOpenThread}
             onSetInboxItemReadState={noopSetInboxItemReadState}
             onOpenLocalEnvironmentsSettings={noopOpenSettings}
+            selectedHostId="local"
             threadTitleById={new Map()}
             workspaceRootOptions={["D:\\workspace\\codex-app"]}
             workspaceRootLabels={{
@@ -111,6 +112,7 @@ function buildSnapshots(): SnapshotMap {
             onOpenThread={noopOpenThread}
             onSetInboxItemReadState={noopSetInboxItemReadState}
             onOpenLocalEnvironmentsSettings={noopOpenSettings}
+            selectedHostId="local"
             threadTitleById={new Map()}
             workspaceRootOptions={["D:\\workspace\\codex-app"]}
             workspaceRootLabels={{

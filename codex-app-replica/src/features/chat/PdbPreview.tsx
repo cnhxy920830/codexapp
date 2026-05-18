@@ -66,6 +66,16 @@ export function PdbPreview({ contents, filePath, t }: PdbPreviewProps) {
   const [zoomRange, setZoomRange] = useState<PdbSelection | null>(null);
 
   useEffect(() => {
+    setActiveModelIndex(0);
+    setActiveChainId(null);
+    highlightRangeRef.current = null;
+    selectionStartIndexRef.current = null;
+    setHighlightRange(null);
+    setZoomRange(null);
+    setViewerResetToken((value) => value + 1);
+  }, [contents]);
+
+  useEffect(() => {
     if (activeModelIndex >= data.models.length) {
       setActiveModelIndex(0);
     }
@@ -82,6 +92,14 @@ export function PdbPreview({ contents, filePath, t }: PdbPreviewProps) {
     highlightRangeRef.current = selection;
     setHighlightRange(selection);
   };
+
+  useEffect(() => {
+    setActiveChainId(activeModel?.residueChains[0]?.chainId ?? null);
+    selectionStartIndexRef.current = null;
+    highlightRangeRef.current = null;
+    setHighlightRange(null);
+    setZoomRange(null);
+  }, [activeModelIndex, activeModel?.residueChains]);
 
   useEffect(() => {
     const viewerContainer = viewerContainerRef.current;
@@ -201,6 +219,10 @@ export function PdbPreview({ contents, filePath, t }: PdbPreviewProps) {
                 return;
               }
               setActiveModelIndex(nextIndex);
+              setActiveChainId(data.models[nextIndex]?.residueChains[0]?.chainId ?? null);
+              selectionStartIndexRef.current = null;
+              setSelection(null);
+              setZoomRange(null);
             }}
             align="end"
             labelClassName="text-token-text-primary tabular-nums"

@@ -50,7 +50,6 @@ import {
   type PendingToolRequestUserInput,
 } from "./threadConversationState";
 import { renderMessageContent } from "./messageContent";
-import { LatestTurnPreview } from "./LatestTurnPreview";
 import { LocalUserImageAttachment } from "./LocalUserImageAttachment";
 import { MultiAgentGroupSummary } from "./MultiAgentGroupSummary";
 import { PlanSummaryItemCard } from "./PlanSummaryItemCard";
@@ -196,6 +195,7 @@ type ChatConversationMainPaneProps = {
   remoteTaskEnvironment?: RemoteTaskEnvironment | null;
   remoteTaskId?: string | null;
   composerPlacement?: "main" | "side";
+  showFooter?: boolean;
   showComposerFooter?: boolean;
   isThreadGoalEditorOpen?: boolean;
   pendingThreadGoalObjective?: string | null;
@@ -261,6 +261,7 @@ export function ChatConversationMainPane({
   remoteTaskEnvironment = null,
   remoteTaskId = null,
   composerPlacement = "main",
+  showFooter = true,
   showComposerFooter = true,
   isThreadGoalEditorOpen = false,
   pendingThreadGoalObjective = null,
@@ -439,31 +440,6 @@ export function ChatConversationMainPane({
       unifiedDiff: latestUnifiedDiff,
     }).catch(() => undefined);
   }, [conversationId, latestUnifiedDiff]);
-  const latestTurnPreviewContent =
-    latestConversationGroup !== null && conversationId !== null ? (
-      <ConversationGroupContent
-        conversationId={conversationId}
-        conversationHostId={conversationHostId}
-        group={latestConversationGroup}
-        approvalActionErrors={approvalActionErrors}
-        onApprovalDecision={onApprovalDecision}
-        onMcpServerElicitationRequestSubmit={onMcpServerElicitationRequestSubmit}
-        onOpenRemoteTask={onOpenRemoteTask}
-        onPermissionsRequestApprovalSubmit={onPermissionsRequestApprovalSubmit}
-        onEditUserMessage={onEditUserMessage}
-        onSelectThread={onSelectThread}
-        onToolRequestUserInputSubmit={onToolRequestUserInputSubmit}
-        conversationCwd={threadConversation?.cwd ?? null}
-        planSummaryIsWriting={isResponseInProgress && latestConversationGroup.assistantMessage === null}
-        remoteAttemptTabs={remoteAttemptTabsByTurnId[latestConversationGroup.turnId] ?? null}
-        remoteConversationOverride={remoteConversationOverridesByTurnId[latestConversationGroup.turnId] ?? null}
-        onSelectRemoteTaskAssistantTurn={onSelectRemoteTaskAssistantTurn}
-        respondingApprovalKeys={respondingApprovalKeys}
-        t={t}
-        userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId}
-      />
-    ) : null;
-
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col bg-[var(--app-shell-main-surface)]">
       {showBlankConversationBody ? (
@@ -550,114 +526,106 @@ export function ChatConversationMainPane({
         </div>
       )}
 
-      <RemoteConversationFooter
-        aboveComposerContent={
-          showThreadGoalOwner ? (
-            <ThreadGoalOwner
+      {showFooter ? (
+        <RemoteConversationFooter
+          aboveComposerContent={
+            showThreadGoalOwner ? (
+              <ThreadGoalOwner
+                conversationId={conversationId}
+                draftObjective={composerDraft}
+                goal={threadConversation?.threadGoal ?? null}
+                hostId={conversationHostId}
+                isEditorOpen={isThreadGoalEditorOpen}
+                pendingObjective={pendingThreadGoalObjective}
+                onEditorOpenChange={onThreadGoalEditorOpenChange}
+                onFocusComposer={onFocusComposerRequest}
+                onPendingObjectiveChange={onPendingThreadGoalObjectiveChange}
+                onShowToast={onShowToast}
+                t={t}
+              />
+            ) : null
+          }
+          composer={
+            <ThreadComposer
+              activeCollaborationMode={activeCollaborationMode}
+              composerDraft={composerDraft}
+              composerEnterBehavior={composerEnterBehavior}
               conversationId={conversationId}
-              draftObjective={composerDraft}
-              goal={threadConversation?.threadGoal ?? null}
-              hostId={conversationHostId}
-              isEditorOpen={isThreadGoalEditorOpen}
-              pendingObjective={pendingThreadGoalObjective}
-              onEditorOpenChange={onThreadGoalEditorOpenChange}
-              onFocusComposer={onFocusComposerRequest}
-              onPendingObjectiveChange={onPendingThreadGoalObjectiveChange}
-              onShowToast={onShowToast}
+              focusComposerNonce={composerFocusNonce}
+              composerPermissionConfig={composerPermissionConfig}
+              composerPermissionMode={composerPermissionMode}
+              composerPermissionsState={composerPermissionsState}
+              followUpQueueMode={followUpQueueMode}
+              isResponseInProgress={isResponseInProgress}
+              isWorktreeThread={isWorktreeThread}
+              onComposerDraftChange={onComposerDraftChange}
+              onComposerCollaborationModeChange={onComposerCollaborationModeChange}
+              onComposerPermissionModeChange={onComposerPermissionModeChange}
+              onClearPendingPdfComments={onClearPendingPdfComments}
+              onOpenWorkspaceFileSearch={onOpenWorkspaceFileSearch}
+              onOpenThreadGoalEditor={
+                composerPlacement === "main"
+                  ? () => onThreadGoalEditorOpenChange(true)
+                  : null
+              }
+              onStopTurn={onStopTurn}
+              onSubmitTurn={onSubmitTurn}
+              pendingPdfComments={currentThreadPendingPdfComments}
+              pendingPdfCommentCount={currentThreadPendingPdfCommentCount}
+              pendingThreadGoalObjective={
+                composerPlacement === "main" ? pendingThreadGoalObjective : null
+              }
+              placement={composerPlacement}
+              reviewDelivery={reviewDelivery}
+              submitButtonMode={submitButtonMode}
               t={t}
-            />
-          ) : null
-        }
-        composer={
-          <ThreadComposer
-            activeCollaborationMode={activeCollaborationMode}
-            composerDraft={composerDraft}
-            composerEnterBehavior={composerEnterBehavior}
-            conversationId={conversationId}
-            focusComposerNonce={composerFocusNonce}
-            composerPermissionConfig={composerPermissionConfig}
-            composerPermissionMode={composerPermissionMode}
-            composerPermissionsState={composerPermissionsState}
-            followUpQueueMode={followUpQueueMode}
-            isResponseInProgress={isResponseInProgress}
-            isWorktreeThread={isWorktreeThread}
-            onComposerDraftChange={onComposerDraftChange}
-            onComposerCollaborationModeChange={onComposerCollaborationModeChange}
-            onComposerPermissionModeChange={onComposerPermissionModeChange}
-            onClearPendingPdfComments={onClearPendingPdfComments}
-            onOpenWorkspaceFileSearch={onOpenWorkspaceFileSearch}
-            onOpenThreadGoalEditor={
-              composerPlacement === "main"
-                ? () => onThreadGoalEditorOpenChange(true)
-                : null
-            }
-            onStopTurn={onStopTurn}
-            onSubmitTurn={onSubmitTurn}
-            pendingPdfComments={currentThreadPendingPdfComments}
-            pendingPdfCommentCount={currentThreadPendingPdfCommentCount}
-            pendingThreadGoalObjective={
-              composerPlacement === "main" ? pendingThreadGoalObjective : null
-            }
-            placement={composerPlacement}
-            reviewDelivery={reviewDelivery}
-            submitButtonMode={submitButtonMode}
-            t={t}
-            authMethod={authMethod}
-            latestTokenUsageInfo={threadConversation?.latestTokenUsageInfo ?? null}
-            threadBranchLabel={threadBranchLabel}
-            threadGoal={threadConversation?.threadGoal ?? null}
-            threadGitRoot={threadGitRoot}
-            threadHostId={conversationHostId}
-            threadCwd={threadConversation?.cwd ?? null}
-            turnError={turnError}
-            onShowToast={onShowToast}
-            onOpenSideChat={
-              onOpenSideChat
-                ? (initialPrompt) => Promise.resolve(onOpenSideChat(initialPrompt)).then(() => true)
-                : null
-            }
-          />
-        }
-        footerPendingRequest={
-          footerPendingRequest ? (
-            <ComposerFooterPendingRequest
-              pendingRequest={footerPendingRequest}
-              approvalActionErrors={approvalActionErrors}
-              respondingApprovalKeys={respondingApprovalKeys}
-              onApprovalDecision={onApprovalDecision}
-              onDismissImplementPlanRequest={onDismissImplementPlanRequest}
-              onImplementPlanRequestSubmit={onImplementPlanRequestSubmit}
-              onMcpServerElicitationRequestSubmit={onMcpServerElicitationRequestSubmit}
-              onPermissionsRequestApprovalSubmit={onPermissionsRequestApprovalSubmit}
-              onToolRequestUserInputSubmit={onToolRequestUserInputSubmit}
-              t={t}
+              authMethod={authMethod}
+              latestTokenUsageInfo={threadConversation?.latestTokenUsageInfo ?? null}
+              threadBranchLabel={threadBranchLabel}
+              threadGoal={threadConversation?.threadGoal ?? null}
+              threadGitRoot={threadGitRoot}
+              threadHostId={conversationHostId}
+              threadCwd={threadConversation?.cwd ?? null}
               turnError={turnError}
+              onShowToast={onShowToast}
+              onOpenSideChat={
+                onOpenSideChat
+                  ? (initialPrompt) => Promise.resolve(onOpenSideChat(initialPrompt)).then(() => true)
+                  : null
+              }
             />
-          ) : null
-        }
-        latestTurnPreview={
-          latestConversationGroup ? (
-            <LatestTurnPreview
-              group={latestConversationGroup}
-              isTurnInProgress={isResponseInProgress}
-              previewContent={latestTurnPreviewContent}
-              t={t}
-            />
-          ) : null
-        }
-        onScrollToBottom={handleScrollToBottom}
-        onShowToast={onShowToast}
-        remoteApplyDiff={remoteApplyDiff}
-        remoteApplyTurnId={remoteApplyTurnId}
-        remoteTaskEnvironment={remoteTaskEnvironment}
-        remoteTaskId={remoteTaskId}
-        showComposerFooter={showComposerFooter}
-        showRemoteApplyFooter={showRemoteApplyFooter}
-        showRemoteFailedFooter={showRemoteFailedFooter}
-        showScrollToBottomButton={showScrollToBottomButton}
-        t={t}
-        workspaceRoot={workspaceRoot}
-      />
+          }
+          footerPendingRequest={
+            footerPendingRequest ? (
+              <ComposerFooterPendingRequest
+                pendingRequest={footerPendingRequest}
+                approvalActionErrors={approvalActionErrors}
+                respondingApprovalKeys={respondingApprovalKeys}
+                onApprovalDecision={onApprovalDecision}
+                onDismissImplementPlanRequest={onDismissImplementPlanRequest}
+                onImplementPlanRequestSubmit={onImplementPlanRequestSubmit}
+                onMcpServerElicitationRequestSubmit={onMcpServerElicitationRequestSubmit}
+                onPermissionsRequestApprovalSubmit={onPermissionsRequestApprovalSubmit}
+                onToolRequestUserInputSubmit={onToolRequestUserInputSubmit}
+                t={t}
+                turnError={turnError}
+              />
+            ) : null
+          }
+          onScrollToBottom={handleScrollToBottom}
+          onShowToast={onShowToast}
+          remoteApplyDiff={remoteApplyDiff}
+          remoteApplyTurnId={remoteApplyTurnId}
+          remoteTaskEnvironment={remoteTaskEnvironment}
+          remoteTaskId={remoteTaskId}
+          showComposerFooter={showComposerFooter}
+          showRemoteApplyFooter={showRemoteApplyFooter}
+          showRemoteFailedFooter={showRemoteFailedFooter}
+          showScrollToBottomButton={showScrollToBottomButton}
+          t={t}
+          workspaceRoot={workspaceRoot}
+        />
+      ) : null}
     </section>
   );
 }
@@ -720,7 +688,7 @@ function ConversationTurnPlanImplementationItems({
   );
 }
 
-function ComposerFooterPendingRequest({
+export function ComposerFooterPendingRequest({
   pendingRequest,
   approvalActionErrors,
   respondingApprovalKeys,
@@ -1131,7 +1099,7 @@ function ApprovalRequestCard({
   );
 }
 
-function ConversationGroupContent({
+export function ConversationGroupContent({
   conversationId,
   conversationCwd = null,
   conversationHostId = null,
@@ -3819,7 +3787,7 @@ function renderPermissionPathBlock(label: string, paths: string[]) {
   );
 }
 
-function selectComposerFooterPendingRequest({
+export function selectComposerFooterPendingRequest({
   approvals,
   implementPlanRequests,
   mcpRequests,
@@ -3923,7 +3891,7 @@ function selectCurrentPendingRequest({
   };
 }
 
-function filterPendingRequestsForConversationBody<
+export function filterPendingRequestsForConversationBody<
   T extends
     | PendingApproval
     | PendingMcpServerElicitationRequest

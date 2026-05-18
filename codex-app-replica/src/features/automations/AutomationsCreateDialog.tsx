@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { AutomationRecord } from "../../services/automations";
-import { PlusIcon } from "../../components/AppShellIcons";
+import { CloseTabIcon } from "../../components/AppShellIcons";
+import { Button } from "../../components/Button";
 import { AutomationFormFields } from "./AutomationFormFields";
 import { AutomationsQuickStartTemplates } from "./AutomationsQuickStartTemplates";
 import type { CronAutomationRecord } from "../../services/automations";
@@ -57,6 +58,24 @@ export function AutomationsCreateDialog({
   t,
 }: AutomationsCreateDialogProps) {
   const [isTemplateMode, setIsTemplateMode] = useState(initialTemplateMode);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Node)) {
+        return;
+      }
+      if (dialogRef.current?.contains(event.target)) {
+        return;
+      }
+      event.preventDefault();
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+    };
+  }, []);
 
   if (draft === null) {
     return null;
@@ -64,9 +83,20 @@ export function AutomationsCreateDialog({
 
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
-      <div className="app-card flex max-h-[95vh] w-full max-w-[1080px] flex-col overflow-hidden rounded-[20px] shadow-[0_20px_48px_rgba(0,0,0,0.22)]">
+      <div
+        ref={dialogRef}
+        className="app-card relative flex max-h-[95vh] w-full max-w-[800px] flex-col overflow-hidden rounded-[20px] shadow-[0_20px_48px_rgba(0,0,0,0.22)]"
+      >
+        <button
+          type="button"
+          aria-label={t("codex.alert.closeAriaLabel")}
+          onClick={onCancel}
+          className="app-control-weak absolute top-[22px] right-5 z-10 flex size-8 items-center justify-center rounded-full"
+        >
+          <CloseTabIcon className="h-4 w-4" />
+        </button>
         <div className="border-b border-[var(--app-shell-border)] px-6 py-4">
-          <div className="flex min-w-0 items-start justify-between gap-4">
+          <div className="flex min-w-0 items-start justify-between gap-4 pr-12">
             <div className="min-w-0 flex-1">
               {isTemplateMode ? (
                 <div className="min-w-0 pr-32 text-lg leading-tight whitespace-nowrap text-[var(--app-shell-title)]">
@@ -85,31 +115,27 @@ export function AutomationsCreateDialog({
                 />
               )}
             </div>
-            <button
-              type="button"
+            <Button
+              color="ghost"
               aria-label={t(
                 isTemplateMode
                   ? "settings.automations.modal.collapse"
                   : "settings.automations.modal.expand",
               )}
               onClick={() => setIsTemplateMode((value) => !value)}
-              className="app-control shrink-0 rounded-[11px] px-3 py-1.5 text-[12px]"
+              size="toolbar"
             >
               {t(
                 isTemplateMode
                   ? "settings.automations.modal.createNew"
                   : "settings.automations.modal.useTemplate",
               )}
-            </button>
+            </Button>
             {!isTemplateMode &&
             (draft.name.trim().length > 0 || draft.prompt.trim().length > 0) ? (
-              <button
-                type="button"
-                onClick={onClearDraft}
-                className="app-control shrink-0 rounded-[11px] px-3 py-1.5 text-[12px]"
-              >
+              <Button color="ghost" onClick={onClearDraft} size="toolbar">
                 {t("settings.automations.clear")}
-              </button>
+              </Button>
             ) : null}
           </div>
         </div>
@@ -121,7 +147,6 @@ export function AutomationsCreateDialog({
                 baseDraft={quickStartBaseDraft}
                 className=""
                 columns="two"
-                hideLearnMore={true}
                 onSelectAction={(nextDraft) => {
                   onSelectTemplateDraft(nextDraft);
                   setIsTemplateMode(false);
@@ -149,28 +174,18 @@ export function AutomationsCreateDialog({
 
         <div className="border-t border-[var(--app-shell-border)] px-6 py-4">
           <div className="flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
-            >
+            <Button color="ghost" onClick={onCancel} size="toolbar">
               {t("settings.automations.cancel")}
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              color="primary"
               disabled={!canSave || isSaving}
+              loading={isSaving}
               onClick={onCreate}
-              className="app-button-primary rounded-[11px] px-3 py-1.5 text-[12px] disabled:cursor-default disabled:opacity-60"
+              size="toolbar"
             >
-              {isSaving ? (
-                t("general.saving")
-              ) : (
-                <span className="inline-flex items-center gap-2">
-                  <PlusIcon className="h-4 w-4" />
-                  {t("settings.automations.create")}
-                </span>
-              )}
-            </button>
+              {isSaving ? t("general.saving") : t("settings.automations.create")}
+            </Button>
           </div>
         </div>
       </div>

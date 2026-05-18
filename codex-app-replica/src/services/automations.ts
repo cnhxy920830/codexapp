@@ -192,7 +192,7 @@ export function buildAutomationDraft(kind: AutomationRecord["kind"]): Automation
     lastRunAt: null,
     nextRunAt: null,
     cwds: [],
-    executionEnvironment: "local",
+    executionEnvironment: "worktree",
     localEnvironmentConfigPath: null,
     model: null,
     reasoningEffort: null,

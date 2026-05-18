@@ -6,10 +6,6 @@ import path from "node:path";
 import { test } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { I18N_CONTEXT } from "../../i18n/i18n";
-import { ChatConversationMainPane } from "./ChatConversationMainPane";
-import { ChatSidePanel } from "./ChatSidePanel";
-import { LocalConversationPageHeader } from "./LocalConversationPageHeader";
-import { createSideChatRightPanelTab } from "./rightPanelTabs";
 import type {
   ThreadConversation,
   ThreadConversationMessage,
@@ -38,6 +34,20 @@ const permissionsState: HotkeyPermissionsState = {
 };
 
 test("local conversation page snapshots", async (t) => {
+  installBrowserModuleShim();
+  const [
+    { ChatConversationMainPane },
+    { ChatSidePanel },
+    { LocalConversationCompactComposerOverlay },
+    { LocalConversationPageHeader },
+    { createSideChatRightPanelTab },
+  ] = await Promise.all([
+    import("./ChatConversationMainPane"),
+    import("./ChatSidePanel"),
+    import("./LocalConversationCompactComposerOverlay"),
+    import("./LocalConversationPageHeader"),
+    import("./rightPanelTabs"),
+  ]);
   const threadConversation = buildLocalConversationFixture();
   const annotationOnlyThreadConversation = buildAnnotationOnlyLocalConversationFixture();
   const editingThreadConversation = buildEditingLocalConversationFixture();
@@ -348,6 +358,58 @@ test("local conversation page snapshots", async (t) => {
         </I18N_CONTEXT.Provider>,
       ),
     ),
+    fullWidthCompactComposerOverlay: normalizeMarkup(
+      renderToStaticMarkup(
+        <I18N_CONTEXT.Provider value={{ locale: "en-US", setLocale: () => undefined, t: translate }}>
+          <div className="relative h-[900px] w-[900px] bg-[var(--app-shell-main-surface)]">
+            <LocalConversationCompactComposerOverlay
+              composerDraft=""
+              composerEnterBehavior="enter"
+              composerPermissionConfig={null}
+              composerPermissionMode="auto"
+              composerPermissionsState={permissionsState}
+              followUpQueueMode="queue"
+              isResponseInProgress={false}
+              isWorktreeThread={false}
+              currentThreadApprovals={[]}
+              currentThreadImplementPlanRequests={[]}
+              currentThreadMcpServerElicitationRequest={[]}
+              currentThreadPermissionsRequestApproval={[]}
+              currentThreadToolRequestUserInput={[]}
+              currentThreadPendingPdfComments={[]}
+              currentThreadPendingPdfCommentCount={0}
+              onApprovalDecision={() => undefined}
+              onDismissImplementPlanRequest={() => undefined}
+              onImplementPlanRequestSubmit={() => undefined}
+              onMcpServerElicitationRequestSubmit={() => undefined}
+              onPermissionsRequestApprovalSubmit={() => undefined}
+              onToolRequestUserInputSubmit={() => undefined}
+              onComposerDraftChange={() => undefined}
+              onComposerPermissionModeChange={() => undefined}
+              onOpenRemoteTask={() => undefined}
+              onSelectRemoteTaskAssistantTurn={() => undefined}
+              onOpenSideChat={() => true}
+              onOpenWorkspaceFileSearch={() => undefined}
+              onSelectThread={() => undefined}
+              onEditUserMessage={() => undefined}
+              onStopTurn={() => undefined}
+              onSubmitTurn={() => undefined}
+              approvalActionErrors={{}}
+              reviewDelivery="inline"
+              respondingApprovalKeys={[]}
+              submitButtonMode="send"
+              t={translate}
+              threadConversation={threadConversation}
+              turnError={null}
+              workspaceRoot="D:\\workspace\\project"
+              conversationHostId={null}
+              authMethod="chatgpt"
+              activeCollaborationMode={threadConversation.latestCollaborationMode ?? null}
+            />
+          </div>
+        </I18N_CONTEXT.Provider>,
+      ),
+    ),
     titleHoverCardOpen: normalizeMarkup(
       renderToStaticMarkup(
         <div className="w-[1440px]">
@@ -395,6 +457,7 @@ type SnapshotMap = {
   annotationOnlyThread: string;
   editingUserMessage: string;
   sideChat: string;
+  fullWidthCompactComposerOverlay: string;
   titleHoverCardOpen: string;
 };
 
@@ -403,6 +466,113 @@ function normalizeMarkup(markup: string) {
     .replace(/>\s+</g, "><")
     .replace(/\s{2,}/g, " ")
     .trim();
+}
+
+function installBrowserModuleShim() {
+  if (typeof window !== "undefined") {
+    return;
+  }
+
+  const eventListeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
+  const localStorageEntries = new Map<string, string>();
+  const location = new URL("https://codex-app.test/?hostId=local");
+
+  class TestCustomEvent<T = unknown> extends Event implements CustomEvent<T> {
+    detail: T;
+
+    constructor(type: string, eventInitDict?: CustomEventInit<T>) {
+      super(type, eventInitDict);
+      this.detail = eventInitDict?.detail as T;
+    }
+
+    initCustomEvent(
+      type: string,
+      bubbles?: boolean,
+      cancelable?: boolean,
+      detail?: T,
+    ) {
+      this.detail = detail as T;
+    }
+  }
+
+  const windowShim = {
+    addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+      const listeners = eventListeners.get(type) ?? new Set<EventListenerOrEventListenerObject>();
+      listeners.add(listener);
+      eventListeners.set(type, listeners);
+    },
+    removeEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+      eventListeners.get(type)?.delete(listener);
+    },
+    dispatchEvent(event: Event) {
+      const listeners = eventListeners.get(event.type);
+      if (listeners == null) {
+        return true;
+      }
+      for (const listener of listeners) {
+        if (typeof listener === "function") {
+          listener.call(windowShim, event);
+          continue;
+        }
+        listener.handleEvent(event);
+      }
+      return !event.defaultPrevented;
+    },
+    location,
+    localStorage: {
+      clear() {
+        localStorageEntries.clear();
+      },
+      getItem(key: string) {
+        return localStorageEntries.get(key) ?? null;
+      },
+      key(index: number) {
+        return Array.from(localStorageEntries.keys())[index] ?? null;
+      },
+      removeItem(key: string) {
+        localStorageEntries.delete(key);
+      },
+      setItem(key: string, value: string) {
+        localStorageEntries.set(key, String(value));
+      },
+      get length() {
+        return localStorageEntries.size;
+      },
+    },
+    navigator: {
+      language: "en-US",
+      platform: "Win32",
+      userAgent: "node-test",
+    },
+    electronBridge: undefined,
+    requestAnimationFrame(callback: FrameRequestCallback) {
+      return setTimeout(() => {
+        callback(Date.now());
+      }, 0) as unknown as number;
+    },
+    cancelAnimationFrame(handle: number) {
+      clearTimeout(handle);
+    },
+  };
+
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: windowShim,
+  });
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: {
+      visibilityState: "visible",
+    },
+  });
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: windowShim.navigator,
+  });
+  Object.defineProperty(globalThis, "CustomEvent", {
+    configurable: true,
+    value: TestCustomEvent,
+  });
 }
 
 function buildLocalConversationFixture(): ThreadConversation {
