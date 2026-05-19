@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useI18n } from "../i18n/i18n";
 import {
   getArchivedThreadsForHost,
@@ -8,6 +8,10 @@ import {
 import type { AppToast } from "./AppToastRegion";
 import { Button } from "./Button";
 import { SettingsContentLayout } from "./SettingsContentLayout";
+import { SettingsGroup } from "./SettingsGroup";
+import { SettingsRow } from "./SettingsRow";
+import { SettingsSectionTitle } from "./SettingsSectionTitle";
+import { SettingsSurface } from "./SettingsSurface";
 
 export function DataControlsSettings({
   onDismissToast,
@@ -25,37 +29,70 @@ export function DataControlsSettings({
   const { locale, t } = useI18n();
   const [archivedThreads, setArchivedThreads] = useState<ThreadHistoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoadError, setIsLoadError] = useState(false);
   const [pendingThreadIds, setPendingThreadIds] = useState<string[]>([]);
+  const archivedThreadsRequestIdRef = useRef(0);
+  const selectedHostIdRef = useRef(selectedHostId);
+
+  selectedHostIdRef.current = selectedHostId;
+
+  const loadArchivedThreads = async ({
+    clearOnError,
+    hostId,
+    showLoading,
+  }: {
+    clearOnError: boolean;
+    hostId: string;
+    showLoading: boolean;
+  }) => {
+    const requestId = ++archivedThreadsRequestIdRef.current;
+
+    if (showLoading) {
+      setIsLoading(true);
+      setIsLoadError(false);
+    }
+
+    try {
+      const threads = await getArchivedThreadsForHost(hostId);
+      if (
+        requestId !== archivedThreadsRequestIdRef.current ||
+        hostId !== selectedHostIdRef.current
+      ) {
+        return;
+      }
+
+      setArchivedThreads(threads);
+      setIsLoadError(false);
+    } catch (error) {
+      if (
+        requestId !== archivedThreadsRequestIdRef.current ||
+        hostId !== selectedHostIdRef.current
+      ) {
+        return;
+      }
+
+      void error;
+      if (clearOnError) {
+        setIsLoadError(true);
+        setArchivedThreads([]);
+      }
+    } finally {
+      if (
+        showLoading &&
+        requestId === archivedThreadsRequestIdRef.current &&
+        hostId === selectedHostIdRef.current
+      ) {
+        setIsLoading(false);
+      }
+    }
+  };
 
   useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      setIsLoading(true);
-      setLoadError(null);
-      try {
-        const threads = await getArchivedThreadsForHost(selectedHostId);
-        if (!cancelled) {
-          setArchivedThreads(threads);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setLoadError(error instanceof Error ? error.message : String(error));
-          setArchivedThreads([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
+    void loadArchivedThreads({
+      hostId: selectedHostId,
+      showLoading: true,
+      clearOnError: true,
+    });
   }, [selectedHostId]);
 
   const openUnarchivedConversation = (threadId: string) => {
@@ -64,13 +101,14 @@ export function DataControlsSettings({
   };
 
   const unarchiveArchivedThread = async (thread: ThreadHistoryEntry) => {
+    const previousThreads = archivedThreads;
     setPendingThreadIds((current) => [...current, thread.id]);
+    setArchivedThreads((current) => current.filter((entry) => entry.id !== thread.id));
     try {
       await unarchiveConversationForHost({
         hostId: selectedHostId,
         conversationId: thread.id,
       });
-      setArchivedThreads((current) => current.filter((entry) => entry.id !== thread.id));
       void onThreadUnarchived?.(thread.id, selectedHostId);
       onShowToast?.({
         tone: "info",
@@ -90,24 +128,30 @@ export function DataControlsSettings({
         ),
       });
     } catch {
+      setArchivedThreads(previousThreads);
       onShowToast?.({
         tone: "error",
         message: t("settings.dataControls.archivedChats.unarchiveError"),
       });
     } finally {
       setPendingThreadIds((current) => current.filter((threadId) => threadId !== thread.id));
+      void loadArchivedThreads({
+        hostId: selectedHostId,
+        showLoading: false,
+        clearOnError: false,
+      });
     }
   };
 
   return (
-    <SettingsContentLayout title={t("settings.section.data-controls")}>
+    <SettingsContentLayout title={<SettingsSectionTitle slug="data-controls" />}>
       <SettingsGroup>
-        <SettingsGroupContent>
+        <SettingsGroup.Content>
           {isLoading ? (
             <SettingsSurface>
               <SettingsRow label={t("settings.dataControls.archivedChats.loading")} />
             </SettingsSurface>
-          ) : loadError ? (
+          ) : isLoadError ? (
             <SettingsSurface>
               <SettingsRow label={t("settings.dataControls.archivedChats.error")} />
             </SettingsSurface>
@@ -119,7 +163,8 @@ export function DataControlsSettings({
             <SettingsSurface className="max-h-[min(80vh)] overflow-y-auto">
               {archivedThreads.map((thread) => {
                 const isPending = pendingThreadIds.includes(thread.id);
-                const title = (thread.name ?? thread.preview).trim() || t("settings.dataControls.archivedChats.untitled");
+                const title =
+                  (thread.name ?? thread.preview).trim() || t("settings.dataControls.archivedChats.untitled");
                 const summary = formatArchivedThreadSummary(thread, locale, t);
 
                 return (
@@ -150,52 +195,10 @@ export function DataControlsSettings({
               })}
             </SettingsSurface>
           )}
-        </SettingsGroupContent>
+        </SettingsGroup.Content>
       </SettingsGroup>
     </SettingsContentLayout>
   );
-}
-
-function SettingsGroup({ children }: { children: ReactNode }) {
-  return <section className="flex flex-col">{children}</section>;
-}
-
-function SettingsGroupContent({ children }: { children: ReactNode }) {
-  return <div className="flex flex-col gap-1.5">{children}</div>;
-}
-
-function SettingsSurface({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <div
-      className={joinClasses(
-        "border-token-border flex flex-col divide-y-[0.5px] divide-token-border rounded-lg border",
-        className,
-      )}
-      style={{
-        backgroundColor: "var(--color-background-panel, var(--color-token-bg-fog))",
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function SettingsRow({ label }: { label: ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-4 p-3 max-sm:flex-col max-sm:items-stretch">
-      <div className="min-w-0 text-sm text-token-text-primary">{label}</div>
-    </div>
-  );
-}
-
-function joinClasses(...values: Array<string | null | undefined | false>) {
-  return values.filter((value): value is string => Boolean(value)).join(" ");
 }
 
 function formatArchivedThreadSummary(

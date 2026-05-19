@@ -20,7 +20,6 @@ const ACCOUNT_SETTINGS_SOURCE_PATH = path.join(
   process.cwd(),
   "src/components/AccountSettings.tsx",
 );
-const APP_SOURCE_PATH = path.join(process.cwd(), "src/App.tsx");
 
 test("account settings uses extracted shared settings shell and row layout", () => {
   const source = readSource(ACCOUNT_SETTINGS_SOURCE_PATH);
@@ -34,11 +33,14 @@ test("account settings uses extracted shared settings shell and row layout", () 
   assert.match(source, /subtitle=\{t\("settings\.account\.subtitle"\)\}/);
 });
 
-test("account settings keeps extracted auth gate and non-loading buttons", () => {
+test("account settings keeps extracted auth gate, local auth override, and non-loading buttons", () => {
   const source = readSource(ACCOUNT_SETTINGS_SOURCE_PATH);
 
+  assert.match(source, /const \[localAuthMethod, setLocalAuthMethod\] = useState<string \| null>\(null\)/);
+  assert.match(source, /const authMethod = localAuthMethod \?\? authSnapshot\.authState\.authMethod/);
   assert.match(source, /authMethod === "chatgpt" \|\|/);
   assert.match(source, /authMethod === "chatgptAuthTokens"/);
+  assert.match(source, /setLocalAuthMethod\("chatgpt"\)/);
   assert.doesNotMatch(source, /loading=\{/);
   assert.match(source, /<Button\s+type="button"\s+color="outline"/);
   assert.match(source, /<Button type="submit" disabled=\{trimmedTokenDraft.length === 0\}>/);
@@ -48,18 +50,9 @@ test("account settings invalidates extracted account and environments query keys
   const source = readSource(ACCOUNT_SETTINGS_SOURCE_PATH);
 
   assert.match(source, /await invalidateAccountSettingsQueries\(\)/);
-  assert.match(source, /clearBrowserChatGptTokenAuth\(\)/);
   assert.match(source, /await logoutForHost\(LOCAL_SETTINGS_HOST_ID\)/);
-});
-
-test("app overlays browser token auth onto auth snapshot", () => {
-  const source = readSource(APP_SOURCE_PATH);
-
-  assert.match(source, /const \[rawAuthSnapshot, setRawAuthSnapshot\]/);
-  assert.match(source, /const \[browserChatGptTokenAuth, setBrowserChatGptTokenAuth\]/);
-  assert.match(source, /authMethod: "chatgpt"/);
-  assert.match(source, /accountId: browserChatGptTokenAuth\.accountId/);
-  assert.match(source, /clearBrowserChatGptTokenAuth\(\);/);
+  assert.doesNotMatch(source, /clearBrowserChatGptTokenAuth\(\)/);
+  assert.doesNotMatch(source, /onShowToast/);
 });
 
 test("account settings renders extracted sign-out and update-token actions", () => {

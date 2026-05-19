@@ -7,7 +7,7 @@ import { test } from "node:test";
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { I18N_CONTEXT } from "../../i18n/i18n";
-import { GlobalDictationPageView } from "./GlobalDictationPage";
+import { GlobalDictationPageView } from "./GlobalDictationPageView";
 
 const SNAPSHOT_PATH = path.join(
   process.cwd(),

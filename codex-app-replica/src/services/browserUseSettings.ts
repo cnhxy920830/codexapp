@@ -25,19 +25,19 @@ export type BrowserBrowsingDataClearResponse = {
 };
 
 export async function readBrowserUseSettings() {
-  return invoke<BrowserUseSettingsState>("read_browser_use_settings");
+  return invoke<BrowserUseSettingsState>("browser-use-origin-state-read");
 }
 
 export async function writeBrowserUseApprovalMode(params: {
   approvalMode: BrowserUseApprovalMode;
 }) {
-  return invoke<BrowserUseSettingsState>("write_browser_use_approval_mode", { params });
+  return invoke<BrowserUseSettingsState>("browser-use-approval-mode-write", { params });
 }
 
 export async function writeBrowserUseHistoryApprovalMode(params: {
   approvalMode: BrowserUseApprovalMode;
 }) {
-  return invoke<BrowserUseSettingsState>("write_browser_use_history_approval_mode", { params });
+  return invoke<BrowserUseSettingsState>("browser-use-history-approval-mode-write", { params });
 }
 
 export async function writeBrowserUseFileTransferApprovalMode(params: {
@@ -51,7 +51,12 @@ export async function addBrowserUseOrigin(params: {
   kind: BrowserUseOriginKind;
   origin: string;
 }) {
-  return invoke<BrowserUseSettingsState>("add_browser_use_origin", { params });
+  return invoke<BrowserUseSettingsState>("browser-use-origin-add", {
+    params: {
+      kind: params.kind,
+      targetOrigin: params.origin,
+    },
+  });
 }
 
 export async function addBrowserUseFileTransferOrigin(params: {
@@ -59,14 +64,25 @@ export async function addBrowserUseFileTransferOrigin(params: {
   transferKind: BrowserUseFileTransferKind;
   origin: string;
 }) {
-  return invoke<BrowserUseSettingsState>("browser-use-file-transfer-origin-add", { params });
+  return invoke<BrowserUseSettingsState>("browser-use-file-transfer-origin-add", {
+    params: {
+      kind: params.kind,
+      targetOrigin: params.origin,
+      transferKind: params.transferKind,
+    },
+  });
 }
 
 export async function removeBrowserUseOrigin(params: {
   kind: BrowserUseOriginKind;
   origin: string;
 }) {
-  return invoke<BrowserUseSettingsState>("remove_browser_use_origin", { params });
+  return invoke<BrowserUseSettingsState>("browser-use-origin-remove", {
+    params: {
+      kind: params.kind,
+      targetOrigin: params.origin,
+    },
+  });
 }
 
 export async function removeBrowserUseFileTransferOrigin(params: {
@@ -74,7 +90,13 @@ export async function removeBrowserUseFileTransferOrigin(params: {
   transferKind: BrowserUseFileTransferKind;
   origin: string;
 }) {
-  return invoke<BrowserUseSettingsState>("browser-use-file-transfer-origin-remove", { params });
+  return invoke<BrowserUseSettingsState>("browser-use-file-transfer-origin-remove", {
+    params: {
+      kind: params.kind,
+      targetOrigin: params.origin,
+      transferKind: params.transferKind,
+    },
+  });
 }
 
 export async function clearBrowserBrowsingData(dataTypes: BrowserBrowsingDataType[]) {

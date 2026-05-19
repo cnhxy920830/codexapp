@@ -1,11 +1,14 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { Button } from "./Button";
 import { CheckIcon, ChevronDownIcon, MoreActionsIcon, RefreshIcon } from "./AppShellIcons";
 import type { AppToast } from "./AppToastRegion";
 import { SettingsContentLayout } from "./SettingsContentLayout";
+import { SettingsRow } from "./SettingsRow";
+import { SettingsSurface } from "./SettingsSurface";
 import { ToggleSwitch } from "./ToggleSwitch";
 import { useI18n } from "../i18n/i18n";
 import type { MessageKey, MessageValues } from "../i18n/messages";
+import { renderInlineLinkMessage } from "../i18n/renderInlineLinkMessage";
 import { openFile } from "../services/hostFiles";
 import {
   invalidateHooksQueries,
@@ -18,8 +21,15 @@ import {
   type HookSource,
   type HooksListEntry,
 } from "../services/hooks";
-import { LOCAL_SETTINGS_HOST_ID } from "../services/settingsHosts";
 import {
+  LOCAL_SETTINGS_HOST_ID,
+  REMOTE_PROJECTS_SHARED_OBJECT_KEY,
+  onSharedObjectUpdated,
+  readSettingsRemoteProjectsSnapshot,
+} from "../services/settingsHosts";
+import {
+  onActiveWorkspaceRootsUpdated,
+  onWorkspaceRootOptionsUpdated,
   readActiveWorkspaceRoots,
   readWorkspaceRootOptions,
   type WorkspaceRootOptionsResponse,
@@ -51,9 +61,11 @@ type HookProjectRootsState = {
 export function HooksSettings({
   onShowToast,
   selectedHostId,
+  settingsCwd = null,
 }: {
   onShowToast?: (toast: AppToast) => void;
   selectedHostId: string;
+  settingsCwd?: string | null;
 }) {
   const { t } = useI18n();
   const isRemoteHost = selectedHostId !== LOCAL_SETTINGS_HOST_ID;
@@ -68,6 +80,7 @@ export function HooksSettings({
   const [isRefreshingHooks, setIsRefreshingHooks] = useState(false);
   const [hooksLoadError, setHooksLoadError] = useState<Error | null>(null);
   const [selectedProjectRootState, setSelectedProjectRootState] = useState<string | null>(null);
+  const [projectRootsReloadNonce, setProjectRootsReloadNonce] = useState(0);
   const projectRootsRequestIdRef = useRef(0);
   const hooksRequestIdRef = useRef(0);
   const skipNextHooksInvalidationRef = useRef(0);
@@ -78,28 +91,47 @@ export function HooksSettings({
 
     setIsLoadingProjectRoots(true);
 
-    void Promise.allSettled([
-      readWorkspaceRootOptions(selectedHostId),
-      readActiveWorkspaceRoots(selectedHostId),
-    ])
-      .then(([optionsResult, activeRootsResult]) => {
+    const loadProjectRoots = async () => {
+      if (isRemoteHost) {
+        const remoteProjects = await readSettingsRemoteProjectsSnapshot();
         if (cancelled || requestId !== projectRootsRequestIdRef.current) {
           return;
         }
 
-        const nextProjectRootsState = optionsResult.status === "fulfilled"
-          ? optionsResult.value
-          : createEmptyWorkspaceRootOptionsResponse();
-        const nextActiveProjectRoots = activeRootsResult.status === "fulfilled"
-          ? activeRootsResult.value.roots
-          : [];
-
+        const remoteProjectsForSelectedHost = remoteProjects.filter((project) => project.hostId === selectedHostId);
         setProjectRootsState({
-          labels: nextProjectRootsState.labels,
-          roots: nextProjectRootsState.roots,
+          labels: Object.fromEntries(
+            remoteProjectsForSelectedHost.map((project) => [project.remotePath, project.label]),
+          ),
+          roots: remoteProjectsForSelectedHost.map((project) => project.remotePath),
         });
-        setActiveProjectRoots(nextActiveProjectRoots);
-      })
+        setActiveProjectRoots([]);
+        return;
+      }
+
+      const [optionsResult, activeRootsResult] = await Promise.allSettled([
+        readWorkspaceRootOptions(selectedHostId),
+        readActiveWorkspaceRoots(selectedHostId),
+      ]);
+      if (cancelled || requestId !== projectRootsRequestIdRef.current) {
+        return;
+      }
+
+      const nextProjectRootsState = optionsResult.status === "fulfilled"
+        ? optionsResult.value
+        : createEmptyWorkspaceRootOptionsResponse();
+      const nextActiveProjectRoots = activeRootsResult.status === "fulfilled"
+        ? activeRootsResult.value.roots
+        : [];
+
+      setProjectRootsState({
+        labels: nextProjectRootsState.labels,
+        roots: nextProjectRootsState.roots,
+      });
+      setActiveProjectRoots(nextActiveProjectRoots);
+    };
+
+    void loadProjectRoots()
       .finally(() => {
         if (!cancelled && requestId === projectRootsRequestIdRef.current) {
           setIsLoadingProjectRoots(false);
@@ -112,9 +144,53 @@ export function HooksSettings({
         projectRootsRequestIdRef.current += 1;
       }
     };
-  }, [selectedHostId]);
+  }, [isRemoteHost, projectRootsReloadNonce, selectedHostId]);
 
-  const defaultProjectRoot = activeProjectRoots[0] ?? null;
+  useEffect(() => {
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+
+    const subscribe = isRemoteHost
+      ? onSharedObjectUpdated((notification) => {
+          if (!disposed && notification.key === REMOTE_PROJECTS_SHARED_OBJECT_KEY) {
+            setProjectRootsReloadNonce((current) => current + 1);
+          }
+        })
+      : Promise.all([
+          onWorkspaceRootOptionsUpdated(() => {
+            if (!disposed) {
+              setProjectRootsReloadNonce((current) => current + 1);
+            }
+          }),
+          onActiveWorkspaceRootsUpdated(() => {
+            if (!disposed) {
+              setProjectRootsReloadNonce((current) => current + 1);
+            }
+          }),
+        ]).then(([disposeOptions, disposeActive]) => {
+          return () => {
+            disposeOptions();
+            disposeActive();
+          };
+        });
+
+    void subscribe.then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+      cleanup = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, [isRemoteHost]);
+
+  const defaultProjectRoot = isRemoteHost
+    ? settingsCwd
+    : activeProjectRoots[0] ?? settingsCwd;
   const projectRoots = useMemo(
     () => uniqueProjectRoots(projectRootsState.roots, defaultProjectRoot),
     [defaultProjectRoot, projectRootsState.roots],
@@ -360,7 +436,7 @@ function HooksSettingsContent({
   return (
     <SettingsContentLayout
       title={t("settings.section.hooks-settings")}
-      subtitle={renderHooksSubtitle(t("settings.hooks.subtitle"))}
+      subtitle={renderInlineLinkMessage(t("settings.hooks.subtitle"), HOOKS_DOCS_URL)}
       subtitleClassName="whitespace-normal"
       action={
         <div className="flex items-center gap-2">
@@ -370,16 +446,17 @@ function HooksSettingsContent({
             selectedProjectRoot={selectedProjectRoot}
             onSelectProjectRoot={onSelectProjectRoot}
           />
-          <button
-            type="button"
+          <Button
             aria-label={t("settings.hooks.refresh")}
-            title={t("settings.hooks.refresh")}
+            color="ghost"
             disabled={refreshDisabled}
             onClick={onRefreshHooks}
-            className="app-control inline-flex h-8 w-8 items-center justify-center rounded-[10px] disabled:cursor-not-allowed disabled:opacity-50"
+            size="icon"
+            title={t("settings.hooks.refresh")}
+            uniform
           >
-            <RefreshIcon className="h-4 w-4" />
-          </button>
+            <RefreshIcon className="icon-xs" />
+          </Button>
         </div>
       }
     >
@@ -529,7 +606,7 @@ function HookRow({
         <div className="text-sm text-token-text-secondary">{getHookSourceSummary(hook, t)}</div>
       </div>
       <div className="flex shrink-0 items-center gap-2">
-        <div className="invisible opacity-0 transition group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100">
+        <div className="invisible opacity-0 group-focus-within:visible group-focus-within:opacity-100 group-hover:visible group-hover:opacity-100 has-[[data-state=open]]:visible has-[[data-state=open]]:opacity-100">
           <HookRowActionsMenu
             disabledOpenSourceFile={isRemoteHost}
             onOpenSourceFile={() => onOpenSourceFile(hook)}
@@ -595,6 +672,7 @@ function HookRowActionsMenu({
       <Button
         aria-label={t("settings.hooks.event.moreActions")}
         color="ghost"
+        data-state={isOpen ? "open" : "closed"}
         size="toolbar"
         uniform
         onClick={(event) => {
@@ -865,36 +943,6 @@ function sortHooksForEvent(hooks: HookMetadata[], eventName: HookEventName) {
     .sort((left, right) => left.displayOrder - right.displayOrder);
 }
 
-function renderHooksSubtitle(template: string) {
-  const startTag = "<a>";
-  const endTag = "</a>";
-  const startIndex = template.indexOf(startTag);
-  const endIndex = template.indexOf(endTag);
-
-  if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
-    return template;
-  }
-
-  const prefix = template.slice(0, startIndex);
-  const linkLabel = template.slice(startIndex + startTag.length, endIndex);
-  const suffix = template.slice(endIndex + endTag.length);
-
-  return (
-    <div>
-      {prefix}
-      <a
-        className="inline-flex text-token-text-link-foreground"
-        href={HOOKS_DOCS_URL}
-        target="_blank"
-        rel="noreferrer"
-      >
-        {linkLabel}
-      </a>
-      {suffix}
-    </div>
-  );
-}
-
 function getProjectRootLabel(projectRoot: string, projectRootLabels: Record<string, string>) {
   return projectRootLabels[projectRoot] ?? deriveProjectName(projectRoot) ?? projectRoot;
 }
@@ -917,53 +965,6 @@ function createEmptyWorkspaceRootOptionsResponse(): WorkspaceRootOptionsResponse
 
 function toError(error: unknown) {
   return error instanceof Error ? error : new Error(String(error));
-}
-
-function SettingsSurface({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <div
-      className={joinClasses(
-        "border-token-border flex flex-col divide-y-[0.5px] divide-token-border rounded-lg border",
-        className,
-      )}
-      style={{
-        backgroundColor: "var(--color-background-panel, var(--color-token-bg-fog))",
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function SettingsRow({
-  control,
-  description,
-  icon,
-  label,
-}: {
-  control?: ReactNode;
-  description?: ReactNode;
-  icon?: ReactNode;
-  label: ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 p-3 max-sm:flex-col max-sm:items-stretch">
-      <div className="flex min-w-0 items-center gap-3">
-        {icon ? <span className="shrink-0">{icon}</span> : null}
-        <div className="flex min-w-0 flex-col gap-1">
-          <div className="min-w-0 text-sm text-token-text-primary">{label}</div>
-          {description ? <div className="min-w-0 text-sm text-token-text-secondary">{description}</div> : null}
-        </div>
-      </div>
-      {control ? <div className="flex shrink-0 items-center gap-2">{control}</div> : null}
-    </div>
-  );
 }
 
 function HooksEventIcon({ className }: { className?: string }) {

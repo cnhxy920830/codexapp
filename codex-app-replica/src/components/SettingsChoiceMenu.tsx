@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CheckIcon, ChevronDownIcon } from "./AppShellIcons";
 
 type SettingsChoiceMenuOption = {
@@ -8,15 +8,18 @@ type SettingsChoiceMenuOption = {
   disabled?: boolean;
   title?: string;
   warning?: string;
+  warningIcon?: ReactNode;
 };
 
 export function SettingsChoiceMenu({
+  className,
   disabled,
   onChange,
   options,
   triggerLabel,
   value,
 }: {
+  className?: string;
   disabled: boolean;
   onChange: (value: string) => void;
   options: SettingsChoiceMenuOption[];
@@ -50,7 +53,7 @@ export function SettingsChoiceMenu({
   );
 
   return (
-    <div className="relative w-[280px] max-w-full" ref={containerRef}>
+    <div className={joinClasses("relative w-[280px] max-w-full", className)} ref={containerRef}>
       <button
         type="button"
         disabled={disabled}
@@ -92,8 +95,9 @@ export function SettingsChoiceMenu({
                       <span className="app-text-muted mt-1 block text-[12px] leading-5">{option.description}</span>
                     ) : null}
                     {option.warning ? (
-                      <span className="mt-1 block text-[12px] leading-5 text-[var(--app-shell-warning-text)]">
-                        {option.warning}
+                      <span className="mt-0.5 flex min-w-0 items-start gap-1 text-sm leading-4 text-token-description-foreground">
+                        {option.warningIcon}
+                        <span className="min-w-0 whitespace-normal">{option.warning}</span>
                       </span>
                     ) : null}
                   </span>
@@ -106,4 +110,8 @@ export function SettingsChoiceMenu({
       ) : null}
     </div>
   );
+}
+
+function joinClasses(...values: Array<string | false | null | undefined>) {
+  return values.filter((value): value is string => Boolean(value)).join(" ");
 }

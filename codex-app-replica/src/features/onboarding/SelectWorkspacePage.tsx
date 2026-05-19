@@ -22,6 +22,7 @@ import {
   deriveCandidateWorkspaceRoots,
   deriveWorkspaceAutoLaunchAction,
   filterExistingWorkspaceRootOptions,
+  mergeWorkspaceRootSelectionsForPersistence,
   normalizeWorkspaceOnboardingExperimentAssignment,
   readWorkspaceOnboardingExperimentArm,
   WORKSPACE_ONBOARDING_DEFAULT_PROJECT_NAME,
@@ -51,6 +52,7 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
   const [isLoadingGitOrigins, setIsLoadingGitOrigins] = useState(false);
   const [isLoadingCodexHome, setIsLoadingCodexHome] = useState(true);
   const [isLoadingExistingPaths, setIsLoadingExistingPaths] = useState(false);
+  const [workspaceOnboardingOverride, setWorkspaceOnboardingOverride] = useState("auto");
   const [workspaceOnboardingExperimentAssignment, setWorkspaceOnboardingExperimentAssignment] = useState(
     normalizeWorkspaceOnboardingExperimentAssignment(null),
   );
@@ -377,13 +379,19 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     let cancelled = false;
 
     void Promise.all([
+      getGlobalState("electron:onboarding-override"),
       getGlobalState("electron:onboarding-workspace-experiment-assignment"),
       getGlobalState("electron:onboarding-workspace-autolaunch-applied"),
     ])
-      .then(([assignmentResponse, autoLaunchAppliedResponse]) => {
+      .then(([onboardingOverrideResponse, assignmentResponse, autoLaunchAppliedResponse]) => {
         if (cancelled) {
           return;
         }
+        setWorkspaceOnboardingOverride(
+          typeof onboardingOverrideResponse.value === "string"
+            ? onboardingOverrideResponse.value
+            : "auto",
+        );
         setWorkspaceOnboardingExperimentAssignment(
           normalizeWorkspaceOnboardingExperimentAssignment(assignmentResponse.value),
         );
@@ -391,6 +399,7 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
       })
       .catch(() => {
         if (!cancelled) {
+          setWorkspaceOnboardingOverride("auto");
           setWorkspaceOnboardingExperimentAssignment(
             normalizeWorkspaceOnboardingExperimentAssignment(null),
           );
@@ -505,9 +514,11 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     }
 
     setSkipErrorMessage(null);
-    const nextWorkspaceRoots = workspaceRoots.length > 0
-      ? dedupeWorkspaceRoots([...workspaceRoots, ...selectedRootList])
-      : selectedRootList;
+    const nextWorkspaceRoots = mergeWorkspaceRootSelectionsForPersistence({
+      onboardingOverride: workspaceOnboardingOverride,
+      persistedRoots: workspaceRoots,
+      selectedRoots: selectedRootList,
+    });
     const completedAt = Math.floor(Date.now() / 1000);
 
     await setGlobalState("last_completed_onboarding", completedAt);

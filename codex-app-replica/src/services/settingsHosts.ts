@@ -38,6 +38,8 @@ export type AppServerConnectionState = "connecting" | "restarting" | "connected"
 export type AppServerConnectionStateResponse = {
   state: AppServerConnectionState;
   error: unknown | null;
+  appServerVersion: string | null;
+  installedCodexVersion: string | null;
 };
 
 export type RemoteAppServerConnectionStateChangedNotification = {
@@ -184,6 +186,25 @@ export async function readSettingsRemoteConnectionStates(remoteConnections: Remo
     remoteConnections.map(async (remoteConnection) => {
       const response = await readAppServerConnectionState(remoteConnection.hostId).catch(() => null);
       return [remoteConnection.hostId, response?.state ?? "disconnected"] as const;
+    }),
+  );
+
+  return Object.fromEntries(states);
+}
+
+export async function readSettingsRemoteConnectionStateResponses(remoteConnections: RemoteConnection[]) {
+  const states = await Promise.all(
+    remoteConnections.map(async (remoteConnection) => {
+      const response = await readAppServerConnectionState(remoteConnection.hostId).catch(() => null);
+      return [
+        remoteConnection.hostId,
+        response ?? {
+          state: "disconnected" as const,
+          error: null,
+          appServerVersion: null,
+          installedCodexVersion: null,
+        },
+      ] as const;
     }),
   );
 

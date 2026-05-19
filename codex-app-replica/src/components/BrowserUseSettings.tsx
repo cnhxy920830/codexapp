@@ -1,8 +1,16 @@
 import { emit } from "@tauri-apps/api/event";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { NewChatIcon } from "./AppShellIcons";
+import { useEffect, useEffectEvent, useMemo, useState, type ReactNode } from "react";
+import { ChevronDownIcon, NewChatIcon, TrashIcon } from "./AppShellIcons";
 import type { AppToast } from "./AppToastRegion";
+import { Button } from "./Button";
 import { SettingsContentLayout } from "./SettingsContentLayout";
+import { FilteredPluginSettings, type FilteredPluginSettingsRenderContext } from "./FilteredPluginSettings";
+import { SettingsChoiceMenu } from "./SettingsChoiceMenu";
+import { SettingsGroup } from "./SettingsGroup";
+import { SettingsSurface } from "./SettingsSurface";
+import { Spinner } from "./Spinner";
+import { useI18n } from "../i18n/i18n";
+import type { MessageKey } from "../i18n/messages";
 import {
   addBrowserUseFileTransferOrigin,
   addBrowserUseOrigin,
@@ -22,23 +30,10 @@ import {
   type BrowserUseOriginKind,
   type BrowserUseSettingsState,
 } from "../services/browserUseSettings";
-import { useI18n } from "../i18n/i18n";
-import type { MessageKey } from "../i18n/messages";
-import { FilteredPluginSettings, type FilteredPluginSettingsRenderContext } from "./FilteredPluginSettings";
-import { SettingsChoiceMenu } from "./SettingsChoiceMenu";
+import { openInBrowser } from "../services/hostFiles";
 import { LOCAL_SETTINGS_HOST_ID } from "../services/settingsHosts";
 
 type BrowserUseResourceKind = "origins" | "downloads" | "uploads";
-
-type AddOriginState = {
-  kind: BrowserUseOriginKind;
-  resource: BrowserUseResourceKind;
-};
-
-type RemoveOriginState = AddOriginState & {
-  origin: string;
-};
-
 type BrowserBrowsingDataScope = "all" | BrowserBrowsingDataType;
 
 type BrowserUseOriginSectionCopy = {
@@ -52,6 +47,20 @@ type BrowserUseOriginSectionCopy = {
   subtitleKey: MessageKey;
   titleKey: MessageKey;
 };
+
+type OriginSectionConfig = {
+  kind: BrowserUseOriginKind;
+  resource: BrowserUseResourceKind;
+};
+
+type RemoveOriginState = OriginSectionConfig & {
+  origin: string;
+};
+
+const ALL_BROWSING_DATA_TYPES: BrowserBrowsingDataType[] = ["cookies", "siteData", "cache"];
+const COMPUTER_USE_SETTINGS_PATH = "/settings/computer-use";
+const NAVIGATE_TO_ROUTE_EVENT = "navigate-to-route";
+const BROWSER_USE_LEARN_MORE_URL = "https://developers.openai.com/codex/app/computer-use";
 
 const BROWSER_USE_ORIGIN_SECTION_COPY: Record<
   BrowserUseResourceKind,
@@ -131,7 +140,7 @@ const BROWSER_USE_ORIGIN_SECTION_COPY: Record<
   },
 };
 
-const BROWSER_USE_ORIGIN_SECTIONS: ReadonlyArray<AddOriginState> = [
+const BROWSER_USE_ORIGIN_SECTIONS: ReadonlyArray<OriginSectionConfig> = [
   { kind: "denied", resource: "origins" },
   { kind: "allowed", resource: "origins" },
   { kind: "denied", resource: "downloads" },
@@ -139,10 +148,6 @@ const BROWSER_USE_ORIGIN_SECTIONS: ReadonlyArray<AddOriginState> = [
   { kind: "denied", resource: "uploads" },
   { kind: "allowed", resource: "uploads" },
 ];
-
-const ALL_BROWSING_DATA_TYPES: BrowserBrowsingDataType[] = ["cookies", "siteData", "cache"];
-const COMPUTER_USE_SETTINGS_PATH = "/settings/computer-use";
-const NAVIGATE_TO_ROUTE_EVENT = "navigate-to-route";
 
 export function BrowserUseSettings({
   hasComputerUseApprovalStore,
@@ -160,16 +165,19 @@ export function BrowserUseSettings({
   const effectiveWorkspaceRoot = isLocalHost ? workspaceRoot : null;
   const subtitle =
     isLocalHost && hasComputerUseApprovalStore
-      ? renderComputerUseSettingsSubtitle(
-          t("settings.browserUse.subtitle"),
-          () => {
-            void emit(NAVIGATE_TO_ROUTE_EVENT, { path: COMPUTER_USE_SETTINGS_PATH }).catch(() => undefined);
-          },
-        )
+      ? renderComputerUseSettingsSubtitle(t("settings.browserUse.subtitle"), () => {
+          void emit(NAVIGATE_TO_ROUTE_EVENT, {
+            path: COMPUTER_USE_SETTINGS_PATH,
+          }).catch(() => undefined);
+        })
       : undefined;
 
   return (
-    <SettingsContentLayout title={t("settings.browserUse.title")} subtitle={subtitle} subtitleClassName="text-pretty">
+    <SettingsContentLayout
+      title={t("settings.browserUse.title")}
+      subtitle={subtitle}
+      subtitleClassName="text-pretty"
+    >
       <FilteredPluginSettings
         hostId={selectedHostId}
         workspaceRoot={effectiveWorkspaceRoot}
@@ -180,13 +188,15 @@ export function BrowserUseSettings({
           controlLabel: t("settings.browserUse.control.title"),
           title: t("settings.browserUse.control.title"),
           description: t("settings.browserUse.control.description"),
-          icon: <BrowserUseControlIcon className="h-full w-full text-[var(--app-shell-text)]" />,
+          icon: (
+            <BrowserUseControlIcon className="h-full w-full text-[var(--app-shell-text)]" />
+          ),
           showIconBorder: false,
         })}
         renderAfterSections={(context) =>
-          isBrowserUseEnabled(context)
-            ? <BrowserUsePermissionsPanel onShowToast={onShowToast} />
-            : null
+          isBrowserUseEnabled(context) ? (
+            <BrowserUsePermissionsPanel onShowToast={onShowToast} />
+          ) : null
         }
       />
     </SettingsContentLayout>
@@ -205,14 +215,16 @@ function BrowserUsePermissionsPanel({
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
-  const [pendingBrowsingDataScope, setPendingBrowsingDataScope] = useState<BrowserBrowsingDataScope | null>(null);
+  const [pendingBrowsingDataScope, setPendingBrowsingDataScope] =
+    useState<BrowserBrowsingDataScope | null>(null);
   const [isBrowsingDataOptionsOpen, setIsBrowsingDataOptionsOpen] = useState(false);
-  const [isAnnotationScreenshotsPending, setIsAnnotationScreenshotsPending] = useState(false);
-  const [addDialogState, setAddDialogState] = useState<AddOriginState | null>(null);
+  const [isAnnotationScreenshotsPending, setIsAnnotationScreenshotsPending] =
+    useState(false);
+  const [addDialogState, setAddDialogState] = useState<OriginSectionConfig | null>(null);
   const [originDraft, setOriginDraft] = useState("");
   const [removeOriginState, setRemoveOriginState] = useState<RemoveOriginState | null>(null);
 
-  const loadSettings = async () => {
+  const loadSettings = useEffectEvent(async () => {
     setIsLoading(true);
     setLoadError(null);
     try {
@@ -228,11 +240,11 @@ function BrowserUsePermissionsPanel({
     } finally {
       setIsLoading(false);
     }
-  };
+  });
 
   useEffect(() => {
     void loadSettings();
-  }, []);
+  }, [loadSettings]);
 
   const approvalOptions = useMemo(
     () => [
@@ -246,6 +258,9 @@ function BrowserUsePermissionsPanel({
         label: t("settings.browserUse.approval.neverAsk.label"),
         description: t("settings.browserUse.approval.neverAsk.description"),
         warning: t("settings.browserUse.approval.neverAsk.elevatedRiskDisclaimer"),
+        warningIcon: (
+          <ElevatedRiskIcon className="icon-xs shrink-0 text-token-editor-warning-foreground" />
+        ),
       },
     ],
     [t],
@@ -313,11 +328,361 @@ function BrowserUsePermissionsPanel({
     [t],
   );
 
-  const updateSettingsState = async (
+  const approvalMode = settingsState?.approvalMode ?? "alwaysAsk";
+  const historyApprovalMode = settingsState?.historyApprovalMode ?? "alwaysAsk";
+  const downloadApprovalMode = settingsState?.downloadApprovalMode ?? "alwaysAsk";
+  const uploadApprovalMode = settingsState?.uploadApprovalMode ?? "alwaysAsk";
+  const controlsDisabled = isLoading || pendingAction !== null;
+  const dataControlsDisabled =
+    isLoading ||
+    pendingBrowsingDataScope !== null ||
+    isAnnotationScreenshotsPending;
+
+  if (loadError) {
+    return (
+      <SettingsGroup>
+        <SettingsGroup.Content>
+          <SettingsSurface>
+            <MessageStateRow
+              message={
+                <div className="flex flex-col gap-3">
+                  <span>{loadError}</span>
+                  <div>
+                    <Button color="secondary" size="toolbar" onClick={() => void loadSettings()}>
+                      {t("skills.appsPage.loadError.retry")}
+                    </Button>
+                  </div>
+                </div>
+              }
+            />
+          </SettingsSurface>
+        </SettingsGroup.Content>
+      </SettingsGroup>
+    );
+  }
+
+  return (
+    <>
+      <SettingsGroup>
+        <SettingsGroup.Header title={t("settings.browserUse.browser.title")} />
+        <SettingsGroup.Content>
+          <SettingsSurface>
+            <SettingsValueRow
+              label={t("settings.browserUse.browser.clearBrowsingData.label")}
+              description={t("settings.browserUse.browser.clearBrowsingData.description")}
+              control={
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    color="ghost"
+                    disabled={dataControlsDisabled && pendingBrowsingDataScope !== "all"}
+                    size="toolbar"
+                    onClick={() =>
+                      void handleClearBrowsingData("all", ALL_BROWSING_DATA_TYPES)
+                    }
+                  >
+                    {pendingBrowsingDataScope === "all"
+                      ? t("general.saving")
+                      : t("settings.browserUse.browser.clearBrowsingData")}
+                  </Button>
+                  <Button
+                    aria-controls="browser-browsing-data-options"
+                    aria-expanded={isBrowsingDataOptionsOpen}
+                    color="ghost"
+                    disabled={pendingBrowsingDataScope !== null}
+                    size="icon"
+                    uniform
+                    onClick={() => setIsBrowsingDataOptionsOpen((value) => !value)}
+                  >
+                    <span className="sr-only">
+                      {t(
+                        isBrowsingDataOptionsOpen
+                          ? "settings.browserUse.browser.hideClearOptions"
+                          : "settings.browserUse.browser.showClearOptions",
+                      )}
+                    </span>
+                    <ChevronDownIcon
+                      className={joinClasses(
+                        "icon-2xs text-token-input-placeholder-foreground transition-transform",
+                        isBrowsingDataOptionsOpen && "rotate-180",
+                      )}
+                    />
+                  </Button>
+                </div>
+              }
+            />
+
+            {isBrowsingDataOptionsOpen ? (
+              <div
+                id="browser-browsing-data-options"
+                className="flex flex-col divide-y divide-token-border bg-token-bg-secondary/20"
+              >
+                {ALL_BROWSING_DATA_TYPES.map((dataType) => (
+                  <BrowsingDataOptionRow
+                    key={dataType}
+                    dataType={dataType}
+                    disabled={
+                      dataControlsDisabled && pendingBrowsingDataScope !== dataType
+                    }
+                    loading={pendingBrowsingDataScope === dataType}
+                    onClear={() =>
+                      void handleClearBrowsingData(dataType, [dataType])
+                    }
+                  />
+                ))}
+              </div>
+            ) : null}
+
+            <SettingsValueRow
+              label={t("settings.browserUse.browser.annotationScreenshots.label")}
+              description={t("settings.browserUse.browser.annotationScreenshots.description")}
+              control={
+                <SettingsChoiceMenu
+                  className="w-[152px]"
+                  disabled={dataControlsDisabled}
+                  onChange={(value) => {
+                    void handleAnnotationScreenshotsModeChange(value);
+                  }}
+                  options={annotationScreenshotOptions}
+                  value={annotationScreenshotsMode}
+                />
+              }
+            />
+          </SettingsSurface>
+        </SettingsGroup.Content>
+      </SettingsGroup>
+
+      <SettingsGroup>
+        <SettingsGroup.Header title={t("settings.browserUse.permissions.title")} />
+        <SettingsGroup.Content>
+          <SettingsSurface>
+            <SettingsValueRow
+              label={t("settings.browserUse.approval.label")}
+              description={renderInlineTagButton(
+                t("settings.browserUse.approval.description"),
+                "learnMoreLink",
+                () => {
+                  void openInBrowser(BROWSER_USE_LEARN_MORE_URL);
+                },
+                "text-token-text-link-foreground hover:underline",
+              )}
+              control={
+                <SettingsChoiceMenu
+                  className="w-[152px]"
+                  disabled={controlsDisabled}
+                  onChange={(value) => {
+                    if (value === approvalMode) {
+                      return;
+                    }
+                    void updateSettingsState(
+                      "approval",
+                      () =>
+                        writeBrowserUseApprovalMode({
+                          approvalMode: value as BrowserUseApprovalMode,
+                        }),
+                      "settings.browserUse.approval.saveError",
+                    );
+                  }}
+                  options={approvalOptions}
+                  value={approvalMode}
+                />
+              }
+            />
+
+            <SettingsValueRow
+              label={t("settings.browserUse.historyApproval.label")}
+              description={t("settings.browserUse.historyApproval.description")}
+              control={
+                <SettingsChoiceMenu
+                  className="w-[152px]"
+                  disabled={controlsDisabled}
+                  onChange={(value) => {
+                    if (value === historyApprovalMode) {
+                      return;
+                    }
+                    void updateSettingsState(
+                      "historyApproval",
+                      () =>
+                        writeBrowserUseHistoryApprovalMode({
+                          approvalMode: value as BrowserUseApprovalMode,
+                        }),
+                      "settings.browserUse.historyApproval.saveError",
+                    );
+                  }}
+                  options={historyApprovalOptions}
+                  value={historyApprovalMode}
+                />
+              }
+            />
+
+            <SettingsValueRow
+              label={t("settings.browserUse.downloadApproval.label")}
+              description={t("settings.browserUse.downloadApproval.description")}
+              control={
+                <SettingsChoiceMenu
+                  className="w-[152px]"
+                  disabled={controlsDisabled}
+                  onChange={(value) => {
+                    if (value === downloadApprovalMode) {
+                      return;
+                    }
+                    void updateSettingsState(
+                      "downloadApproval",
+                      () =>
+                        writeBrowserUseFileTransferApprovalMode({
+                          kind: "download",
+                          approvalMode: value as BrowserUseApprovalMode,
+                        }),
+                      "settings.browserUse.downloadApproval.saveError",
+                    );
+                  }}
+                  options={downloadApprovalOptions}
+                  value={downloadApprovalMode}
+                />
+              }
+            />
+
+            <SettingsValueRow
+              label={t("settings.browserUse.uploadApproval.label")}
+              description={t("settings.browserUse.uploadApproval.description")}
+              control={
+                <SettingsChoiceMenu
+                  className="w-[152px]"
+                  disabled={controlsDisabled}
+                  onChange={(value) => {
+                    if (value === uploadApprovalMode) {
+                      return;
+                    }
+                    void updateSettingsState(
+                      "uploadApproval",
+                      () =>
+                        writeBrowserUseFileTransferApprovalMode({
+                          kind: "upload",
+                          approvalMode: value as BrowserUseApprovalMode,
+                        }),
+                      "settings.browserUse.uploadApproval.saveError",
+                    );
+                  }}
+                  options={uploadApprovalOptions}
+                  value={uploadApprovalMode}
+                />
+              }
+            />
+          </SettingsSurface>
+        </SettingsGroup.Content>
+      </SettingsGroup>
+
+      {BROWSER_USE_ORIGIN_SECTIONS.map((section) => (
+        <OriginSection
+          key={`${section.resource}:${section.kind}`}
+          config={section}
+          isDisabled={controlsDisabled}
+          isLoading={isLoading}
+          onRequestAdd={() => {
+            setOriginDraft("");
+            setAddDialogState(section);
+          }}
+          onRequestRemove={(origin) => {
+            setRemoveOriginState({ ...section, origin });
+          }}
+          origins={getOriginList(settingsState, section.resource, section.kind)}
+        />
+      ))}
+
+      {addDialogState ? (
+        <BrowserUseDialog
+          confirmLabel={t("settings.browserUse.domains.addDialogConfirm")}
+          disableConfirm={originDraft.trim().length === 0 || pendingAction !== null}
+          onClose={() => {
+            setOriginDraft("");
+            setAddDialogState(null);
+          }}
+          onConfirm={() => void handleAddOrigin(addDialogState)}
+          title={t(getOriginSectionCopy(addDialogState.resource, addDialogState.kind).addDialogTitleKey)}
+          subtitle={t(
+            getOriginSectionCopy(addDialogState.resource, addDialogState.kind).addDialogSubtitleKey,
+          )}
+          footer={
+            <>
+              <Button
+                color="outline"
+                disabled={pendingAction !== null}
+                type="button"
+                onClick={() => {
+                  setOriginDraft("");
+                  setAddDialogState(null);
+                }}
+              >
+                {t("settings.browserUse.domains.addDialogCancel")}
+              </Button>
+              <Button
+                disabled={originDraft.trim().length === 0 || pendingAction !== null}
+                loading={pendingAction !== null}
+                type="submit"
+              >
+                {t("settings.browserUse.domains.addDialogConfirm")}
+              </Button>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-2">
+            <input
+              autoFocus
+              aria-label={t("settings.browserUse.domains.addDialogAriaLabel")}
+              className="rounded-xl border border-token-border px-3 py-2 text-base text-token-input-foreground shadow-sm outline-none placeholder:text-token-input-placeholder-foreground"
+              onChange={(event) => setOriginDraft(event.currentTarget.value)}
+              placeholder={t("settings.browserUse.domains.addDialogPlaceholder")}
+              value={originDraft}
+            />
+          </div>
+        </BrowserUseDialog>
+      ) : null}
+
+      {removeOriginState ? (
+        <BrowserUseDialog
+          confirmLabel={t("settings.browserUse.origins.removeDialogConfirm")}
+          confirmTone="danger"
+          disableConfirm={pendingAction !== null}
+          onClose={() => setRemoveOriginState(null)}
+          onConfirm={() => void handleRemoveOrigin(removeOriginState)}
+          title={t(
+            getOriginSectionCopy(removeOriginState.resource, removeOriginState.kind)
+              .removeDialogTitleKey,
+            { origin: removeOriginState.origin },
+          )}
+          subtitle={t(
+            getOriginSectionCopy(removeOriginState.resource, removeOriginState.kind)
+              .removeDialogSubtitleKey,
+          )}
+          footer={
+            <>
+              <Button
+                color="ghost"
+                disabled={pendingAction !== null}
+                type="button"
+                onClick={() => setRemoveOriginState(null)}
+              >
+                {t("settings.browserUse.origins.removeDialogCancel")}
+              </Button>
+              <Button
+                color="danger"
+                loading={pendingAction !== null}
+                type="button"
+                onClick={() => void handleRemoveOrigin(removeOriginState)}
+              >
+                {t("settings.browserUse.origins.removeDialogConfirm")}
+              </Button>
+            </>
+          }
+        />
+      ) : null}
+    </>
+  );
+
+  async function updateSettingsState(
     actionKey: string,
     save: () => Promise<BrowserUseSettingsState>,
     errorKey: MessageKey,
-  ) => {
+  ) {
     if (pendingAction !== null) {
       return;
     }
@@ -332,12 +697,12 @@ function BrowserUsePermissionsPanel({
     } finally {
       setPendingAction(null);
     }
-  };
+  }
 
-  const handleClearBrowsingData = async (
+  async function handleClearBrowsingData(
     scope: BrowserBrowsingDataScope,
     dataTypes: BrowserBrowsingDataType[],
-  ) => {
+  ) {
     if (pendingBrowsingDataScope !== null) {
       return;
     }
@@ -357,9 +722,9 @@ function BrowserUsePermissionsPanel({
     } finally {
       setPendingBrowsingDataScope(null);
     }
-  };
+  }
 
-  const handleAnnotationScreenshotsModeChange = async (value: string) => {
+  async function handleAnnotationScreenshotsModeChange(value: string) {
     const nextValue = value as BrowserAnnotationScreenshotsMode;
     if (isAnnotationScreenshotsPending || nextValue === annotationScreenshotsMode) {
       return;
@@ -377,9 +742,9 @@ function BrowserUsePermissionsPanel({
     } finally {
       setIsAnnotationScreenshotsPending(false);
     }
-  };
+  }
 
-  const handleAddOrigin = async (state: AddOriginState) => {
+  async function handleAddOrigin(state: OriginSectionConfig) {
     const nextOrigin = originDraft.trim();
     if (nextOrigin.length === 0 || pendingAction !== null) {
       return;
@@ -416,9 +781,9 @@ function BrowserUsePermissionsPanel({
     } finally {
       setPendingAction(null);
     }
-  };
+  }
 
-  const handleRemoveOrigin = async (state: RemoveOriginState) => {
+  async function handleRemoveOrigin(state: RemoveOriginState) {
     if (pendingAction !== null) {
       return;
     }
@@ -453,432 +818,237 @@ function BrowserUsePermissionsPanel({
     } finally {
       setPendingAction(null);
     }
-  };
-
-  const approvalMode = settingsState?.approvalMode ?? "alwaysAsk";
-  const historyApprovalMode = settingsState?.historyApprovalMode ?? "alwaysAsk";
-  const downloadApprovalMode = settingsState?.downloadApprovalMode ?? "alwaysAsk";
-  const uploadApprovalMode = settingsState?.uploadApprovalMode ?? "alwaysAsk";
-  const controlsDisabled = isLoading || pendingAction !== null;
-  const dataControlsDisabled = isLoading || pendingBrowsingDataScope !== null || isAnnotationScreenshotsPending;
-
-  if (loadError) {
-    return (
-      <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="text-[14px] font-medium">{t("settings.browserUse.permissions.title")}</div>
-        <div className="app-text-muted mt-2 text-[13px] leading-6">{loadError}</div>
-        <button
-          type="button"
-          onClick={() => void loadSettings()}
-          className="app-control mt-3 rounded-[11px] px-3 py-1.5 text-[12px]"
-        >
-          {t("skills.appsPage.loadError.retry")}
-        </button>
-      </div>
-    );
   }
+}
+
+function BrowsingDataOptionRow({
+  dataType,
+  disabled,
+  loading,
+  onClear,
+}: {
+  dataType: BrowserBrowsingDataType;
+  disabled: boolean;
+  loading: boolean;
+  onClear: () => void;
+}) {
+  const { t } = useI18n();
 
   return (
-    <>
-      <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="text-[14px] font-medium">{t("settings.browserUse.browser.title")}</div>
-        <div className="mt-4 space-y-4">
-          <SettingsRow
-            label={t("settings.browserUse.browser.clearBrowsingData.label")}
-            description={t("settings.browserUse.browser.clearBrowsingData.description")}
-            control={
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={dataControlsDisabled && pendingBrowsingDataScope !== "all"}
-                  onClick={() => void handleClearBrowsingData("all", ALL_BROWSING_DATA_TYPES)}
-                  className="app-control rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
-                >
-                  {pendingBrowsingDataScope === "all"
-                    ? t("general.saving")
-                    : t("settings.browserUse.browser.clearBrowsingData")}
-                </button>
-                <button
-                  type="button"
-                  aria-controls="browser-browsing-data-options"
-                  aria-expanded={isBrowsingDataOptionsOpen}
-                  disabled={pendingBrowsingDataScope !== null}
-                  onClick={() => setIsBrowsingDataOptionsOpen((value) => !value)}
-                  className="app-control rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
-                >
-                  {t(
-                    isBrowsingDataOptionsOpen
-                      ? "settings.browserUse.browser.hideClearOptions"
-                      : "settings.browserUse.browser.showClearOptions",
-                  )}
-                </button>
-              </div>
-            }
-          />
-
-          {isBrowsingDataOptionsOpen ? (
-            <div
-              id="browser-browsing-data-options"
-              className="rounded-[14px] border border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)]"
-            >
-              {ALL_BROWSING_DATA_TYPES.map((dataType, index) => (
-                <div
-                  key={dataType}
-                  className={[
-                    "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 max-sm:grid-cols-1 max-sm:items-start",
-                    index > 0 ? "border-t border-[var(--app-shell-border)]" : "",
-                  ].join(" ")}
-                >
-                  <div className="min-w-0 text-[13px] text-[var(--app-shell-subtle)]">
-                    {t(getClearBrowsingDataRowLabelKey(dataType))}
-                  </div>
-                  <button
-                    type="button"
-                    disabled={dataControlsDisabled && pendingBrowsingDataScope !== dataType}
-                    onClick={() => void handleClearBrowsingData(dataType, [dataType])}
-                    className="app-control justify-self-end rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60 max-sm:justify-self-start"
-                  >
-                    {pendingBrowsingDataScope === dataType
-                      ? t("general.saving")
-                      : t(getClearBrowsingDataButtonLabelKey(dataType))}
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : null}
-
-          <SettingsRow
-            label={t("settings.browserUse.browser.annotationScreenshots.label")}
-            description={t("settings.browserUse.browser.annotationScreenshots.description")}
-            control={
-              <SettingsChoiceMenu
-                disabled={dataControlsDisabled}
-                onChange={(value) => {
-                  void handleAnnotationScreenshotsModeChange(value);
-                }}
-                options={annotationScreenshotOptions}
-                value={annotationScreenshotsMode}
-              />
-            }
-          />
-        </div>
+    <div className="grid min-h-10 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-4 py-0.5 max-md:grid-cols-1 max-md:items-start max-md:gap-1 max-md:py-2">
+      <div className="min-w-0 text-sm text-token-text-secondary">
+        {t(getClearBrowsingDataRowLabelKey(dataType))}
       </div>
-
-      <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="text-[14px] font-medium">{t("settings.browserUse.permissions.title")}</div>
-        <div className="mt-4 space-y-4">
-          <SettingsRow
-            label={t("settings.browserUse.approval.label")}
-            description={t("settings.browserUse.approval.description")}
-            control={
-              <SettingsChoiceMenu
-                disabled={controlsDisabled}
-                onChange={(value) => {
-                  if (value === approvalMode) {
-                    return;
-                  }
-                  void updateSettingsState(
-                    "approval",
-                    () =>
-                      writeBrowserUseApprovalMode({
-                        approvalMode: value as BrowserUseApprovalMode,
-                      }),
-                    "settings.browserUse.approval.saveError",
-                  );
-                }}
-                options={approvalOptions}
-                value={approvalMode}
-              />
-            }
-          />
-          <SettingsRow
-            label={t("settings.browserUse.historyApproval.label")}
-            description={t("settings.browserUse.historyApproval.description")}
-            control={
-              <SettingsChoiceMenu
-                disabled={controlsDisabled}
-                onChange={(value) => {
-                  if (value === historyApprovalMode) {
-                    return;
-                  }
-                  void updateSettingsState(
-                    "historyApproval",
-                    () =>
-                      writeBrowserUseHistoryApprovalMode({
-                        approvalMode: value as BrowserUseApprovalMode,
-                      }),
-                    "settings.browserUse.historyApproval.saveError",
-                  );
-                }}
-                options={historyApprovalOptions}
-                value={historyApprovalMode}
-              />
-            }
-          />
-          <SettingsRow
-            label={t("settings.browserUse.downloadApproval.label")}
-            description={t("settings.browserUse.downloadApproval.description")}
-            control={
-              <SettingsChoiceMenu
-                disabled={controlsDisabled}
-                onChange={(value) => {
-                  if (value === downloadApprovalMode) {
-                    return;
-                  }
-                  void updateSettingsState(
-                    "downloadApproval",
-                    () =>
-                      writeBrowserUseFileTransferApprovalMode({
-                        kind: "download",
-                        approvalMode: value as BrowserUseApprovalMode,
-                      }),
-                    "settings.browserUse.downloadApproval.saveError",
-                  );
-                }}
-                options={downloadApprovalOptions}
-                value={downloadApprovalMode}
-              />
-            }
-          />
-          <SettingsRow
-            label={t("settings.browserUse.uploadApproval.label")}
-            description={t("settings.browserUse.uploadApproval.description")}
-            control={
-              <SettingsChoiceMenu
-                disabled={controlsDisabled}
-                onChange={(value) => {
-                  if (value === uploadApprovalMode) {
-                    return;
-                  }
-                  void updateSettingsState(
-                    "uploadApproval",
-                    () =>
-                      writeBrowserUseFileTransferApprovalMode({
-                        kind: "upload",
-                        approvalMode: value as BrowserUseApprovalMode,
-                      }),
-                    "settings.browserUse.uploadApproval.saveError",
-                  );
-                }}
-                options={uploadApprovalOptions}
-                value={uploadApprovalMode}
-              />
-            }
-          />
-        </div>
-      </div>
-
-      {BROWSER_USE_ORIGIN_SECTIONS.map(({ kind, resource }) => {
-        const sectionCopy = getOriginSectionCopy(resource, kind);
-        return (
-          <OriginSection
-            key={`${resource}:${kind}`}
-            emptyTitle={t(sectionCopy.emptyTitleKey)}
-            kind={kind}
-            isDisabled={controlsDisabled}
-            isLoading={isLoading}
-            onRequestAdd={() => {
-              setOriginDraft("");
-              setAddDialogState({ kind, resource });
-            }}
-            onRequestRemove={(origin) => setRemoveOriginState({ kind, resource, origin })}
-            origins={getOriginList(settingsState, resource, kind)}
-            resource={resource}
-            subtitle={t(sectionCopy.subtitleKey)}
-            title={t(sectionCopy.titleKey)}
-          />
-        );
-      })}
-
-      {addDialogState ? (
-        <DialogShell
-          confirmLabel={t("settings.browserUse.domains.addDialogConfirm")}
-          disableConfirm={originDraft.trim().length === 0 || pendingAction !== null}
-          onClose={() => {
-            setOriginDraft("");
-            setAddDialogState(null);
-          }}
-          onConfirm={() => void handleAddOrigin(addDialogState)}
-          title={t(getOriginSectionCopy(addDialogState.resource, addDialogState.kind).addDialogTitleKey)}
-        >
-          <div className="app-text-muted text-[13px] leading-6">
-            {t(getOriginSectionCopy(addDialogState.resource, addDialogState.kind).addDialogSubtitleKey)}
-          </div>
-          <input
-            autoFocus
-            aria-label={t("settings.browserUse.domains.addDialogAriaLabel")}
-            value={originDraft}
-            onChange={(event) => setOriginDraft(event.target.value)}
-            placeholder={t("settings.browserUse.domains.addDialogPlaceholder")}
-            className="app-control app-text-input mt-4 w-full rounded-[12px] px-3 py-2 text-[13px] outline-none"
-          />
-        </DialogShell>
-      ) : null}
-
-      {removeOriginState ? (
-        <DialogShell
-          confirmLabel={t("settings.browserUse.origins.removeDialogConfirm")}
-          confirmTone="danger"
-          disableConfirm={pendingAction !== null}
-          onClose={() => setRemoveOriginState(null)}
-          onConfirm={() => void handleRemoveOrigin(removeOriginState)}
-          title={t(
-            getOriginSectionCopy(removeOriginState.resource, removeOriginState.kind).removeDialogTitleKey,
-            { origin: removeOriginState.origin },
-          )}
-        >
-          <div className="app-text-muted text-[13px] leading-6">
-            {t(getOriginSectionCopy(removeOriginState.resource, removeOriginState.kind).removeDialogSubtitleKey)}
-          </div>
-        </DialogShell>
-      ) : null}
-    </>
+      <Button
+        className="max-w-full justify-self-end text-left whitespace-normal max-md:-ml-2 max-md:justify-self-start"
+        color="ghost"
+        disabled={disabled}
+        loading={loading}
+        size="toolbar"
+        onClick={onClear}
+      >
+        {t(getClearBrowsingDataButtonLabelKey(dataType))}
+      </Button>
+    </div>
   );
 }
 
 function OriginSection({
-  emptyTitle,
+  config,
   isDisabled,
   isLoading,
-  kind,
   onRequestAdd,
   onRequestRemove,
   origins,
-  resource,
-  subtitle,
-  title,
 }: {
-  emptyTitle: string;
+  config: OriginSectionConfig;
   isDisabled: boolean;
   isLoading: boolean;
-  kind: BrowserUseOriginKind;
   onRequestAdd: () => void;
   onRequestRemove: (origin: string) => void;
   origins: string[];
-  resource: BrowserUseResourceKind;
-  subtitle: string;
-  title: string;
 }) {
   const { t } = useI18n();
+  const copy = getOriginSectionCopy(config.resource, config.kind);
 
   return (
-    <div className="app-card rounded-[18px] px-5 py-4">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="text-[14px] font-medium">{title}</div>
-          <div className="app-text-muted mt-1 text-[13px] leading-6">{subtitle}</div>
-        </div>
-        <button
-          type="button"
-          disabled={isDisabled}
-          onClick={onRequestAdd}
-          className="app-control inline-flex shrink-0 items-center gap-2 rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
-        >
-          <NewChatIcon className="h-3.5 w-3.5" />
-          <span>{t("settings.browserUse.domains.add")}</span>
-        </button>
-      </div>
-
-      <div className="mt-4">
-        {isLoading ? (
-          <div className="app-text-muted text-[13px] leading-6">{t("settings.browserUse.origins.loading")}</div>
-        ) : origins.length === 0 ? (
-          <div className="app-text-muted text-[13px] leading-6">{emptyTitle}</div>
-        ) : (
-          <div className="space-y-2">
-            {origins.map((origin) => (
-              <div
-                key={`${resource}:${kind}:${origin}`}
-                className="flex items-center justify-between gap-3 rounded-[14px] border border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)] px-4 py-3"
-              >
-                <div className="min-w-0 truncate text-[13px] font-medium">{origin}</div>
-                <button
-                  type="button"
-                  disabled={isDisabled}
-                  aria-label={t("settings.browserUse.origins.removeAriaLabel", { origin })}
-                  onClick={() => onRequestRemove(origin)}
-                  className="app-control-weak flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] disabled:opacity-60"
-                >
-                  <TrashIcon className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+    <SettingsGroup>
+      <SettingsGroup.Header
+        actions={
+          <Button color="secondary" disabled={isDisabled} size="toolbar" onClick={onRequestAdd}>
+            <NewChatIcon className="icon-xs" />
+            {t("settings.browserUse.domains.add")}
+          </Button>
+        }
+        title={t(copy.titleKey)}
+        subtitle={t(copy.subtitleKey)}
+      />
+      <SettingsGroup.Content>
+        <SettingsSurface>
+          {isLoading ? (
+            <LoadingStateRow />
+          ) : origins.length === 0 ? (
+            <SettingsValueRow
+              className="justify-center"
+              label={
+                <span className="text-token-text-secondary">
+                  {t(copy.emptyTitleKey)}
+                </span>
+              }
+              control={null}
+            />
+          ) : (
+            origins.map((origin) => (
+              <SettingsValueRow
+                key={`${config.resource}:${config.kind}:${origin}`}
+                label={<span className="font-medium">{origin}</span>}
+                control={
+                  <Button
+                    aria-label={t("settings.browserUse.origins.removeAriaLabel", {
+                      origin,
+                    })}
+                    color="ghost"
+                    disabled={isDisabled}
+                    size="icon"
+                    uniform
+                    onClick={() => onRequestRemove(origin)}
+                  >
+                    <TrashIcon className="icon-2xs" />
+                  </Button>
+                }
+              />
+            ))
+          )}
+        </SettingsSurface>
+      </SettingsGroup.Content>
+    </SettingsGroup>
   );
 }
 
-function SettingsRow({
-  control,
-  description,
-  label,
-}: {
-  control: ReactNode;
-  description: string;
-  label: string;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4 max-sm:flex-col max-sm:items-stretch">
-      <div className="min-w-0 flex-1">
-        <div className="text-[14px]">{label}</div>
-        <div className="app-text-muted mt-1 text-[13px] leading-6">{description}</div>
-      </div>
-      <div className="shrink-0">{control}</div>
-    </div>
-  );
-}
-
-function DialogShell({
+function BrowserUseDialog({
   children,
   confirmLabel,
   confirmTone,
   disableConfirm,
+  footer,
   onClose,
   onConfirm,
+  subtitle,
   title,
 }: {
-  children: ReactNode;
-  confirmLabel: string;
+  children?: ReactNode;
+  confirmLabel?: string;
   confirmTone?: "danger";
-  disableConfirm: boolean;
+  disableConfirm?: boolean;
+  footer?: ReactNode;
   onClose: () => void;
-  onConfirm: () => void;
-  title: string;
+  onConfirm?: () => void;
+  subtitle: ReactNode;
+  title: ReactNode;
 }) {
+  return (
+    <DialogOverlay onDismiss={onClose}>
+      <div
+        aria-modal="true"
+        role="dialog"
+        className="w-full max-w-[420px] rounded-[18px] border border-token-border bg-token-main-surface-primary px-5 py-5 shadow-[0_16px_40px_rgba(0,0,0,0.22)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <form
+          className="flex flex-col gap-5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onConfirm?.();
+          }}
+        >
+          <div className="flex flex-col gap-2">
+            <div className="text-[15px] font-medium text-token-text-primary">{title}</div>
+            <div className="text-sm text-token-text-secondary">{subtitle}</div>
+          </div>
+          {children}
+          <div className="flex items-center justify-end gap-2">
+            {footer ?? (
+              <>
+                <Button color="ghost" type="button" onClick={onClose}>
+                  Cancel
+                </Button>
+                <Button
+                  color={confirmTone === "danger" ? "danger" : "primary"}
+                  disabled={disableConfirm}
+                  type="submit"
+                >
+                  {confirmLabel}
+                </Button>
+              </>
+            )}
+          </div>
+        </form>
+      </div>
+    </DialogOverlay>
+  );
+}
+
+function SettingsValueRow({
+  className,
+  control,
+  description,
+  label,
+}: {
+  className?: string;
+  control?: ReactNode | null;
+  description?: ReactNode;
+  label: ReactNode;
+}) {
+  return (
+    <div
+      className={joinClasses(
+        "flex items-start justify-between gap-4 p-3 max-sm:flex-col max-sm:items-stretch",
+        className,
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="text-sm text-token-text-primary">{label}</div>
+        {description ? (
+          <div className="mt-1 text-sm leading-6 text-token-text-secondary">
+            {description}
+          </div>
+        ) : null}
+      </div>
+      {control !== null && control !== undefined ? (
+        <div className="shrink-0">{control}</div>
+      ) : null}
+    </div>
+  );
+}
+
+function LoadingStateRow() {
   const { t } = useI18n();
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
-      <div className="app-card w-full max-w-[420px] rounded-[18px] px-5 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
-        <div className="app-title text-[15px] font-medium">{title}</div>
-        <div className="mt-2">{children}</div>
-        <div className="mt-5 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
-          >
-            {t(
-              confirmTone === "danger"
-                ? "settings.browserUse.origins.removeDialogCancel"
-                : "settings.browserUse.domains.addDialogCancel",
-            )}
-          </button>
-          <button
-            type="button"
-            disabled={disableConfirm}
-            onClick={onConfirm}
-            className={[
-              confirmTone === "danger" ? "app-card-error" : "app-control",
-              "rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60",
-            ].join(" ")}
-          >
-            {confirmLabel}
-          </button>
-        </div>
-      </div>
+    <div className="flex items-center gap-2 p-4 text-sm text-token-text-secondary">
+      <Spinner className="icon-xs" />
+      {t("settings.browserUse.origins.loading")}
+    </div>
+  );
+}
+
+function MessageStateRow({ message }: { message: ReactNode }) {
+  return <div className="p-4 text-sm text-token-text-secondary">{message}</div>;
+}
+
+function DialogOverlay({
+  children,
+  onDismiss,
+}: {
+  children: ReactNode;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-30 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4"
+      onClick={onDismiss}
+    >
+      {children}
     </div>
   );
 }
@@ -916,10 +1086,31 @@ function BrowserUseControlIcon({ className }: { className?: string }) {
   );
 }
 
-function TrashIcon({ className }: { className?: string }) {
+function ElevatedRiskIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-      <path d="M10.6299 1.33496C12.0335 1.33496 13.2695 2.25996 13.666 3.60645L13.8809 4.33496H17L17.1338 4.34863C17.4369 4.41057 17.665 4.67858 17.665 5C17.665 5.32142 17.4369 5.58943 17.1338 5.65137L17 5.66504H16.6543L15.8574 14.9912C15.7177 16.629 14.3478 17.8877 12.7041 17.8877H7.2959C5.75502 17.8877 4.45439 16.7815 4.18262 15.2939L4.14258 14.9912L3.34668 5.66504H3C2.63273 5.66504 2.33496 5.36727 2.33496 5C2.33496 4.63273 2.63273 4.33496 3 4.33496H6.11914L6.33398 3.60645L6.41797 3.3584C6.88565 2.14747 8.05427 1.33496 9.37012 1.33496H10.6299ZM5.46777 14.8779L5.49121 15.0537C5.64881 15.9161 6.40256 16.5576 7.2959 16.5576H12.7041C13.6571 16.5576 14.4512 15.8275 14.5322 14.8779L15.3193 5.66504H4.68164L5.46777 14.8779ZM7.66797 12.8271V8.66016C7.66797 8.29299 7.96588 7.99528 8.33301 7.99512C8.70028 7.99512 8.99805 8.29289 8.99805 8.66016V12.8271C8.99779 13.1942 8.70012 13.4912 8.33301 13.4912C7.96604 13.491 7.66823 13.1941 7.66797 12.8271ZM11.002 12.8271V8.66016C11.002 8.29289 11.2997 7.99512 11.667 7.99512C12.0341 7.9953 12.332 8.293 12.332 8.66016V12.8271C12.3318 13.1941 12.0339 13.491 11.667 13.4912C11.2999 13.4912 11.0022 13.1942 11.002 12.8271ZM9.37012 2.66504C8.60726 2.66504 7.92938 3.13589 7.6582 3.83789L7.60938 3.98145L7.50586 4.33496H12.4941L12.3906 3.98145C12.1607 3.20084 11.4437 2.66504 10.6299 2.66504H9.37012Z" />
+    <svg
+      className={className}
+      width="20"
+      height="20"
+      viewBox="0 0 20 20"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M9.06543 1.95123C9.66107 1.69076 10.3389 1.69071 10.9346 1.95123L15.9346 4.13873C16.7832 4.51008 17.3311 5.34917 17.3311 6.27545V10.5528C17.3309 14.6017 14.0489 17.8847 10 17.8848C5.95108 17.8846 2.66813 14.6017 2.66797 10.5528V6.27545C2.66797 5.34924 3.21695 4.51012 4.06543 4.13873L9.06543 1.95123ZM10.4014 3.16998C10.1456 3.05814 9.85444 3.05819 9.59863 3.16998L4.59863 5.35748C4.23427 5.51708 3.99805 5.87764 3.99805 6.27545V10.5528C3.99821 13.8671 6.68563 16.5546 10 16.5547C13.3144 16.5546 16.0008 13.8671 16.001 10.5528V6.27545C16.001 5.87756 15.7658 5.51703 15.4014 5.35748L10.4014 3.16998Z"
+        fill="currentColor"
+      />
+      <path
+        d="M10.8883 13.1116C10.8883 13.6025 10.4903 14.0005 9.99936 14.0005C9.50844 14.0005 9.11047 13.6025 9.11047 13.1116C9.11047 12.6207 9.50844 12.2227 9.99936 12.2227C10.4903 12.2227 10.8883 12.6207 10.8883 13.1116Z"
+        fill="currentColor"
+      />
+      <path
+        d="M10.5169 10.8949L11.1135 7.31519C11.2283 6.62672 10.6974 6 9.99941 6C9.30145 6 8.77053 6.62672 8.88528 7.31519L9.4819 10.8949C9.52406 11.1479 9.74294 11.3333 9.99941 11.3333C10.2559 11.3333 10.4748 11.1479 10.5169 10.8949Z"
+        fill="currentColor"
+      />
     </svg>
   );
 }
@@ -943,20 +1134,23 @@ function getOriginList(
   switch (resource) {
     case "origins":
       return kind === "allowed"
-        ? (settingsState?.allowedOrigins ?? [])
-        : (settingsState?.deniedOrigins ?? []);
+        ? settingsState?.allowedOrigins ?? []
+        : settingsState?.deniedOrigins ?? [];
     case "downloads":
       return kind === "allowed"
-        ? (settingsState?.allowedDownloadOrigins ?? [])
-        : (settingsState?.deniedDownloadOrigins ?? []);
+        ? settingsState?.allowedDownloadOrigins ?? []
+        : settingsState?.deniedDownloadOrigins ?? [];
     case "uploads":
       return kind === "allowed"
-        ? (settingsState?.allowedUploadOrigins ?? [])
-        : (settingsState?.deniedUploadOrigins ?? []);
+        ? settingsState?.allowedUploadOrigins ?? []
+        : settingsState?.deniedUploadOrigins ?? [];
   }
 }
 
-function getOriginSectionCopy(resource: BrowserUseResourceKind, kind: BrowserUseOriginKind) {
+function getOriginSectionCopy(
+  resource: BrowserUseResourceKind,
+  kind: BrowserUseOriginKind,
+) {
   return BROWSER_USE_ORIGIN_SECTION_COPY[resource][kind];
 }
 
@@ -971,7 +1165,9 @@ function getClearBrowsingDataRowLabelKey(dataType: BrowserBrowsingDataType): Mes
   }
 }
 
-function getClearBrowsingDataButtonLabelKey(dataType: BrowserBrowsingDataType): MessageKey {
+function getClearBrowsingDataButtonLabelKey(
+  dataType: BrowserBrowsingDataType,
+): MessageKey {
   switch (dataType) {
     case "cookies":
       return "settings.browserUse.browser.clearCookies";
@@ -982,7 +1178,9 @@ function getClearBrowsingDataButtonLabelKey(dataType: BrowserBrowsingDataType): 
   }
 }
 
-function getClearBrowsingDataSuccessMessageKey(scope: BrowserBrowsingDataScope): MessageKey {
+function getClearBrowsingDataSuccessMessageKey(
+  scope: BrowserBrowsingDataScope,
+): MessageKey {
   switch (scope) {
     case "all":
       return "settings.browserUse.browser.browsingDataCleared";
@@ -995,7 +1193,9 @@ function getClearBrowsingDataSuccessMessageKey(scope: BrowserBrowsingDataScope):
   }
 }
 
-function getClearBrowsingDataErrorMessageKey(scope: BrowserBrowsingDataScope): MessageKey {
+function getClearBrowsingDataErrorMessageKey(
+  scope: BrowserBrowsingDataScope,
+): MessageKey {
   switch (scope) {
     case "all":
       return "settings.browserUse.browser.clearBrowsingDataError";
@@ -1008,9 +1208,26 @@ function getClearBrowsingDataErrorMessageKey(scope: BrowserBrowsingDataScope): M
   }
 }
 
-function renderComputerUseSettingsSubtitle(template: string, onNavigate: () => void) {
-  const startTag = "<computerUseSettingsLink>";
-  const endTag = "</computerUseSettingsLink>";
+function renderComputerUseSettingsSubtitle(
+  template: string,
+  onNavigate: () => void,
+) {
+  return renderInlineTagButton(
+    template,
+    "computerUseSettingsLink",
+    onNavigate,
+    "inline p-0 text-[var(--app-shell-accent)] underline underline-offset-2",
+  );
+}
+
+function renderInlineTagButton(
+  template: string,
+  tagName: string,
+  onClick: () => void,
+  className: string,
+) {
+  const startTag = `<${tagName}>`;
+  const endTag = `</${tagName}>`;
   const startIndex = template.indexOf(startTag);
   const endIndex = template.indexOf(endTag);
 
@@ -1027,8 +1244,8 @@ function renderComputerUseSettingsSubtitle(template: string, onNavigate: () => v
       {prefix}
       <button
         type="button"
-        onClick={onNavigate}
-        className="inline p-0 text-[var(--app-shell-accent)] underline underline-offset-2"
+        onClick={onClick}
+        className={className}
       >
         {label}
       </button>
@@ -1048,4 +1265,8 @@ function getBrowserUsePlugin(context: FilteredPluginSettingsRenderContext) {
     const pluginPrefix = candidate.plugin.id.split("@")[0]?.toLowerCase();
     return pluginName === "browser-use" || pluginPrefix === "browser-use";
   });
+}
+
+function joinClasses(...values: Array<string | false | null | undefined>) {
+  return values.filter((value): value is string => Boolean(value)).join(" ");
 }

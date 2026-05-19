@@ -17,6 +17,7 @@ const CLIENT_TITLE: &str = "Codex App Replica";
 const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const CODEX_APP_SERVER_INITIALIZED_EVENT: &str = "codex-app-server-initialized";
 const MCP_OAUTH_EVENT: &str = "mcp-oauth-login-completed";
+const REMOTE_CHATGPT_LOGIN_COMPLETED_EVENT: &str = "remote-chatgpt-login-completed";
 const REMOTE_APP_SERVER_CONNECTION_STATE_CHANGED_EVENT: &str =
     "remote-app-server-connection-state-changed";
 const REMOTE_APP_SERVER_COMMAND: &str = "codex app-server --listen stdio://";
@@ -93,6 +94,15 @@ struct CodexAppServerInitializedNotification {
 struct McpOauthLoginCompletedNotification {
     host_id: Option<String>,
     name: String,
+    success: bool,
+    error: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RemoteChatGptLoginCompletedNotification {
+    host_id: String,
+    login_id: Option<String>,
     success: bool,
     error: Option<String>,
 }
@@ -247,6 +257,8 @@ async fn ensure_stopped(
     if let Some(process) = remove_process(runtime_state, host_id).await {
         stop_process(process).await;
     }
+    let registry = app.state::<RemoteAppServerRegistry>();
+    registry.set_versions(host_id, None, None);
     set_connection_state(
         app,
         host_id,
@@ -503,13 +515,22 @@ async fn run_remote_app_server_client(
                                         if let Some(handle) = debug_request_handle.as_ref() {
                                             match (&result, &error) {
                                                 (Some(value), None) => {
+                                                    let app_server_version =
+                                                        debug_app_server::parse_app_server_version_from_initialize_result(
+                                                            value,
+                                                        );
                                                     debug_app_server::request_completed(&app, handle, value);
                                                     debug_app_server::set_versions(
                                                         &app,
                                                         &host_id,
-                                                        debug_app_server::parse_app_server_version_from_initialize_result(
-                                                            value,
-                                                        ),
+                                                        app_server_version.clone(),
+                                                        None,
+                                                    );
+                                                    let registry =
+                                                        app.state::<RemoteAppServerRegistry>();
+                                                    registry.set_versions(
+                                                        &host_id,
+                                                        app_server_version,
                                                         None,
                                                     );
                                                 }
@@ -590,6 +611,9 @@ async fn run_remote_app_server_client(
                                 RemoteJsonRpcMessage::Notification { method, params } => {
                                     debug_app_server::notification_received(&app, &host_id, &method, &params);
                                     match method.as_str() {
+                                        "account/login/completed" => {
+                                            handle_remote_chatgpt_login_completed(&app, &host_id, params);
+                                        }
                                         "mcpServer/oauthLogin/completed" => {
                                             handle_mcp_oauth_login_completed(&app, &host_id, params);
                                         }
@@ -763,6 +787,20 @@ fn handle_mcp_oauth_login_completed(app: &AppHandle, host_id: &str, params: Valu
     };
     notification.host_id = Some(host_id.to_string());
     let _ = app.emit(MCP_OAUTH_EVENT, notification);
+}
+
+fn handle_remote_chatgpt_login_completed(app: &AppHandle, host_id: &str, params: Value) {
+    let Ok(notification) =
+        serde_json::from_value::<RemoteChatGptLoginCompletedNotification>(serde_json::json!({
+            "hostId": host_id,
+            "loginId": params.get("loginId").cloned().unwrap_or(Value::Null),
+            "success": params.get("success").cloned().unwrap_or(Value::Bool(false)),
+            "error": params.get("error").cloned().unwrap_or(Value::Null),
+        }))
+    else {
+        return;
+    };
+    let _ = app.emit(REMOTE_CHATGPT_LOGIN_COMPLETED_EVENT, notification);
 }
 
 #[cfg(test)]

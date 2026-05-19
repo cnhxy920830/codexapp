@@ -43,11 +43,31 @@ export async function readWorkspaceAgentsMd(workspaceRoot: string | null) {
   });
 }
 
+export async function readCodexAgentsMd(hostId?: string | null) {
+  return invoke<WorkspaceAgentsMdDocument>("codex-agents-md", {
+    params: {
+      hostId: hostId ?? null,
+    },
+  });
+}
+
 export async function writeWorkspaceAgentsMd(params: {
   workspaceRoot: string | null;
   contents: string;
 }) {
   return invoke<WorkspaceAgentsMdDocument>("write_workspace_agents_md", { params });
+}
+
+export async function writeCodexAgentsMd(params: {
+  hostId?: string | null;
+  contents: string;
+}) {
+  return invoke<{ path: string }>("codex-agents-md-save", {
+    params: {
+      hostId: params.hostId ?? null,
+      contents: params.contents,
+    },
+  });
 }
 
 export async function listExperimentalFeatures() {
@@ -107,6 +127,14 @@ export async function setExperimentalFeatureForHost(
 
 export async function resetMemories() {
   return invoke<void>("reset_memories");
+}
+
+export async function resetMemoriesForHost(hostId?: string | null) {
+  return invoke<void>("reset-memories-for-host", {
+    params: {
+      hostId: hostId ?? null,
+    },
+  });
 }
 
 export async function readChroniclePermissions() {

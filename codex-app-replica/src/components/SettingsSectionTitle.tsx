@@ -5,6 +5,7 @@ export type SettingsSectionTitleSlug =
   | "agent"
   | "appearance"
   | "browser-use"
+  | "computer-use"
   | "connections"
   | "data-controls"
   | "general-settings"
@@ -24,6 +25,7 @@ const TITLE_KEY_BY_SLUG = {
   agent: "settings.section.agent",
   appearance: "settings.section.appearance",
   "browser-use": "settings.section.browser-use",
+  "computer-use": "settings.section.computer-use",
   connections: "settings.section.connections",
   "data-controls": "settings.section.data-controls",
   "general-settings": "settings.section.general-settings",

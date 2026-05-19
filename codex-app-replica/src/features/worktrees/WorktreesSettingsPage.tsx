@@ -3,10 +3,14 @@ import { RefreshIcon } from "../../components/AppShellIcons";
 import type { AppToast } from "../../components/AppToastRegion";
 import { Button } from "../../components/Button";
 import { SettingsContentLayout } from "../../components/SettingsContentLayout";
+import { SettingsGroup } from "../../components/SettingsGroup";
+import { SettingsSectionTitle } from "../../components/SettingsSectionTitle";
+import { SettingsSurface } from "../../components/SettingsSurface";
 import { Spinner } from "../../components/Spinner";
+import { useReplicaStatsigGateValue } from "../statsig/replicaStatsig";
 import { useI18n } from "../../i18n/i18n";
 import { readGitOrigins } from "../../services/gitOrigins";
-import { archiveConversation, getRecentThreadsForHost, type ThreadHistoryEntry } from "../../services/history";
+import { archiveConversation, type ThreadHistoryEntry } from "../../services/history";
 import {
   LOCAL_SETTINGS_HOST_ID,
   REMOTE_PROJECTS_SHARED_OBJECT_KEY,
@@ -20,6 +24,8 @@ type WorktreesSettingsPageProps = {
   onDismissToast?: () => void;
   onShowToast?: (toast: AppToast) => void;
   onViewConversation?: (threadId: string, hostId: string) => void | Promise<void>;
+  isRecentThreadsLoading?: boolean;
+  recentThreads: ThreadHistoryEntry[];
   selectedHostId: string;
 };
 
@@ -33,19 +39,20 @@ export function WorktreesSettingsPage({
   onDismissToast,
   onShowToast,
   onViewConversation,
+  isRecentThreadsLoading = false,
+  recentThreads,
   selectedHostId,
 }: WorktreesSettingsPageProps) {
   const { t } = useI18n();
   const [reloadNonce, setReloadNonce] = useState(0);
   const [worktrees, setWorktrees] = useState<CodexWorktreeEntry[]>([]);
   const [projectRoots, setProjectRoots] = useState<string[]>([]);
-  const [recentThreads, setRecentThreads] = useState<ThreadHistoryEntry[]>([]);
   const [restoredRepoRoots, setRestoredRepoRoots] = useState<Record<string, string>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isThreadsLoading, setIsThreadsLoading] = useState(true);
   const hasLoadedOnceRef = useRef(false);
+  const backgroundSubagentsEnabled = useReplicaStatsigGateValue("1221508807");
 
   useEffect(() => {
     let disposed = false;
@@ -139,34 +146,6 @@ export function WorktreesSettingsPage({
   useEffect(() => {
     let cancelled = false;
 
-    const load = async () => {
-      setIsThreadsLoading(true);
-      try {
-        const threads = await getRecentThreadsForHost(selectedHostId);
-        if (!cancelled) {
-          setRecentThreads(threads);
-        }
-      } catch {
-        if (!cancelled) {
-          setRecentThreads([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setIsThreadsLoading(false);
-        }
-      }
-    };
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [reloadNonce, selectedHostId]);
-
-  useEffect(() => {
-    let cancelled = false;
-
     const visibleWorktrees = filterOutProjectRootWorktrees(worktrees, projectRoots);
     const groups = groupWorktreesByRepository(visibleWorktrees);
     const dirsToResolve = groups
@@ -223,7 +202,10 @@ export function WorktreesSettingsPage({
 
   const visibleWorktrees = filterOutProjectRootWorktrees(worktrees, projectRoots);
   const groupedWorktrees = groupWorktreesByRepository(visibleWorktrees);
-  const visibleRecentThreads = recentThreads.filter((thread) => !isThreadSpawnSubagentConversation(thread));
+  const recentThreadsForHost = recentThreads.filter((thread) => (thread.hostId ?? LOCAL_SETTINGS_HOST_ID) === selectedHostId);
+  const visibleRecentThreads = recentThreadsForHost.filter(
+    (thread) => !isThreadSpawnSubagentConversation(thread, backgroundSubagentsEnabled),
+  );
 
   const refreshAction = (
     <Button
@@ -242,17 +224,17 @@ export function WorktreesSettingsPage({
 
   if (isLoading) {
     return (
-      <SettingsContentLayout title={t("settings.section.worktrees")}>
+      <SettingsContentLayout title={<SettingsSectionTitle slug="worktrees" />}>
         <SettingsGroup>
-          <SettingsGroupHeader action={refreshAction} title={t("settings.worktrees.loading.title")} />
-          <SettingsGroupContent>
+          <SettingsGroup.Header actions={refreshAction} title={t("settings.worktrees.loading.title")} />
+          <SettingsGroup.Content>
             <SettingsSurface>
               <div className="flex items-center gap-2 p-3 text-sm text-token-text-secondary">
                 <Spinner className="icon-xxs" />
                 <span>{t("settings.worktrees.loading.body")}</span>
               </div>
             </SettingsSurface>
-          </SettingsGroupContent>
+          </SettingsGroup.Content>
         </SettingsGroup>
       </SettingsContentLayout>
     );
@@ -260,16 +242,16 @@ export function WorktreesSettingsPage({
 
   if (loadError !== null) {
     return (
-      <SettingsContentLayout title={t("settings.section.worktrees")}>
+      <SettingsContentLayout title={<SettingsSectionTitle slug="worktrees" />}>
         <SettingsGroup>
-          <SettingsGroupHeader action={refreshAction} title={t("settings.worktrees.error.title")} />
-          <SettingsGroupContent>
+          <SettingsGroup.Header actions={refreshAction} title={t("settings.worktrees.error.title")} />
+          <SettingsGroup.Content>
             <SettingsSurface>
               <div className="p-3 text-sm text-token-text-secondary">
                 {loadError || t("settings.worktrees.error.body")}
               </div>
             </SettingsSurface>
-          </SettingsGroupContent>
+          </SettingsGroup.Content>
         </SettingsGroup>
       </SettingsContentLayout>
     );
@@ -277,29 +259,29 @@ export function WorktreesSettingsPage({
 
   if (groupedWorktrees.length === 0) {
     return (
-      <SettingsContentLayout title={t("settings.section.worktrees")}>
+      <SettingsContentLayout title={<SettingsSectionTitle slug="worktrees" />}>
         <SettingsGroup>
-          <SettingsGroupHeader action={refreshAction} title={t("settings.worktrees.empty.title")} />
-          <SettingsGroupContent>
+          <SettingsGroup.Header actions={refreshAction} title={t("settings.worktrees.empty.title")} />
+          <SettingsGroup.Content>
             <SettingsSurface>
               <div className="p-3 text-sm text-token-text-secondary">{t("settings.worktrees.empty.body")}</div>
             </SettingsSurface>
-          </SettingsGroupContent>
+          </SettingsGroup.Content>
         </SettingsGroup>
       </SettingsContentLayout>
     );
   }
 
   return (
-    <SettingsContentLayout title={t("settings.section.worktrees")}>
+    <SettingsContentLayout title={<SettingsSectionTitle slug="worktrees" />}>
       {groupedWorktrees.map((group, index) => (
         <WorktreeRepositorySection
           key={group.key}
           action={index === 0 ? refreshAction : null}
-          allRecentThreads={recentThreads}
+          allRecentThreads={recentThreadsForHost}
           displayRepoRoot={restoredRepoRoots[group.key] ?? group.repoRoot ?? group.worktrees[0]?.dir ?? null}
           hostId={selectedHostId}
-          isThreadsLoading={isThreadsLoading}
+          isThreadsLoading={isRecentThreadsLoading}
           onDismissToast={onDismissToast}
           onShowToast={onShowToast}
           onViewConversation={onViewConversation}
@@ -342,15 +324,19 @@ function WorktreeRepositorySection({
 
   return (
     <SettingsGroup>
-      <SettingsGroupHeader
-        action={action}
+      <SettingsGroup.Header
+        actions={action}
         title={
-          <div className="min-w-0 truncate text-sm text-token-text-primary">
-            {displayRepoRoot ?? t("settings.worktrees.repository.unknown")}
+          <div className="min-w-0 text-token-text-primary">
+            {displayRepoRoot ? (
+              <span className="block truncate font-mono text-sm">{displayRepoRoot}</span>
+            ) : (
+              <span className="text-sm">{t("settings.worktrees.repository.unknown")}</span>
+            )}
           </div>
         }
       />
-      <SettingsGroupContent>
+      <SettingsGroup.Content>
         <SettingsSurface>
           {sortedWorktrees.map((worktree) => (
             <WorktreeRow
@@ -367,7 +353,7 @@ function WorktreeRepositorySection({
             />
           ))}
         </SettingsSurface>
-      </SettingsGroupContent>
+      </SettingsGroup.Content>
     </SettingsGroup>
   );
 }
@@ -475,51 +461,6 @@ function WorktreeRow({
   );
 }
 
-function SettingsGroup({ children }: { children: ReactNode }) {
-  return <section className="flex flex-col">{children}</section>;
-}
-
-function SettingsGroupHeader({
-  action,
-  title,
-}: {
-  action?: ReactNode;
-  title: ReactNode;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3 pb-2">
-      <div className="min-w-0 flex-1">{title}</div>
-      {action ? <div className="shrink-0">{action}</div> : null}
-    </div>
-  );
-}
-
-function SettingsGroupContent({ children }: { children: ReactNode }) {
-  return <div className="flex flex-col gap-1.5">{children}</div>;
-}
-
-function SettingsSurface({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <div
-      className={joinClasses(
-        "border-token-border flex flex-col divide-y-[0.5px] divide-token-border rounded-lg border",
-        className,
-      )}
-      style={{
-        backgroundColor: "var(--color-background-panel, var(--color-token-bg-fog))",
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
 function filterOutProjectRootWorktrees(worktrees: CodexWorktreeEntry[], projectRoots: string[]) {
   if (projectRoots.length === 0) {
     return worktrees;
@@ -609,14 +550,10 @@ function isSameOrNestedPath(root: string, path: string) {
   return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`);
 }
 
-function isThreadSpawnSubagentConversation(thread: ThreadHistoryEntry) {
-  return thread.source?.parentThreadId != null;
+function isThreadSpawnSubagentConversation(thread: ThreadHistoryEntry, backgroundSubagentsEnabled: boolean) {
+  return !backgroundSubagentsEnabled && thread.source?.parentThreadId != null;
 }
 
 function normalizePath(path: string) {
   return path.replace(/\\/g, "/").replace(/\/+$/, "");
-}
-
-function joinClasses(...values: Array<string | false | null | undefined>) {
-  return values.filter((value): value is string => Boolean(value)).join(" ");
 }

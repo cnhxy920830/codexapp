@@ -33,15 +33,15 @@ export type ChromeExtensionInstalledState = {
 };
 
 export async function readComputerUseApprovalsVisibility() {
-  return invoke<ComputerUseVisibilityState>("read_computer_use_approvals_visibility");
+  return invoke<ComputerUseVisibilityState>("computer-use-app-approvals-visibility");
 }
 
 export async function readComputerUseApprovals() {
-  return invoke<ComputerUseApprovalsState | null>("read_computer_use_approvals");
+  return invoke<ComputerUseApprovalsState | null>("computer-use-app-approvals-read");
 }
 
 export async function removeComputerUseApproval(params: { bundleIdentifier: string }) {
-  return invoke<ComputerUseApprovalsState | null>("remove_computer_use_approval", { params });
+  return invoke<ComputerUseApprovalsState | null>("computer-use-app-approval-remove", { params });
 }
 
 export async function readComputerUseSoundMode() {

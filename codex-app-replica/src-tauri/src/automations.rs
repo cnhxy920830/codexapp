@@ -534,7 +534,7 @@ async fn run_automation_record_now_inner(
     state: &Arc<AuthBridgeState>,
     automation: AutomationRecord,
 ) -> Result<AutomationThreadRunResult, String> {
-    let personality = state.current_personality();
+    let personality = state.current_personality_for_host(None);
 
     let result: AutomationThreadRunResult = match &automation {
         AutomationRecord::Heartbeat {

@@ -109,6 +109,27 @@ pub struct HostScopedParams {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct SetPersonalityParams {
+    pub host_id: Option<String>,
+    pub personality: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RestartAppServerParams {
+    pub host_id: Option<String>,
+    pub kill_codex_process: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelLoginParams {
+    pub login_id: String,
+    pub host_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct ChatGptLoginParams {
     pub host_id: Option<String>,
     pub use_streamlined_login: bool,
@@ -1347,7 +1368,7 @@ pub struct AuthBridgeState {
     app_server_process: AsyncMutex<Option<tokio::process::Child>>,
     app_server_generation: Mutex<u64>,
     app_server_lifecycle_lock: AsyncMutex<()>,
-    current_personality: Mutex<Option<String>>,
+    current_personality_by_host: Mutex<HashMap<String, Option<String>>>,
     turn_diffs: Mutex<HashMap<String, String>>,
     model_reroutes: Mutex<HashMap<String, Vec<ModelReroutedCacheEntry>>>,
     automatic_approval_reviews: Mutex<HashMap<String, Vec<AutomaticApprovalReviewCacheEntry>>>,
@@ -1368,11 +1389,27 @@ pub struct AuthBridgeState {
 }
 
 impl AuthBridgeState {
-    pub fn current_personality(&self) -> Option<String> {
-        self.current_personality
+    pub fn current_personality_for_host(&self, host_id: Option<&str>) -> Option<String> {
+        self.current_personality_by_host
             .lock()
             .expect("current personality mutex poisoned")
-            .clone()
+            .get(normalize_personality_host_id(host_id))
+            .cloned()
+            .flatten()
+    }
+
+    pub fn set_current_personality_for_host(
+        &self,
+        host_id: Option<&str>,
+        personality: Option<String>,
+    ) {
+        self.current_personality_by_host
+            .lock()
+            .expect("current personality mutex poisoned")
+            .insert(
+                normalize_personality_host_id(host_id).to_string(),
+                personality,
+            );
     }
 }
 
@@ -1664,7 +1701,7 @@ impl Default for AuthBridgeState {
             app_server_process: AsyncMutex::new(None),
             app_server_generation: Mutex::new(0),
             app_server_lifecycle_lock: AsyncMutex::new(()),
-            current_personality: Mutex::new(None),
+            current_personality_by_host: Mutex::new(HashMap::new()),
             turn_diffs: Mutex::new(HashMap::new()),
             model_reroutes: Mutex::new(HashMap::new()),
             automatic_approval_reviews: Mutex::new(HashMap::new()),
@@ -1716,6 +1753,13 @@ fn normalize_runtime_personality(personality: Option<&str>) -> Result<Option<Str
         None => Ok(None),
         Some(value @ ("friendly" | "pragmatic" | "none")) => Ok(Some(value.to_string())),
         Some(other) => Err(format!("unsupported personality value: {other}")),
+    }
+}
+
+fn normalize_personality_host_id(host_id: Option<&str>) -> &str {
+    match host_id.map(str::trim).filter(|value| !value.is_empty()) {
+        None | Some(LOCAL_HOST_ID) => LOCAL_HOST_ID,
+        Some(host_id) => host_id,
     }
 }
 
@@ -2285,18 +2329,27 @@ async fn login_chatgpt_device_code_inner_for_host(
 pub async fn cancel_login(
     app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
-    login_id: String,
+    params: CancelLoginParams,
 ) -> Result<(), String> {
-    send_request(
+    let host_id = params.host_id.as_deref();
+    send_request_for_host(
+        &app,
         state.inner(),
+        host_id,
         AppServerRequestKind::CancelLogin,
-        serde_json::json!({ "loginId": login_id }),
+        serde_json::json!({ "loginId": params.login_id }),
     )
     .await
     .map(|_| ())
-    .map(|_| clear_login_state(&app, state.inner()))
+    .map(|_| {
+        if is_local_host_id(host_id) {
+            clear_login_state(&app, state.inner());
+        }
+    })
     .map_err(|error| {
-        set_login_error(&app, state.inner(), error.clone());
+        if is_local_host_id(host_id) {
+            set_login_error(&app, state.inner(), error.clone());
+        }
         error
     })
 }
@@ -2572,16 +2625,13 @@ async fn batch_write_config_values_inner_for_host(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(rename = "set-personality")]
 pub async fn set_personality(
     state: State<'_, Arc<AuthBridgeState>>,
-    personality: Option<String>,
+    params: SetPersonalityParams,
 ) -> Result<(), String> {
-    let personality = normalize_runtime_personality(personality.as_deref())?;
-    *state
-        .current_personality
-        .lock()
-        .expect("current personality mutex poisoned") = personality;
+    let personality = normalize_runtime_personality(params.personality.as_deref())?;
+    state.set_current_personality_for_host(params.host_id.as_deref(), personality);
     Ok(())
 }
 
@@ -3431,7 +3481,7 @@ pub async fn reload_mcp_server_config(
 pub async fn codex_app_server_restart(
     app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
-    params: HostScopedParams,
+    params: RestartAppServerParams,
 ) -> Result<(), String> {
     if let Some(host_id) = remote_host_id(params.host_id.as_deref()) {
         remote_app_server_runtime::restart(&app, host_id).await
@@ -3800,7 +3850,8 @@ pub async fn start_thread(
     state: State<'_, Arc<AuthBridgeState>>,
     cwd: Option<String>,
 ) -> Result<String, String> {
-    start_thread_with_personality(state.inner(), cwd, state.current_personality()).await
+    start_thread_with_personality(state.inner(), cwd, state.current_personality_for_host(None))
+        .await
 }
 
 #[tauri::command(rename = "start-conversation")]
@@ -3868,7 +3919,7 @@ pub async fn start_conversation(
         AppServerRequestKind::ThreadStart,
         build_thread_start_payload_with_overrides(
             cwd.clone(),
-            state.current_personality(),
+            state.current_personality_for_host(host_id.as_deref()),
             thread_start_overrides,
         ),
     )
@@ -3890,7 +3941,7 @@ pub async fn start_conversation(
             thread_id.clone(),
             input,
             cwd,
-            state.current_personality(),
+            state.current_personality_for_host(host_id.as_deref()),
             None,
             permission_overrides,
         ),
@@ -4295,7 +4346,7 @@ pub async fn start_turn(
         thread_id,
         text,
         cwd,
-        state.current_personality(),
+        state.current_personality_for_host(None),
         collaboration_mode,
         Some(TurnStartPermissionOverrides {
             approval_policy,
@@ -4322,7 +4373,7 @@ pub async fn start_turn_with_input(
         thread_id,
         serde_json::Value::Array(input),
         cwd,
-        state.current_personality(),
+        state.current_personality_for_host(None),
         collaboration_mode,
         Some(TurnStartPermissionOverrides {
             approval_policy,
@@ -7582,6 +7633,7 @@ mod tests {
     use super::PluginSummary;
     use super::PluginUninstallParams;
     use super::ReadAppToolsParams;
+    use super::SetPersonalityParams;
     use super::SkillInterface;
     use super::SkillsConfigWriteParams;
     use super::SkillsListParams;
@@ -7796,6 +7848,23 @@ mod tests {
                 reasoning_effort: None,
                 workspace_roots: vec!["D:/workspace".to_string()],
                 collaboration_mode: None,
+            }
+        );
+    }
+
+    #[test]
+    fn set_personality_params_accept_upstream_host_scoped_shape() {
+        let params: SetPersonalityParams = serde_json::from_value(json!({
+            "hostId": "remote",
+            "personality": "friendly"
+        }))
+        .expect("params should deserialize");
+
+        assert_eq!(
+            params,
+            SetPersonalityParams {
+                host_id: Some("remote".to_string()),
+                personality: Some("friendly".to_string()),
             }
         );
     }
@@ -8037,20 +8106,20 @@ mod tests {
     #[test]
     fn host_scoped_params_accept_logout_host_id() {
         let params: HostScopedParams = serde_json::from_value(json!({
-            "hostId": "local"
+            "hostId": "remote-ssh-discovered:demo"
         }))
         .expect("params should deserialize");
 
         assert_eq!(
             params,
             HostScopedParams {
-                host_id: Some("local".to_string()),
+                host_id: Some("remote-ssh-discovered:demo".to_string()),
             }
         );
     }
 
     #[test]
-    fn remote_connections_auth_host_scoped_commands_only_accept_local_host() {
+    fn remote_connections_auth_host_scoped_commands_allow_remote_hosts_for_for_host_endpoints() {
         assert!(ensure_supported_host_id(None, "login-with-api-key").is_ok());
         assert!(ensure_supported_host_id(Some(""), "login-with-api-key").is_ok());
         assert!(ensure_supported_host_id(Some("local"), "login-with-api-key").is_ok());
@@ -8063,6 +8132,10 @@ mod tests {
         assert!(ensure_supported_host_id(None, "login-with-api-key-for-host").is_ok());
         assert!(ensure_supported_host_id(Some(""), "login-with-api-key-for-host").is_ok());
         assert!(ensure_supported_host_id(Some("local"), "login-with-api-key-for-host").is_ok());
+        assert_eq!(
+            remote_host_id(Some("remote-ssh-discovered:demo")),
+            Some("remote-ssh-discovered:demo")
+        );
 
         assert!(ensure_supported_host_id(None, "login-with-chatgpt").is_ok());
         assert!(ensure_supported_host_id(Some(""), "login-with-chatgpt").is_ok());
@@ -8090,11 +8163,9 @@ mod tests {
         assert!(ensure_supported_host_id(Some(""), "logout").is_ok());
         assert!(ensure_supported_host_id(Some("local"), "logout").is_ok());
         assert_eq!(
-            ensure_supported_host_id(Some("remote"), "logout")
-                .expect_err("non-local host id should be rejected"),
-            "logout does not support host id: remote"
+            remote_host_id(Some("remote-ssh-discovered:demo")),
+            Some("remote-ssh-discovered:demo")
         );
-
         assert_eq!(remote_host_id(Some("remote")), Some("remote"));
     }
 

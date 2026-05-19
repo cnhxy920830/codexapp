@@ -8,19 +8,71 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { I18N_CONTEXT } from "../i18n/i18n";
 import { MESSAGES } from "../i18n/messages";
-import {
-  KeyboardShortcutsSettingsView,
-} from "./KeyboardShortcutsSettings";
+
+if (!("window" in globalThis)) {
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      addEventListener() {},
+      removeEventListener() {},
+      dispatchEvent() {
+        return true;
+      },
+      location: {
+        href: "http://localhost/",
+        origin: "http://localhost",
+        hostname: "localhost",
+      },
+      electronBridge: undefined,
+    },
+  });
+}
+
+if (!("document" in globalThis)) {
+  Object.defineProperty(globalThis, "document", {
+    configurable: true,
+    value: {
+      body: {},
+    },
+  });
+}
+
+if (!("navigator" in globalThis)) {
+  Object.defineProperty(globalThis, "navigator", {
+    configurable: true,
+    value: {
+      platform: "Win32",
+      language: "en-US",
+    },
+  });
+}
 
 const SNAPSHOT_PATH = path.join(
   process.cwd(),
   "src/components/__snapshots__/keyboard-shortcuts-settings.snap.json",
 );
+const SOURCE_PATH = path.join(
+  process.cwd(),
+  "src/components/KeyboardShortcutsSettings.tsx",
+);
 const UPDATE_SNAPSHOTS =
   process.env.KEYBOARD_SHORTCUTS_SETTINGS_UPDATE_SNAPSHOTS === "1";
 
+test("keyboard shortcuts source uses extracted title owner and compact kbd chip", async () => {
+  const source = await readFile(SOURCE_PATH, "utf8");
+
+  assert.match(
+    source,
+    /SettingsContentLayout\s+title=\{<SettingsSectionTitle slug="keyboard-shortcuts" \/>\}/s,
+  );
+  assert.match(
+    source,
+    /<kbd className="inline-flex !rounded-md !border-0 !bg-current\/10 !px-1\.5 !py-0\.5 !font-sans !text-xs !leading-none !text-current !shadow-none">/,
+  );
+});
+
 test("keyboard shortcuts settings snapshots", async (t) => {
-  const actualSnapshots = buildSnapshots();
+  const actualSnapshots = await buildSnapshots();
 
   if (UPDATE_SNAPSHOTS) {
     await mkdir(path.dirname(SNAPSHOT_PATH), { recursive: true });
@@ -53,6 +105,10 @@ test("keyboard shortcuts settings snapshots", async (t) => {
         assert.match(actual, /Find/);
         assert.match(actual, /Search the current chat/);
         assert.match(actual, /Ctrl\+Alt\+F/);
+        assert.match(
+          actual,
+          /<kbd class=\"inline-flex !rounded-md !border-0 !bg-current\/10 !px-1\.5 !py-0\.5 !font-sans !text-xs !leading-none !text-current !shadow-none\">Ctrl\+Alt\+F<\/kbd>/,
+        );
         assert.match(actual, /Clear shortcut for Find/);
         assert.match(actual, /Reset shortcut for Find/);
       }
@@ -73,7 +129,11 @@ type SnapshotMap = {
   populated: string;
 };
 
-function buildSnapshots(): SnapshotMap {
+async function buildSnapshots(): Promise<SnapshotMap> {
+  const { KeyboardShortcutsSettingsView } = await import(
+    "./KeyboardShortcutsSettings"
+  );
+
   return {
     loading: renderSnapshot(
       <KeyboardShortcutsSettingsView

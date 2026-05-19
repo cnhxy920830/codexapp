@@ -9,11 +9,8 @@ import {
   getLaunchContext,
   getAuthSnapshot,
   initialAuthSnapshot,
-  isUsageSettingsPlanSupported,
   logout,
   onAuthSnapshotChange,
-  onBrowserAuthChanged,
-  readBrowserChatGptTokenAuth,
   type AuthSnapshot,
   type LaunchContext,
 } from "./services/auth";
@@ -138,10 +135,8 @@ import { UsageSettings } from "./components/UsageSettings";
 import { WorkspaceDependenciesSettings } from "./components/WorkspaceDependenciesSettings";
 import { SettingsChoiceMenu } from "./components/SettingsChoiceMenu";
 import { ToggleSwitch } from "./components/ToggleSwitch";
-import { Button } from "./components/Button";
 import { ChatConversationMainPane } from "./features/chat/ChatConversationMainPane";
 import { ChatRouteHeader } from "./features/chat/ChatRouteHeader";
-import { ThreadPageHeader } from "./features/chat/ThreadPageHeader";
 import { ChatSidePanel } from "./features/chat/ChatSidePanel";
 import { FilePreviewPage } from "./features/chat/FilePreviewPage";
 import { LocalConversationCompactComposerOverlay } from "./features/chat/LocalConversationCompactComposerOverlay";
@@ -167,6 +162,7 @@ import { HotkeyWindowHomePage } from "./features/hotkeyWindow/HotkeyWindowHomePa
 import { HotkeyWindowNewThreadPage } from "./features/hotkeyWindow/HotkeyWindowNewThreadPage";
 import { HotkeyWindowThreadPage } from "./features/hotkeyWindow/HotkeyWindowThreadPage";
 import { LoginRoutePage } from "./features/auth/LoginRoutePage";
+import { useUsageSettingsAccess } from "./hooks/useUsageSettingsAccess";
 import {
   resolveLoginOnboardingRouteTarget,
   type LoginOnboardingRouteTarget,
@@ -399,6 +395,7 @@ type SettingsSection =
 type SettingsSectionState = {
   licensesBackPath?: string;
   localEnvironmentRouteSearch?: string;
+  pendingViewAction?: "open-create-remote-project-modal";
 } | null;
 type AgentConfigControlErrors = Partial<Record<"approval" | "sandbox" | "network", string>>;
 type AppRoute =
@@ -432,6 +429,7 @@ type NavigateToRouteState = {
   focusComposerNonce?: number;
   initialHostId?: string;
   initialTab?: SkillsRouteInitialTab;
+  pendingViewAction?: "open-create-remote-project-modal";
   pluginDeepLinkAuthBlocked?: boolean;
   prefillCwd?: string | null;
   prefillPrompt?: string;
@@ -567,7 +565,7 @@ const settingsSectionLabelKeys: Record<SettingsSection, MessageKey> = {
   "open-source-licenses": "settings.openSourceLicenses.title",
   personalization: "settings.section.personalization",
   "browser-use": "settings.section.browser-use",
-  "computer-use": "computerUse.label",
+  "computer-use": "settings.section.computer-use",
   usage: "settings.section.usage",
   "plugins-settings": "settings.section.plugins-settings",
   "skills-settings": "settings.section.skills-settings",
@@ -1227,7 +1225,6 @@ function App() {
   const [launchContext, setLaunchContext] = useState<LaunchContext | null>(null);
   const [hasLoadedAuthSnapshot, setHasLoadedAuthSnapshot] = useState(false);
   const [hasLoadedLaunchContext, setHasLoadedLaunchContext] = useState(false);
-  const [browserChatGptTokenAuth, setBrowserChatGptTokenAuth] = useState(() => readBrowserChatGptTokenAuth());
   const [loginRouteOverride, setLoginRouteOverride] = useState<string | null>("auto");
   const [postLoginWelcomePending, setPostLoginWelcomePending] = useState(false);
   const [projectlessOnboardingCompleted, setProjectlessOnboardingCompleted] = useState(false);
@@ -1244,28 +1241,12 @@ function App() {
   const [hasLoadedInitialWindowRoute, setHasLoadedInitialWindowRoute] = useState(false);
   const [hasLoadedInitialThreadSnapshot, setHasLoadedInitialThreadSnapshot] = useState(false);
   const [pendingPlanSummary, setPendingPlanSummary] = useState<PendingPlanSummaryState | null>(null);
-  const [scratchpadClearAction, setScratchpadClearAction] = useState<(() => void) | null>(null);
+  const [pageHeaderContent, setPageHeaderContent] = useState<ReactNode | null>(null);
   const [editorDiffRouteState, setEditorDiffRouteState] = useState<unknown | null>(() =>
     typeof window === "undefined" ? null : window.history.state,
   );
 
-  const authSnapshot = useMemo<AuthSnapshot>(() => {
-    if (browserChatGptTokenAuth == null) {
-      return rawAuthSnapshot;
-    }
-
-    return {
-      ...rawAuthSnapshot,
-      authState: {
-        ...rawAuthSnapshot.authState,
-        authMethod: "chatgpt",
-        email: browserChatGptTokenAuth.email ?? rawAuthSnapshot.authState.email,
-        accountId: browserChatGptTokenAuth.accountId,
-        userId: browserChatGptTokenAuth.userId ?? rawAuthSnapshot.authState.userId,
-        planAtLogin: browserChatGptTokenAuth.planType ?? rawAuthSnapshot.authState.planAtLogin,
-      },
-    };
-  }, [browserChatGptTokenAuth, rawAuthSnapshot]);
+  const authSnapshot = useMemo<AuthSnapshot>(() => rawAuthSnapshot, [rawAuthSnapshot]);
   const [worktreeInitRoute, setWorktreeInitRoute] = useState<WorktreeInitRoute | null>(() =>
     typeof window === "undefined" ? null : parseWorktreeInitRoute(window.location.pathname),
   );
@@ -1451,6 +1432,7 @@ function App() {
   const openProjectPath = launchContext?.openProjectPath ?? null;
   const chatWorkspaceRoot = threadConversation?.cwd ?? openProjectPath ?? null;
   const settingsWorkspaceRoot = chatWorkspaceRoot;
+  const settingsCwd = threadConversation?.cwd ?? openProjectPath ?? null;
   const isApiKeyAuth = authSnapshot.authState.authMethod === "apikey";
   const isChatGptAuth = authSnapshot.authState.authMethod === "chatgpt";
   const isWorktreeThread = isWithinCodexWorktrees(threadConversation?.cwd ?? null, codexHome);
@@ -1485,9 +1467,12 @@ function App() {
   const primarySkillsRouteLabelKey: MessageKey = isChatGptAuth && isPluginsRouteEnabled
       ? "sidebarElectron.skillsAppsRouteNavLink"
       : "sidebarElectron.skillsRouteNavLink";
-  const showUsageSettings =
-    authSnapshot.authState.authMethod === "chatgpt" &&
-    isUsageSettingsPlanSupported(authSnapshot.authState.planAtLogin);
+  const {
+    isUsageSettingsVisible: showUsageSettings,
+  } = useUsageSettingsAccess({
+    authMethod: authSnapshot.authState.authMethod,
+    isAuthLoading: !hasLoadedAuthSnapshot || authSnapshot.isLoading,
+  });
   const isRemoteConnectionsSettingsVisible =
     configSnapshot === null
       ? remoteConnectionsHomeBannerEnabled || settingsSection === "connections"
@@ -1867,7 +1852,6 @@ function App() {
 
   useEffect(() => {
     let authUnlisten: (() => void) | undefined;
-    let browserAuthDispose: (() => void) | undefined;
     void getAuthSnapshot()
       .then(setRawAuthSnapshot)
       .catch(() => setRawAuthSnapshot(initialAuthSnapshot))
@@ -1879,12 +1863,8 @@ function App() {
     void onAuthSnapshotChange(setRawAuthSnapshot).then((dispose) => {
       authUnlisten = dispose;
     });
-    browserAuthDispose = onBrowserAuthChanged(() => {
-      setBrowserChatGptTokenAuth(readBrowserChatGptTokenAuth());
-    });
     return () => {
       authUnlisten?.();
-      browserAuthDispose?.();
     };
   }, []);
 
@@ -4275,28 +4255,11 @@ function App() {
 
   const viewConversationForHost = async (threadId: string, hostId: string) => {
     if (hostId !== LOCAL_SETTINGS_HOST_ID) {
-      const opened = await openRemoteTask(threadId);
-      if (opened && typeof window !== "undefined") {
-        const nextPath = buildRemoteThreadRoutePath(threadId, "default");
-        if (window.location.pathname !== nextPath) {
-          window.history.replaceState(window.history.state, "", nextPath);
-        }
-      }
+      await handleNavigateToRoute(buildRemoteThreadRoutePath(threadId, "default"));
       return;
     }
 
-    try {
-      const threads = await getRecentThreads();
-      syncProjectGroups(threadId, threads);
-      setTurnError(null);
-      setCurrentRoute("chat");
-      await loadThreadConversation(threadId);
-    } catch (error) {
-      setAppToast({
-        tone: "error",
-        message: error instanceof Error ? error.message : String(error),
-      });
-    }
+    await handleNavigateToRoute(buildLocalThreadRoutePath(threadId, "default"));
   };
 
   const mutateQueuedFollowUps = (update: (current: QueuedLocalFollowUp[]) => QueuedLocalFollowUp[]) => {
@@ -4696,13 +4659,22 @@ function App() {
     if (isRemoteConnectionsRoute(path)) {
       setThreadShellVariant("default");
       setSkillsRouteState(null);
+      if (state?.initialHostId && state.initialHostId.trim().length > 0) {
+        setSelectedSettingsHostId(state.initialHostId);
+      }
       const nextPath = isRemoteConnectionsSettingsVisible ? "/settings/connections" : "/";
       if (typeof window !== "undefined" && window.location.pathname !== nextPath) {
         window.history.replaceState(window.history.state, "", nextPath);
       }
       if (isRemoteConnectionsSettingsVisible) {
         setSettingsSection("connections");
-        setSettingsSectionState(null);
+        setSettingsSectionState(
+          state?.pendingViewAction
+            ? {
+                pendingViewAction: state.pendingViewAction,
+              }
+            : null,
+        );
         setCurrentRoute("settings");
       } else {
         setCurrentRoute("chat");
@@ -4714,6 +4686,9 @@ function App() {
     if (settingsSection) {
       setThreadShellVariant("default");
       setSkillsRouteState(null);
+      if (state?.initialHostId && state.initialHostId.trim().length > 0) {
+        setSelectedSettingsHostId(state.initialHostId);
+      }
       if (settingsSection === "connections" && !isRemoteConnectionsSettingsVisible) {
         if (typeof window !== "undefined" && window.location.pathname !== "/") {
           window.history.replaceState(window.history.state, "", "/");
@@ -4722,7 +4697,13 @@ function App() {
         return;
       }
       setSettingsSection(settingsSection);
-      setSettingsSectionState(null);
+      setSettingsSectionState(
+        state?.pendingViewAction
+          ? {
+              pendingViewAction: state.pendingViewAction,
+            }
+          : null,
+      );
       setCurrentRoute("settings");
       return;
     }
@@ -6183,8 +6164,7 @@ function App() {
   };
 
   const openSourceLicenses = () => {
-    setSettingsSectionState({ licensesBackPath: "/settings/agent" });
-    setSettingsSection("open-source-licenses");
+    void handleNavigateToRoute("/settings/open-source-licenses");
   };
 
   const updateConfigValue = async (keyPath: string, value: string | boolean) => {
@@ -6208,7 +6188,6 @@ function App() {
       });
     }
     const selectedScope = configScopeOptions.find((scope) => scope.key === selectedConfigScopeKey) ?? null;
-    const settingsCwd = threadConversation?.cwd ?? openProjectPath ?? null;
     try {
       await writeConfigValue({
         keyPath,
@@ -6268,7 +6247,6 @@ function App() {
         <AccountSettings
           authSnapshot={authSnapshot}
           onNavigateToLogin={navigateToLogin}
-          onShowToast={(toast) => setAppToast(toast)}
         />
       );
     }
@@ -6286,6 +6264,7 @@ function App() {
       return (
         <PersonalizationSettings
           onOpenChatWithPrompt={(prompt) => openNewConversation({ prefillPrompt: prompt })}
+          selectedHostId={selectedSettingsHostId}
           workspaceRoot={settingsWorkspaceRoot}
           onShowToast={(toast) => setAppToast(toast)}
         />
@@ -6330,13 +6309,20 @@ function App() {
     if (settingsSection === "plugins-settings") {
       return (
         <PluginsSettings
+          codexHome={codexHome}
+          connectedRemoteConnections={connectedSettingsRemoteConnections}
+          onSelectHost={setSelectedSettingsHostId}
           selectedHostId={selectedSettingsHostId}
           workspaceRoot={settingsWorkspaceRoot}
           onShowToast={(toast) => setAppToast(toast)}
-          onOpenChatWithPrompt={(prompt) => {
-            setCurrentRoute("chat");
-            setComposerDraft(prompt);
-          }}
+          remoteConnectionHostIds={settingsRemoteConnectionHostIds}
+          onOpenChatWithPrompt={({ cwd, prompt }) =>
+            openNewConversation({
+              cwd,
+              focusComposerNonce: Date.now(),
+              prefillPrompt: prompt,
+            })
+          }
         />
       );
     }
@@ -6370,6 +6356,7 @@ function App() {
     if (settingsSection === "hooks-settings") {
       return (
         <HooksSettings
+          settingsCwd={settingsCwd}
           selectedHostId={selectedSettingsHostId}
           onShowToast={(toast) => setAppToast(toast)}
         />
@@ -6380,15 +6367,43 @@ function App() {
       return (
         <LocalEnvironmentsSettings
           codexHome={codexHome}
+          onConsumePendingViewAction={() => {
+            setSettingsSectionState((currentState) => {
+              if (
+                currentState == null ||
+                currentState.pendingViewAction !== "open-create-remote-project-modal"
+              ) {
+                return currentState;
+              }
+
+              return currentState.localEnvironmentRouteSearch
+                ? {
+                    localEnvironmentRouteSearch: currentState.localEnvironmentRouteSearch,
+                  }
+                : null;
+            });
+          }}
           onUpdateRouteSearch={(localEnvironmentRouteSearch) => {
             setSettingsSectionState(
-              localEnvironmentRouteSearch
+              localEnvironmentRouteSearch ||
+              settingsSectionState?.pendingViewAction
                 ? {
-                    localEnvironmentRouteSearch,
+                    localEnvironmentRouteSearch:
+                      localEnvironmentRouteSearch ?? undefined,
+                    pendingViewAction: settingsSectionState?.pendingViewAction,
                   }
                 : null,
             );
           }}
+          pendingViewAction={
+            settingsSectionState != null &&
+            typeof settingsSectionState === "object" &&
+            !Array.isArray(settingsSectionState) &&
+            "pendingViewAction" in settingsSectionState &&
+            settingsSectionState.pendingViewAction === "open-create-remote-project-modal"
+              ? settingsSectionState.pendingViewAction
+              : null
+          }
           routeSearch={
             settingsSectionState != null &&
             typeof settingsSectionState === "object" &&
@@ -6426,15 +6441,26 @@ function App() {
     }
 
     if (settingsSection === "connections") {
-      return <RemoteConnectionsSettings />;
+      return (
+        <RemoteConnectionsSettings
+          onNavigateToCreateRemoteProject={() => {
+            void handleNavigateToRoute("/settings/local-environments", {
+              pendingViewAction: "open-create-remote-project-modal",
+            });
+          }}
+          onShowToast={(toast) => setAppToast(toast)}
+        />
+      );
     }
 
     if (settingsSection === "worktrees") {
       return (
         <WorktreesSettingsPage
+          isRecentThreadsLoading={!hasLoadedInitialThreadSnapshot}
           onDismissToast={() => setAppToast(null)}
           onShowToast={(toast) => setAppToast(toast)}
           onViewConversation={(threadId, hostId) => void viewConversationForHost(threadId, hostId)}
+          recentThreads={recentThreadEntries}
           selectedHostId={selectedSettingsHostId}
         />
       );
@@ -6445,8 +6471,7 @@ function App() {
         <OpenSourceLicensesPage
           licensesBackPath={settingsSectionState?.licensesBackPath ?? null}
           onNavigateBack={(backPath) => {
-            setSettingsSection(backPath === "/settings/agent" ? "agent" : "general-settings");
-            setSettingsSectionState(null);
+            void handleNavigateToRoute(backPath);
           }}
         />
       );
@@ -6795,28 +6820,6 @@ function App() {
       conversationHostId={currentPageConversationHostId}
     />
   );
-  const scratchpadHeader = useMemo(() => {
-    if (currentRoute !== "scratchpad") {
-      return null;
-    }
-
-    return (
-      <div className="draggable grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 py-2">
-        <ThreadPageHeader
-          compact
-          environmentType={null}
-          secondaryText={t("scratchpadPage.headerSubtitle")}
-          start={t("scratchpadPage.headerTitle")}
-          trailingActions={
-            <Button color="ghost" size="toolbar" onClick={() => scratchpadClearAction?.()}>
-              {t("scratchpadPage.clearButton")}
-            </Button>
-          }
-        />
-      </div>
-    );
-  }, [currentRoute, scratchpadClearAction, t]);
-
   if (isAppBootstrapping) {
     return <LoadingPage debugName="PersistedStateProvider" />;
   }
@@ -7213,7 +7216,7 @@ function App() {
                 workspaceRoot={openProjectPath}
               />
             ) : currentRoute === "scratchpad" ? (
-              scratchpadHeader
+              pageHeaderContent
             ) : null}
           </div>
 
@@ -7815,8 +7818,8 @@ function App() {
                     }
                     void selectThread(conversationId, "default");
                   }}
-                  onRegisterClearAction={(action) => {
-                    setScratchpadClearAction(() => action);
+                  onRegisterHeaderContent={(content) => {
+                    setPageHeaderContent(content);
                   }}
                   onShowToast={(toast) => setAppToast(toast)}
                 />

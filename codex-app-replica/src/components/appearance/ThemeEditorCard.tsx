@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useI18n } from "../../i18n/i18n";
 import {
   canDecodeAppearanceThemeShare,
@@ -11,6 +11,8 @@ import {
   type AppearanceThemeFonts,
   type AppearanceVariant,
 } from "../../services/appearanceThemes";
+import { Button } from "../Button";
+import { SettingsRow } from "../SettingsRow";
 import { ToggleSwitch } from "../ToggleSwitch";
 import { ChromeThemeColorInput } from "./ChromeThemeColorInput";
 import { CodeThemePicker } from "./CodeThemePicker";
@@ -18,6 +20,7 @@ import { CodeThemePicker } from "./CodeThemePicker";
 export function ThemeEditorCard({
   codeThemeId,
   disabled,
+  showCodeFont = true,
   theme,
   variant,
   onCodeThemeChange,
@@ -28,6 +31,7 @@ export function ThemeEditorCard({
 }: {
   codeThemeId: AppearanceCodeThemeId;
   disabled: boolean;
+  showCodeFont?: boolean;
   theme: AppearanceChromeTheme;
   variant: AppearanceVariant;
   onCodeThemeChange: (value: AppearanceCodeThemeId) => void;
@@ -71,22 +75,24 @@ export function ThemeEditorCard({
           </div>
 
           <div className="flex items-center gap-2 max-sm:w-full max-sm:flex-wrap max-sm:justify-end">
-            <button
-              type="button"
+            <Button
+              className="px-2"
+              color="ghost"
               disabled={disabled}
               onClick={() => setIsImportDialogOpen(true)}
-              className="app-control-weak rounded-[10px] px-2.5 py-1.5 text-[12px] disabled:opacity-60"
+              size="toolbar"
             >
               {t("settings.general.appearance.chromeTheme.import")}
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              className="px-2"
+              color="ghost"
               disabled={disabled}
               onClick={() => void onCopyTheme()}
-              className="app-control-weak rounded-[10px] px-2.5 py-1.5 text-[12px] disabled:opacity-60"
+              size="toolbar"
             >
               {t("settings.general.appearance.chromeTheme.export")}
-            </button>
+            </Button>
             <CodeThemePicker
               ariaLabel={t("settings.general.appearance.codeTheme", { variant: variantLabel })}
               disabled={disabled}
@@ -99,71 +105,101 @@ export function ThemeEditorCard({
         </div>
 
         <div className="divide-y divide-[var(--app-shell-border)]">
-          <EditorRow label={t("settings.general.appearance.chromeTheme.accent.short")}>
-            <ChromeThemeColorInput
-              ariaLabel={t("settings.general.appearance.chromeTheme.accent", { variant: variantLabel })}
-              disabled={disabled}
-              value={theme.accent}
-              onChange={(value) => onThemePatchChange({ accent: value })}
-            />
-          </EditorRow>
+          <SettingsRow
+            label={t("settings.general.appearance.chromeTheme.accent.short")}
+            variant="nested"
+            control={
+              <ChromeThemeColorInput
+                ariaLabel={t("settings.general.appearance.chromeTheme.accent", { variant: variantLabel })}
+                disabled={disabled}
+                value={theme.accent}
+                onChange={(value) => onThemePatchChange({ accent: value })}
+              />
+            }
+          />
 
-          <EditorRow label={t("settings.general.appearance.chromeTheme.surface.short")}>
-            <ChromeThemeColorInput
-              ariaLabel={t("settings.general.appearance.chromeTheme.surface", { variant: variantLabel })}
-              disabled={disabled}
-              value={theme.surface}
-              onChange={(value) => onThemePatchChange({ surface: value })}
-            />
-          </EditorRow>
+          <SettingsRow
+            label={t("settings.general.appearance.chromeTheme.surface.short")}
+            variant="nested"
+            control={
+              <ChromeThemeColorInput
+                ariaLabel={t("settings.general.appearance.chromeTheme.surface", { variant: variantLabel })}
+                disabled={disabled}
+                value={theme.surface}
+                onChange={(value) => onThemePatchChange({ surface: value })}
+              />
+            }
+          />
 
-          <EditorRow label={t("settings.general.appearance.chromeTheme.ink.short")}>
-            <ChromeThemeColorInput
-              ariaLabel={t("settings.general.appearance.chromeTheme.ink", { variant: variantLabel })}
-              disabled={disabled}
-              value={theme.ink}
-              onChange={(value) => onThemePatchChange({ ink: value })}
-            />
-          </EditorRow>
+          <SettingsRow
+            label={t("settings.general.appearance.chromeTheme.ink.short")}
+            variant="nested"
+            control={
+              <ChromeThemeColorInput
+                ariaLabel={t("settings.general.appearance.chromeTheme.ink", { variant: variantLabel })}
+                disabled={disabled}
+                value={theme.ink}
+                onChange={(value) => onThemePatchChange({ ink: value })}
+              />
+            }
+          />
 
-          <EditorRow label={t("settings.general.appearance.chromeTheme.uiFontFamily.short")}>
-            <FontFamilyInput
-              ariaLabel={t("settings.general.appearance.chromeTheme.uiFontFamily", { variant: variantLabel })}
-              disabled={disabled}
-              placeholder={DEFAULT_UI_FONT_STACK}
-              value={theme.fonts.ui}
-              onChange={(value) => onFontsPatchChange({ ui: value })}
-            />
-          </EditorRow>
+          <SettingsRow
+            label={t("settings.general.appearance.chromeTheme.uiFontFamily.short")}
+            variant="nested"
+            control={
+              <FontFamilyInput
+                ariaLabel={t("settings.general.appearance.chromeTheme.uiFontFamily", { variant: variantLabel })}
+                disabled={disabled}
+                placeholder={DEFAULT_UI_FONT_STACK}
+                value={theme.fonts.ui}
+                onChange={(value) => onFontsPatchChange({ ui: value })}
+              />
+            }
+          />
 
-          <EditorRow label={t("settings.general.appearance.chromeTheme.codeFontFamily.short")}>
-            <FontFamilyInput
-              ariaLabel={t("settings.general.appearance.chromeTheme.codeFontFamily", { variant: variantLabel })}
-              disabled={disabled}
-              placeholder={DEFAULT_CODE_FONT_STACK}
-              value={theme.fonts.code}
-              onChange={(value) => onFontsPatchChange({ code: value })}
+          {showCodeFont ? (
+            <SettingsRow
+              label={t("settings.general.appearance.chromeTheme.codeFontFamily.short")}
+              variant="nested"
+              control={
+                <FontFamilyInput
+                  ariaLabel={t("settings.general.appearance.chromeTheme.codeFontFamily", { variant: variantLabel })}
+                  disabled={disabled}
+                  placeholder={DEFAULT_CODE_FONT_STACK}
+                  value={theme.fonts.code}
+                  onChange={(value) => onFontsPatchChange({ code: value })}
+                />
+              }
             />
-          </EditorRow>
+          ) : null}
 
-          <EditorRow label={t("settings.general.appearance.chromeTheme.translucentSidebar.short")}>
-            <ToggleSwitch
-              ariaLabel={t("settings.general.appearance.chromeTheme.translucentSidebar", { variant: variantLabel })}
-              checked={!theme.opaqueWindows}
-              disabled={disabled}
-              onChange={(checked) => onThemePatchChange({ opaqueWindows: !checked })}
-            />
-          </EditorRow>
+          <SettingsRow
+            label={t("settings.general.appearance.chromeTheme.translucentSidebar.short")}
+            variant="nested"
+            control={
+              <ToggleSwitch
+                ariaLabel={t("settings.general.appearance.chromeTheme.translucentSidebar", { variant: variantLabel })}
+                checked={!theme.opaqueWindows}
+                disabled={disabled}
+                onChange={(checked) => onThemePatchChange({ opaqueWindows: !checked })}
+              />
+            }
+          />
 
-          <EditorRow label={t("settings.general.appearance.chromeTheme.contrast.short")}>
-            <ContrastSlider
-              ariaLabel={t("settings.general.appearance.chromeTheme.contrast", { variant: variantLabel })}
-              disabled={disabled}
-              theme={theme}
-              value={theme.contrast}
-              onChange={(value) => onThemePatchChange({ contrast: value })}
-            />
-          </EditorRow>
+          <SettingsRow
+            label={t("settings.general.appearance.chromeTheme.contrast.short")}
+            variant="nested"
+            control={
+              <ContrastSlider
+                ariaLabel={t("settings.general.appearance.chromeTheme.contrast", { variant: variantLabel })}
+                disabled={disabled}
+                theme={theme}
+                value={theme.contrast}
+                onChange={(value) => onThemePatchChange({ contrast: value })}
+              />
+            }
+          />
         </div>
       </div>
 
@@ -182,21 +218,6 @@ export function ThemeEditorCard({
         onValueChange={setImportValue}
       />
     </>
-  );
-}
-
-function EditorRow({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="flex min-h-10 items-center justify-between gap-3 px-4 py-0.5 max-sm:min-h-0 max-sm:flex-col max-sm:items-stretch">
-      <div className="text-sm text-token-text-primary">{label}</div>
-      <div className="max-sm:w-full">{children}</div>
-    </div>
   );
 }
 
@@ -334,21 +355,15 @@ function ThemeImportDialog({
           onChange={(event) => onValueChange(event.target.value)}
         />
         <div className="mt-5 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
-          >
+          <Button color="ghost" onClick={onClose}>
             {t("settings.general.appearance.chromeTheme.import.dialog.cancel")}
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
             disabled={isDisabled || !isSubmitEnabled}
             onClick={() => void onSubmit()}
-            className="app-control rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
           >
             {t("settings.general.appearance.chromeTheme.import.dialog.submit")}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

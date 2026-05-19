@@ -1,22 +1,29 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { REPLICA_STATSIG_GATES, useReplicaStatsigGateValue } from "../features/statsig/replicaStatsig";
-import { useI18n } from "../i18n/i18n";
-import { renderInlineLinkMessage } from "../i18n/renderInlineLinkMessage";
+import { useEffect, useState } from "react";
 import type { AppToast } from "./AppToastRegion";
+import { Button } from "./Button";
 import { PersonalizationChronicleSettings } from "./PersonalizationChronicleSettings";
+import { SettingsGroup } from "./SettingsGroup";
+import { SettingsRow } from "./SettingsRow";
+import { SettingsSurface } from "./SettingsSurface";
 import { ToggleSwitch } from "./ToggleSwitch";
 import {
-  listExperimentalFeatures,
-  resetMemories,
-  setExperimentalFeatureEnablement,
+  REPLICA_STATSIG_GATES,
+  useReplicaStatsigGateValue,
+} from "../features/statsig/replicaStatsig";
+import { useI18n } from "../i18n/i18n";
+import {
+  listExperimentalFeaturesForHost,
+  readChroniclePermissions,
+  resetMemoriesForHost,
+  setExperimentalFeatureForHost,
 } from "../services/personalization";
 import {
-  batchWriteConfigValues,
-  buildConfigScopeOptions,
-  chooseDefaultConfigScopeKey,
-  readConfig,
+  batchWriteConfigValueForHost,
+  readConfigForHost,
+  resolveUserConfigWriteTarget,
   type MemoriesConfigSnapshot,
 } from "../services/settings";
+import { LOCAL_SETTINGS_HOST_ID } from "../services/settingsHosts";
 
 const MEMORY_FEATURE_NAME = "memories";
 const MEMORY_DOCS_URL = "https://developers.openai.com/codex/memories";
@@ -28,42 +35,51 @@ const DEFAULT_MEMORIES_CONFIG: MemoriesConfigSnapshot = {
 };
 
 type MemorySettingsState = {
-  featureEnabled: boolean;
   chronicleEnabled: boolean;
+  chronicleSidecarPresent: boolean;
+  chronicleVisible: boolean;
+  featureEnabled: boolean;
+  hasLoaded: boolean;
   memories: MemoriesConfigSnapshot;
-  expectedVersion: string | null;
-  filePath: string | null;
   isLoading: boolean;
   isSaving: boolean;
   error: string | null;
+  writeTargetFilePath: string | null;
 };
 
 const INITIAL_MEMORY_SETTINGS_STATE: MemorySettingsState = {
-  featureEnabled: false,
   chronicleEnabled: false,
+  chronicleSidecarPresent: false,
+  chronicleVisible: false,
+  featureEnabled: false,
+  hasLoaded: false,
   memories: DEFAULT_MEMORIES_CONFIG,
-  expectedVersion: null,
-  filePath: null,
   isLoading: true,
   isSaving: false,
   error: null,
+  writeTargetFilePath: null,
 };
 
 export function PersonalizationMemorySettings({
   onOpenChatWithPrompt,
   onShowToast,
-  workspaceRoot,
+  selectedHostId,
 }: {
   onOpenChatWithPrompt?: (prompt: string) => void;
   onShowToast?: (toast: AppToast) => void;
-  workspaceRoot: string | null;
+  selectedHostId: string;
 }) {
   const { t } = useI18n();
-  const memoryGateEnabled = useReplicaStatsigGateValue(REPLICA_STATSIG_GATES.memories);
+  const memoryGateEnabled = useReplicaStatsigGateValue(
+    REPLICA_STATSIG_GATES.memories,
+  );
   const [refreshVersion, setRefreshVersion] = useState(0);
-  const [state, setState] = useState<MemorySettingsState>(INITIAL_MEMORY_SETTINGS_STATE);
+  const [state, setState] = useState<MemorySettingsState>(
+    INITIAL_MEMORY_SETTINGS_STATE,
+  );
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const isLocalHost = selectedHostId === LOCAL_SETTINGS_HOST_ID;
 
   useEffect(() => {
     let cancelled = false;
@@ -75,35 +91,50 @@ export function PersonalizationMemorySettings({
         isSaving: false,
         error: null,
       }));
+
       try {
-        const [configResponse, features] = await Promise.all([
-          readConfig(workspaceRoot),
-          listExperimentalFeatures().catch(() => []),
+        const [configResponse, features, chroniclePermissions] = await Promise.all([
+          readConfigForHost({
+            hostId: selectedHostId,
+            cwd: null,
+            includeLayers: true,
+          }),
+          listExperimentalFeaturesForHost(selectedHostId),
+          isLocalHost ? readChroniclePermissions().catch(() => null) : Promise.resolve(null),
         ]);
         if (cancelled) {
           return;
         }
-        const scopeOptions = buildConfigScopeOptions(configResponse);
-        const selectedScopeKey = chooseDefaultConfigScopeKey(scopeOptions);
-        const selectedScope = scopeOptions.find((scope) => scope.key === selectedScopeKey) ?? null;
-        const scopedConfig = selectedScope?.config;
-        const memoryFeature = features.find((feature) => feature.name === MEMORY_FEATURE_NAME) ?? null;
+
+        const memoryFeature =
+          features.find((feature) => feature.name === MEMORY_FEATURE_NAME) ?? null;
+        const featureEnabled = memoryFeature?.enabled === true;
+        const memories = configResponse.config.memories ?? DEFAULT_MEMORIES_CONFIG;
+        const chronicleEnabled = configResponse.config.features?.chronicle === true;
+        const chronicleSidecarPresent = chroniclePermissions?.chronicleSidecarPresent === true;
+        const writeTarget = resolveUserConfigWriteTarget(configResponse);
+
         setState({
-          featureEnabled: memoryFeature?.enabled ?? false,
-          chronicleEnabled:
-            scopedConfig?.features?.chronicle === true ||
-            configResponse.config.features?.chronicle === true,
-          memories: scopedConfig?.memories ?? configResponse.config.memories ?? DEFAULT_MEMORIES_CONFIG,
-          expectedVersion: selectedScope?.expectedVersion ?? null,
-          filePath: selectedScope?.kind === "project" ? selectedScope.filePath : null,
+          chronicleEnabled,
+          chronicleSidecarPresent,
+          chronicleVisible: isLocalHost && chronicleSidecarPresent,
+          featureEnabled,
+          hasLoaded: true,
+          memories,
           isLoading: false,
           isSaving: false,
           error: null,
+          writeTargetFilePath: writeTarget?.filePath ?? null,
         });
+
+        if (!chronicleEnabled && isResetDialogOpen) {
+          setIsResetDialogOpen(false);
+        }
       } catch (error) {
         if (!cancelled) {
           setState((current) => ({
             ...current,
+            hasLoaded: false,
             isLoading: false,
             isSaving: false,
             error: error instanceof Error ? error.message : String(error),
@@ -117,17 +148,20 @@ export function PersonalizationMemorySettings({
     return () => {
       cancelled = true;
     };
-  }, [refreshVersion, workspaceRoot]);
+  }, [isLocalHost, isResetDialogOpen, refreshVersion, selectedHostId]);
 
-  const showMemorySettings = memoryGateEnabled || state.featureEnabled;
+  const shouldShowMemorySection = memoryGateEnabled || state.featureEnabled;
+  const memoriesEnabled =
+    state.featureEnabled &&
+    state.memories.generateMemories &&
+    state.memories.useMemories;
+  const isBusy = state.isLoading || state.isSaving || isResetting;
+  const disableOnExternalContextDisabled = isBusy || !state.featureEnabled;
+  const chronicleChecked = state.chronicleEnabled;
 
-  if (!state.isLoading && state.error === null && !showMemorySettings) {
+  if (!state.isLoading && state.error === null && !shouldShowMemorySection) {
     return null;
   }
-
-  const isBusy = state.isLoading || state.isSaving || isResetting;
-  const memoriesEnabled = state.featureEnabled && state.memories.generateMemories && state.memories.useMemories;
-  const canToggleToolContext = !isBusy && memoriesEnabled;
 
   const reload = () => {
     setRefreshVersion((current) => current + 1);
@@ -137,11 +171,13 @@ export function PersonalizationMemorySettings({
     if (isBusy || enabled === memoriesEnabled) {
       return;
     }
+
     const previousState = state;
     setState((current) => ({
       ...current,
       featureEnabled: enabled,
-      chronicleEnabled: enabled ? current.chronicleEnabled : false,
+      chronicleEnabled:
+        enabled || !isLocalHost ? current.chronicleEnabled : false,
       memories: {
         ...current.memories,
         generateMemories: enabled,
@@ -150,10 +186,12 @@ export function PersonalizationMemorySettings({
       isSaving: true,
       error: null,
     }));
+
     try {
       await Promise.all([
-        setExperimentalFeatureEnablement({ [MEMORY_FEATURE_NAME]: enabled }),
-        batchWriteConfigValues({
+        setExperimentalFeatureForHost(selectedHostId, MEMORY_FEATURE_NAME, enabled),
+        batchWriteConfigValueForHost({
+          hostId: selectedHostId,
           edits: [
             {
               keyPath: "memories.generate_memories",
@@ -165,20 +203,26 @@ export function PersonalizationMemorySettings({
               value: enabled,
               mergeStrategy: "upsert",
             },
-            ...(!enabled && state.chronicleEnabled
-              ? [
-                  {
-                    keyPath: "features.chronicle",
-                    value: false,
-                    mergeStrategy: "upsert" as const,
-                  },
-                ]
-              : []),
           ],
-          filePath: state.filePath,
-          expectedVersion: state.expectedVersion,
+          filePath: state.writeTargetFilePath,
+          expectedVersion: null,
           reloadUserConfig: true,
         }),
+        !enabled && isLocalHost
+          ? batchWriteConfigValueForHost({
+              hostId: selectedHostId,
+              edits: [
+                {
+                  keyPath: "features.chronicle",
+                  value: false,
+                  mergeStrategy: "upsert",
+                },
+              ],
+              filePath: state.writeTargetFilePath,
+              expectedVersion: null,
+              reloadUserConfig: true,
+            })
+          : Promise.resolve(),
       ]);
       reload();
     } catch (error) {
@@ -194,6 +238,7 @@ export function PersonalizationMemorySettings({
     if (isBusy || enabled === state.memories.disableOnExternalContext) {
       return;
     }
+
     const previousState = state;
     setState((current) => ({
       ...current,
@@ -204,8 +249,10 @@ export function PersonalizationMemorySettings({
       isSaving: true,
       error: null,
     }));
+
     try {
-      await batchWriteConfigValues({
+      await batchWriteConfigValueForHost({
+        hostId: selectedHostId,
         edits: [
           {
             keyPath: "memories.disable_on_external_context",
@@ -218,8 +265,8 @@ export function PersonalizationMemorySettings({
             mergeStrategy: "replace",
           },
         ],
-        filePath: state.filePath,
-        expectedVersion: state.expectedVersion,
+        filePath: state.writeTargetFilePath,
+        expectedVersion: null,
         reloadUserConfig: true,
       });
       reload();
@@ -233,9 +280,10 @@ export function PersonalizationMemorySettings({
   };
 
   const saveChronicleEnabled = async (enabled: boolean) => {
-    if (isBusy || enabled === state.chronicleEnabled) {
+    if (isBusy || enabled === chronicleChecked) {
       return;
     }
+
     const previousState = state;
     setState((current) => ({
       ...current,
@@ -243,8 +291,10 @@ export function PersonalizationMemorySettings({
       isSaving: true,
       error: null,
     }));
+
     try {
-      await batchWriteConfigValues({
+      await batchWriteConfigValueForHost({
+        hostId: selectedHostId,
         edits: [
           {
             keyPath: "features.chronicle",
@@ -252,8 +302,8 @@ export function PersonalizationMemorySettings({
             mergeStrategy: "upsert",
           },
         ],
-        filePath: state.filePath,
-        expectedVersion: state.expectedVersion,
+        filePath: state.writeTargetFilePath,
+        expectedVersion: null,
         reloadUserConfig: true,
       });
       reload();
@@ -271,9 +321,10 @@ export function PersonalizationMemorySettings({
     if (isBusy) {
       return;
     }
+
     setIsResetting(true);
     try {
-      await resetMemories();
+      await resetMemoriesForHost(selectedHostId);
       setIsResetDialogOpen(false);
       onShowToast?.({
         tone: "success",
@@ -291,113 +342,154 @@ export function PersonalizationMemorySettings({
 
   return (
     <>
-      <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="app-title text-[14px] font-medium">{t("settings.personalization.memory.title")}</div>
-        <div className="app-text-muted mt-1 text-[12px] leading-5">
-          {renderInlineLinkMessage(t("settings.personalization.memory.subtitle"), MEMORY_DOCS_URL)}
-        </div>
-
-        <div className="mt-4 space-y-4 text-[14px]">
-          {state.error ? (
-            <div className="app-card-error rounded-[14px] px-4 py-3 text-[13px]">{state.error}</div>
-          ) : null}
-
-          <MemorySettingRow
-            label={t("settings.memory.enableMemoriesLabel")}
-            description={t("settings.memory.enableMemoriesDescription")}
-          >
-            <ToggleSwitch
-              checked={memoriesEnabled}
-              disabled={isBusy}
-              ariaLabel={t("settings.memory.enableMemoriesAriaLabel")}
-              onChange={(checked) => void saveMemoriesEnabled(checked)}
+      <SettingsGroup className="gap-2">
+        <SettingsGroup.Header
+          title={t("settings.personalization.memory.title")}
+          subtitle={renderInlineMemoryDescription(
+            t("settings.personalization.memory.subtitle"),
+          )}
+        />
+        <SettingsGroup.Content>
+          <SettingsSurface>
+            <SettingsRow
+              label={t("settings.memory.enableMemoriesLabel")}
+              description={t("settings.memory.enableMemoriesDescription")}
+              control={
+                <ToggleSwitch
+                  checked={memoriesEnabled}
+                  disabled={isBusy}
+                  ariaLabel={t("settings.memory.enableMemoriesAriaLabel")}
+                  onChange={(checked) => {
+                    void saveMemoriesEnabled(checked);
+                  }}
+                />
+              }
             />
-          </MemorySettingRow>
 
-          <PersonalizationChronicleSettings
-            checked={state.chronicleEnabled}
-            disabled={isBusy}
-            memoriesEnabled={memoriesEnabled}
-            onOpenChatWithPrompt={onOpenChatWithPrompt}
-            onSetEnabled={saveChronicleEnabled}
-          />
+            {state.chronicleVisible ? (
+              <PersonalizationChronicleSettings
+                checked={chronicleChecked}
+                disabled={isBusy || !state.featureEnabled}
+                memoriesEnabled={memoriesEnabled}
+                onOpenChatWithPrompt={onOpenChatWithPrompt}
+                onSetEnabled={saveChronicleEnabled}
+              />
+            ) : null}
 
-          <MemorySettingRow
-            label={t("settings.memory.noToolContextLabel")}
-            description={t("settings.memory.noToolContextDescription")}
-          >
-            <ToggleSwitch
-              checked={state.memories.disableOnExternalContext}
-              disabled={!canToggleToolContext}
-              ariaLabel={t("settings.memory.noToolContextAriaLabel")}
-              onChange={(checked) => void saveDisableOnExternalContext(checked)}
+            <SettingsRow
+              label={t("settings.memory.noToolContextLabel")}
+              description={t("settings.memory.noToolContextDescription")}
+              control={
+                <ToggleSwitch
+                  checked={state.memories.disableOnExternalContext}
+                  disabled={disableOnExternalContextDisabled}
+                  ariaLabel={t("settings.memory.noToolContextAriaLabel")}
+                  onChange={(checked) => {
+                    void saveDisableOnExternalContext(checked);
+                  }}
+                />
+              }
             />
-          </MemorySettingRow>
 
-          <MemorySettingRow
-            label={t("settings.memory.resetMemoriesLabel")}
-            description={t("settings.memory.resetMemoriesDescription")}
-          >
-            <button
-              type="button"
-              disabled={isResetting}
-              onClick={() => setIsResetDialogOpen(true)}
-              className="app-card-error rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
-            >
-              {isResetting ? t("general.saving") : t("settings.memory.resetMemoriesButton")}
-            </button>
-          </MemorySettingRow>
+            <SettingsRow
+              label={t("settings.memory.resetMemoriesLabel")}
+              description={t("settings.memory.resetMemoriesDescription")}
+              control={
+                <Button
+                  color="danger"
+                  disabled={isResetting}
+                  loading={isResetting}
+                  onClick={() => setIsResetDialogOpen(true)}
+                  size="toolbar"
+                >
+                  {t("settings.memory.resetMemoriesButton")}
+                </Button>
+              }
+            />
+          </SettingsSurface>
+        </SettingsGroup.Content>
+      </SettingsGroup>
+
+      {state.error ? (
+        <div className="rounded-md border border-token-charts-red/20 bg-token-charts-red/5 px-3 py-2 text-sm text-token-charts-red">
+          {state.error}
         </div>
-      </div>
+      ) : null}
 
       {isResetDialogOpen ? (
-        <div className="fixed inset-0 z-20 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
-          <div className="app-card w-full max-w-[420px] rounded-[18px] px-5 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
-            <div className="app-title text-[15px] font-medium">{t("settings.memory.resetDialogTitle")}</div>
-            <div className="app-text-muted mt-2 text-[13px] leading-6">
-              {t("settings.memory.resetDialogSubtitle")}
-            </div>
-            <div className="mt-5 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                disabled={isResetting}
-                onClick={() => setIsResetDialogOpen(false)}
-                className="app-control rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
-              >
-                {t("settings.memory.resetDialogCancel")}
-              </button>
-              <button
-                type="button"
-                disabled={isResetting}
-                onClick={() => void confirmReset()}
-                className="app-card-error rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
-              >
-                {isResetting ? t("general.saving") : t("settings.memory.resetDialogConfirm")}
-              </button>
-            </div>
-          </div>
-        </div>
+        <MemoryResetDialog
+          isResetting={isResetting}
+          onCancel={() => setIsResetDialogOpen(false)}
+          onConfirm={() => void confirmReset()}
+        />
       ) : null}
     </>
   );
 }
 
-function MemorySettingRow({
-  label,
-  description,
-  children,
+function MemoryResetDialog({
+  isResetting,
+  onCancel,
+  onConfirm,
 }: {
-  label: string;
-  description: ReactNode;
-  children: ReactNode;
+  isResetting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
 }) {
+  const { t } = useI18n();
+
   return (
-    <div className="flex items-start justify-between gap-4">
-      <div className="min-w-0 flex-1">
-        <div>{label}</div>
-        <div className="app-text-muted mt-1 text-[12px] leading-5">{description}</div>
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
+      <div className="w-full max-w-[420px] rounded-[18px] border border-token-border bg-token-main-surface-primary px-5 py-5 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-2">
+            <div className="text-[15px] font-medium text-token-text-primary">
+              {t("settings.memory.resetDialogTitle")}
+            </div>
+            <div className="text-sm text-token-text-secondary">
+              {t("settings.memory.resetDialogSubtitle")}
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <Button color="ghost" disabled={isResetting} onClick={onCancel}>
+              {t("settings.memory.resetDialogCancel")}
+            </Button>
+            <Button color="danger" loading={isResetting} onClick={onConfirm}>
+              {t("settings.memory.resetDialogConfirm")}
+            </Button>
+          </div>
+        </div>
       </div>
-      {children}
     </div>
+  );
+}
+
+function renderInlineMemoryDescription(template: string) {
+  const startTag = "<a>";
+  const endTag = "</a>";
+  const startIndex = template.indexOf(startTag);
+  const endIndex = template.indexOf(endTag);
+
+  if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
+    return template;
+  }
+
+  const prefix = template.slice(0, startIndex);
+  const label = template.slice(startIndex + startTag.length, endIndex);
+  const suffix = template.slice(endIndex + endTag.length);
+
+  return (
+    <>
+      {prefix}
+      <a
+        className="inline-flex text-token-text-link-foreground"
+        href={MEMORY_DOCS_URL}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {label}
+      </a>
+      {suffix}
+    </>
   );
 }

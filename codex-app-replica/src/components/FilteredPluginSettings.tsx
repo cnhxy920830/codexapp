@@ -1,5 +1,7 @@
 import { useEffect, useEffectEvent, useMemo, useState, type ReactNode } from "react";
 import { Button } from "./Button";
+import { SettingsSurface } from "./SettingsSurface";
+import { Spinner } from "./Spinner";
 import { ToggleSwitch } from "./ToggleSwitch";
 import { useI18n } from "../i18n/i18n";
 import { selectPluginCandidatesByName, type PluginCandidate } from "../lib/pluginSelectors";
@@ -27,9 +29,11 @@ export type FilteredPluginSettingsRenderContext = {
   loadError: string | null;
 };
 
-type FilteredPluginSettingsItemPresentation = {
+export type FilteredPluginSettingsItemPresentation = {
+  action?: ReactNode;
   controlLabel?: string;
   description?: ReactNode;
+  descriptionIndicator?: "error" | "success";
   icon?: ReactNode;
   showIconBorder?: boolean;
   title?: ReactNode;
@@ -41,14 +45,16 @@ export function FilteredPluginSettings({
   hostId,
   installButtonLabel,
   pluginNames,
+  selectPlugins,
   renderAfterSections,
   workspaceRoot,
 }: {
-  emptyState: string;
+  emptyState: ReactNode;
   getItemPresentation?: (candidate: PluginCandidate) => FilteredPluginSettingsItemPresentation;
   hostId?: string | null;
-  installButtonLabel: string;
+  installButtonLabel: ReactNode;
   pluginNames: readonly string[];
+  selectPlugins?: (snapshot: PluginListSnapshot | null) => PluginCandidate[];
   renderAfterSections?: (context: FilteredPluginSettingsRenderContext) => ReactNode;
   workspaceRoot: string | null;
 }) {
@@ -115,10 +121,13 @@ export function FilteredPluginSettings({
     };
   }, [activePlugin, hostId]);
 
-  const selectedPlugins = useMemo(
-    () => selectPluginCandidatesByName(pluginsSnapshot, pluginNames),
-    [pluginNames, pluginsSnapshot],
-  );
+  const selectedPlugins = useMemo(() => {
+    if (selectPlugins) {
+      return selectPlugins(pluginsSnapshot);
+    }
+
+    return selectPluginCandidatesByName(pluginsSnapshot, pluginNames);
+  }, [pluginNames, pluginsSnapshot, selectPlugins]);
 
   useEffect(() => {
     if (activePlugin == null) {
@@ -244,41 +253,35 @@ export function FilteredPluginSettings({
   return (
     <>
       {isLoading ? (
-        <div className="app-card rounded-[18px] px-5 py-4">
-          <div className="flex min-h-[72px] items-center justify-center">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--app-shell-subtle)] border-t-transparent" />
-          </div>
+        <div className="flex min-h-[62px] items-center justify-center rounded-lg border border-token-border text-token-text-secondary">
+          <Spinner className="icon-xs" />
         </div>
       ) : loadError ? (
-        <div className="app-card rounded-[18px] px-5 py-4">
-          <div className="app-card-muted rounded-[12px] px-3 py-2 text-[13px] leading-6">
-            <div className="font-medium">{t("skills.appsPage.loadError.title")}</div>
-            <div className="app-text-muted mt-1 text-[12px]">{loadError}</div>
-            <button
-              type="button"
-              onClick={() => void retryLoad()}
-              className="app-control mt-3 rounded-[11px] px-3 py-1.5 text-[12px]"
-            >
-              {t("skills.appsPage.loadError.retry")}
-            </button>
+        <SettingsSurface>
+          <div className="p-4 text-sm text-token-text-secondary">
+            <div>{loadError}</div>
+            <div className="mt-3">
+              <Button color="secondary" size="toolbar" onClick={() => void retryLoad()}>
+                {t("skills.appsPage.loadError.retry")}
+              </Button>
+            </div>
           </div>
-        </div>
+        </SettingsSurface>
       ) : selectedPlugins.length === 0 ? (
-        <div className="app-card rounded-[18px] px-5 py-4">
-          <div className="app-card-muted rounded-[12px] px-3 py-2 text-[13px] leading-6">{emptyState}</div>
+        <div className="flex min-h-[62px] items-center justify-center rounded-lg border border-token-border px-4 text-center text-sm text-token-text-secondary">
+          {emptyState}
         </div>
       ) : (
-        <div className="app-card overflow-hidden rounded-[18px] px-2 py-2">
+        <SettingsSurface className="overflow-hidden">
           {selectedPlugins.map((candidate) => {
             const presentation = getItemPresentation?.(candidate);
+            const action = presentation?.action;
             const title = presentation?.title ?? getPluginTitle(candidate);
             const description = presentation?.description ?? getPluginDescription(candidate);
+            const descriptionIndicator = presentation?.descriptionIndicator;
             const controlLabel = presentation?.controlLabel ?? getPluginTitle(candidate);
             const isPending = pendingPluginId === candidate.plugin.id;
-            const iconBorderClass =
-              presentation?.showIconBorder === false
-                ? "border-transparent bg-transparent"
-                : "border border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)]";
+            const iconBorderClass = presentation?.showIconBorder === false ? "border-0" : "border border-token-border";
             const toggleTooltip = candidate.plugin.enabled
               ? t("settings.pluginControls.disableToggleTooltip", { pluginName: controlLabel })
               : t("settings.pluginControls.enableToggleTooltip", { pluginName: controlLabel });
@@ -295,20 +298,40 @@ export function FilteredPluginSettings({
                 }}
                 role="button"
                 tabIndex={0}
-                className="group flex min-h-[60px] cursor-pointer items-center gap-3 rounded-[14px] px-3 py-2.5 text-left transition hover:bg-[var(--app-shell-hover-surface)] max-sm:flex-wrap"
+                className="group flex min-h-[60px] items-center gap-3 p-2.5 text-left hover:bg-token-foreground/5 max-sm:flex-wrap"
               >
                 {presentation?.icon ? (
-                  <div className={["flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px]", iconBorderClass].join(" ")}>
+                  <div
+                    className={joinClasses(
+                      "flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px]",
+                      iconBorderClass,
+                    )}
+                  >
                     {presentation.icon}
                   </div>
                 ) : null}
 
                 <div className="min-w-0 flex-1">
-                  <div className="text-[14px] leading-6">{title}</div>
-                  <div className="app-text-muted mt-1 text-[12px] leading-5">{description}</div>
+                  <div className="text-sm leading-6">{title}</div>
+                  <div
+                    className={joinClasses(
+                      "mt-1 text-sm leading-6",
+                      descriptionIndicator === "success"
+                        ? "text-[var(--color-text-success)]"
+                        : descriptionIndicator === "error"
+                          ? "text-token-charts-red"
+                          : "text-token-text-secondary",
+                    )}
+                  >
+                    {description}
+                  </div>
                 </div>
 
-                <div className="shrink-0" onClick={(event) => event.stopPropagation()}>
+                <div
+                  className="flex shrink-0 items-center gap-2"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  {action}
                   {candidate.plugin.installed ? (
                     <div title={toggleTooltip}>
                       <ToggleSwitch
@@ -338,7 +361,7 @@ export function FilteredPluginSettings({
               </div>
             );
           })}
-        </div>
+        </SettingsSurface>
       )}
 
       {afterSections}
@@ -597,4 +620,8 @@ function getPluginDescription(candidate: PluginCandidate, detail?: PluginDetail 
     candidate.plugin.interface?.shortDescription ??
     candidate.plugin.name
   );
+}
+
+function joinClasses(...values: Array<string | false | null | undefined>) {
+  return values.filter((value): value is string => Boolean(value)).join(" ");
 }

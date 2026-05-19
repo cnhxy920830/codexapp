@@ -478,8 +478,23 @@ export async function batchWriteConfigValueForHost(params: BatchWriteConfigForHo
   return invoke<void>("batch-write-config-value", { params });
 }
 
+export async function setPersonalityForHost(params: {
+  hostId?: string | null;
+  personality: ConfigPersonality | null;
+}) {
+  return invoke<void>("set-personality", {
+    params: {
+      hostId: normalizeHostId(params.hostId),
+      personality: params.personality,
+    },
+  });
+}
+
 export async function setPersonality(personality: ConfigPersonality | null) {
-  return invoke<void>("set_personality", { personality });
+  return setPersonalityForHost({
+    hostId: null,
+    personality,
+  });
 }
 
 export function peekThirdPartyNotices() {

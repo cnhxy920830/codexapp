@@ -98,6 +98,22 @@ export function shouldUsePlaygroundCopy(arm: WorkspaceOnboardingExperimentArm) {
   return arm === "t4_modal_copy_cta_playground";
 }
 
+export function mergeWorkspaceRootSelectionsForPersistence({
+  onboardingOverride,
+  persistedRoots,
+  selectedRoots,
+}: {
+  onboardingOverride: string | null | undefined;
+  persistedRoots: string[];
+  selectedRoots: string[];
+}) {
+  if (normalizeWorkspaceOnboardingOverride(onboardingOverride) !== "workspace" || persistedRoots.length === 0) {
+    return selectedRoots;
+  }
+
+  return dedupeWorkspaceRootSequence([...persistedRoots, ...selectedRoots]);
+}
+
 export function deriveWorkspaceAutoLaunchAction({
   arm,
   autoLaunchApplied,
@@ -223,8 +239,38 @@ function dedupePaths(paths: string[]) {
   return deduped.sort((left, right) => left.localeCompare(right));
 }
 
+function dedupeWorkspaceRootSequence(roots: string[]) {
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+
+  for (const root of roots) {
+    const normalizedValue = normalizeWorkspaceRootValue(root);
+    if (normalizedValue === null) {
+      continue;
+    }
+
+    const comparisonKey = normalizeComparablePath(normalizedValue);
+    if (seen.has(comparisonKey)) {
+      continue;
+    }
+
+    seen.add(comparisonKey);
+    deduped.push(normalizedValue);
+  }
+
+  return deduped;
+}
+
 function normalizeComparablePath(path: string) {
   return normalizePathForComparison(path).replace(/\/+$/, "").toLowerCase();
+}
+
+function normalizeWorkspaceOnboardingOverride(value: string | null | undefined) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function normalizeWorkspaceRootValue(value: string | null | undefined) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
 function isNonEmptyString(value: string | null | undefined): value is string {

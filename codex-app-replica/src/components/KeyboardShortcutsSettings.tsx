@@ -12,6 +12,7 @@ import { createPortal } from "react-dom";
 import { Button } from "./Button";
 import { SettingsContentLayout } from "./SettingsContentLayout";
 import { SettingsGroup } from "./SettingsGroup";
+import { SettingsSectionTitle } from "./SettingsSectionTitle";
 import { SettingsSurface } from "./SettingsSurface";
 import { useI18n } from "../i18n/i18n";
 import {
@@ -280,7 +281,9 @@ export function KeyboardShortcutsSettingsView({
   );
 
   return (
-    <SettingsContentLayout title={t("settings.section.keyboard-shortcuts")}>
+    <SettingsContentLayout
+      title={<SettingsSectionTitle slug="keyboard-shortcuts" />}
+    >
       <SettingsGroup>
         <SettingsGroup.Content>
           {keymapState == null ? null : (
@@ -615,7 +618,7 @@ function ShortcutLabel({ shortcutLabel }: { shortcutLabel: string | null }) {
       {shortcutLabel == null ? (
         t("settings.keyboardShortcuts.unassigned")
       ) : (
-        <kbd className="inline-flex rounded-md bg-current/10 px-2 py-1 font-sans text-sm leading-none text-current">
+        <kbd className="inline-flex !rounded-md !border-0 !bg-current/10 !px-1.5 !py-0.5 !font-sans !text-xs !leading-none !text-current !shadow-none">
           {shortcutLabel}
         </kbd>
       )}

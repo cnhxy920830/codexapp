@@ -54,6 +54,8 @@ pub struct RemoteAppServerHostStatus {
     pub state: RemoteAppServerConnectionState,
     pub error: Option<String>,
     pub auto_connect: bool,
+    pub app_server_version: Option<String>,
+    pub installed_codex_version: Option<String>,
 }
 
 #[derive(Default)]
@@ -71,6 +73,8 @@ struct RegistryEntry {
     state: RemoteAppServerConnectionState,
     error: Option<String>,
     auto_connect: bool,
+    app_server_version: Option<String>,
+    installed_codex_version: Option<String>,
 }
 
 impl RemoteAppServerRegistry {
@@ -82,6 +86,8 @@ impl RemoteAppServerRegistry {
             state: entry.state,
             error: entry.error,
             auto_connect: entry.auto_connect,
+            app_server_version: entry.app_server_version,
+            installed_codex_version: entry.installed_codex_version,
         }
     }
 
@@ -95,6 +101,8 @@ impl RemoteAppServerRegistry {
                 state: entry.state,
                 error: entry.error.clone(),
                 auto_connect: entry.auto_connect,
+                app_server_version: entry.app_server_version.clone(),
+                installed_codex_version: entry.installed_codex_version.clone(),
             })
             .collect();
         entries.sort_by(|left, right| left.host_id.cmp(&right.host_id));
@@ -122,6 +130,18 @@ impl RemoteAppServerRegistry {
         let mut guard = self.inner.lock().expect("registry mutex poisoned");
         let entry = guard.hosts.entry(host_id.to_string()).or_default();
         entry.auto_connect = auto_connect;
+    }
+
+    pub fn set_versions(
+        &self,
+        host_id: &str,
+        app_server_version: Option<String>,
+        installed_codex_version: Option<String>,
+    ) {
+        let mut guard = self.inner.lock().expect("registry mutex poisoned");
+        let entry = guard.hosts.entry(host_id.to_string()).or_default();
+        entry.app_server_version = app_server_version;
+        entry.installed_codex_version = installed_codex_version;
     }
 
     pub fn forget(&self, host_id: &str) {
@@ -153,6 +173,8 @@ pub struct RemoteAppServerConnectStateParams {
 pub struct RemoteAppServerConnectStateResponse {
     pub state: RemoteAppServerConnectionState,
     pub error: Option<String>,
+    pub app_server_version: Option<String>,
+    pub installed_codex_version: Option<String>,
 }
 
 /// Page-owned `app-server-connection-state` query, registry-backed.
@@ -170,6 +192,8 @@ pub fn registry_connection_state(
     RemoteAppServerConnectStateResponse {
         state: snapshot.state,
         error: snapshot.error,
+        app_server_version: snapshot.app_server_version,
+        installed_codex_version: snapshot.installed_codex_version,
     }
 }
 
@@ -183,6 +207,8 @@ mod tests {
         let response = registry_connection_state(&registry, "host-a");
         assert_eq!(response.state, RemoteAppServerConnectionState::Disconnected);
         assert!(response.error.is_none());
+        assert!(response.app_server_version.is_none());
+        assert!(response.installed_codex_version.is_none());
     }
 
     #[test]
@@ -197,6 +223,8 @@ mod tests {
             RemoteAppServerConnectionState::Disconnected
         );
         assert!(!entries[0].auto_connect);
+        assert!(entries[0].app_server_version.is_none());
+        assert!(entries[0].installed_codex_version.is_none());
     }
 
     #[test]
@@ -263,6 +291,8 @@ mod tests {
         let value = serde_json::to_value(&response).expect("serialize");
         assert_eq!(value["state"], "connected");
         assert!(value["error"].is_null());
+        assert!(value["appServerVersion"].is_null());
+        assert!(value["installedCodexVersion"].is_null());
     }
 
     #[test]
@@ -272,11 +302,29 @@ mod tests {
             state: RemoteAppServerConnectionState::Connecting,
             error: Some("slow".into()),
             auto_connect: true,
+            app_server_version: Some("0.129.0".into()),
+            installed_codex_version: Some("0.130.0".into()),
         };
         let value = serde_json::to_value(&status).expect("serialize");
         assert_eq!(value["hostId"], "h");
         assert_eq!(value["state"], "connecting");
         assert_eq!(value["error"], "slow");
         assert_eq!(value["autoConnect"], true);
+        assert_eq!(value["appServerVersion"], "0.129.0");
+        assert_eq!(value["installedCodexVersion"], "0.130.0");
+    }
+
+    #[test]
+    fn set_versions_updates_existing_entry() {
+        let registry = RemoteAppServerRegistry::default();
+        registry.set_versions(
+            "host-f",
+            Some("0.129.0".to_string()),
+            Some("0.130.0".to_string()),
+        );
+
+        let snapshot = registry.snapshot("host-f");
+        assert_eq!(snapshot.app_server_version.as_deref(), Some("0.129.0"));
+        assert_eq!(snapshot.installed_codex_version.as_deref(), Some("0.130.0"));
     }
 }

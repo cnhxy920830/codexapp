@@ -1,6 +1,7 @@
 /// <reference types="node" />
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
@@ -17,6 +18,7 @@ const SNAPSHOT_PATH = path.join(
   process.cwd(),
   "src/components/__snapshots__/open-source-licenses-page.snap.json",
 );
+const APP_SOURCE_PATH = path.join(process.cwd(), "src/App.tsx");
 const UPDATE_SNAPSHOTS =
   process.env.OPEN_SOURCE_LICENSES_PAGE_UPDATE_SNAPSHOTS === "1";
 
@@ -82,6 +84,23 @@ test("resolve open source licenses back path", () => {
   assert.equal(
     resolveOpenSourceLicensesBackPath(null),
     "/settings/general",
+  );
+});
+
+test("open source licenses routing follows extracted settings route behavior", () => {
+  const appSource = readFileSync(APP_SOURCE_PATH, "utf8");
+
+  assert.match(
+    appSource,
+    /const openSourceLicenses = \(\) => \{\s*void handleNavigateToRoute\("\/settings\/open-source-licenses"\);\s*\};/s,
+  );
+  assert.match(
+    appSource,
+    /onNavigateBack=\{\(backPath\) => \{\s*void handleNavigateToRoute\(backPath\);\s*\}\}/s,
+  );
+  assert.doesNotMatch(
+    appSource,
+    /backPath === "\/settings\/agent" \? "agent" : "general-settings"/,
   );
 });
 

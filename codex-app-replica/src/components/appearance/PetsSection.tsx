@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import type { AppToast } from "../AppToastRegion";
 import { useI18n } from "../../i18n/i18n";
 import { ChevronDownIcon } from "../AppShellIcons";
@@ -25,6 +25,11 @@ import {
   resolveAvatarOption,
   type AvatarOption,
 } from "./avatarData";
+import { Button } from "../Button";
+import { SettingsGroup } from "../SettingsGroup";
+import { SettingsRow } from "../SettingsRow";
+import { SettingsSurface } from "../SettingsSurface";
+import { Spinner } from "../Spinner";
 
 const HATCH_PET_SKILL_NAME = "hatch-pet";
 const HATCH_PET_FALLBACK_SKILL_PATH =
@@ -46,6 +51,7 @@ export function PetsSection({
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [isOverlayOpen, setIsOverlayOpen] = useState(false);
   const [selectedAvatarId, setSelectedAvatarIdState] = useState<string>(DEFAULT_AVATAR_ID);
+  const contentId = useId();
 
   useEffect(() => {
     let cancelled = false;
@@ -184,105 +190,104 @@ export function PetsSection({
   const customAvatars = avatarOptions.filter(isCustomAvatar);
 
   return (
-    <section className="flex flex-col">
-      <div
-        className="border-token-border flex flex-col divide-y-[0.5px] divide-token-border rounded-lg border"
-        style={{
-          backgroundColor: "var(--color-background-panel, var(--color-token-bg-fog))",
-        }}
-      >
-        <button
-          type="button"
-          aria-expanded={isExpanded}
-          onClick={() => setIsExpanded((value) => !value)}
-          className={[
-            "flex w-full items-center justify-between gap-4 p-3 text-left hover:bg-token-list-hover-background",
-            isExpanded ? "rounded-t-lg" : "rounded-lg",
-          ].join(" ")}
-        >
-          <span className="flex min-w-0 flex-col gap-1">
-            <span className="min-w-0 text-sm text-token-text-primary">{t("settings.personalization.pets.title")}</span>
-            <span className="min-w-0 text-sm text-token-text-secondary">
-              {customAvatarsSnapshot.isError
-                ? t("settings.pets.loadCustomError")
-                : t("settings.personalization.pets.current", { petName: selectedAvatar.displayName })}
-            </span>
-          </span>
-          <ChevronDownIcon
-            className={[
-              "h-4 w-4 shrink-0 text-token-text-secondary transition-transform",
-              isExpanded ? "rotate-180" : "",
-            ].join(" ")}
-          />
-        </button>
+    <section className="flex flex-col gap-[var(--padding-panel)]">
+      <SettingsGroup>
+        <SettingsGroup.Content>
+          <SettingsSurface>
+            <button
+              type="button"
+              aria-controls={contentId}
+              aria-expanded={isExpanded}
+              onClick={() => setIsExpanded((value) => !value)}
+              className={[
+                "flex w-full cursor-interaction items-center justify-between gap-4 p-3 text-left hover:bg-token-list-hover-background",
+                isExpanded ? "rounded-t-lg" : "rounded-lg",
+              ].join(" ")}
+            >
+              <span className="flex min-w-0 flex-col gap-1">
+                <span className="min-w-0 text-sm text-token-text-primary">{t("settings.personalization.pets.title")}</span>
+                <span className="min-w-0 text-sm text-token-text-secondary">
+                  {customAvatarsSnapshot.isError
+                    ? t("settings.pets.loadCustomError")
+                    : t("settings.personalization.pets.current", { petName: selectedAvatar.displayName })}
+                </span>
+              </span>
+              <ChevronDownIcon
+                className={[
+                  "icon-2xs shrink-0 text-token-input-placeholder-foreground transition-transform",
+                  isExpanded ? "rotate-180" : "",
+                ].join(" ")}
+                aria-hidden="true"
+              />
+            </button>
 
-        {isExpanded ? (
-          <div className="flex flex-col divide-y divide-token-border bg-token-bg-secondary/20">
-            <div className="flex justify-end gap-2 p-3">
-              {onOpenChatWithPrompt ? (
-                <ToolbarButton disabled={isCreatingCustomAvatar} onClick={() => void handleCreateCustomAvatar()}>
-                  {isCreatingCustomAvatar ? (
-                    <>
-                      <InlineSpinner />
-                      <span>{t("settings.pets.custom.create.title")}</span>
-                    </>
-                  ) : (
-                    t("settings.pets.custom.create.title")
-                  )}
-                </ToolbarButton>
-              ) : null}
-              <ToolbarButton onClick={() => void handleRefreshCustomAvatars()}>
-                {t("settings.pets.refresh")}
-              </ToolbarButton>
-              <ToolbarButton onClick={() => void handleToggleAvatarOverlay()}>
-                {t(
-                  isOverlayOpen
-                    ? "settings.personalization.pets.tuckAwayPet"
-                    : "settings.personalization.pets.openPet",
-                )}
-              </ToolbarButton>
-            </div>
+            {isExpanded ? (
+              <div id={contentId} className="flex flex-col divide-y divide-token-border bg-token-bg-secondary/20">
+                <div className="flex justify-end gap-2 p-3">
+                  {onOpenChatWithPrompt ? (
+                    <Button
+                      color="secondary"
+                      loading={isCreatingCustomAvatar}
+                      onClick={() => void handleCreateCustomAvatar()}
+                      size="toolbar"
+                    >
+                      {t("settings.pets.custom.create.title")}
+                    </Button>
+                  ) : null}
+                  <Button color="secondary" onClick={() => void handleRefreshCustomAvatars()} size="toolbar">
+                    {t("settings.pets.refresh")}
+                  </Button>
+                  <Button color="secondary" onClick={() => void handleToggleAvatarOverlay()} size="toolbar">
+                    {t(
+                      isOverlayOpen
+                        ? "settings.personalization.pets.tuckAwayPet"
+                        : "settings.personalization.pets.openPet",
+                    )}
+                  </Button>
+                </div>
 
-            {customAvatarsSnapshot.isLoading ? (
-              <div className="flex items-center gap-2 p-3 text-sm text-token-text-secondary">
-                <InlineSpinner />
-                <span>{t("settings.pets.loadingCustom")}</span>
+                {customAvatarsSnapshot.isLoading ? (
+                  <div className="flex items-center gap-2 p-3 text-sm text-token-text-secondary">
+                    <Spinner className="icon-xs" />
+                    <span>{t("settings.pets.loadingCustom")}</span>
+                  </div>
+                ) : null}
+
+                {customAvatarsSnapshot.isError ? (
+                  <div className="p-3 text-sm text-token-text-secondary">{t("settings.pets.loadCustomError")}</div>
+                ) : null}
+
+                {builtInAvatars.map((avatar) => (
+                  <PetRow
+                    key={avatar.id}
+                    avatar={avatar}
+                    disabled={false}
+                    isSelected={avatar.id === selectedAvatarId}
+                    onSelect={() => void handleSelectAvatar(avatar)}
+                  />
+                ))}
+
+                {customAvatarsSnapshot.avatarDirectory ? (
+                  <CustomPetsDirectoryRow
+                    avatarDirectory={customAvatarsSnapshot.avatarDirectory}
+                    onOpenFolder={() => void handleOpenAvatarDirectory()}
+                  />
+                ) : null}
+
+                {customAvatars.map((avatar) => (
+                  <PetRow
+                    key={avatar.id}
+                    avatar={avatar}
+                    disabled={false}
+                    isSelected={avatar.id === selectedAvatarId}
+                    onSelect={() => void handleSelectAvatar(avatar)}
+                  />
+                ))}
               </div>
             ) : null}
-
-            {customAvatarsSnapshot.isError ? (
-              <div className="p-3 text-sm text-token-text-secondary">{t("settings.pets.loadCustomError")}</div>
-            ) : null}
-
-            {builtInAvatars.map((avatar) => (
-              <PetRow
-                key={avatar.id}
-                avatar={avatar}
-                disabled={false}
-                isSelected={avatar.id === selectedAvatarId}
-                onSelect={() => void handleSelectAvatar(avatar)}
-              />
-            ))}
-
-            {customAvatarsSnapshot.avatarDirectory ? (
-              <CustomPetsDirectoryRow
-                avatarDirectory={customAvatarsSnapshot.avatarDirectory}
-                onOpenFolder={() => void handleOpenAvatarDirectory()}
-              />
-            ) : null}
-
-            {customAvatars.map((avatar) => (
-              <PetRow
-                key={avatar.id}
-                avatar={avatar}
-                disabled={false}
-                isSelected={avatar.id === selectedAvatarId}
-                onSelect={() => void handleSelectAvatar(avatar)}
-              />
-            ))}
-          </div>
-        ) : null}
-      </div>
+          </SettingsSurface>
+        </SettingsGroup.Content>
+      </SettingsGroup>
     </section>
   );
 }
@@ -297,19 +302,16 @@ function CustomPetsDirectoryRow({
   const { t } = useI18n();
 
   return (
-    <div className="flex items-center justify-between gap-4 p-3 max-sm:flex-col max-sm:items-stretch">
-      <div className="flex min-w-0 flex-col gap-1">
-        <div className="min-w-0 text-sm text-token-text-primary">{t("settings.pets.custom.title")}</div>
-        <div className="font-mono text-xs break-all text-token-text-secondary">{avatarDirectory}</div>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-2 max-sm:justify-end">
-        <ToolbarButton onClick={onOpenFolder}>
+    <SettingsRow
+      label={t("settings.pets.custom.title")}
+      description={<span className="font-mono text-xs break-all">{avatarDirectory}</span>}
+      control={
+        <Button color="ghost" onClick={onOpenFolder} size="toolbar">
           <span>{t("settings.pets.custom.openFolder")}</span>
-          <ArrowTopRightIcon className="h-4 w-4" />
-        </ToolbarButton>
-      </div>
-    </div>
+          <ArrowTopRightIcon className="icon-2xs" />
+        </Button>
+      }
+    />
   );
 }
 
@@ -327,60 +329,20 @@ function PetRow({
   const { t } = useI18n();
 
   return (
-    <div className="flex items-center justify-between gap-4 p-3 max-sm:flex-col max-sm:items-stretch">
-      <div className="flex min-w-0 items-center gap-3">
-        <span className="shrink-0">
-          <AvatarSprite avatar={avatar} size="sm" />
-        </span>
-        <div className="flex min-w-0 flex-col gap-1">
-          <div className="min-w-0 text-sm text-token-text-primary">{avatar.displayName}</div>
-          <div className="min-w-0 text-sm text-token-text-secondary">{avatar.description}</div>
-        </div>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-2 max-sm:justify-end">
-        <button
-          type="button"
+    <SettingsRow
+      icon={<AvatarSprite avatar={avatar} size="sm" />}
+      label={avatar.displayName}
+      description={avatar.description}
+      control={
+        <Button
+          color="secondary"
           disabled={disabled || isSelected}
           onClick={onSelect}
-          className={[
-            "rounded-[10px] px-3 py-1.5 text-[12px] transition",
-            isSelected ? "app-control" : "app-control-weak",
-          ].join(" ")}
+          size="toolbar"
         >
           {t(isSelected ? "settings.personalization.avatars.selected" : "settings.personalization.avatars.select")}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function ToolbarButton({
-  children,
-  disabled = false,
-  onClick,
-}: {
-  children: ReactNode;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className="app-control-weak inline-flex items-center gap-1.5 rounded-[10px] px-3 py-1.5 text-[12px] disabled:opacity-60"
-    >
-      {children}
-    </button>
-  );
-}
-
-function InlineSpinner() {
-  return (
-    <span
-      aria-hidden="true"
-      className="inline-block h-3.5 w-3.5 animate-spin rounded-full border border-current border-t-transparent"
+        </Button>
+      }
     />
   );
 }

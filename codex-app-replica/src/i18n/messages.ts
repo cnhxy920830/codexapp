@@ -95,6 +95,13 @@ export type MessageKey =
   | "app.route.extensionPanelNew.description"
   | "skills.appsPage.heading.plugins"
   | "skills.appsPage.subheading.plugins"
+  | "skills.appsPage.managePlugins"
+  | "skills.appsPage.breadcrumb.root"
+  | "skills.appsPage.breadcrumb.manage"
+  | "skills.appsPage.create"
+  | "skills.appsPage.createPlugin"
+  | "skills.appsPage.createSkill"
+  | "skills.appsPage.actionsMenu"
   | "skills.appsPage.search.plugins"
   | "skills.appsPage.search.plugins.label"
   | "skills.appsPage.loading"
@@ -1223,6 +1230,7 @@ export type MessageKey =
   | "settings.section.usage"
   | "settings.section.local-environments"
   | "computerUse.label"
+  | "settings.section.computer-use"
   | "settings.section.data-controls"
   | "settings.section.keyboard-shortcuts"
   | "settings.section.git-settings"
@@ -1231,6 +1239,7 @@ export type MessageKey =
   | "settings.section.browser-use"
   | "settings.section.mcp-settings"
   | "settings.section.mcp-settings.subtitle"
+  | "settings.section.mcp-settings.learnMore"
   | "settings.browserUse.title"
   | "settings.browserUse.subtitle"
   | "settings.browserUse.control.title"
@@ -2104,6 +2113,84 @@ export type MessageKey =
   | "settings.openSourceLicenses.missing"
   | "settings.section.account"
   | "settings.section.connections"
+  | "remoteConnections.page.subheading"
+  | "settings.remoteConnections.refresh"
+  | "settings.remoteConnections.refresh.error"
+  | "settings.remoteConnections.refresh.success"
+  | "settings.remoteConnections.add"
+  | "settings.remoteConnections.deviceConnections.header.title"
+  | "settings.remoteConnections.deviceConnections.loading"
+  | "settings.remoteConnections.deviceConnections.empty"
+  | "settings.remoteConnections.deviceConnections.sshSubtitle"
+  | "settings.remoteConnections.table.actions.ariaLabel"
+  | "settings.remoteConnections.table.autoConnect.ariaLabel"
+  | "settings.remoteConnections.connectToggle.error"
+  | "settings.remoteConnections.createRemoteProject"
+  | "settings.remoteConnections.editConnection"
+  | "settings.remoteConnections.detailsMenu"
+  | "settings.remoteConnections.restartConnection"
+  | "settings.remoteConnections.logout"
+  | "settings.remoteConnections.logout.error"
+  | "settings.remoteConnections.deleteConnection"
+  | "settings.remoteConnections.details.copySuccess"
+  | "settings.remoteConnections.details.copyError"
+  | "settings.remoteConnections.details.alias"
+  | "settings.remoteConnections.details.host"
+  | "settings.remoteConnections.details.port"
+  | "settings.remoteConnections.details.identity"
+  | "settings.remoteConnections.details.version"
+  | "settings.remoteConnections.loginRequiredCta"
+  | "settings.remoteConnections.state.connected"
+  | "settings.remoteConnections.state.connecting"
+  | "settings.remoteConnections.state.disconnected"
+  | "settings.remoteConnections.state.error"
+  | "settings.remoteConnections.state.loginRequired"
+  | "settings.remoteConnections.state.restarting"
+  | "settings.remoteConnections.auth.title"
+  | "settings.remoteConnections.auth.description"
+  | "settings.remoteConnections.auth.error"
+  | "settings.remoteConnections.auth.closeIcon"
+  | "settings.remoteConnections.auth.back"
+  | "settings.remoteConnections.auth.close"
+  | "settings.remoteConnections.dialog.addTitle"
+  | "settings.remoteConnections.dialog.editTitle"
+  | "settings.remoteConnections.save.success"
+  | "settings.remoteConnections.save.error"
+  | "settings.remoteConnections.dialog.cancel"
+  | "settings.remoteConnections.dialog.apply"
+  | "settings.remoteConnections.dialog.authMode.ariaLabel"
+  | "settings.remoteConnections.dialog.authMode.none"
+  | "settings.remoteConnections.dialog.authMode.identity"
+  | "settings.remoteConnections.dialog.field.displayName"
+  | "settings.remoteConnections.dialog.field.alias"
+  | "settings.remoteConnections.dialog.field.sshHost"
+  | "settings.remoteConnections.dialog.field.sshHost.placeholder"
+  | "settings.remoteConnections.dialog.field.sshPort"
+  | "settings.remoteConnections.dialog.field.optional"
+  | "settings.remoteConnections.dialog.field.identity"
+  | "settings.remoteConnections.dialog.field.displayName.error"
+  | "settings.remoteConnections.dialog.field.displayName.duplicateError"
+  | "settings.remoteConnections.dialog.field.sshHost.error"
+  | "settings.remoteConnections.dialog.field.sshPort.intError"
+  | "settings.remoteConnections.dialog.field.sshPort.rangeError"
+  | "settings.remoteConnections.dialog.field.identity.error"
+  | "settings.remoteConnections.delete.error"
+  | "settings.remoteControlConnections.deleteDialog.title"
+  | "settings.remoteControlConnections.deleteDialog.subtitle"
+  | "settings.remoteControlConnections.deleteDialog.cancel"
+  | "settings.remoteControlConnections.deleteDialog.confirm"
+  | "settings.remoteConnections.localHost.header.title"
+  | "settings.remoteConnections.localHost.remoteControl.label"
+  | "settings.remoteConnections.localHost.remoteControl.error"
+  | "settings.remoteConnections.localHost.keepLive.label"
+  | "settings.remoteConnections.remoteControlClients.header.title"
+  | "settings.remoteConnections.remoteControlClients.loading"
+  | "settings.remoteConnections.remoteControlClients.empty"
+  | "settings.remoteConnections.remoteControlClients.authorized"
+  | "settings.remoteConnections.remoteControlClients.lastSeen"
+  | "settings.remoteConnections.remoteControlClients.deviceLabel.pc"
+  | "settings.remoteConnections.remoteControlClients.deviceLabel.mac"
+  | "settings.remoteConnections.remoteControlClients.deviceLabel.computer"
   | "settings.section.hooks-settings"
   | "settings.hooks.subtitle"
   | "settings.hooks.refresh"
@@ -2508,6 +2595,13 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "skills.appsPage.categoryDropdown.ariaLabel": "Choose a category",
     "skills.appsPage.browseDropdown.ariaLabel": "Choose a plugin marketplace",
     "skills.appsPage.marketplaceFilter.addMore": "Add more",
+    "skills.appsPage.managePlugins": "Manage plugins",
+    "skills.appsPage.breadcrumb.root": "Plugins",
+    "skills.appsPage.breadcrumb.manage": "Manage",
+    "skills.appsPage.create": "Create",
+    "skills.appsPage.createPlugin": "Create plugin",
+    "skills.appsPage.createSkill": "Create skill",
+    "skills.appsPage.actionsMenu": "Actions",
     "skills.page.heading": "Skills",
     "skills.page.subheading": "Give Codex superpowers. <a>Learn more</a>",
     "skills.page.loading": "Loading skills...",
@@ -3703,6 +3797,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.section.usage": "Usage",
     "settings.section.local-environments": "Environments",
     "computerUse.label": "Computer use",
+    "settings.section.computer-use": "Computer use",
     "settings.section.data-controls": "Archived chats",
     "settings.section.keyboard-shortcuts": "Keyboard shortcuts",
     "settings.section.git-settings": "Git",
@@ -3711,7 +3806,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.section.skills-settings": "Skills",
     "settings.section.browser-use": "Browser use",
     "settings.section.mcp-settings": "MCP servers",
-    "settings.section.mcp-settings.subtitle": "Connect external tools and data sources. <a>Learn more.</a>",
+    "settings.section.mcp-settings.subtitle": "Connect external tools and data sources. ",
+    "settings.section.mcp-settings.learnMore": "Learn more.",
     "settings.browserUse.title": "Browser",
     "settings.browserUse.subtitle":
       "Manage Codex's browser. Google Chrome can be set up in <computerUseSettingsLink>computer use settings</computerUseSettingsLink>",
@@ -3750,7 +3846,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.browserUse.browser.annotationScreenshots.saveError":
       "Unable to save annotation screenshots setting",
     "settings.browserUse.approval.label": "Approval",
-    "settings.browserUse.approval.description": "Choose if Codex asks for approval before opening websites",
+    "settings.browserUse.approval.description":
+      "Choose if Codex asks for approval before opening websites. <learnMoreLink>Learn more</learnMoreLink>",
     "settings.browserUse.approval.alwaysAsk.label": "Always ask",
     "settings.browserUse.approval.alwaysAsk.description": "Ask before opening websites",
     "settings.browserUse.approval.neverAsk.label": "Always allow",
@@ -3759,7 +3856,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
       "This setting has elevated risks for your data.",
     "settings.browserUse.approval.saveError": "Unable to save approval setting",
     "settings.browserUse.historyApproval.label": "History",
-    "settings.browserUse.historyApproval.description": "Choose if Codex asks for approval before accessing your history",
+    "settings.browserUse.historyApproval.description":
+      "Choose if Codex asks for approval before accessing your browser's history",
     "settings.browserUse.historyApproval.alwaysAsk.label": "Always ask",
     "settings.browserUse.historyApproval.alwaysAsk.description": "Ask before accessing history",
     "settings.browserUse.historyApproval.neverAsk.label": "Always allow",
@@ -3863,9 +3961,9 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.browserUse.deniedWebsites.removeDialogTitle": "Remove “{origin}” from blocked domains?",
     "settings.browserUse.deniedWebsites.removeDialogSubtitle":
       "Codex can ask again before opening this domain.",
-    "settings.computerUse.install.title": "Plugin",
+    "settings.computerUse.install.title": "Control",
     "settings.computerUse.install.button": "Install",
-    "settings.computerUse.install.empty": "Computer Use plugin unavailable",
+    "settings.computerUse.install.empty": "Computer Use plugins unavailable",
     "settings.computerUse.subtitle": "Manage how Codex uses other applications on your computer",
     "settings.computerUse.sounds.foregroundClicks": "Play sounds for foreground clicks",
     "settings.computerUse.sounds.foregroundAndBackgroundClicks":
@@ -4673,6 +4771,84 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.openSourceLicenses.missing": "No third-party notices were found.",
     "settings.section.account": "Account",
     "settings.section.connections": "Connections",
+    "remoteConnections.page.subheading": "Manage remote connections",
+    "settings.remoteConnections.refresh": "Refresh",
+    "settings.remoteConnections.refresh.error": "Unable to refresh remote connections",
+    "settings.remoteConnections.refresh.success": "Remote connections refreshed",
+    "settings.remoteConnections.add": "Add",
+    "settings.remoteConnections.deviceConnections.header.title": "Device connections",
+    "settings.remoteConnections.deviceConnections.loading": "Loading connections…",
+    "settings.remoteConnections.deviceConnections.empty": "No device connections found. Add a new connection to get started",
+    "settings.remoteConnections.deviceConnections.sshSubtitle": "SSH",
+    "settings.remoteConnections.table.actions.ariaLabel": "Actions",
+    "settings.remoteConnections.table.autoConnect.ariaLabel": "Auto-connect",
+    "settings.remoteConnections.connectToggle.error": "Unable to update auto-connect",
+    "settings.remoteConnections.createRemoteProject": "Create remote project",
+    "settings.remoteConnections.editConnection": "Edit",
+    "settings.remoteConnections.detailsMenu": "Details",
+    "settings.remoteConnections.restartConnection": "Restart",
+    "settings.remoteConnections.logout": "Logout",
+    "settings.remoteConnections.logout.error": "Unable to log out of remote connection",
+    "settings.remoteConnections.deleteConnection": "Delete",
+    "settings.remoteConnections.details.copySuccess": "Copied to clipboard",
+    "settings.remoteConnections.details.copyError": "Failed to copy value",
+    "settings.remoteConnections.details.alias": "Alias",
+    "settings.remoteConnections.details.host": "Host",
+    "settings.remoteConnections.details.port": "Port",
+    "settings.remoteConnections.details.identity": "Identity",
+    "settings.remoteConnections.details.version": "Version",
+    "settings.remoteConnections.loginRequiredCta": "Login required",
+    "settings.remoteConnections.state.connected": "Connected",
+    "settings.remoteConnections.state.connecting": "Connecting",
+    "settings.remoteConnections.state.disconnected": "Disconnected",
+    "settings.remoteConnections.state.error": "Error",
+    "settings.remoteConnections.state.loginRequired": "Login required",
+    "settings.remoteConnections.state.restarting": "Restarting",
+    "settings.remoteConnections.auth.title": "Login required",
+    "settings.remoteConnections.auth.description": "Authenticate this remote Codex connection to continue.",
+    "settings.remoteConnections.auth.error": "Sign-in failed: {message}",
+    "settings.remoteConnections.auth.closeIcon": "Close",
+    "settings.remoteConnections.auth.back": "Back",
+    "settings.remoteConnections.auth.close": "Close",
+    "settings.remoteConnections.dialog.addTitle": "Add SSH connection",
+    "settings.remoteConnections.dialog.editTitle": "Edit SSH connection",
+    "settings.remoteConnections.save.success": "Connection saved",
+    "settings.remoteConnections.save.error": "Unable to save connection",
+    "settings.remoteConnections.dialog.cancel": "Cancel",
+    "settings.remoteConnections.dialog.apply": "Save",
+    "settings.remoteConnections.dialog.authMode.ariaLabel": "SSH authentication method",
+    "settings.remoteConnections.dialog.authMode.none": "No Auth",
+    "settings.remoteConnections.dialog.authMode.identity": "Identity",
+    "settings.remoteConnections.dialog.field.displayName": "Display name",
+    "settings.remoteConnections.dialog.field.alias": "Alias",
+    "settings.remoteConnections.dialog.field.sshHost": "Hostname",
+    "settings.remoteConnections.dialog.field.sshHost.placeholder": "host.com or user@host.com",
+    "settings.remoteConnections.dialog.field.sshPort": "SSH port",
+    "settings.remoteConnections.dialog.field.optional": "(optional)",
+    "settings.remoteConnections.dialog.field.identity": "Identity file path",
+    "settings.remoteConnections.dialog.field.displayName.error": "Display name is required",
+    "settings.remoteConnections.dialog.field.displayName.duplicateError": "A connection with this display name already exists",
+    "settings.remoteConnections.dialog.field.sshHost.error": "Hostname is required",
+    "settings.remoteConnections.dialog.field.sshPort.intError": "SSH port must be an integer",
+    "settings.remoteConnections.dialog.field.sshPort.rangeError": "SSH port must be between 1 and 65535",
+    "settings.remoteConnections.dialog.field.identity.error": "Identity file path is required",
+    "settings.remoteConnections.delete.error": "Unable to delete connection",
+    "settings.remoteControlConnections.deleteDialog.title": "Delete {connectionName}?",
+    "settings.remoteControlConnections.deleteDialog.subtitle": "This removes the environment and its remote control threads from Codex. This cannot be undone.",
+    "settings.remoteControlConnections.deleteDialog.cancel": "Cancel",
+    "settings.remoteControlConnections.deleteDialog.confirm": "Delete",
+    "settings.remoteConnections.localHost.header.title": "Device settings",
+    "settings.remoteConnections.localHost.remoteControl.label": "Allow other devices to connect",
+    "settings.remoteConnections.localHost.remoteControl.error": "Unable to update remote control setting",
+    "settings.remoteConnections.localHost.keepLive.label": "Keep connection alive",
+    "settings.remoteConnections.remoteControlClients.header.title": "Devices that can control this {device}",
+    "settings.remoteConnections.remoteControlClients.loading": "Loading devices…",
+    "settings.remoteConnections.remoteControlClients.empty": "No devices can control this computer yet",
+    "settings.remoteConnections.remoteControlClients.authorized": "Authorized device",
+    "settings.remoteConnections.remoteControlClients.lastSeen": "Last connected {date}",
+    "settings.remoteConnections.remoteControlClients.deviceLabel.pc": "PC",
+    "settings.remoteConnections.remoteControlClients.deviceLabel.mac": "Mac",
+    "settings.remoteConnections.remoteControlClients.deviceLabel.computer": "computer",
     "settings.section.hooks-settings": "Hooks",
     "settings.hooks.subtitle": "Manage lifecycle hooks from config and enabled plugins <a>Learn more</a>",
     "settings.hooks.refresh": "Refresh",
@@ -5056,6 +5232,13 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "skills.appsPage.categoryDropdown.ariaLabel": "选择分类",
     "skills.appsPage.browseDropdown.ariaLabel": "选择插件市场",
     "skills.appsPage.marketplaceFilter.addMore": "添加更多",
+    "skills.appsPage.managePlugins": "管理插件",
+    "skills.appsPage.breadcrumb.root": "插件",
+    "skills.appsPage.breadcrumb.manage": "管理",
+    "skills.appsPage.create": "创建",
+    "skills.appsPage.createPlugin": "创建插件",
+    "skills.appsPage.createSkill": "创建技能",
+    "skills.appsPage.actionsMenu": "操作",
     "skills.page.heading": "技能",
     "skills.page.subheading": "赋予 Codex 更强大的能力。<a>了解更多</a>",
     "skills.page.loading": "正在加载技能…",
@@ -6239,6 +6422,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.section.usage": "用量",
     "settings.section.local-environments": "环境",
     "computerUse.label": "计算机使用",
+    "settings.section.computer-use": "计算机使用",
     "settings.section.data-controls": "已归档对话",
     "settings.section.keyboard-shortcuts": "键盘快捷键",
     "settings.section.git-settings": "Git",
@@ -6247,7 +6431,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.section.skills-settings": "技能",
     "settings.section.browser-use": "浏览器使用",
     "settings.section.mcp-settings": "MCP 服务器",
-    "settings.section.mcp-settings.subtitle": "连接外部工具和数据源。<a>了解更多。</a>",
+    "settings.section.mcp-settings.subtitle": "连接外部工具和数据源。",
+    "settings.section.mcp-settings.learnMore": "了解更多。",
     "settings.browserUse.title": "浏览器",
     "settings.browserUse.subtitle":
       "管理 Codex 的浏览器。可在<computerUseSettingsLink>计算机使用设置</computerUseSettingsLink>中设置 Google Chrome",
@@ -6285,7 +6470,8 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.browserUse.browser.annotationScreenshots.necessary.label": "仅在拖拽选择时",
     "settings.browserUse.browser.annotationScreenshots.saveError": "无法保存标注截图设置",
     "settings.browserUse.approval.label": "审批",
-    "settings.browserUse.approval.description": "选择 Codex 在打开网站前是否请求批准",
+    "settings.browserUse.approval.description":
+      "选择 Codex 在打开网站前是否请求批准。<learnMoreLink>了解更多</learnMoreLink>",
     "settings.browserUse.approval.alwaysAsk.label": "始终询问",
     "settings.browserUse.approval.alwaysAsk.description": "打开网站前先询问",
     "settings.browserUse.approval.neverAsk.label": "始终允许",
@@ -6294,7 +6480,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
       "此设置会给你的数据带来较高风险。",
     "settings.browserUse.approval.saveError": "无法保存审批设置",
     "settings.browserUse.historyApproval.label": "历史记录",
-    "settings.browserUse.historyApproval.description": "选择 Codex 在访问你的历史记录前是否需要批准",
+    "settings.browserUse.historyApproval.description": "选择 Codex 在访问浏览器历史记录前是否需要批准",
     "settings.browserUse.historyApproval.alwaysAsk.label": "始终询问",
     "settings.browserUse.historyApproval.alwaysAsk.description": "访问历史记录前先询问",
     "settings.browserUse.historyApproval.neverAsk.label": "始终允许",
@@ -6385,9 +6571,9 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.browserUse.deniedWebsites.saved": "已移除已屏蔽的域名",
     "settings.browserUse.deniedWebsites.removeDialogTitle": "要从已屏蔽的域名中移除“{origin}”吗？",
     "settings.browserUse.deniedWebsites.removeDialogSubtitle": "打开此域名前，Codex 可以再次询问。",
-    "settings.computerUse.install.title": "插件",
+    "settings.computerUse.install.title": "控制",
     "settings.computerUse.install.button": "安装",
-    "settings.computerUse.install.empty": "电脑操控插件不可用",
+    "settings.computerUse.install.empty": "Computer Use 插件不可用",
     "settings.computerUse.subtitle": "管理 Codex 如何使用您电脑上的其他应用程序",
     "settings.computerUse.sounds.foregroundClicks": "为前台点击播放音效",
     "settings.computerUse.sounds.foregroundAndBackgroundClicks": "为前台和后台点击播放音效",
@@ -7157,6 +7343,84 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.openSourceLicenses.missing": "找不到第三方声明。",
     "settings.section.account": "账户",
     "settings.section.connections": "连接",
+    "remoteConnections.page.subheading": "管理远程连接",
+    "settings.remoteConnections.refresh": "刷新",
+    "settings.remoteConnections.refresh.error": "无法刷新远程连接",
+    "settings.remoteConnections.refresh.success": "远程连接已刷新",
+    "settings.remoteConnections.add": "添加",
+    "settings.remoteConnections.deviceConnections.header.title": "设备连接",
+    "settings.remoteConnections.deviceConnections.loading": "正在加载连接…",
+    "settings.remoteConnections.deviceConnections.empty": "未找到设备连接。添加新连接即可开始使用",
+    "settings.remoteConnections.deviceConnections.sshSubtitle": "SSH",
+    "settings.remoteConnections.table.actions.ariaLabel": "操作",
+    "settings.remoteConnections.table.autoConnect.ariaLabel": "自动连接",
+    "settings.remoteConnections.connectToggle.error": "无法更新自动连接设置",
+    "settings.remoteConnections.createRemoteProject": "创建远程项目",
+    "settings.remoteConnections.editConnection": "编辑",
+    "settings.remoteConnections.detailsMenu": "详情",
+    "settings.remoteConnections.restartConnection": "重启",
+    "settings.remoteConnections.logout": "退出登录",
+    "settings.remoteConnections.logout.error": "无法退出远程连接登录",
+    "settings.remoteConnections.deleteConnection": "删除",
+    "settings.remoteConnections.details.copySuccess": "已复制到剪贴板",
+    "settings.remoteConnections.details.copyError": "复制失败",
+    "settings.remoteConnections.details.alias": "别名",
+    "settings.remoteConnections.details.host": "主机",
+    "settings.remoteConnections.details.port": "端口",
+    "settings.remoteConnections.details.identity": "身份文件",
+    "settings.remoteConnections.details.version": "版本",
+    "settings.remoteConnections.loginRequiredCta": "需要登录",
+    "settings.remoteConnections.state.connected": "已连接",
+    "settings.remoteConnections.state.connecting": "连接中",
+    "settings.remoteConnections.state.disconnected": "未连接",
+    "settings.remoteConnections.state.error": "错误",
+    "settings.remoteConnections.state.loginRequired": "需要登录",
+    "settings.remoteConnections.state.restarting": "重启中",
+    "settings.remoteConnections.auth.title": "需要登录",
+    "settings.remoteConnections.auth.description": "验证此远程 Codex 连接后即可继续。",
+    "settings.remoteConnections.auth.error": "登录失败：{message}",
+    "settings.remoteConnections.auth.closeIcon": "关闭",
+    "settings.remoteConnections.auth.back": "返回",
+    "settings.remoteConnections.auth.close": "关闭",
+    "settings.remoteConnections.dialog.addTitle": "添加 SSH 连接",
+    "settings.remoteConnections.dialog.editTitle": "编辑 SSH 连接",
+    "settings.remoteConnections.save.success": "连接已保存",
+    "settings.remoteConnections.save.error": "无法保存连接",
+    "settings.remoteConnections.dialog.cancel": "取消",
+    "settings.remoteConnections.dialog.apply": "保存",
+    "settings.remoteConnections.dialog.authMode.ariaLabel": "SSH 身份验证方式",
+    "settings.remoteConnections.dialog.authMode.none": "无认证",
+    "settings.remoteConnections.dialog.authMode.identity": "身份文件",
+    "settings.remoteConnections.dialog.field.displayName": "显示名称",
+    "settings.remoteConnections.dialog.field.alias": "别名",
+    "settings.remoteConnections.dialog.field.sshHost": "主机名",
+    "settings.remoteConnections.dialog.field.sshHost.placeholder": "host.com 或 user@host.com",
+    "settings.remoteConnections.dialog.field.sshPort": "SSH 端口",
+    "settings.remoteConnections.dialog.field.optional": "（可选）",
+    "settings.remoteConnections.dialog.field.identity": "身份文件路径",
+    "settings.remoteConnections.dialog.field.displayName.error": "显示名称为必填项",
+    "settings.remoteConnections.dialog.field.displayName.duplicateError": "已存在同名连接",
+    "settings.remoteConnections.dialog.field.sshHost.error": "主机名为必填项",
+    "settings.remoteConnections.dialog.field.sshPort.intError": "SSH 端口必须是整数",
+    "settings.remoteConnections.dialog.field.sshPort.rangeError": "SSH 端口必须介于 1 到 65535 之间",
+    "settings.remoteConnections.dialog.field.identity.error": "身份文件路径为必填项",
+    "settings.remoteConnections.delete.error": "无法删除连接",
+    "settings.remoteControlConnections.deleteDialog.title": "删除 {connectionName}？",
+    "settings.remoteControlConnections.deleteDialog.subtitle": "这将从 Codex 中移除该环境及其远程控制对话线程。此操作无法撤消。",
+    "settings.remoteControlConnections.deleteDialog.cancel": "取消",
+    "settings.remoteControlConnections.deleteDialog.confirm": "删除",
+    "settings.remoteConnections.localHost.header.title": "设备设置",
+    "settings.remoteConnections.localHost.remoteControl.label": "允许其他设备连接",
+    "settings.remoteConnections.localHost.remoteControl.error": "无法更新远程控制设置",
+    "settings.remoteConnections.localHost.keepLive.label": "保持连接活跃",
+    "settings.remoteConnections.remoteControlClients.header.title": "可控制此{device}的设备",
+    "settings.remoteConnections.remoteControlClients.loading": "正在加载设备…",
+    "settings.remoteConnections.remoteControlClients.empty": "还没有设备可以控制这台电脑",
+    "settings.remoteConnections.remoteControlClients.authorized": "已授权设备",
+    "settings.remoteConnections.remoteControlClients.lastSeen": "上次连接于 {date}",
+    "settings.remoteConnections.remoteControlClients.deviceLabel.pc": "PC",
+    "settings.remoteConnections.remoteControlClients.deviceLabel.mac": "Mac",
+    "settings.remoteConnections.remoteControlClients.deviceLabel.computer": "电脑",
     "settings.section.hooks-settings": "Hooks",
     "settings.hooks.subtitle": "管理来自配置和已启用插件的生命周期 Hooks <a>了解更多</a>",
     "settings.hooks.refresh": "刷新",

@@ -1,12 +1,16 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { CheckIcon } from "./AppShellIcons";
+import { CheckCircleFilledIcon } from "./AppShellIcons";
 import type { AppToast } from "./AppToastRegion";
 import { Button } from "./Button";
 import { SettingsContentLayout } from "./SettingsContentLayout";
+import { SettingsGroup } from "./SettingsGroup";
+import { SettingsRow } from "./SettingsRow";
+import { SettingsSectionTitle } from "./SettingsSectionTitle";
+import { SettingsSurface } from "./SettingsSurface";
 import { UsageAutoTopUpDialog } from "./UsageAutoTopUpDialog";
+import { useUsageSettingsAccess } from "../hooks/useUsageSettingsAccess";
 import { useI18n } from "../i18n/i18n";
 import type { MessageKey } from "../i18n/messages";
-import { isUsageSettingsPlanSupported, readAccountInfo } from "../services/auth";
 import {
   readAccountRateLimits,
   readUsageAutoTopUpSettings,
@@ -40,10 +44,10 @@ export function UsageSettings({
   onShowToast?: (toast: AppToast) => void;
 }) {
   const { locale, t } = useI18n();
-  const [isUsageSettingsVisible, setIsUsageSettingsVisible] = useState(false);
-  const [isUsageSettingsAccessLoading, setIsUsageSettingsAccessLoading] = useState(
-    isAuthLoading || authMethod === "chatgpt",
-  );
+  const { isUsageSettingsAccessLoading, isUsageSettingsVisible } = useUsageSettingsAccess({
+    authMethod,
+    isAuthLoading,
+  });
   const [rateLimitsResponse, setRateLimitsResponse] = useState<UsageRateLimitsResponse | null>(null);
   const [autoTopUpSettings, setAutoTopUpSettings] = useState<UsageAutoTopUpSettings | null>(null);
   const [isRateLimitsLoading, setIsRateLimitsLoading] = useState(false);
@@ -51,50 +55,6 @@ export function UsageSettings({
   const [rateLimitsLoadError, setRateLimitsLoadError] = useState<string | null>(null);
   const [autoTopUpLoadError, setAutoTopUpLoadError] = useState<string | null>(null);
   const [isAutoTopUpDialogOpen, setIsAutoTopUpDialogOpen] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (isAuthLoading) {
-      setIsUsageSettingsAccessLoading(true);
-      setIsUsageSettingsVisible(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    if (authMethod !== "chatgpt") {
-      setIsUsageSettingsAccessLoading(false);
-      setIsUsageSettingsVisible(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    setIsUsageSettingsAccessLoading(true);
-    setIsUsageSettingsVisible(false);
-    void readAccountInfo()
-      .then((response) => {
-        if (cancelled) {
-          return;
-        }
-        setIsUsageSettingsVisible(isUsageSettingsPlanSupported(response.plan));
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setIsUsageSettingsVisible(false);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsUsageSettingsAccessLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [authMethod, isAuthLoading]);
 
   useEffect(() => {
     const cancelled = { current: false };
@@ -135,7 +95,7 @@ export function UsageSettings({
 
   if (isUsageSettingsAccessLoading) {
     return (
-      <SettingsContentLayout title={t("settings.section.usage")}>
+      <SettingsContentLayout title={<SettingsSectionTitle slug="usage" />}>
         <UsageStateSection label={t("settings.usage.access.loading")} />
       </SettingsContentLayout>
     );
@@ -146,7 +106,7 @@ export function UsageSettings({
     (autoTopUpLoadError != null && autoTopUpSettings == null);
   if (hasInitialLoadError) {
     return (
-      <SettingsContentLayout title={t("settings.section.usage")}>
+      <SettingsContentLayout title={<SettingsSectionTitle slug="usage" />}>
         <UsageStateSection
           label={t("settings.usage.load.error")}
           control={
@@ -176,7 +136,7 @@ export function UsageSettings({
 
   if ((isRateLimitsLoading && rateLimitsResponse == null) || (isAutoTopUpLoading && autoTopUpSettings == null)) {
     return (
-      <SettingsContentLayout title={t("settings.section.usage")}>
+      <SettingsContentLayout title={<SettingsSectionTitle slug="usage" />}>
         <UsageStateSection label={t("settings.usage.load.loading")} />
       </SettingsContentLayout>
     );
@@ -194,7 +154,7 @@ export function UsageSettings({
 
   return (
     <>
-      <SettingsContentLayout title={t("settings.section.usage")}>
+      <SettingsContentLayout title={<SettingsSectionTitle slug="usage" />}>
         <UsageLimitSection
           locale={locale}
           rows={coreLimitRows}
@@ -317,12 +277,13 @@ function UsageLimitSection({
 
   return (
     <SettingsGroup>
-      <SettingsGroupHeader title={sectionTitle} />
-      <SettingsGroupContent>
+      <SettingsGroup.Header title={sectionTitle} />
+      <SettingsGroup.Content>
         <SettingsSurface>
           {rows.map((row) => (
             <SettingsRow
               key={row.key}
+              className="gap-6"
               label={
                 (row.windowDurationMins ?? 0) < 1440
                   ? t("settings.usage.limits.fiveHour.label")
@@ -341,7 +302,7 @@ function UsageLimitSection({
             />
           ))}
         </SettingsSurface>
-      </SettingsGroupContent>
+      </SettingsGroup.Content>
     </SettingsGroup>
   );
 }
@@ -361,8 +322,8 @@ function UsageCreditSection({
 
   return (
     <SettingsGroup>
-      <SettingsGroupHeader title={t("settings.usage.credit.title")} />
-      <SettingsGroupContent>
+      <SettingsGroup.Header title={t("settings.usage.credit.title")} />
+      <SettingsGroup.Content>
         <SettingsSurface>
           <SettingsRow
             label={formatCreditRemaining(creditDetails, locale, t)}
@@ -388,7 +349,7 @@ function UsageCreditSection({
             }
           />
         </SettingsSurface>
-      </SettingsGroupContent>
+      </SettingsGroup.Content>
     </SettingsGroup>
   );
 }
@@ -402,11 +363,11 @@ function UsageStateSection({
 }) {
   return (
     <SettingsGroup>
-      <SettingsGroupContent>
+      <SettingsGroup.Content>
         <SettingsSurface>
-          <SettingsRow label={label} control={control ?? null} />
+          <SettingsRow className="gap-6" label={label} control={control ?? null} />
         </SettingsSurface>
-      </SettingsGroupContent>
+      </SettingsGroup.Content>
     </SettingsGroup>
   );
 }
@@ -416,7 +377,7 @@ function AutoTopUpActiveBadge() {
 
   return (
     <span className="inline-flex items-center gap-1 text-sm text-token-charts-green">
-      <CheckIcon className="h-3.5 w-3.5 shrink-0" />
+      <CheckCircleFilledIcon className="icon-2xs shrink-0" />
       {t("settings.usage.autoTopUp.status.active")}
     </span>
   );
@@ -579,7 +540,7 @@ function renderUsageDocLink(template: string) {
           className="inline-flex items-center gap-1 text-token-text-secondary hover:text-token-text-primary"
           href={CREDIT_PRICING_URL}
           target="_blank"
-          rel="noreferrer"
+          rel="noopener noreferrer"
         >
           {linkLabel}
           <LinkExternalIcon className="size-4" />
@@ -590,59 +551,6 @@ function renderUsageDocLink(template: string) {
   }
 
   return template;
-}
-
-function SettingsGroup({ children }: { children: ReactNode }) {
-  return <section className="flex flex-col">{children}</section>;
-}
-
-function SettingsGroupHeader({ title }: { title?: ReactNode }) {
-  if (!title) {
-    return null;
-  }
-
-  return (
-    <div className="pb-3">
-      <div className="text-base font-medium text-token-text-primary">{title}</div>
-    </div>
-  );
-}
-
-function SettingsGroupContent({ children }: { children: ReactNode }) {
-  return <div className="flex flex-col gap-1.5">{children}</div>;
-}
-
-function SettingsSurface({ children }: { children: ReactNode }) {
-  return (
-    <div
-      className="border-token-border flex flex-col divide-y-[0.5px] divide-token-border rounded-lg border"
-      style={{
-        backgroundColor: "var(--color-background-panel, var(--color-token-bg-fog))",
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function SettingsRow({
-  control,
-  description,
-  label,
-}: {
-  control?: ReactNode;
-  description?: ReactNode;
-  label: ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 p-3 max-sm:flex-col max-sm:items-stretch">
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <div className="min-w-0 text-sm text-token-text-primary">{label}</div>
-        {description ? <div className="min-w-0 text-sm text-token-text-secondary">{description}</div> : null}
-      </div>
-      <div className="flex shrink-0 items-center gap-2">{control}</div>
-    </div>
-  );
 }
 
 function LinkExternalIcon({ className }: { className?: string }) {

@@ -10,6 +10,7 @@ import {
   type ChronicleSidecarProcessState,
 } from "../services/personalization";
 import { getGlobalState, setGlobalState } from "../services/settings";
+import { SettingsRow } from "./SettingsRow";
 import { ToggleSwitch } from "./ToggleSwitch";
 
 const CHRONICLE_DOCS_URL = "https://developers.openai.com/codex/memories/chronicle";
@@ -254,35 +255,20 @@ export function PersonalizationChronicleSettings({
 
   return (
     <>
-      <div className="space-y-2">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <div>{chronicleDisplayName}</div>
-            <div className="app-text-muted mt-1 text-[12px] leading-5">
-              <span className="flex min-w-0 flex-col gap-1.5">
-                <span>
-                  {renderInlineLinkMessage(
-                    t("settings.general.experimentalFeatures.chronicle.description"),
-                    CHRONICLE_DOCS_URL,
-                  )}
-                </span>
-                {checked ? (
-                  <span className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
-                    <ChronicleStatusText
-                      accessibilityStatus={permissions?.accessibility}
-                      isChecking={permissionsState.isLoading}
-                      processState={permissions?.chronicleSidecarProcessState}
-                      screenRecordingStatus={permissions?.screenRecording}
-                      onOpenSetup={() => {
-                        setEnableError(null);
-                        setIsSetupDialogOpen(true);
-                      }}
-                    />
-                  </span>
-                ) : null}
-              </span>
-            </div>
-          </div>
+      <SettingsRow
+        label={chronicleDisplayName}
+        description={
+          <ChronicleDescription
+            checked={checked}
+            permissions={permissions}
+            isChecking={permissionsState.isLoading}
+            onOpenSetup={() => {
+              setEnableError(null);
+              setIsSetupDialogOpen(true);
+            }}
+          />
+        }
+        control={
           <div title={chronicleToggleTooltip}>
             <span className={memoriesEnabled ? "inline-flex" : "inline-flex cursor-not-allowed"}>
               <ToggleSwitch
@@ -295,8 +281,8 @@ export function PersonalizationChronicleSettings({
               />
             </span>
           </div>
-        </div>
-      </div>
+        }
+      />
 
       {isConsentDialogOpen ? (
         <ChronicleConsentDialog
@@ -320,6 +306,42 @@ export function PersonalizationChronicleSettings({
         />
       ) : null}
     </>
+  );
+}
+
+function ChronicleDescription({
+  checked,
+  permissions,
+  isChecking,
+  onOpenSetup,
+}: {
+  checked: boolean;
+  permissions: ChroniclePermissionsResponse | null;
+  isChecking: boolean;
+  onOpenSetup: () => void;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <span className="flex min-w-0 flex-col gap-1.5">
+      <span>
+        {renderInlineLinkMessage(
+          t("settings.general.experimentalFeatures.chronicle.description"),
+          CHRONICLE_DOCS_URL,
+        )}
+      </span>
+      {checked ? (
+        <span className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+          <ChronicleStatusText
+            accessibilityStatus={permissions?.accessibility}
+            isChecking={isChecking}
+            processState={permissions?.chronicleSidecarProcessState}
+            screenRecordingStatus={permissions?.screenRecording}
+            onOpenSetup={onOpenSetup}
+          />
+        </span>
+      ) : null}
+    </span>
   );
 }
 

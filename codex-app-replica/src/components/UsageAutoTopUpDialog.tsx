@@ -183,149 +183,156 @@ export function UsageAutoTopUpDialog({
         className="w-full max-w-[536px] rounded-[18px] border border-token-border bg-token-main-surface-primary px-6 py-6 shadow-[0_16px_40px_rgba(0,0,0,0.22)]"
         onClick={(event) => event.stopPropagation()}
       >
-        <h2 id={dialogTitleId} className="text-[20px] font-medium leading-7 text-token-text-primary">
-          {t("settings.usage.autoTopUp.dialog.title")}
-        </h2>
-        <p id={dialogDescriptionId} className="sr-only">
-          {t("settings.usage.autoTopUp.dialog.description")}
-        </p>
-
-        <div className="mt-5 flex flex-col gap-5">
-          <AutoTopUpInputField
-            ariaLabel={t("settings.usage.autoTopUp.threshold.ariaLabel")}
-            disabled={isSaving}
-            error={thresholdErrorMessage}
-            fieldId={thresholdInputId}
-            footerContent={null}
-            footerTone="error"
-            helperText={t("settings.usage.autoTopUp.threshold.helper")}
-            label={t("settings.usage.autoTopUp.threshold.label")}
-            onBlur={() => setIsThresholdBlurred(true)}
-            onChange={(value) => {
-              clearImmediateFailureState(setHasImmediateTopUpFailure, setImmediateTopUpFailureAmount);
-              setDraftState((current) => ({ ...current, rechargeThreshold: value }));
-            }}
-            placeholder={DEFAULT_THRESHOLD}
-            value={draftState.rechargeThreshold}
-          />
-          <AutoTopUpInputField
-            ariaLabel={t("settings.usage.autoTopUp.target.ariaLabel")}
-            disabled={isSaving}
-            error={targetErrorMessage}
-            fieldId={targetInputId}
-            footerContent={renderTargetFooter({
-              estimate: targetEquivalentEstimate,
-              hasError: targetErrorMessage != null,
-              isPricingLoading,
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleSave({
+              draftState,
+              immediateTopUpEstimate,
+              onClose,
+              onSaved,
+              onShowToast,
+              saveIntent,
+              setHasImmediateTopUpFailure,
+              setImmediateTopUpFailureAmount,
+              setIsSavingEnableOrUpdate,
+              setSubmissionAttempts,
               t,
-            })}
-            footerTone={targetErrorMessage == null ? "secondary" : "error"}
-            helperText={t("settings.usage.autoTopUp.target.helper")}
-            label={t("settings.usage.autoTopUp.target.label")}
-            onBlur={() => setIsTargetBlurred(true)}
-            onChange={(value) => {
-              clearImmediateFailureState(setHasImmediateTopUpFailure, setImmediateTopUpFailureAmount);
-              setDraftState((current) => ({ ...current, rechargeTarget: value }));
-            }}
-            placeholder={DEFAULT_TARGET}
-            value={draftState.rechargeTarget}
-          />
-          <div className="text-sm leading-5 text-token-text-secondary">
+            });
+          }}
+        >
+          <h2 id={dialogTitleId} className="text-[20px] font-medium leading-7 text-token-text-primary">
+            {t("settings.usage.autoTopUp.dialog.title")}
+          </h2>
+          <p id={dialogDescriptionId} className="sr-only">
             {t("settings.usage.autoTopUp.dialog.description")}
-          </div>
-          {immediateTopUpEstimate != null && (saveIntent === "enable" || saveIntent === "update") ? (
-            <DialogBanner tone="info">
-              {renderStrongMessage(
-                saveIntent === "enable"
-                  ? t("settings.usage.autoTopUp.immediateTopUpNotice.enable", {
-                      amount: immediateTopUpEstimate.amount,
-                      creditCount: immediateTopUpEstimate.creditCount,
-                    })
-                  : t("settings.usage.autoTopUp.immediateTopUpNotice.update", {
-                      amount: immediateTopUpEstimate.amount,
-                      creditCount: immediateTopUpEstimate.creditCount,
-                    }),
-              )}
-            </DialogBanner>
-          ) : null}
-          {hasImmediateTopUpFailure ? (
-            <DialogBanner tone="error">
-              {renderImmediateTopUpFailureMessage({
-                isManagePaymentPending,
-                template:
-                  immediateTopUpFailureAmount == null
-                    ? t("settings.usage.autoTopUp.immediateTopUpFailure.generic")
-                    : t("settings.usage.autoTopUp.immediateTopUpFailure.amount", {
-                        amount: immediateTopUpFailureAmount,
-                      }),
-                onManagePayment: () =>
-                  void handleManagePayment(
-                    t("settings.usage.autoTopUp.managePayment.error"),
-                    onShowToast,
-                    setIsManagePaymentPending,
-                  ),
-              })}
-            </DialogBanner>
-          ) : null}
-        </div>
+          </p>
 
-        <div className="mt-7 flex items-center justify-end gap-2">
-          {serverState.isEnabled ? (
-            <Button
-              color="outline"
-              className="min-w-[88px] justify-center"
-              loading={isSavingDisable}
+          <div className="mt-5 flex flex-col gap-5">
+            <AutoTopUpInputField
+              ariaLabel={t("settings.usage.autoTopUp.threshold.ariaLabel")}
               disabled={isSaving}
-              onClick={() =>
-                void handleDisable({
-                  onClose,
-                  onSaved,
-                  onShowToast,
-                  setIsSavingDisable,
-                  t,
-                })
-              }
-            >
-              {t("settings.usage.autoTopUp.disable")}
-            </Button>
-          ) : (
-            <Button
-              color="outline"
-              className="min-w-[88px] justify-center"
+              error={thresholdErrorMessage}
+              fieldId={thresholdInputId}
+              footerContent={null}
+              footerTone="error"
+              helperText={t("settings.usage.autoTopUp.threshold.helper")}
+              label={t("settings.usage.autoTopUp.threshold.label")}
+              onBlur={() => setIsThresholdBlurred(true)}
+              onChange={(value) => {
+                clearImmediateFailureState(setHasImmediateTopUpFailure, setImmediateTopUpFailureAmount);
+                setDraftState((current) => ({ ...current, rechargeThreshold: value }));
+              }}
+              placeholder={DEFAULT_THRESHOLD}
+              value={draftState.rechargeThreshold}
+            />
+            <AutoTopUpInputField
+              ariaLabel={t("settings.usage.autoTopUp.target.ariaLabel")}
               disabled={isSaving}
-              onClick={onClose}
-            >
-              {t("settings.usage.autoTopUp.cancel")}
-            </Button>
-          )}
-          <Button
-            color="primary"
-            className="min-w-[88px] justify-center"
-            disabled={!isSaveEnabled}
-            loading={isSavingEnableOrUpdate}
-            onClick={() =>
-              void handleSave({
-                draftState,
-                immediateTopUpEstimate,
-                onClose,
-                onSaved,
-                onShowToast,
-                saveIntent,
-                setHasImmediateTopUpFailure,
-                setImmediateTopUpFailureAmount,
-                setIsSavingEnableOrUpdate,
-                setSubmissionAttempts,
+              error={targetErrorMessage}
+              fieldId={targetInputId}
+              footerContent={renderTargetFooter({
+                estimate: targetEquivalentEstimate,
+                hasError: targetErrorMessage != null,
+                isPricingLoading,
                 t,
-              })
-            }
-          >
+              })}
+              footerTone={targetErrorMessage == null ? "secondary" : "error"}
+              helperText={t("settings.usage.autoTopUp.target.helper")}
+              label={t("settings.usage.autoTopUp.target.label")}
+              onBlur={() => setIsTargetBlurred(true)}
+              onChange={(value) => {
+                clearImmediateFailureState(setHasImmediateTopUpFailure, setImmediateTopUpFailureAmount);
+                setDraftState((current) => ({ ...current, rechargeTarget: value }));
+              }}
+              placeholder={DEFAULT_TARGET}
+              value={draftState.rechargeTarget}
+            />
+            <div className="text-sm leading-5 text-token-text-secondary">
+              {t("settings.usage.autoTopUp.dialog.description")}
+            </div>
+            {immediateTopUpEstimate != null && (saveIntent === "enable" || saveIntent === "update") ? (
+              <DialogBanner tone="info">
+                {renderStrongMessage(
+                  saveIntent === "enable"
+                    ? t("settings.usage.autoTopUp.immediateTopUpNotice.enable", {
+                        amount: immediateTopUpEstimate.amount,
+                        creditCount: immediateTopUpEstimate.creditCount,
+                      })
+                    : t("settings.usage.autoTopUp.immediateTopUpNotice.update", {
+                        amount: immediateTopUpEstimate.amount,
+                        creditCount: immediateTopUpEstimate.creditCount,
+                      }),
+                )}
+              </DialogBanner>
+            ) : null}
+            {hasImmediateTopUpFailure ? (
+              <DialogBanner tone="error">
+                {renderImmediateTopUpFailureMessage({
+                  isManagePaymentPending,
+                  template:
+                    immediateTopUpFailureAmount == null
+                      ? t("settings.usage.autoTopUp.immediateTopUpFailure.generic")
+                      : t("settings.usage.autoTopUp.immediateTopUpFailure.amount", {
+                          amount: immediateTopUpFailureAmount,
+                        }),
+                  onManagePayment: () =>
+                    void handleManagePayment(
+                      t("settings.usage.autoTopUp.managePayment.error"),
+                      onShowToast,
+                      setIsManagePaymentPending,
+                    ),
+                })}
+              </DialogBanner>
+            ) : null}
+          </div>
+
+          <div className="mt-7 flex items-center justify-end gap-2">
             {serverState.isEnabled ? (
-              t("settings.usage.autoTopUp.save")
+              <Button
+                type="button"
+                color="outline"
+                className="min-w-[88px] justify-center"
+                loading={isSavingDisable}
+                disabled={isSaving}
+                onClick={() =>
+                  void handleDisable({
+                    onClose,
+                    onSaved,
+                    onShowToast,
+                    setIsSavingDisable,
+                    t,
+                  })
+                }
+              >
+                {t("settings.usage.autoTopUp.disable")}
+              </Button>
             ) : (
-              t("settings.usage.autoTopUp.enable")
+              <Button
+                type="button"
+                color="outline"
+                className="min-w-[88px] justify-center"
+                disabled={isSaving}
+                onClick={onClose}
+              >
+                {t("settings.usage.autoTopUp.cancel")}
+              </Button>
             )}
-          </Button>
-        </div>
+            <Button
+              type="submit"
+              color="primary"
+              className="min-w-[88px] justify-center"
+              disabled={!isSaveEnabled}
+              loading={isSavingEnableOrUpdate}
+            >
+              {serverState.isEnabled ? (
+                t("settings.usage.autoTopUp.save")
+              ) : (
+                t("settings.usage.autoTopUp.enable")
+              )}
+            </Button>
+          </div>
+        </form>
       </div>
     </div>
   );
@@ -473,14 +480,13 @@ async function handleSave({
     const response =
       saveIntent === "enable" ? await enableUsageAutoTopUp(params) : await updateUsageAutoTopUp(params);
 
-    onSaved(response);
-
     if (response.immediateTopUpStatus === "failed" || response.immediateTopUpStatus === "payment_declined") {
       setHasImmediateTopUpFailure(true);
       setImmediateTopUpFailureAmount(immediateTopUpEstimate?.amount ?? null);
       return;
     }
 
+    onSaved(response);
     onShowToast?.({
       tone: "success",
       message: t(
@@ -865,7 +871,7 @@ function renderImmediateTopUpFailureActionLine({
       <a
         href={CREDIT_PURCHASE_URL}
         target="_blank"
-        rel="noreferrer"
+        rel="noopener noreferrer"
         className="font-medium underline underline-offset-2"
       >
         {purchaseCreditLabel}

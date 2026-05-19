@@ -403,7 +403,7 @@ function HomeBanner({ onDismiss, onSetUp }: HomeBannerProps) {
   );
 }
 
-function SetupDialog({
+export function SetupDialog({
   computerUseEnabled,
   computerUseToggleDisabled,
   installModal,
@@ -778,7 +778,7 @@ function ConnectedSettingsRow({
   );
 }
 
-function DialogOverlay({ children }: { children: ReactNode }) {
+export function DialogOverlay({ children }: { children: ReactNode }) {
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
       {children}
@@ -786,7 +786,7 @@ function DialogOverlay({ children }: { children: ReactNode }) {
   );
 }
 
-function useConnectedSettings({
+export function useConnectedSettings({
   enabled,
   onShowToast,
 }: {

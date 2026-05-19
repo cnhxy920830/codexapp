@@ -1,10 +1,21 @@
 import { useEffect, useEffectEvent, useMemo, useState, type ReactNode } from "react";
-import { BackNavigationIcon, NewChatIcon } from "./AppShellIcons";
+import { BackNavigationIcon, TrashIcon } from "./AppShellIcons";
 import type { AppToast } from "./AppToastRegion";
 import { Button } from "./Button";
+import { FilteredPluginSettings, type FilteredPluginSettingsItemPresentation } from "./FilteredPluginSettings";
 import { SettingsContentLayout } from "./SettingsContentLayout";
 import { SettingsChoiceMenu } from "./SettingsChoiceMenu";
-import { ToggleSwitch } from "./ToggleSwitch";
+import { SettingsGroup } from "./SettingsGroup";
+import { SettingsRow } from "./SettingsRow";
+import { SettingsSectionTitle } from "./SettingsSectionTitle";
+import { SettingsSurface } from "./SettingsSurface";
+import {
+  BrowserUseDialog,
+  BrowserUseLoadingStateRow,
+  BrowserUseMessageStateRow,
+  BrowserUseOriginSection,
+  renderInlineTagButton,
+} from "./browserUseShared";
 import { useI18n } from "../i18n/i18n";
 import type { MessageKey } from "../i18n/messages";
 import { selectPluginCandidatesByName, type PluginCandidate } from "../lib/pluginSelectors";
@@ -42,9 +53,7 @@ import {
 } from "../services/queryCache";
 import { LOCAL_SETTINGS_HOST_ID } from "../services/settingsHosts";
 import {
-  installPlugin,
   readPluginsSnapshot,
-  setPluginEnabled,
   type PluginListSnapshot,
 } from "../services/plugins";
 
@@ -54,9 +63,9 @@ const PLUGIN_QUERY_KEY = ["plugins"] as const;
 const DEFAULT_SOUND_MODE: ComputerUseSoundModeValue = "foregroundClicks";
 const CHROME_EXTENSION_ID_RELATIVE_PATH = "scripts/extension-id.json";
 const CHROME_EXTENSION_INSTALL_URL_PREFIX = "https://chromewebstore.google.com/detail/codex/";
+const BROWSER_USE_LEARN_MORE_URL = "https://developers.openai.com/codex/app/computer-use";
 
 type ComputerUseSubpage = "google-chrome" | "overview";
-type DescriptionTone = "danger" | "success";
 type BrowserUseOriginResource = "downloads" | "origins" | "uploads";
 
 type BrowserUseOriginSectionConfig = {
@@ -175,11 +184,10 @@ export function ComputerUseSettings({
 }) {
   const { t } = useI18n();
   const isLocalHost = selectedHostId === LOCAL_SETTINGS_HOST_ID;
+  const effectiveWorkspaceRoot = isLocalHost ? workspaceRoot : null;
   const [currentSubpage, setCurrentSubpage] = useState<ComputerUseSubpage>(readCurrentSubpageFromLocation);
   const [pluginsSnapshot, setPluginsSnapshot] = useState<PluginListSnapshot | null>(null);
   const [pluginsLoading, setPluginsLoading] = useState(true);
-  const [pluginsError, setPluginsError] = useState<string | null>(null);
-  const [pendingPluginId, setPendingPluginId] = useState<string | null>(null);
   const [soundMode, setSoundMode] = useState<ComputerUseSoundModeValue>(DEFAULT_SOUND_MODE);
   const [soundModeLoading, setSoundModeLoading] = useState(false);
   const [soundModePending, setSoundModePending] = useState(false);
@@ -195,18 +203,15 @@ export function ComputerUseSettings({
   const loadPlugins = useEffectEvent(async () => {
     if (!isLocalHost) {
       setPluginsSnapshot(null);
-      setPluginsError(null);
       setPluginsLoading(false);
       return;
     }
 
     setPluginsLoading(true);
-    setPluginsError(null);
     try {
       setPluginsSnapshot(await readPluginsSnapshot(workspaceRoot, selectedHostId));
     } catch (error) {
       setPluginsSnapshot(null);
-      setPluginsError(error instanceof Error ? error.message : String(error));
     } finally {
       setPluginsLoading(false);
     }
@@ -426,48 +431,6 @@ export function ComputerUseSettings({
     [t],
   );
 
-  const handleInstallPlugin = async (candidate: PluginCandidate) => {
-    if (pendingPluginId != null || !isLocalHost) {
-      return;
-    }
-
-    setPendingPluginId(candidate.plugin.id);
-    try {
-      await installPlugin(buildPluginInstallParams(candidate, selectedHostId));
-      await loadPlugins();
-    } catch (error) {
-      onShowToast?.({
-        tone: "error",
-        message: error instanceof Error ? error.message : String(error),
-      });
-    } finally {
-      setPendingPluginId(null);
-    }
-  };
-
-  const handleTogglePlugin = async (candidate: PluginCandidate, enabled: boolean) => {
-    if (pendingPluginId != null || !isLocalHost) {
-      return;
-    }
-
-    setPendingPluginId(candidate.plugin.id);
-    try {
-      await setPluginEnabled({
-        hostId: selectedHostId,
-        pluginId: candidate.plugin.id,
-        enabled,
-      });
-      await loadPlugins();
-    } catch {
-      onShowToast?.({
-        tone: "error",
-        message: t("plugins.card.toggleError"),
-      });
-    } finally {
-      setPendingPluginId(null);
-    }
-  };
-
   const handleSoundModeChange = async (value: string) => {
     const nextValue = value as ComputerUseSoundModeValue;
     if (soundModePending || nextValue === soundMode) {
@@ -526,65 +489,58 @@ export function ComputerUseSettings({
         ? "success"
         : "danger";
 
-  const showControlEmptyState = !pluginsLoading && (pluginsError == null && !isComputerUseAvailable);
-
   return (
-    <SettingsContentLayout title={t("computerUse.label")} subtitle={t("settings.computerUse.subtitle")}>
+    <SettingsContentLayout
+      subtitle={t("settings.computerUse.subtitle")}
+      title={<SettingsSectionTitle slug="computer-use" />}
+    >
       <SettingsGroup>
-        <SettingsGroupHeader title={t("settings.computerUse.install.title")} />
-        <SettingsGroupContent>
-          <SettingsSurface>
-            {pluginsLoading ? (
-              <LoadingStateRow />
-            ) : pluginsError ? (
-              <MessageStateRow message={pluginsError} />
-            ) : showControlEmptyState ? (
-              <MessageStateRow message={t("settings.computerUse.install.empty")} />
-            ) : (
-              <>
-                {anyAppPlugin ? (
-                  <PluginControlRow
-                    candidate={anyAppPlugin}
-                    description={t("settings.computerUse.anyApp.description")}
-                    isPending={pendingPluginId === anyAppPlugin.plugin.id}
-                    onInstall={() => void handleInstallPlugin(anyAppPlugin)}
-                    onToggle={(enabled) => void handleTogglePlugin(anyAppPlugin, enabled)}
-                    title={t("settings.computerUse.anyApp.title")}
-                  />
-                ) : null}
-                {chromePlugin ? (
-                  <PluginControlRow
-                    action={
-                      chromePlugin.plugin.enabled ? (
-                        <Button
-                          color="secondary"
-                          size="toolbar"
-                          onClick={handleOpenChromeSettings}
-                        >
-                          {t("settings.computerUse.chrome.manage")}
-                        </Button>
-                      ) : null
-                    }
-                    candidate={chromePlugin}
-                    description={chromeDescription}
-                    descriptionTone={chromeDescriptionTone}
-                    isPending={pendingPluginId === chromePlugin.plugin.id}
-                    onInstall={() => void handleInstallPlugin(chromePlugin)}
-                    onToggle={(enabled) => void handleTogglePlugin(chromePlugin, enabled)}
-                    title={t("settings.computerUse.chrome.pluginTitle")}
-                  />
-                ) : null}
-              </>
-            )}
-          </SettingsSurface>
-        </SettingsGroupContent>
+        <SettingsGroup.Header title={t("settings.computerUse.install.title")} />
+        <SettingsGroup.Content>
+          <FilteredPluginSettings
+            emptyState={t("settings.computerUse.install.empty")}
+            getItemPresentation={(candidate) =>
+              getControlItemPresentation({
+                candidate,
+                chromeDescription,
+                chromeDescriptionTone,
+                isChromePluginReady,
+                onOpenChromeSettings: handleOpenChromeSettings,
+                t,
+              })
+            }
+            hostId={selectedHostId}
+            installButtonLabel={t("settings.computerUse.install.button")}
+            pluginNames={["computer-use", "chrome"]}
+            selectPlugins={(snapshot) => {
+              const plugins = [];
+              const computerUsePlugin =
+                isLocalHost ? selectPluginCandidatesByName(snapshot, ["computer-use"])[0] ?? null : null;
+              const selectedChromePlugin =
+                isLocalHost
+                  ? selectChromePlugin(selectPluginCandidatesByName(snapshot, ["chrome-internal", "chrome-dev", "chrome"]))
+                  : null;
+
+              if (computerUsePlugin != null) {
+                plugins.push(computerUsePlugin);
+              }
+
+              if (selectedChromePlugin != null) {
+                plugins.push(selectedChromePlugin);
+              }
+
+              return plugins;
+            }}
+            workspaceRoot={effectiveWorkspaceRoot}
+          />
+        </SettingsGroup.Content>
       </SettingsGroup>
 
       {isComputerUseAvailable ? (
         <>
           <SettingsGroup>
-            <SettingsGroupHeader title={t("settings.computerUse.allowedApps.title")} />
-            <SettingsGroupContent>
+            <SettingsGroup.Header title={t("settings.computerUse.allowedApps.title")} />
+            <SettingsGroup.Content>
               <SettingsSurface>
                 <ComputerUseAllowedAppsList
                   approvalsState={approvalsState}
@@ -594,22 +550,19 @@ export function ComputerUseSettings({
                   setApprovalsState={setApprovalsState}
                 />
               </SettingsSurface>
-            </SettingsGroupContent>
+            </SettingsGroup.Content>
           </SettingsGroup>
 
           <SettingsGroup>
-            <SettingsGroupContent>
-              <SettingsSurface>
-                <div className="flex justify-end p-3 max-sm:justify-stretch">
-                  <SettingsChoiceMenu
-                    disabled={soundModeLoading || soundModePending}
-                    onChange={(value) => void handleSoundModeChange(value)}
-                    options={soundOptions}
-                    value={soundMode}
-                  />
-                </div>
-              </SettingsSurface>
-            </SettingsGroupContent>
+            <SettingsGroup.Content>
+              <SoundModeSelector
+                isLoading={soundModeLoading}
+                isPending={soundModePending}
+                onChange={(value) => void handleSoundModeChange(value)}
+                options={soundOptions}
+                value={soundMode}
+              />
+            </SettingsGroup.Content>
           </SettingsGroup>
         </>
       ) : null}
@@ -671,6 +624,10 @@ function GoogleChromeComputerUseSettingsPage({
         value: "neverAsk",
         label: t("settings.browserUse.approval.neverAsk.label"),
         description: t("settings.browserUse.approval.neverAsk.description"),
+        warning: t("settings.browserUse.approval.neverAsk.elevatedRiskDisclaimer"),
+        warningIcon: (
+          <ElevatedRiskIcon className="icon-xs shrink-0 text-token-editor-warning-foreground" />
+        ),
       },
     ],
     [t],
@@ -692,7 +649,7 @@ function GoogleChromeComputerUseSettingsPage({
     [t],
   );
 
-  const fileTransferApprovalOptions = useMemo(
+  const downloadApprovalOptions = useMemo(
     () => [
       {
         value: "alwaysAsk",
@@ -862,13 +819,11 @@ function GoogleChromeComputerUseSettingsPage({
       <SettingsContentLayout
         action={headerAction}
         backSlot={<ComputerUseChromeBreadcrumb onBack={onBack} />}
-        subtitle={<StatusBadge installed={chromeExtensionInstalled} />}
-        subtitleClassName="flex"
         title={t("settings.computerUse.chrome.title")}
       >
-        <SettingsSurface>
-          <LoadingStateRow />
-        </SettingsSurface>
+        <div className="flex min-h-[120px] items-center justify-center text-token-text-secondary">
+          <BrowserUseLoadingStateRow message={null} />
+        </div>
       </SettingsContentLayout>
     );
   }
@@ -885,17 +840,18 @@ function GoogleChromeComputerUseSettingsPage({
     >
       {loadError ? (
         <SettingsSurface>
-          <MessageStateRow message={loadError} />
+          <BrowserUseMessageStateRow message={loadError} />
         </SettingsSurface>
       ) : (
         <>
           <SettingsGroup>
-            <SettingsGroupHeader title={t("settings.computerUse.chrome.permissions.title")} />
-            <SettingsGroupContent>
+            <SettingsGroup.Header title={t("settings.computerUse.chrome.permissions.title")} />
+            <SettingsGroup.Content>
               <SettingsSurface>
-                <SettingsValueRow
+                <SettingsRow
                   control={
                     <SettingsChoiceMenu
+                      className="w-[152px]"
                       disabled={controlsDisabled}
                       onChange={(value) => {
                         if (value === approvalMode) {
@@ -914,12 +870,20 @@ function GoogleChromeComputerUseSettingsPage({
                       value={approvalMode}
                     />
                   }
-                  description={t("settings.browserUse.approval.description")}
+                  description={renderInlineTagButton(
+                    t("settings.browserUse.approval.description"),
+                    "learnMoreLink",
+                    () => {
+                      void openInBrowser(BROWSER_USE_LEARN_MORE_URL);
+                    },
+                    "text-token-text-link-foreground hover:underline",
+                  )}
                   label={t("settings.browserUse.approval.label")}
                 />
-                <SettingsValueRow
+                <SettingsRow
                   control={
                     <SettingsChoiceMenu
+                      className="w-[152px]"
                       disabled={controlsDisabled}
                       onChange={(value) => {
                         if (value === historyApprovalMode) {
@@ -941,9 +905,10 @@ function GoogleChromeComputerUseSettingsPage({
                   description={t("settings.browserUse.historyApproval.description")}
                   label={t("settings.browserUse.historyApproval.label")}
                 />
-                <SettingsValueRow
+                <SettingsRow
                   control={
                     <SettingsChoiceMenu
+                      className="w-[152px]"
                       disabled={controlsDisabled}
                       onChange={(value) => {
                         if (value === downloadApprovalMode) {
@@ -959,16 +924,17 @@ function GoogleChromeComputerUseSettingsPage({
                           "settings.browserUse.downloadApproval.saveError",
                         );
                       }}
-                      options={fileTransferApprovalOptions}
+                      options={downloadApprovalOptions}
                       value={downloadApprovalMode}
                     />
                   }
                   description={t("settings.browserUse.downloadApproval.description")}
                   label={t("settings.browserUse.downloadApproval.label")}
                 />
-                <SettingsValueRow
+                <SettingsRow
                   control={
                     <SettingsChoiceMenu
+                      className="w-[152px]"
                       disabled={controlsDisabled}
                       onChange={(value) => {
                         if (value === uploadApprovalMode) {
@@ -992,13 +958,13 @@ function GoogleChromeComputerUseSettingsPage({
                   label={t("settings.browserUse.uploadApproval.label")}
                 />
               </SettingsSurface>
-            </SettingsGroupContent>
+            </SettingsGroup.Content>
           </SettingsGroup>
 
           {CHROME_ORIGIN_SECTION_CONFIGS.map((config) => (
-            <OriginSection
+            <BrowserUseOriginSection
               key={`${config.resource}:${config.kind}`}
-              config={config}
+              emptyTitleKey={config.emptyTitleKey}
               isDisabled={controlsDisabled}
               isLoading={settingsLoading}
               onRequestAdd={() => {
@@ -1007,13 +973,15 @@ function GoogleChromeComputerUseSettingsPage({
               }}
               onRequestRemove={(origin) => setRemoveOriginState({ config, origin })}
               origins={getOriginsForConfig(settingsState, config)}
+              subtitleKey={config.subtitleKey}
+              titleKey={config.titleKey}
             />
           ))}
         </>
       )}
 
       {addOriginConfig ? (
-        <DialogShell
+        <BrowserUseDialog
           confirmLabel={t("settings.browserUse.domains.addDialogConfirm")}
           disableConfirm={originDraft.trim().length === 0 || pendingAction != null}
           onClose={() => {
@@ -1021,91 +989,78 @@ function GoogleChromeComputerUseSettingsPage({
             setAddOriginConfig(null);
           }}
           onConfirm={() => void handleAddOrigin(addOriginConfig)}
+          subtitle={t(addOriginConfig.addDialogSubtitleKey)}
           title={t(addOriginConfig.addDialogTitleKey)}
+          footer={
+            <>
+              <Button
+                color="outline"
+                disabled={pendingAction != null}
+                type="button"
+                onClick={() => {
+                  setOriginDraft("");
+                  setAddOriginConfig(null);
+                }}
+              >
+                {t("settings.browserUse.domains.addDialogCancel")}
+              </Button>
+              <Button
+                disabled={originDraft.trim().length === 0 || pendingAction != null}
+                loading={pendingAction != null}
+                type="submit"
+              >
+                {t("settings.browserUse.domains.addDialogConfirm")}
+              </Button>
+            </>
+          }
         >
-          <div className="app-text-muted text-[13px] leading-6">{t(addOriginConfig.addDialogSubtitleKey)}</div>
-          <input
-            autoFocus
-            aria-label={t("settings.browserUse.domains.addDialogAriaLabel")}
-            className="app-control app-text-input mt-4 w-full rounded-[12px] px-3 py-2 text-[13px] outline-none"
-            onChange={(event) => setOriginDraft(event.target.value)}
-            placeholder={t("settings.browserUse.domains.addDialogPlaceholder")}
-            value={originDraft}
-          />
-        </DialogShell>
+          <div className="flex flex-col gap-2">
+            <input
+              autoFocus
+              aria-label={t("settings.browserUse.domains.addDialogAriaLabel")}
+              className="rounded-xl border border-token-border px-3 py-2 text-base text-token-input-foreground shadow-sm outline-none placeholder:text-token-input-placeholder-foreground"
+              onChange={(event) => setOriginDraft(event.currentTarget.value)}
+              placeholder={t("settings.browserUse.domains.addDialogPlaceholder")}
+              value={originDraft}
+            />
+          </div>
+        </BrowserUseDialog>
       ) : null}
 
       {removeOriginState ? (
-        <DialogShell
+        <BrowserUseDialog
           confirmLabel={t("settings.browserUse.origins.removeDialogConfirm")}
           confirmTone="danger"
           disableConfirm={pendingAction != null}
           onClose={() => setRemoveOriginState(null)}
           onConfirm={() => void handleRemoveOrigin(removeOriginState)}
+          subtitle={t(removeOriginState.config.removeDialogSubtitleKey)}
           title={t(removeOriginState.config.removeDialogTitleKey, { origin: removeOriginState.origin })}
+          footer={
+            <>
+              <Button
+                color="ghost"
+                disabled={pendingAction != null}
+                type="button"
+                onClick={() => setRemoveOriginState(null)}
+              >
+                {t("settings.browserUse.origins.removeDialogCancel")}
+              </Button>
+              <Button
+                color="danger"
+                loading={pendingAction != null}
+                type="button"
+                onClick={() => void handleRemoveOrigin(removeOriginState)}
+              >
+                {t("settings.browserUse.origins.removeDialogConfirm")}
+              </Button>
+            </>
+          }
         >
-          <div className="app-text-muted text-[13px] leading-6">
-            {t(removeOriginState.config.removeDialogSubtitleKey)}
-          </div>
-        </DialogShell>
+          {null}
+        </BrowserUseDialog>
       ) : null}
     </SettingsContentLayout>
-  );
-}
-
-function PluginControlRow({
-  action,
-  candidate,
-  description,
-  descriptionTone,
-  isPending,
-  onInstall,
-  onToggle,
-  title,
-}: {
-  action?: ReactNode;
-  candidate: PluginCandidate;
-  description: string;
-  descriptionTone?: DescriptionTone;
-  isPending: boolean;
-  onInstall: () => void;
-  onToggle: (enabled: boolean) => void;
-  title: string;
-}) {
-  const { t } = useI18n();
-  const isInstalled = candidate.plugin.installed;
-  const isEnabled = candidate.plugin.enabled;
-
-  return (
-    <SettingsValueRow
-      control={
-        <div className="flex items-center gap-2">
-          {action}
-          {isInstalled ? (
-            <ToggleSwitch
-              ariaLabel={t("settings.pluginControls.toggleAria", { pluginName: title })}
-              checked={isEnabled}
-              disabled={isPending}
-              onChange={onToggle}
-            />
-          ) : (
-            <Button
-              color="secondary"
-              size="toolbar"
-              title={t("settings.pluginControls.installTooltip", { pluginName: title })}
-              disabled={isPending}
-              loading={isPending}
-              onClick={onInstall}
-            >
-              {t("settings.computerUse.install.button")}
-            </Button>
-          )}
-        </div>
-      }
-      description={description}
-      descriptionTone={descriptionTone}
-      label={title}
-    />
   );
 }
 
@@ -1159,14 +1114,18 @@ function ComputerUseAllowedAppsList({
   return (
     <>
       {isLoading ? (
-        <LoadingStateRow />
+        <BrowserUseLoadingStateRow message={t("settings.computerUse.allowedApps.loading")} />
       ) : hasLoadError ? (
-        <MessageStateRow message={t("settings.computerUse.allowedApps.loadError")} />
+        <BrowserUseMessageStateRow message={t("settings.computerUse.allowedApps.loadError")} />
       ) : approvedApps.length === 0 ? (
-        <MessageStateRow message={t("settings.computerUse.allowedApps.emptyTitle")} />
+        <SettingsRow
+          className="justify-center"
+          control={null}
+          label={<span className="text-token-text-secondary">{t("settings.computerUse.allowedApps.emptyTitle")}</span>}
+        />
       ) : (
         approvedApps.map((approvedApp) => (
-          <SettingsValueRow
+          <ComputerUseSettingsRow
             key={approvedApp.bundleIdentifier}
             control={
               <Button
@@ -1192,93 +1151,43 @@ function ComputerUseAllowedAppsList({
       )}
 
       {removeDialogApp ? (
-        <DialogShell
+        <BrowserUseDialog
           confirmLabel={t("settings.computerUse.allowedApps.removeDialogConfirm")}
           confirmTone="danger"
           disableConfirm={pendingBundleIdentifier != null}
           onClose={() => setRemoveDialogApp(null)}
           onConfirm={() => void handleRemoveApproval()}
+          subtitle={t("settings.computerUse.allowedApps.removeDialogSubtitle", {
+            displayName: removeDialogApp.displayName,
+          })}
           title={t("settings.computerUse.allowedApps.removeDialogTitle", {
             displayName: removeDialogApp.displayName,
           })}
+          footer={
+            <>
+              <Button
+                color="ghost"
+                disabled={pendingBundleIdentifier != null}
+                type="button"
+                onClick={() => setRemoveDialogApp(null)}
+              >
+                {t("settings.computerUse.allowedApps.removeDialogCancel")}
+              </Button>
+              <Button
+                color="danger"
+                loading={pendingBundleIdentifier != null}
+                type="button"
+                onClick={() => void handleRemoveApproval()}
+              >
+                {t("settings.computerUse.allowedApps.removeDialogConfirm")}
+              </Button>
+            </>
+          }
         >
-          <div className="app-text-muted text-[13px] leading-6">
-            {t("settings.computerUse.allowedApps.removeDialogSubtitle", {
-              displayName: removeDialogApp.displayName,
-            })}
-          </div>
-        </DialogShell>
+          {null}
+        </BrowserUseDialog>
       ) : null}
     </>
-  );
-}
-
-function OriginSection({
-  config,
-  isDisabled,
-  isLoading,
-  onRequestAdd,
-  onRequestRemove,
-  origins,
-}: {
-  config: BrowserUseOriginSectionConfig;
-  isDisabled: boolean;
-  isLoading: boolean;
-  onRequestAdd: () => void;
-  onRequestRemove: (origin: string) => void;
-  origins: string[];
-}) {
-  const { t } = useI18n();
-
-  return (
-    <SettingsGroup>
-      <SettingsGroupContent>
-        <SettingsSurface>
-          <div className="flex items-start justify-between gap-4 p-3 max-sm:flex-col max-sm:items-stretch">
-            <div className="min-w-0 flex-1">
-              <div className="text-sm text-token-text-primary">{t(config.titleKey)}</div>
-              <div className="mt-1 text-sm leading-6 text-token-text-secondary">{t(config.subtitleKey)}</div>
-            </div>
-            <Button
-              className="shrink-0"
-              color="secondary"
-              disabled={isDisabled}
-              size="toolbar"
-              onClick={onRequestAdd}
-            >
-              <NewChatIcon className="icon-2xs" />
-              <span>{t("settings.browserUse.domains.add")}</span>
-            </Button>
-          </div>
-
-          {isLoading ? (
-            <LoadingStateRow />
-          ) : origins.length === 0 ? (
-            <MessageStateRow message={t(config.emptyTitleKey)} />
-          ) : (
-            origins.map((origin) => (
-              <SettingsValueRow
-                key={`${config.resource}:${config.kind}:${origin}`}
-                control={
-                  <Button
-                    aria-label={t("settings.browserUse.origins.removeAriaLabel", { origin })}
-                    color="ghost"
-                    disabled={isDisabled}
-                    size="icon"
-                    title={t("settings.browserUse.origins.removeAriaLabel", { origin })}
-                    uniform
-                    onClick={() => onRequestRemove(origin)}
-                  >
-                    <TrashIcon className="icon-2xs" />
-                  </Button>
-                }
-                label={origin}
-              />
-            ))
-          )}
-        </SettingsSurface>
-      </SettingsGroupContent>
-    </SettingsGroup>
   );
 }
 
@@ -1293,7 +1202,7 @@ function ComputerUseChromeBreadcrumb({ onBack }: { onBack: () => void }) {
       </Button>
       <div className="flex items-center gap-1">
         <span>{t("settings.computerUse.breadcrumb.computerUse")}</span>
-        <span className="text-token-text-secondary">{">"}</span>
+        <ChevronRightIcon className="icon-xs text-token-text-secondary" />
         <span className="text-token-text-primary">{t("settings.computerUse.chrome.breadcrumb.googleChrome")}</span>
       </div>
     </nav>
@@ -1323,41 +1232,7 @@ function StatusBadge({ installed }: { installed: boolean }) {
   );
 }
 
-function SettingsGroup({ children }: { children: ReactNode }) {
-  return <section className="flex flex-col">{children}</section>;
-}
-
-function SettingsGroupHeader({ title }: { title: ReactNode }) {
-  return <div className="pb-2 text-sm font-medium text-token-text-primary">{title}</div>;
-}
-
-function SettingsGroupContent({ children }: { children: ReactNode }) {
-  return <div className="flex flex-col gap-1.5">{children}</div>;
-}
-
-function SettingsSurface({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <div
-      className={joinClasses(
-        "border-token-border flex flex-col divide-y-[0.5px] divide-token-border rounded-lg border",
-        className,
-      )}
-      style={{
-        backgroundColor: "var(--color-background-panel, var(--color-token-bg-fog))",
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function SettingsValueRow({
+function ComputerUseSettingsRow({
   control,
   description,
   descriptionTone,
@@ -1366,7 +1241,7 @@ function SettingsValueRow({
 }: {
   control?: ReactNode;
   description?: ReactNode;
-  descriptionTone?: DescriptionTone;
+  descriptionTone?: "danger" | "success";
   icon?: ReactNode;
   label: ReactNode;
 }) {
@@ -1397,64 +1272,6 @@ function SettingsValueRow({
   );
 }
 
-function LoadingStateRow() {
-  return (
-    <div className="flex items-center gap-2 p-4 text-sm text-token-text-secondary">
-      <div className="h-4 w-4 animate-spin rounded-full border-2 border-[var(--app-shell-subtle)] border-t-transparent" />
-    </div>
-  );
-}
-
-function MessageStateRow({ message }: { message: ReactNode }) {
-  return <div className="p-4 text-sm text-token-text-secondary">{message}</div>;
-}
-
-function DialogShell({
-  children,
-  confirmLabel,
-  confirmTone,
-  disableConfirm,
-  onClose,
-  onConfirm,
-  title,
-}: {
-  children: ReactNode;
-  confirmLabel: string;
-  confirmTone?: "danger";
-  disableConfirm: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  title: string;
-}) {
-  const { t } = useI18n();
-
-  return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
-      <div className="app-card w-full max-w-[420px] rounded-[18px] px-5 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
-        <div className="app-title text-[15px] font-medium">{title}</div>
-        <div className="mt-2">{children}</div>
-        <div className="mt-5 flex items-center justify-end gap-2">
-          <Button color="secondary" size="toolbar" onClick={onClose}>
-            {t(
-              confirmTone === "danger"
-                ? "settings.browserUse.origins.removeDialogCancel"
-                : "settings.browserUse.domains.addDialogCancel",
-            )}
-          </Button>
-          <Button
-            color={confirmTone === "danger" ? "danger" : "secondary"}
-            disabled={disableConfirm}
-            size="toolbar"
-            onClick={onConfirm}
-          >
-            {confirmLabel}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function ComputerUseApprovedAppIcon({
   approvedApp,
 }: {
@@ -1478,10 +1295,72 @@ function ComputerUseApprovedAppIcon({
   );
 }
 
-function TrashIcon({ className }: { className?: string }) {
+function ElevatedRiskIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-      <path d="M10.6299 1.33496C12.0335 1.33496 13.2695 2.25996 13.666 3.60645L13.8809 4.33496H17L17.1338 4.34863C17.4369 4.41057 17.665 4.67858 17.665 5C17.665 5.32142 17.4369 5.58943 17.1338 5.65137L17 5.66504H16.6543L15.8574 14.9912C15.7177 16.629 14.3478 17.8877 12.7041 17.8877H7.2959C5.75502 17.8877 4.45439 16.7815 4.18262 15.2939L4.14258 14.9912L3.34668 5.66504H3C2.63273 5.66504 2.33496 5.36727 2.33496 5C2.33496 4.63273 2.63273 4.33496 3 4.33496H6.11914L6.33398 3.60645L6.41797 3.3584C6.88565 2.14747 8.05427 1.33496 9.37012 1.33496H10.6299ZM5.46777 14.8779L5.49121 15.0537C5.64881 15.9161 6.40256 16.5576 7.2959 16.5576H12.7041C13.6571 16.5576 14.4512 15.8275 14.5322 14.8779L15.3193 5.66504H4.68164L5.46777 14.8779ZM7.66797 12.8271V8.66016C7.66797 8.29299 7.96588 7.99528 8.33301 7.99512C8.70028 7.99512 8.99805 8.29289 8.99805 8.66016V12.8271C8.99779 13.1942 8.70012 13.4912 8.33301 13.4912C7.96604 13.491 7.66823 13.1941 7.66797 12.8271ZM11.002 12.8271V8.66016C11.002 8.29289 11.2997 7.99512 11.667 7.99512C12.0341 7.9953 12.332 8.293 12.332 8.66016V12.8271C12.3318 13.1941 12.0339 13.491 11.667 13.4912C11.2999 13.4912 11.0022 13.1942 11.002 12.8271ZM9.37012 2.66504C8.60726 2.66504 7.92938 3.13589 7.6582 3.83789L7.60938 3.98145L7.50586 4.33496H12.4941L12.3906 3.98145C12.1607 3.20084 11.4437 2.66504 10.6299 2.66504H9.37012Z" />
+    <svg
+      className={className}
+      width="20"
+      height="20"
+      viewBox="0 0 20 20"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+    >
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M9.06543 1.95123C9.66107 1.69076 10.3389 1.69071 10.9346 1.95123L15.9346 4.13873C16.7832 4.51008 17.3311 5.34917 17.3311 6.27545V10.5528C17.3309 14.6017 14.0489 17.8847 10 17.8848C5.95108 17.8846 2.66813 14.6017 2.66797 10.5528V6.27545C2.66797 5.34924 3.21695 4.51012 4.06543 4.13873L9.06543 1.95123ZM10.4014 3.16998C10.1456 3.05814 9.85444 3.05819 9.59863 3.16998L4.59863 5.35748C4.23427 5.51708 3.99805 5.87764 3.99805 6.27545V10.5528C3.99821 13.8671 6.68563 16.5546 10 16.5547C13.3144 16.5546 16.0008 13.8671 16.001 10.5528V6.27545C16.001 5.87756 15.7658 5.51703 15.4014 5.35748L10.4014 3.16998Z"
+        fill="currentColor"
+      />
+      <path
+        d="M10.8883 13.1116C10.8883 13.6025 10.4903 14.0005 9.99936 14.0005C9.50844 14.0005 9.11047 13.6025 9.11047 13.1116C9.11047 12.6207 9.50844 12.2227 9.99936 12.2227C10.4903 12.2227 10.8883 12.6207 10.8883 13.1116Z"
+        fill="currentColor"
+      />
+      <path
+        d="M10.5169 10.8949L11.1135 7.31519C11.2283 6.62672 10.6974 6 9.99941 6C9.30145 6 8.77053 6.62672 8.88528 7.31519L9.4819 10.8949C9.52406 11.1479 9.74294 11.3333 9.99941 11.3333C10.2559 11.3333 10.4748 11.1479 10.5169 10.8949Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function SoundModeSelector({
+  isLoading,
+  isPending,
+  onChange,
+  options,
+  value,
+}: {
+  isLoading: boolean;
+  isPending: boolean;
+  onChange: (value: string) => void;
+  options: Array<{ label: string; value: string }>;
+  value: string;
+}) {
+  const selectedOption = options.find((option) => option.value === value) ?? options[0];
+
+  if (selectedOption == null) {
+    return null;
+  }
+
+  return (
+    <SettingsChoiceMenu
+      className="w-max max-w-full"
+      disabled={isLoading || isPending}
+      onChange={onChange}
+      options={options}
+      value={value}
+    />
+  );
+}
+
+function ChevronRightIcon({ className }: { className?: string }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" className={className}>
+      <path
+        d="M7.52925 3.7793C7.75652 3.55203 8.10803 3.52383 8.36616 3.69434L8.47065 3.7793L14.2207 9.5293C14.4804 9.789 14.4804 10.211 14.2207 10.4707L8.47065 16.2207C8.21095 16.4804 7.78895 16.4804 7.52925 16.2207C7.26955 15.961 7.26955 15.539 7.52925 15.2793L12.8085 10L7.52925 4.7207L7.44429 4.61621C7.27378 4.35808 7.30198 4.00657 7.52925 3.7793Z"
+        fill="currentColor"
+      />
     </svg>
   );
 }
@@ -1505,12 +1384,6 @@ function updateComputerUsePath(path: string, mode: "push" | "replace") {
   }
 
   window.history.replaceState(window.history.state, "", path);
-}
-
-function buildPluginInstallParams(candidate: PluginCandidate, hostId: string) {
-  return candidate.marketplacePath == null
-    ? { hostId, pluginName: candidate.plugin.name }
-    : { hostId, marketplacePath: candidate.marketplacePath, pluginName: candidate.plugin.name };
 }
 
 function isComputerUseSoundModeValue(value: unknown): value is ComputerUseSoundModeValue {
@@ -1583,4 +1456,49 @@ function buildNestedPath(rootPath: string, relativePath: string) {
 
 function joinClasses(...values: Array<string | false | null | undefined>) {
   return values.filter((value): value is string => Boolean(value)).join(" ");
+}
+
+function getControlItemPresentation({
+  candidate,
+  chromeDescription,
+  chromeDescriptionTone,
+  isChromePluginReady,
+  onOpenChromeSettings,
+  t,
+}: {
+  candidate: PluginCandidate;
+  chromeDescription: string;
+  chromeDescriptionTone?: "danger" | "success";
+  isChromePluginReady: boolean;
+  onOpenChromeSettings: () => void;
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+}): FilteredPluginSettingsItemPresentation {
+  if (candidate.plugin.name === "computer-use") {
+    return {
+      controlLabel: t("settings.computerUse.anyApp.title"),
+      title: t("settings.computerUse.anyApp.title"),
+      description: t("settings.computerUse.anyApp.description"),
+    };
+  }
+
+  return {
+    action: isChromePluginReady ? (
+      <Button color="secondary" size="toolbar" onClick={onOpenChromeSettings}>
+        {t("settings.computerUse.chrome.manage")}
+      </Button>
+    ) : null,
+    controlLabel: t("settings.computerUse.chrome.pluginTitle"),
+    title: t("settings.computerUse.chrome.pluginTitle"),
+    description: chromeDescription,
+    descriptionIndicator:
+      chromeDescriptionTone === "success"
+        ? "success"
+        : chromeDescriptionTone === "danger"
+          ? "error"
+          : undefined,
+  };
+}
+
+function selectChromePlugin(candidates: PluginCandidate[]) {
+  return candidates.find((candidate) => candidate.plugin.name === "chrome-internal") ?? candidates[0] ?? null;
 }

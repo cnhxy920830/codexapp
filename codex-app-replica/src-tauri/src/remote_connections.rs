@@ -33,6 +33,10 @@ const SSH_CONFIG_DIR: &str = ".ssh";
 const SSH_CONFIG_FILE: &str = "config";
 const EXCLUDED_DISCOVERED_ALIAS: &str = "colima";
 const EXCLUDED_DISCOVERED_HOSTNAME: &str = "github.com";
+const APP_SERVER_VERSION_RESTART_AVAILABLE_PREFIX: &str =
+    "codex-app-server-version-restart-available:";
+const APP_SERVER_VERSION_UNSUPPORTED_PREFIX: &str = "codex-app-server-version-unsupported:";
+const APP_SERVER_MIN_REQUIRED_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -78,6 +82,8 @@ pub enum AppServerConnectionError {
 pub struct AppServerConnectionStateResponse {
     pub state: AppServerConnectionState,
     pub error: Option<AppServerConnectionError>,
+    pub app_server_version: Option<String>,
+    pub installed_codex_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -368,8 +374,46 @@ fn app_server_connection_state_for_registry(
     };
     let error = snapshot
         .error
-        .map(|message| AppServerConnectionError::ConnectionFailed { message });
-    AppServerConnectionStateResponse { state, error }
+        .map(|message| map_app_server_connection_error(&message));
+    AppServerConnectionStateResponse {
+        state,
+        error,
+        app_server_version: snapshot.app_server_version,
+        installed_codex_version: snapshot.installed_codex_version,
+    }
+}
+
+fn map_app_server_connection_error(message: &str) -> AppServerConnectionError {
+    if message.starts_with("Parse Error") {
+        return AppServerConnectionError::RestartRequired {
+            current_version: None,
+            installed_version: None,
+        };
+    }
+
+    if let Some(payload) = message.strip_prefix(APP_SERVER_VERSION_RESTART_AVAILABLE_PREFIX) {
+        let mut parts = payload.splitn(2, ':');
+        let current_version = parts.next().and_then(trim_to_owned);
+        let installed_version = parts.next().and_then(trim_to_owned);
+        return AppServerConnectionError::RestartRequired {
+            current_version,
+            installed_version,
+        };
+    }
+
+    if let Some(current_version) = message
+        .strip_prefix(APP_SERVER_VERSION_UNSUPPORTED_PREFIX)
+        .and_then(trim_to_owned)
+    {
+        return AppServerConnectionError::UpdateRequired {
+            min_required_version: APP_SERVER_MIN_REQUIRED_VERSION.to_string(),
+            current_version,
+        };
+    }
+
+    AppServerConnectionError::ConnectionFailed {
+        message: message.to_string(),
+    }
 }
 
 async fn refresh_remote_connections_runtime(
@@ -1567,9 +1611,11 @@ mod tests {
     use super::default_ssh_config_entrypoint;
     use super::expand_glob_pattern;
     use super::load_remote_connections;
+    use super::map_app_server_connection_error;
     use super::normalize_saved_remote_connection;
     use super::parse_resolved_ssh_config;
     use super::split_ssh_values;
+    use super::AppServerConnectionError;
     use super::AppServerConnectionState;
     use super::AppServerConnectionStateParams;
     use super::AppServerConnectionStateResponse;
@@ -1802,13 +1848,17 @@ mod tests {
         let response = AppServerConnectionStateResponse {
             state: AppServerConnectionState::Disconnected,
             error: None,
+            app_server_version: None,
+            installed_codex_version: None,
         };
 
         assert_eq!(
             serde_json::to_value(&response).expect("response should serialize"),
             json!({
                 "state": "disconnected",
-                "error": null
+                "error": null,
+                "appServerVersion": null,
+                "installedCodexVersion": null
             })
         );
     }
@@ -1883,6 +1933,53 @@ mod tests {
             AppServerConnectionStateResponse {
                 state: AppServerConnectionState::Disconnected,
                 error: None,
+                app_server_version: None,
+                installed_codex_version: None,
+            }
+        );
+    }
+
+    #[test]
+    fn app_server_connection_error_maps_restart_required_from_parse_error() {
+        assert_eq!(
+            map_app_server_connection_error("Parse Error: expected value"),
+            AppServerConnectionError::RestartRequired {
+                current_version: None,
+                installed_version: None,
+            }
+        );
+    }
+
+    #[test]
+    fn app_server_connection_error_maps_restart_required_from_version_restart_message() {
+        assert_eq!(
+            map_app_server_connection_error(
+                "codex-app-server-version-restart-available:0.128.0:0.129.0"
+            ),
+            AppServerConnectionError::RestartRequired {
+                current_version: Some("0.128.0".to_string()),
+                installed_version: Some("0.129.0".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn app_server_connection_error_maps_update_required_from_unsupported_version_message() {
+        assert_eq!(
+            map_app_server_connection_error("codex-app-server-version-unsupported:0.128.0"),
+            AppServerConnectionError::UpdateRequired {
+                min_required_version: env!("CARGO_PKG_VERSION").to_string(),
+                current_version: "0.128.0".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn app_server_connection_error_preserves_generic_connection_failures() {
+        assert_eq!(
+            map_app_server_connection_error("ssh handshake failed"),
+            AppServerConnectionError::ConnectionFailed {
+                message: "ssh handshake failed".to_string(),
             }
         );
     }

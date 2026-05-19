@@ -3,10 +3,18 @@ import type { AppToast } from "./AppToastRegion";
 import {
   BackNavigationIcon,
   FolderIcon,
+  PlusIcon,
   PlayOutlineIcon,
   SettingsCogIcon,
   TrashIcon,
+  WorktreeIcon,
 } from "./AppShellIcons";
+import { Button } from "./Button";
+import { SettingsContentLayout } from "./SettingsContentLayout";
+import { SettingsGroup } from "./SettingsGroup";
+import { SettingsSectionTitle } from "./SettingsSectionTitle";
+import { SettingsSurface } from "./SettingsSurface";
+import { Spinner } from "./Spinner";
 import { useI18n } from "../i18n/i18n";
 import type { MessageKey } from "../i18n/messages";
 import {
@@ -33,6 +41,8 @@ import {
   type LocalEnvironmentPlatform,
   type LocalEnvironmentScriptSection,
 } from "../services/localEnvironments";
+import { readGitOrigins } from "../services/gitOrigins";
+import { parseRepoKeyFromOriginUrl } from "../services/pullRequests";
 import {
   addNewWorkspaceRootOption,
   onActiveWorkspaceRootsUpdated,
@@ -64,6 +74,19 @@ const LOCAL_ENVIRONMENT_LEARN_MORE_URL = "https://developers.openai.com/codex/ap
 
 type ScriptPlatformSelection = (typeof SCRIPT_PLATFORM_OPTIONS)[number];
 
+type WorkspaceProjectGroup = {
+  path: string;
+  label: string;
+  isCodexWorktree: boolean;
+  repositoryData: {
+    ownerRepo: {
+      owner: string | null;
+      repo: string | null;
+    } | null;
+    rootFolder: string | null;
+  } | null;
+};
+
 type EditableLocalEnvironmentAction = LocalEnvironmentAction & {
   id: string;
 };
@@ -74,6 +97,8 @@ type EditableLocalEnvironmentDocument = Omit<LocalEnvironmentDocument, "actions"
 
 export function LocalEnvironmentsSettings({
   codexHome,
+  onConsumePendingViewAction,
+  pendingViewAction,
   routeSearch,
   selectedHostId,
   onSelectHostId,
@@ -81,6 +106,8 @@ export function LocalEnvironmentsSettings({
   onShowToast,
 }: {
   codexHome: string | null;
+  onConsumePendingViewAction?: () => void;
+  pendingViewAction?: "open-create-remote-project-modal" | null;
   routeSearch?: string;
   selectedHostId: string;
   onSelectHostId?: (hostId: string) => void;
@@ -114,6 +141,7 @@ export function LocalEnvironmentsSettings({
   const [cleanupPlatform, setCleanupPlatform] = useState<ScriptPlatformSelection>("default");
   const [isSetupEnvVarsOpen, setIsSetupEnvVarsOpen] = useState(false);
   const [workspaceRootsReloadVersion, setWorkspaceRootsReloadVersion] = useState(0);
+  const [gitOriginsByWorkspaceRoot, setGitOriginsByWorkspaceRoot] = useState<Record<string, string>>({});
   const [connectedRemoteConnections, setConnectedRemoteConnections] = useState<RemoteConnection[]>([]);
   const [remoteProjects, setRemoteProjects] = useState<RemoteProject[]>([]);
   const [isRemoteProjectDialogOpen, setIsRemoteProjectDialogOpen] = useState(false);
@@ -135,7 +163,28 @@ export function LocalEnvironmentsSettings({
       remoteProjectsForSelectedHost.map((remoteProject) => [remoteProject.remotePath, remoteProject.label]),
     );
   }, [isRemoteHost, remoteProjectsForSelectedHost, workspaceRootLabels]);
-  const activeProjectRoots = isRemoteHost ? [] : activeWorkspaceRoots;
+  const workspaceProjectGroups = useMemo(() => {
+    return projectRoots.map((workspaceRoot) => {
+      const label = getWorkspaceRootLabel(workspaceRoot, projectRootLabels);
+      const originUrl = gitOriginsByWorkspaceRoot[normalizeComparablePath(workspaceRoot)] ?? null;
+      const parsedOrigin = originUrl ? parseRepoKeyFromOriginUrl(originUrl) : null;
+
+      return {
+        path: workspaceRoot,
+        label,
+        isCodexWorktree: isWithinCodexWorktrees(workspaceRoot, codexHome),
+        repositoryData: {
+          ownerRepo: parsedOrigin
+            ? {
+                owner: parsedOrigin.owner,
+                repo: parsedOrigin.repo,
+              }
+            : null,
+          rootFolder: getLocalEnvironmentProjectName(workspaceRoot) ?? null,
+        },
+      } satisfies WorkspaceProjectGroup;
+    });
+  }, [codexHome, gitOriginsByWorkspaceRoot, projectRootLabels, projectRoots]);
 
   const selectedWorkspacePath = useMemo(() => {
     if (!selectedWorkspaceRoot) {
@@ -160,15 +209,15 @@ export function LocalEnvironmentsSettings({
     return getWorkspaceRootLabel(normalizedSelectedWorkspaceRoot, projectRootLabels);
   }, [normalizedSelectedWorkspaceRoot, projectRootLabels]);
 
-  const selectedWorkspaceIsCodexWorktree = useMemo(() => {
-    return normalizedSelectedWorkspaceRoot
-      ? isWithinCodexWorktrees(normalizedSelectedWorkspaceRoot, codexHome)
-      : false;
-  }, [codexHome, normalizedSelectedWorkspaceRoot]);
+  const selectedWorkspaceGroup = useMemo(() => {
+    if (!normalizedSelectedWorkspaceRoot) {
+      return null;
+    }
+
+    return workspaceProjectGroups.find((group) => group.path === normalizedSelectedWorkspaceRoot) ?? null;
+  }, [normalizedSelectedWorkspaceRoot, workspaceProjectGroups]);
 
   const isSelectProjectMode = normalizedSelectedWorkspaceRoot === null;
-  const canAddProject = true;
-
   const previewEnvironment = parsedEnvironment?.type === "success" ? parsedEnvironment.environment : null;
   const parseErrorMessage = parsedEnvironment?.type === "error" ? parsedEnvironment.error.message : null;
   const readErrorMessage = detailsErrorMessage ?? listErrorMessage ?? workspaceRootsErrorMessage;
@@ -283,6 +332,30 @@ export function LocalEnvironmentsSettings({
         setWorkspaceRoots(workspaceRootOptionsResponse.roots);
         setWorkspaceRootLabels(workspaceRootOptionsResponse.labels);
         setActiveWorkspaceRoots(activeWorkspaceRootsResponse.roots);
+        try {
+          const gitOriginsResponse =
+            workspaceRootOptionsResponse.roots.length === 0
+              ? { origins: [] as Array<{ dir: string; originUrl: string | null }> }
+              : await readGitOrigins({
+                  dirs: workspaceRootOptionsResponse.roots,
+                  hostId: selectedHostId,
+                });
+          if (!cancelled) {
+            setGitOriginsByWorkspaceRoot(
+              Object.fromEntries(
+                gitOriginsResponse.origins.flatMap((origin) =>
+                  origin.originUrl == null
+                    ? []
+                    : [[normalizeComparablePath(origin.dir), origin.originUrl]],
+                ),
+              ),
+            );
+          }
+        } catch {
+          if (!cancelled) {
+            setGitOriginsByWorkspaceRoot({});
+          }
+        }
         setSelectedWorkspaceRoot((current) => {
           if (current && workspaceRootOptionsResponse.roots.includes(current)) {
             return current;
@@ -296,6 +369,7 @@ export function LocalEnvironmentsSettings({
         setWorkspaceRoots([]);
         setWorkspaceRootLabels({});
         setActiveWorkspaceRoots([]);
+        setGitOriginsByWorkspaceRoot({});
         setSelectedWorkspaceRoot(null);
         setWorkspaceRootsErrorMessage(getErrorMessage(error));
       } finally {
@@ -311,6 +385,29 @@ export function LocalEnvironmentsSettings({
       cancelled = true;
     };
   }, [isRemoteHost, selectedHostId, workspaceRootsReloadVersion]);
+
+  useEffect(() => {
+    if (pendingViewAction !== "open-create-remote-project-modal") {
+      return;
+    }
+
+    if (!isRemoteHost) {
+      const fallbackConnectedHostId = connectedRemoteConnections[0]?.hostId;
+      if (fallbackConnectedHostId != null) {
+        onSelectHostId?.(fallbackConnectedHostId);
+      }
+      return;
+    }
+
+    setIsRemoteProjectDialogOpen(true);
+    onConsumePendingViewAction?.();
+  }, [
+    connectedRemoteConnections,
+    isRemoteHost,
+    onConsumePendingViewAction,
+    onSelectHostId,
+    pendingViewAction,
+  ]);
 
   useEffect(() => {
     if (routeSelection.workspaceRoot === null || projectRoots.length === 0) {
@@ -626,7 +723,9 @@ export function LocalEnvironmentsSettings({
     }
 
     const shouldPersistWorktreeConfigPath =
-      !configSnapshot?.exists && selectedWorkspaceIsCodexWorktree && normalizedSelectedWorkspaceRoot !== null;
+      !configSnapshot?.exists &&
+      (selectedWorkspaceGroup?.isCodexWorktree ?? false) &&
+      normalizedSelectedWorkspaceRoot !== null;
 
     setIsSaving(true);
     setSaveErrorMessage(null);
@@ -800,47 +899,35 @@ export function LocalEnvironmentsSettings({
 
   if (isWorkspaceRootsLoading) {
     return (
-      <PageFrame
-        subtitle={t("settings.localEnvironments.workspaceSelect.description")}
-        title={t("settings.nav.local-environments")}
-      >
-        <InfoCard
+      <LocalEnvironmentsPageFrame subtitle={t("settings.localEnvironments.workspaceSelect.description")}>
+        <LoadingOrUnavailableGroup
           body={t("settings.localEnvironments.loading.body")}
           title={t("settings.localEnvironments.loading.title")}
         />
-      </PageFrame>
+      </LocalEnvironmentsPageFrame>
     );
   }
 
   if (isSelectProjectMode) {
     return (
-      <PageFrame
-        subtitle={renderLearnMoreDescription(t("settings.localEnvironments.workspaceSelect.description"))}
-        title={t("settings.nav.local-environments")}
-      >
+      <LocalEnvironmentsPageFrame subtitle={renderLearnMoreDescription(t("settings.localEnvironments.workspaceSelect.description"))}>
         <WorkspaceSelectionCard
-          activeWorkspaceRoots={activeProjectRoots}
-          environmentEntries={environmentEntries}
+          groups={workspaceProjectGroups}
           hostId={selectedHostId}
-          isAddProjectEnabled={canAddProject}
           isLoading={isWorkspaceRootsLoading}
           onAddProject={() => void handleAddProject()}
           onCreateEnvironment={createWorkspaceEnvironment}
           onSelectEnvironment={selectWorkspaceEnvironment}
-          selectedWorkspaceRoot={selectedWorkspaceRoot}
-          t={t}
-          workspaceRootLabels={projectRootLabels}
-          workspaceRoots={projectRoots}
         />
         {workspaceRootsErrorMessage ? <InlineError message={workspaceRootsErrorMessage} /> : null}
-      </PageFrame>
+      </LocalEnvironmentsPageFrame>
     );
   }
 
   if (isListLoading || isDetailsLoading || !selectedWorkspacePath || !normalizedSelectedWorkspaceRoot) {
     return (
-      <PageFrame
-        breadcrumb={
+      <LocalEnvironmentsPageFrame
+        backSlot={
           <Breadcrumbs
             mode={isEditMode ? "edit" : "preview"}
             onBack={isEditMode ? closeEditor : openWorkspaceSelection}
@@ -848,20 +935,19 @@ export function LocalEnvironmentsSettings({
             workspaceRoot={selectedWorkspaceRoot}
           />
         }
-        title={t("settings.nav.local-environments")}
       >
-        <InfoCard
+        <LoadingOrUnavailableGroup
           body={t("settings.localEnvironments.loading.body")}
           title={t("settings.localEnvironments.loading.title")}
         />
-      </PageFrame>
+      </LocalEnvironmentsPageFrame>
     );
   }
 
   if (!configSnapshot) {
     return (
-      <PageFrame
-        breadcrumb={
+      <LocalEnvironmentsPageFrame
+        backSlot={
           <Breadcrumbs
             mode={isEditMode ? "edit" : "preview"}
             onBack={isEditMode ? closeEditor : openWorkspaceSelection}
@@ -869,188 +955,62 @@ export function LocalEnvironmentsSettings({
             workspaceRoot={selectedWorkspaceRoot}
           />
         }
-        title={t("settings.nav.local-environments")}
       >
-        <InfoCard
+        <LoadingOrUnavailableGroup
           body={t("settings.localEnvironments.unavailable.body")}
           title={t("settings.localEnvironments.unavailable.title")}
         />
-      </PageFrame>
+      </LocalEnvironmentsPageFrame>
     );
   }
 
-  const previewContent = isEditMode ? (
+  const pageContent = isEditMode ? (
     editableEnvironment ? (
-      <>
-        <SectionCard title={t("settings.localEnvironments.editor.title")}>
-          <ProjectCard isCodexWorktree={selectedWorkspaceIsCodexWorktree} workspaceRoot={normalizedSelectedWorkspaceRoot} />
-          {parseErrorMessage ? <InlineError message={t("settings.localEnvironments.file.parseError", { error: parseErrorMessage })} /> : null}
-          {readErrorMessage ? <InlineError message={t("settings.localEnvironments.file.readError", { error: readErrorMessage })} /> : null}
-          <div className="mt-4 flex flex-col gap-2">
-            <label
-              htmlFor="local-environment-name"
-              className="text-sm font-medium text-token-text-primary"
-            >
-              {t("settings.localEnvironments.environment.name")}
-            </label>
-            <input
-              id="local-environment-name"
-              value={editableEnvironment.name}
-              onChange={(event) =>
-                setEditableEnvironment((current) =>
-                  current ? { ...current, name: event.target.value } : current,
-                )
-              }
-              className="app-control app-text-input w-full rounded-[12px] px-3 py-2 text-[13px] outline-none"
-            />
-          </div>
-        </SectionCard>
-
-        <ScriptEditorCard
-          activePlatform={setupPlatform}
-          description={t("settings.localEnvironments.editor.setup.description")}
-          isEnvVarsOpen={isSetupEnvVarsOpen}
-          onPlatformChange={setSetupPlatform}
-          onScriptChange={(platform, script) => updateScriptSection("setup", platform, script)}
-          onToggleEnvVars={() => setIsSetupEnvVarsOpen((current) => !current)}
-          placeholder={LOCAL_ENVIRONMENT_SETUP_PLACEHOLDER}
-          script={getScriptForPlatform(editableEnvironment.setup, setupPlatform)}
-          title={t("settings.localEnvironments.environment.setup")}
-          toggleAriaLabel={t("settings.localEnvironments.environment.setup.platformSelector")}
-          t={t}
-        />
-
-        <ScriptEditorCard
-          activePlatform={cleanupPlatform}
-          description={t("settings.localEnvironments.environment.cleanup.description")}
-          isEnvVarsOpen={false}
-          onPlatformChange={setCleanupPlatform}
-          onScriptChange={(platform, script) => updateScriptSection("cleanup", platform, script)}
-          placeholder={LOCAL_ENVIRONMENT_CLEANUP_PLACEHOLDER}
-          script={getScriptForPlatform(editableEnvironment.cleanup, cleanupPlatform)}
-          title={t("settings.localEnvironments.environment.cleanup.title")}
-          toggleAriaLabel={t("settings.localEnvironments.environment.cleanup.platformSelector")}
-          t={t}
-        />
-
-        <SectionCard
-          actions={
-            <button
-              type="button"
-              onClick={addAction}
-              className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
-            >
-              {t("settings.localEnvironments.actions.add")}
-            </button>
-          }
-          title={t("settings.localEnvironments.actions.title")}
-        >
-          <div className="app-text-muted text-[13px] leading-6">
-            {t("settings.localEnvironments.environment.actions.description")}
-          </div>
-          {editableEnvironment.actions.length === 0 ? (
-            <SurfaceCard>
-              <div className="text-sm text-token-text-secondary">
-                {t("settings.localEnvironments.actions.empty")}
-              </div>
-            </SurfaceCard>
-          ) : (
-            <div className="mt-4 space-y-4">
-              {editableEnvironment.actions.map((action) => (
-                <ActionEditorCard
-                  key={action.id}
-                  action={action}
-                  onChange={updateAction}
-                  onDelete={removeAction}
-                  t={t}
-                />
-              ))}
-            </div>
-          )}
-        </SectionCard>
-
-        {saveErrorMessage ? <InlineError message={saveErrorMessage} /> : null}
-
-        <div className="flex flex-col items-end gap-2">
-          <button
-            type="button"
-            disabled={saveDisabledReason !== null}
-            onClick={() => void saveEditor()}
-            title={saveDisabledReason ?? undefined}
-            className="app-control rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
-          >
-            {t("settings.localEnvironments.preview.save")}
-          </button>
-          {saveDisabledReason ? (
-            <div className="app-text-muted text-[12px] leading-5">{saveDisabledReason}</div>
-          ) : null}
-        </div>
-      </>
+      <LocalEnvironmentEditor
+        cleanupPlatform={cleanupPlatform}
+        editableEnvironment={editableEnvironment}
+        isSaving={isSaving}
+        isSetupEnvVarsOpen={isSetupEnvVarsOpen}
+        onAddAction={addAction}
+        onNameChange={(name) =>
+          setEditableEnvironment((current) => (current ? { ...current, name } : current))
+        }
+        onRemoveAction={removeAction}
+        onSave={() => void saveEditor()}
+        onSetupEnvVarsOpenChange={setIsSetupEnvVarsOpen}
+        onSetupPlatformChange={setSetupPlatform}
+        onCleanupPlatformChange={setCleanupPlatform}
+        onUpdateAction={updateAction}
+        onUpdateScript={updateScriptSection}
+        parseErrorMessage={parseErrorMessage}
+        readErrorMessage={readErrorMessage}
+        saveDisabledReason={saveDisabledReason}
+        saveErrorMessage={saveErrorMessage}
+        setupPlatform={setupPlatform}
+        workspaceGroup={selectedWorkspaceGroup}
+        workspaceRoot={normalizedSelectedWorkspaceRoot}
+      />
     ) : (
-      <InfoCard
+      <LoadingOrUnavailableGroup
         body={t("settings.localEnvironments.unavailable.body")}
         title={t("settings.localEnvironments.unavailable.title")}
       />
     )
   ) : (
-    <>
-      <SectionCard title={t("settings.localEnvironments.environment.title")}>
-        <ProjectCard isCodexWorktree={selectedWorkspaceIsCodexWorktree} workspaceRoot={normalizedSelectedWorkspaceRoot} />
-        {parseErrorMessage ? <InlineError message={t("settings.localEnvironments.file.parseError", { error: parseErrorMessage })} /> : null}
-        {readErrorMessage ? <InlineError message={t("settings.localEnvironments.file.readError", { error: readErrorMessage })} /> : null}
-        <div className="mt-5 space-y-5">
-          {configSnapshot.exists ? (
-            <>
-              <PreviewSection
-                description={t("settings.localEnvironments.environment.setup.description")}
-                platformOverridesDescription={t(
-                  "settings.localEnvironments.environment.setup.platformOverrides.description",
-                )}
-                platformOverridesTitle={t("settings.localEnvironments.environment.setup.platformOverrides")}
-                scriptSection={previewEnvironment?.setup ?? createDefaultLocalEnvironmentDocument(normalizedSelectedWorkspaceRoot).setup}
-                title={t("settings.localEnvironments.environment.setup")}
-                t={t}
-              />
-              <PreviewSection
-                description={t("settings.localEnvironments.environment.cleanup.summaryDescription")}
-                emptyMessage={t("settings.localEnvironments.environment.cleanup.empty")}
-                platformOverridesDescription={t(
-                  "settings.localEnvironments.environment.cleanup.platformOverrides.description",
-                )}
-                platformOverridesTitle={t("settings.localEnvironments.environment.cleanup.platformOverrides")}
-                scriptSection={previewEnvironment?.cleanup ?? createDefaultLocalEnvironmentDocument(normalizedSelectedWorkspaceRoot).cleanup}
-                title={t("settings.localEnvironments.environment.cleanup.summaryTitle")}
-                t={t}
-              />
-              <ActionsPreview actions={previewEnvironment?.actions ?? []} t={t} />
-            </>
-          ) : (
-            <SurfaceCard>
-              <div className="text-sm text-token-text-secondary">
-                {t("settings.localEnvironments.environment.empty")}
-              </div>
-            </SurfaceCard>
-          )}
-        </div>
-      </SectionCard>
-
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={openEditor}
-          className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
-        >
-          {configSnapshot.exists
-            ? t("settings.localEnvironments.environment.edit")
-            : t("settings.localEnvironments.environment.create")}
-        </button>
-      </div>
-    </>
+    <LocalEnvironmentPreview
+      configExists={configSnapshot.exists}
+      initialEnvironment={previewEnvironment}
+      onEdit={openEditor}
+      parseErrorMessage={parseErrorMessage}
+      readErrorMessage={readErrorMessage}
+      workspaceGroup={selectedWorkspaceGroup}
+      workspaceRoot={normalizedSelectedWorkspaceRoot}
+    />
   );
 
   return (
-    <PageFrame
-      breadcrumb={
+    <LocalEnvironmentsPageFrame
+      backSlot={
         <Breadcrumbs
           mode={isEditMode ? "edit" : "preview"}
           onBack={isEditMode ? closeEditor : openWorkspaceSelection}
@@ -1058,9 +1018,8 @@ export function LocalEnvironmentsSettings({
           workspaceRoot={selectedWorkspaceRoot}
         />
       }
-      title={t("settings.nav.local-environments")}
     >
-      {previewContent}
+      {pageContent}
       {isRemoteProjectDialogOpen ? (
         <RemoteProjectSetupDialog
           connectedRemoteConnections={connectedRemoteConnections}
@@ -1074,30 +1033,49 @@ export function LocalEnvironmentsSettings({
           onSave={(params) => void handleSaveRemoteProject(params)}
         />
       ) : null}
-    </PageFrame>
+    </LocalEnvironmentsPageFrame>
   );
 }
 
-function PageFrame({
-  breadcrumb = null,
+function LocalEnvironmentsPageFrame({
+  backSlot = null,
   children,
   subtitle,
-  title,
+  subtitleClassName,
 }: {
-  breadcrumb?: ReactNode;
+  backSlot?: ReactNode;
   children: ReactNode;
   subtitle?: ReactNode;
-  title: string;
+  subtitleClassName?: string;
 }) {
   return (
-    <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-5 py-5">
-      <div className="flex flex-col gap-2">
-        <div className="text-[18px] font-medium text-token-text-primary">{title}</div>
-        {subtitle ? <div className="text-sm leading-6 text-token-text-secondary">{subtitle}</div> : null}
-      </div>
-      {breadcrumb}
+    <SettingsContentLayout
+      backSlot={backSlot}
+      subtitle={subtitle}
+      subtitleClassName={subtitleClassName ?? "leading-6"}
+      title={<SettingsSectionTitle slug="local-environments" />}
+    >
       {children}
-    </div>
+    </SettingsContentLayout>
+  );
+}
+
+function LoadingOrUnavailableGroup({
+  title,
+  body,
+}: {
+  title: string;
+  body: string;
+}) {
+  return (
+    <SettingsGroup>
+      <SettingsGroup.Header title={title} />
+      <SettingsGroup.Content>
+        <SettingsSurface className="rounded-xl">
+          <div className="p-3 text-sm text-token-text-secondary">{body}</div>
+        </SettingsSurface>
+      </SettingsGroup.Content>
+    </SettingsGroup>
   );
 }
 
@@ -1145,129 +1123,105 @@ function Breadcrumbs({
 }
 
 function WorkspaceSelectionCard({
-  activeWorkspaceRoots,
-  environmentEntries: _environmentEntries,
+  groups,
   hostId,
-  isAddProjectEnabled,
   isLoading,
   onAddProject,
   onCreateEnvironment,
   onSelectEnvironment,
-  selectedWorkspaceRoot,
-  t,
-  workspaceRootLabels,
-  workspaceRoots,
 }: {
-  activeWorkspaceRoots: string[];
-  environmentEntries: LocalEnvironmentConfigEntry[];
+  groups: WorkspaceProjectGroup[];
   hostId: string;
-  isAddProjectEnabled: boolean;
   isLoading: boolean;
   onAddProject: () => void;
   onCreateEnvironment: (workspaceRoot: string, entries: LocalEnvironmentConfigEntry[]) => void;
   onSelectEnvironment: (workspaceRoot: string, configPath: string) => void;
-  selectedWorkspaceRoot: string | null;
-  t: (key: MessageKey, values?: Record<string, number | string>) => string;
-  workspaceRootLabels: Record<string, string>;
-  workspaceRoots: string[];
 }) {
+  const { t } = useI18n();
+
   if (isLoading) {
     return (
-      <SectionCard title={t("settings.localEnvironments.workspaceSelect.title")}>
-        <SurfaceCard>
-          <div className="text-sm text-token-text-secondary">
-            {t("settings.localEnvironments.workspaceSelect.loading")}
-          </div>
-        </SurfaceCard>
-      </SectionCard>
+      <SettingsGroup className="gap-2">
+        <SettingsGroup.Header title={t("settings.localEnvironments.workspaceSelect.title")} />
+        <SettingsGroup.Content>
+          <SettingsSurface className="rounded-xl">
+            <div className="flex items-center gap-2 p-3 text-sm text-token-text-secondary">
+              <Spinner className="icon-xs" />
+              <span>{t("settings.localEnvironments.workspaceSelect.loading")}</span>
+            </div>
+          </SettingsSurface>
+        </SettingsGroup.Content>
+      </SettingsGroup>
     );
   }
 
-  if (workspaceRoots.length === 0) {
+  if (groups.length === 0) {
     return (
-      <SectionCard title={t("settings.localEnvironments.workspaceSelect.title")}>
-        <SurfaceCard>
-          <div className="flex flex-col gap-3">
-            <div className="text-sm text-token-text-secondary">
-              {t("settings.localEnvironments.workspaceSelect.empty")}
-            </div>
-            {isAddProjectEnabled ? (
+      <SettingsGroup className="gap-2">
+        <SettingsGroup.Header title={t("settings.localEnvironments.workspaceSelect.title")} />
+        <SettingsGroup.Content>
+          <SettingsSurface className="rounded-xl">
+            <div className="flex flex-col gap-3 p-3 text-sm text-token-text-secondary">
+              <div>{t("settings.localEnvironments.workspaceSelect.empty")}</div>
               <div>
-                <button
-                  type="button"
-                  onClick={onAddProject}
-                  className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
-                >
+                <Button color="primary" size="toolbar" onClick={onAddProject}>
                   {t("settings.localEnvironments.workspace.add")}
-                </button>
+                </Button>
               </div>
-            ) : null}
-          </div>
-        </SurfaceCard>
-      </SectionCard>
+            </div>
+          </SettingsSurface>
+        </SettingsGroup.Content>
+      </SettingsGroup>
     );
   }
 
   return (
-    <SectionCard
-      title={t("settings.localEnvironments.workspaceSelect.title")}
-      actions={
-        isAddProjectEnabled ? (
-          <button
-            type="button"
-            onClick={onAddProject}
-            className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
-          >
+    <SettingsGroup className="gap-2">
+      <SettingsGroup.Header
+        title={t("settings.localEnvironments.workspaceSelect.title")}
+        actions={
+          <Button color="secondary" size="toolbar" onClick={onAddProject}>
             {t("settings.localEnvironments.workspace.add")}
-          </button>
-        ) : null
-      }
-    >
-      <div className="space-y-3" aria-label={t("settings.localEnvironments.workspaceSelect.listLabel")}>
-        {workspaceRoots.map((workspaceRoot) => (
-          <WorkspaceSelectionProjectCard
-            key={workspaceRoot}
-            hostId={hostId}
-            isActive={selectedWorkspaceRoot === workspaceRoot}
-            isCodexWorktree={false}
-            isInitiallyExpanded={activeWorkspaceRoots.includes(workspaceRoot)}
-            label={getWorkspaceRootLabel(workspaceRoot, workspaceRootLabels)}
-            onCreateEnvironment={onCreateEnvironment}
-            onSelectEnvironment={onSelectEnvironment}
-            t={t}
-            workspaceRoot={workspaceRoot}
-          />
-        ))}
-      </div>
-    </SectionCard>
+          </Button>
+        }
+      />
+      <SettingsGroup.Content>
+        <div className="flex flex-col gap-3" aria-label={t("settings.localEnvironments.workspaceSelect.listLabel")} role="list">
+          {groups.map((group) => (
+            <WorkspaceSelectionProjectCard
+              key={group.path}
+              group={group}
+              hostId={hostId}
+              isInitiallyExpanded={false}
+              onCreateEnvironment={onCreateEnvironment}
+              onSelectEnvironment={onSelectEnvironment}
+            />
+          ))}
+        </div>
+      </SettingsGroup.Content>
+    </SettingsGroup>
   );
 }
 
 function WorkspaceSelectionProjectCard({
+  group,
   hostId,
-  isActive,
-  isCodexWorktree,
   isInitiallyExpanded,
-  label,
   onCreateEnvironment,
   onSelectEnvironment,
-  t,
-  workspaceRoot,
 }: {
+  group: WorkspaceProjectGroup;
   hostId: string;
-  isActive: boolean;
-  isCodexWorktree: boolean;
   isInitiallyExpanded: boolean;
-  label: string;
   onCreateEnvironment: (workspaceRoot: string, entries: LocalEnvironmentConfigEntry[]) => void;
   onSelectEnvironment: (workspaceRoot: string, configPath: string) => void;
-  t: (key: MessageKey, values?: Record<string, number | string>) => string;
-  workspaceRoot: string;
 }) {
+  const { t } = useI18n();
   const [entries, setEntries] = useState<LocalEnvironmentConfigEntry[]>([]);
   const [isExpanded, setIsExpanded] = useState(isInitiallyExpanded);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const workspaceRoot = group.path;
 
   useEffect(() => {
     setIsExpanded(isInitiallyExpanded);
@@ -1310,11 +1264,12 @@ function WorkspaceSelectionProjectCard({
   );
   const preferredProjectEntry = useMemo(() => getPreferredLocalEnvironment(projectEntries), [projectEntries]);
   const hasEntries = projectEntries.length > 0 || inheritedEntries.length > 0;
-  const ProjectIcon = isCodexWorktree ? WorktreeIcon : FolderIcon;
+  const ProjectIcon = group.isCodexWorktree ? WorktreeIcon : FolderIcon;
+  const ownerLabel = group.repositoryData?.ownerRepo?.owner ?? null;
 
   return (
-    <div className={["rounded-[16px] border border-[var(--app-shell-border)]", isActive ? "app-card" : "bg-[var(--app-shell-card)]"].join(" ")}>
-      <div className="flex items-center justify-between gap-3 px-4 py-3">
+    <SettingsSurface className="rounded-lg p-0">
+      <div className="flex items-center justify-between gap-2 px-4 py-3">
         <button
           type="button"
           onClick={() => {
@@ -1324,35 +1279,44 @@ function WorkspaceSelectionProjectCard({
             }
             setIsExpanded((current) => !current);
           }}
-          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+          className="flex min-w-0 items-center gap-3 text-left"
         >
           <ProjectIcon className="icon-sm shrink-0 text-token-text-secondary" />
-          <div className="min-w-0">
-            <div className="truncate text-sm font-medium text-token-text-primary">{label}</div>
-            <div className="truncate text-xs text-token-text-secondary">{workspaceRoot}</div>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-2 text-sm text-token-text-primary">
+              <span className="truncate font-medium">{group.label}</span>
+              {ownerLabel ? <span className="truncate text-token-text-secondary">{ownerLabel}</span> : null}
+            </div>
           </div>
         </button>
-        <button
-          type="button"
-          onClick={() => onCreateEnvironment(workspaceRoot, entries)}
-          className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
+
+        <Button
           aria-label={t("settings.localEnvironments.workspaceSelect.addLabel")}
+          className="w-9 justify-center"
+          color="secondary"
+          size="toolbar"
+          onClick={() => onCreateEnvironment(workspaceRoot, entries)}
         >
-          {t("settings.localEnvironments.workspaceSelect.addLabel")}
-        </button>
+          <PlusIcon className="icon-xs" />
+        </Button>
       </div>
 
       {isLoading ? (
-        <div className="border-t border-[var(--app-shell-border)] px-4 py-3 text-sm text-token-text-secondary">
-          {t("settings.localEnvironments.workspaceSelect.loadingLabel")}
+        <div className="border-t border-token-border px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-token-text-secondary">
+            <Spinner className="icon-xs" />
+            <span>{t("settings.localEnvironments.workspaceSelect.loadingLabel")}</span>
+          </div>
         </div>
       ) : errorMessage ? (
-        <div className="border-t border-[var(--app-shell-border)] px-4 py-3 text-sm text-token-error-foreground">
-          {t("settings.localEnvironments.workspaceSelect.errorLabel")}
+        <div className="border-t border-token-border px-4 py-3">
+          <div className="flex items-center gap-2 text-sm text-token-error-foreground">
+            <span>{t("settings.localEnvironments.workspaceSelect.errorLabel")}</span>
+          </div>
         </div>
       ) : hasEntries ? (
-        <div className="border-t border-[var(--app-shell-border)]">
-          <div className="divide-y divide-[var(--app-shell-border)]">
+        <div className="border-t border-token-border">
+          <div className="divide-y divide-token-border">
             {projectEntries.map((entry: LocalEnvironmentConfigEntry) => (
               <WorkspaceEnvironmentRow
                 key={entry.configPath}
@@ -1364,26 +1328,27 @@ function WorkspaceSelectionProjectCard({
             ))}
           </div>
           {inheritedEntries.length > 0 ? (
-            <div className="border-t border-[var(--app-shell-border)]">
+            <div className="flex flex-col">
               <button
                 type="button"
                 onClick={() => setIsExpanded((current) => !current)}
-                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm text-token-text-secondary"
+                aria-expanded={isExpanded}
+                className="flex cursor-interaction items-center justify-between gap-3 px-4 py-3 text-left text-sm text-token-text-secondary hover:bg-token-list-hover-background"
               >
-                <span>
+                <span className="min-w-0 truncate">
                   {t("settings.localEnvironments.workspaceSelect.inherited", {
                     count: inheritedEntries.length,
                   })}
                 </span>
                 <ChevronRightIcon
                   className={[
-                    "icon-xs shrink-0 text-token-text-secondary transition-transform",
-                    isExpanded ? "rotate-90" : "",
+                    "icon-2xs shrink-0 text-token-input-placeholder-foreground transition-transform",
+                    isExpanded ? "rotate-180" : "",
                   ].join(" ")}
                 />
               </button>
               {isExpanded ? (
-                <div className="divide-y divide-[var(--app-shell-border)] border-t border-[var(--app-shell-border)]">
+                <div className="flex flex-col divide-y divide-token-border border-t border-token-border">
                   {inheritedEntries.map((entry: LocalEnvironmentConfigEntry) => (
                     <WorkspaceEnvironmentRow
                       key={entry.configPath}
@@ -1399,7 +1364,7 @@ function WorkspaceSelectionProjectCard({
           ) : null}
         </div>
       ) : null}
-    </div>
+    </SettingsSurface>
   );
 }
 
@@ -1442,247 +1407,565 @@ function WorkspaceEnvironmentRow({
   );
 }
 
-function SectionCard({
-  title,
-  actions,
-  children,
-}: {
-  title: string;
-  actions?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <div className="app-card rounded-[18px] px-5 py-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="text-[14px] font-medium">{title}</div>
-        {actions}
-      </div>
-      <div className="mt-4">{children}</div>
-    </div>
-  );
-}
-
-function SurfaceCard({ children }: { children: ReactNode }) {
-  return (
-    <div className="rounded-[14px] border border-[var(--app-shell-border)] bg-[var(--app-shell-card)] p-3">
-      {children}
-    </div>
-  );
-}
-
-function ProjectCard({
-  isCodexWorktree,
+function LocalEnvironmentPreview({
+  configExists,
+  initialEnvironment,
+  onEdit,
+  parseErrorMessage,
+  readErrorMessage,
+  workspaceGroup,
   workspaceRoot,
 }: {
-  isCodexWorktree: boolean;
+  configExists: boolean;
+  initialEnvironment: LocalEnvironmentDocument | null;
+  onEdit: () => void;
+  parseErrorMessage: string | null;
+  readErrorMessage: string | null;
+  workspaceGroup: WorkspaceProjectGroup | null;
   workspaceRoot: string;
 }) {
-  const ProjectIcon = isCodexWorktree ? WorktreeIcon : FolderIcon;
-  const projectName = getLocalEnvironmentProjectName(workspaceRoot) ?? workspaceRoot;
+  const { t } = useI18n();
+  const hasEnvironment = configExists && initialEnvironment !== null;
+  const actions = initialEnvironment?.actions ?? [];
+  const setupOverrides = getScriptOverrides(initialEnvironment?.setup ?? null);
+  const cleanupOverrides = getScriptOverrides(initialEnvironment?.cleanup ?? null);
 
   return (
-    <SurfaceCard>
-      <div className="flex items-center gap-3">
-        <ProjectIcon className="icon-sm shrink-0 text-token-text-secondary" />
-        <div className="min-w-0">
-          <div className="truncate text-sm text-token-text-primary">{projectName}</div>
-          <div className="truncate text-xs text-token-text-secondary">{workspaceRoot}</div>
-        </div>
-      </div>
-    </SurfaceCard>
-  );
-}
+    <div className="flex flex-col gap-[var(--padding-panel)]">
+      <SettingsGroup>
+        <SettingsGroup.Header title={t("settings.localEnvironments.workspace.title")} />
+        <SettingsGroup.Content>
+          <SettingsSurface>
+            <ProjectSummaryCard workspaceGroup={workspaceGroup} workspaceRoot={workspaceRoot} />
+          </SettingsSurface>
+        </SettingsGroup.Content>
+      </SettingsGroup>
 
-function PreviewSection({
-  title,
-  description,
-  scriptSection,
-  platformOverridesTitle,
-  platformOverridesDescription,
-  emptyMessage,
-  t,
-}: {
-  title: string;
-  description: string;
-  scriptSection: LocalEnvironmentScriptSection;
-  platformOverridesTitle: string;
-  platformOverridesDescription: string;
-  emptyMessage?: string;
-  t: (key: MessageKey, values?: Record<string, number | string>) => string;
-}) {
-  const defaultScript = scriptSection.script.trim();
-  const overrides = LOCAL_ENVIRONMENT_PLATFORMS.flatMap((platform) => {
-    const script = scriptSection[platform]?.script ?? "";
-    return script.trim().length > 0 ? [{ platform, script }] : [];
-  });
+      <SettingsGroup>
+        <SettingsGroup.Header title={t("settings.localEnvironments.environment.title")} />
+        <SettingsGroup.Content className="gap-[var(--padding-panel)]">
+          {hasEnvironment && initialEnvironment ? (
+            <>
+              <SettingsSurface>
+                <LocalEnvironmentSettingsRow
+                  control={<span className="text-sm text-token-text-secondary">{initialEnvironment.name}</span>}
+                  label={t("settings.localEnvironments.environment.name")}
+                />
+              </SettingsSurface>
 
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <div className="text-sm font-medium text-token-text-primary">{title}</div>
-        <div className="text-sm text-token-text-secondary">{description}</div>
-      </div>
-
-      {defaultScript.length > 0 ? <CodeBlock script={defaultScript} /> : null}
-      {defaultScript.length === 0 && overrides.length === 0 && emptyMessage ? (
-        <SurfaceCard>
-          <div className="text-sm text-token-text-secondary">{emptyMessage}</div>
-        </SurfaceCard>
-      ) : null}
-
-      {overrides.length > 0 ? (
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1">
-            <div className="text-sm font-medium text-token-text-primary">{platformOverridesTitle}</div>
-            <div className="text-sm text-token-text-secondary">{platformOverridesDescription}</div>
-          </div>
-          <div className="space-y-3">
-            {overrides.map((override) => (
-              <div key={override.platform} className="flex flex-col gap-2">
-                <div className="text-xs font-medium uppercase tracking-[0.12em] text-token-text-secondary">
-                  {formatPlatformLabel(override.platform, t)}
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium text-token-text-primary">
+                        {t("settings.localEnvironments.environment.setup")}
+                      </div>
+                      <div className="text-sm text-token-text-secondary">
+                        {t("settings.localEnvironments.environment.setup.description")}
+                      </div>
+                    </div>
+                    <SetupEnvVarsPopover />
+                  </div>
                 </div>
-                <CodeBlock script={override.script} />
+                <CodeBlock script={initialEnvironment.setup.script} />
+                {setupOverrides.length > 0 ? (
+                  <PlatformOverridesPreview
+                    description={t("settings.localEnvironments.environment.setup.platformOverrides.description")}
+                    overrides={setupOverrides}
+                    title={t("settings.localEnvironments.environment.setup.platformOverrides")}
+                  />
+                ) : null}
               </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
+
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1">
+                  <div className="text-sm font-medium text-token-text-primary">
+                    {t("settings.localEnvironments.environment.cleanup.summaryTitle")}
+                  </div>
+                  <div className="text-sm text-token-text-secondary">
+                    {t("settings.localEnvironments.environment.cleanup.summaryDescription")}
+                  </div>
+                </div>
+                {initialEnvironment.cleanup.script.length > 0 ? (
+                  <CodeBlock script={initialEnvironment.cleanup.script} />
+                ) : (
+                  <SettingsSurface>
+                    <div className="p-3 text-sm text-token-text-secondary">
+                      {t("settings.localEnvironments.environment.cleanup.empty")}
+                    </div>
+                  </SettingsSurface>
+                )}
+                {cleanupOverrides.length > 0 ? (
+                  <PlatformOverridesPreview
+                    description={t("settings.localEnvironments.environment.cleanup.platformOverrides.description")}
+                    overrides={cleanupOverrides}
+                    title={t("settings.localEnvironments.environment.cleanup.platformOverrides")}
+                  />
+                ) : null}
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1">
+                  <div className="text-sm font-medium text-token-text-primary">
+                    {t("settings.localEnvironments.environment.actionsLabel")}
+                  </div>
+                  <div className="text-sm text-token-text-secondary">
+                    {t("settings.localEnvironments.environment.actions.description")}
+                  </div>
+                </div>
+                <SettingsSurface>
+                  <div className="flex flex-col gap-2 p-3">
+                    {actions.length > 0 ? (
+                      <div className="flex flex-col gap-2">
+                        {actions.map((action, index) => (
+                          <ActionSummaryRow key={`${action.name}-${index}`} action={action} />
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-token-text-secondary">
+                        {t("settings.localEnvironments.actions.empty")}
+                      </div>
+                    )}
+                  </div>
+                </SettingsSurface>
+              </div>
+            </>
+          ) : (
+            <SettingsSurface>
+              <div className="p-3 text-sm text-token-text-secondary">
+                {t("settings.localEnvironments.environment.empty")}
+              </div>
+            </SettingsSurface>
+          )}
+
+          {parseErrorMessage ? (
+            <div className="mt-2 text-sm text-token-error-foreground">
+              {t("settings.localEnvironments.file.parseError", { error: parseErrorMessage })}
+            </div>
+          ) : null}
+          {readErrorMessage ? (
+            <div className="mt-2 text-sm text-token-error-foreground">
+              {t("settings.localEnvironments.file.readError", { error: readErrorMessage })}
+            </div>
+          ) : null}
+        </SettingsGroup.Content>
+      </SettingsGroup>
+
+      <div className="flex justify-end">
+        <Button color="primary" size="toolbar" onClick={onEdit}>
+          {hasEnvironment
+            ? t("settings.localEnvironments.environment.edit")
+            : t("settings.localEnvironments.environment.create")}
+        </Button>
+      </div>
     </div>
   );
 }
 
-function ActionsPreview({
-  actions,
-  t,
+function LocalEnvironmentEditor({
+  cleanupPlatform,
+  editableEnvironment,
+  isSaving,
+  isSetupEnvVarsOpen,
+  onAddAction,
+  onCleanupPlatformChange,
+  onNameChange,
+  onRemoveAction,
+  onSave,
+  onSetupEnvVarsOpenChange,
+  onSetupPlatformChange,
+  onUpdateAction,
+  onUpdateScript,
+  parseErrorMessage,
+  readErrorMessage,
+  saveDisabledReason,
+  saveErrorMessage,
+  setupPlatform,
+  workspaceGroup,
+  workspaceRoot,
 }: {
-  actions: LocalEnvironmentAction[];
-  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+  cleanupPlatform: ScriptPlatformSelection;
+  editableEnvironment: EditableLocalEnvironmentDocument;
+  isSaving: boolean;
+  isSetupEnvVarsOpen: boolean;
+  onAddAction: () => void;
+  onCleanupPlatformChange: (platform: ScriptPlatformSelection) => void;
+  onNameChange: (name: string) => void;
+  onRemoveAction: (actionId: string) => void;
+  onSave: () => void;
+  onSetupEnvVarsOpenChange: (open: boolean) => void;
+  onSetupPlatformChange: (platform: ScriptPlatformSelection) => void;
+  onUpdateAction: (actionId: string, patch: Partial<EditableLocalEnvironmentAction>) => void;
+  onUpdateScript: (
+    sectionKey: "setup" | "cleanup",
+    platform: ScriptPlatformSelection,
+    script: string,
+  ) => void;
+  parseErrorMessage: string | null;
+  readErrorMessage: string | null;
+  saveDisabledReason: string | null;
+  saveErrorMessage: string | null;
+  setupPlatform: ScriptPlatformSelection;
+  workspaceGroup: WorkspaceProjectGroup | null;
+  workspaceRoot: string;
 }) {
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <div className="text-sm font-medium text-token-text-primary">
-          {t("settings.localEnvironments.environment.actionsLabel")}
-        </div>
-        <div className="text-sm text-token-text-secondary">
-          {t("settings.localEnvironments.environment.actions.description")}
-        </div>
-      </div>
+  const { t } = useI18n();
+  const saveDisabled = saveDisabledReason !== null;
 
-      <SurfaceCard>
-        <div className="flex flex-col gap-2">
-          {actions.length > 0 ? (
-            actions.map((action, index) => (
-              <div
-                key={`${action.name}-${index}`}
-                className="flex items-center gap-2 text-sm text-token-text-secondary"
-              >
-                <span className="text-token-text-secondary">
-                  <LocalEnvironmentActionIconGlyph icon={action.icon ?? "tool"} />
-                </span>
-                <span>{action.name}</span>
+  return (
+    <form
+      className="flex flex-col gap-[var(--padding-panel)]"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!saveDisabled) {
+          onSave();
+        }
+      }}
+    >
+      <SettingsGroup>
+        <SettingsGroup.Header title={t("settings.localEnvironments.editor.title")} />
+        <SettingsGroup.Content className="gap-[var(--padding-panel)]">
+          <SettingsSurface>
+            <ProjectSummaryCard workspaceGroup={workspaceGroup} workspaceRoot={workspaceRoot} />
+          </SettingsSurface>
+
+          {parseErrorMessage ? (
+            <div className="mt-2 text-sm text-token-error-foreground">
+              {t("settings.localEnvironments.file.parseError", { error: parseErrorMessage })}
+            </div>
+          ) : null}
+          {readErrorMessage ? (
+            <div className="mt-2 text-sm text-token-error-foreground">
+              {t("settings.localEnvironments.file.readError", { error: readErrorMessage })}
+            </div>
+          ) : null}
+
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="local-environment-name"
+              className="text-sm font-medium text-token-text-primary"
+            >
+              {t("settings.localEnvironments.environment.name")}
+            </label>
+            <input
+              id="local-environment-name"
+              className="focus-visible:ring-token-focus w-72 rounded-md border border-token-border bg-token-input-background px-2.5 py-1.5 text-sm text-token-text-primary outline-none focus-visible:ring-2"
+              value={editableEnvironment.name}
+              onChange={(event) => onNameChange(event.target.value)}
+            />
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              <div className="text-sm font-medium text-token-text-primary">
+                {t("settings.localEnvironments.environment.setup")}
               </div>
-            ))
-          ) : (
+              <div className="text-sm text-token-text-secondary">
+                {t("settings.localEnvironments.editor.setup.description")}
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <SegmentedControl
+                  ariaLabel={t("settings.localEnvironments.environment.setup.platformSelector")}
+                  options={buildScriptPlatformOptions(t)}
+                  selectedId={setupPlatform}
+                  onSelect={(value) => onSetupPlatformChange(value as ScriptPlatformSelection)}
+                />
+                <SetupEnvVarsPopover
+                  open={isSetupEnvVarsOpen}
+                  onOpenChange={onSetupEnvVarsOpenChange}
+                />
+              </div>
+              <textarea
+                id={`local-environment-setup-script-${setupPlatform}`}
+                className="focus-visible:ring-token-focus w-full rounded-md border border-token-border bg-token-input-background px-2.5 py-2 font-mono text-sm text-token-text-primary outline-none focus-visible:ring-2"
+                value={getScriptForPlatform(editableEnvironment.setup, setupPlatform)}
+                placeholder={LOCAL_ENVIRONMENT_SETUP_PLACEHOLDER}
+                rows={6}
+                onChange={(event) => onUpdateScript("setup", setupPlatform, event.target.value)}
+              />
+            </div>
+          </div>
+        </SettingsGroup.Content>
+      </SettingsGroup>
+
+      <SettingsGroup>
+        <SettingsGroup.Content className="gap-3">
+          <div className="flex flex-col gap-1">
+            <div className="text-sm font-medium text-token-text-primary">
+              {t("settings.localEnvironments.environment.cleanup.title")}
+            </div>
             <div className="text-sm text-token-text-secondary">
-              {t("settings.localEnvironments.actions.empty")}
+              {t("settings.localEnvironments.environment.cleanup.description")}
+            </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <SegmentedControl
+                ariaLabel={t("settings.localEnvironments.environment.cleanup.platformSelector")}
+                options={buildScriptPlatformOptions(t)}
+                selectedId={cleanupPlatform}
+                onSelect={(value) => onCleanupPlatformChange(value as ScriptPlatformSelection)}
+              />
+            </div>
+            <textarea
+              id={`local-environment-cleanup-script-${cleanupPlatform}`}
+              className="focus-visible:ring-token-focus w-full rounded-md border border-token-border bg-token-input-background px-2.5 py-2 font-mono text-sm text-token-text-primary outline-none focus-visible:ring-2"
+              value={getScriptForPlatform(editableEnvironment.cleanup, cleanupPlatform)}
+              placeholder={LOCAL_ENVIRONMENT_CLEANUP_PLACEHOLDER}
+              rows={6}
+              onChange={(event) => onUpdateScript("cleanup", cleanupPlatform, event.target.value)}
+            />
+          </div>
+        </SettingsGroup.Content>
+      </SettingsGroup>
+
+      <SettingsGroup>
+        <SettingsGroup.Header
+          title={t("settings.localEnvironments.actions.title")}
+          actions={
+            <Button color="secondary" size="toolbar" onClick={onAddAction}>
+              {t("settings.localEnvironments.actions.add")}
+            </Button>
+          }
+        />
+        <SettingsGroup.Content className="gap-1">
+          <div className="text-sm text-token-text-secondary">
+            {t("settings.localEnvironments.environment.actions.description")}
+          </div>
+          {editableEnvironment.actions.length === 0 ? (
+            <SettingsSurface>
+              <div className="p-3 text-sm text-token-text-secondary">
+                {t("settings.localEnvironments.actions.empty")}
+              </div>
+            </SettingsSurface>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {editableEnvironment.actions.map((action) => (
+                <ActionEditorCard
+                  key={action.id}
+                  action={action}
+                  onChange={onUpdateAction}
+                  onDelete={onRemoveAction}
+                />
+              ))}
             </div>
           )}
+        </SettingsGroup.Content>
+      </SettingsGroup>
+
+      {saveErrorMessage ? (
+        <div className="text-sm text-token-error-foreground">{saveErrorMessage}</div>
+      ) : null}
+
+      <div className="flex justify-end">
+        <span className="inline-flex" title={saveDisabledReason ?? undefined}>
+          <Button color="primary" disabled={saveDisabled} size="toolbar" loading={isSaving} type="submit">
+            {t("settings.localEnvironments.preview.save")}
+          </Button>
+        </span>
+      </div>
+    </form>
+  );
+}
+
+function ProjectSummaryCard({
+  workspaceGroup,
+  workspaceRoot,
+}: {
+  workspaceGroup: WorkspaceProjectGroup | null;
+  workspaceRoot: string;
+}) {
+  const resolvedLabel = workspaceGroup?.label ?? getLocalEnvironmentProjectName(workspaceRoot) ?? workspaceRoot;
+  const rootFolder = workspaceGroup?.repositoryData?.rootFolder ?? null;
+  const secondaryLabel =
+    rootFolder && rootFolder !== resolvedLabel ? `(${rootFolder})` : null;
+  const ProjectIcon = workspaceGroup?.isCodexWorktree ? WorktreeIcon : FolderIcon;
+
+  return (
+    <div className="flex items-center gap-3 p-3">
+      <ProjectIcon className="icon-sm shrink-0 text-token-text-secondary" />
+      <div className="flex min-w-0 flex-col gap-1">
+        <div className="flex min-w-0 items-center gap-1 text-sm text-token-text-primary">
+          <span className="truncate">{resolvedLabel}</span>
+          {secondaryLabel ? (
+            <span className="truncate text-xs text-token-description-foreground">{secondaryLabel}</span>
+          ) : null}
         </div>
-      </SurfaceCard>
+        <span className="truncate text-xs text-token-text-secondary">{workspaceRoot}</span>
+      </div>
     </div>
   );
 }
 
-function ScriptEditorCard({
-  activePlatform,
+function PlatformOverridesPreview({
   description,
-  isEnvVarsOpen,
-  onPlatformChange,
-  onScriptChange,
-  onToggleEnvVars,
-  placeholder,
-  script,
+  overrides,
   title,
-  toggleAriaLabel,
-  t,
 }: {
-  activePlatform: ScriptPlatformSelection;
   description: string;
-  isEnvVarsOpen: boolean;
-  onPlatformChange: (platform: ScriptPlatformSelection) => void;
-  onScriptChange: (platform: ScriptPlatformSelection, script: string) => void;
-  onToggleEnvVars?: (() => void) | undefined;
-  placeholder: string;
-  script: string;
+  overrides: Array<{ platform: LocalEnvironmentPlatform; script: string }>;
   title: string;
-  toggleAriaLabel: string;
-  t: (key: MessageKey, values?: Record<string, number | string>) => string;
 }) {
   return (
-    <SectionCard title={title}>
-      <div className="flex flex-col gap-4">
-        <div className="text-sm text-token-text-secondary">{description}</div>
-
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap items-center gap-2" aria-label={toggleAriaLabel}>
-            {SCRIPT_PLATFORM_OPTIONS.map((platform) => {
-              const isActive = platform === activePlatform;
-              return (
-                <button
-                  key={platform}
-                  type="button"
-                  onClick={() => onPlatformChange(platform)}
-                  className={[
-                    "rounded-[11px] px-3 py-1.5 text-[12px]",
-                    isActive ? "app-nav-item-active" : "app-control",
-                  ].join(" ")}
-                >
-                  {formatScriptPlatformLabel(platform, t)}
-                </button>
-              );
-            })}
-          </div>
-
-          {onToggleEnvVars ? (
-            <button
-              type="button"
-              onClick={onToggleEnvVars}
-              className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
-            >
-              {t("settings.localEnvironments.environment.setup.envVars.button")}
-            </button>
-          ) : null}
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1">
+        <div className="text-xs font-medium uppercase tracking-[0.12em] text-token-text-secondary">
+          {title}
         </div>
-
-        {isEnvVarsOpen ? (
-          <SurfaceCard>
-            <div className="flex flex-col gap-3">
-              <div className="text-sm font-medium text-token-text-primary">
-                {t("settings.localEnvironments.environment.setup.envVars.title")}
-              </div>
-              <EnvVarRow
-                description={t("settings.localEnvironments.environment.setup.envVars.sourcePath.description")}
-                variable="CODEX_SOURCE_PATH"
-              />
-              <EnvVarRow
-                description={t("settings.localEnvironments.environment.setup.envVars.worktreePath.description")}
-                variable="CODEX_WORKTREE_PATH"
-              />
-            </div>
-          </SurfaceCard>
-        ) : null}
-
-        <textarea
-          value={script}
-          rows={6}
-          placeholder={placeholder}
-          onChange={(event) => onScriptChange(activePlatform, event.target.value)}
-          className="app-control app-text-input min-h-[140px] w-full rounded-[12px] px-3 py-2 font-mono text-[13px] outline-none"
-        />
+        <div className="text-sm text-token-text-secondary">{description}</div>
       </div>
-    </SectionCard>
+      {overrides.map((override) => (
+        <PlatformScriptPreview key={override.platform} platform={override.platform} script={override.script} />
+      ))}
+    </div>
+  );
+}
+
+function PlatformScriptPreview({
+  platform,
+  script,
+}: {
+  platform: LocalEnvironmentPlatform;
+  script: string;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="text-xs font-medium uppercase tracking-[0.12em] text-token-text-secondary">
+        {formatPlatformLabel(platform, t)}
+      </div>
+      <CodeBlock script={script} />
+    </div>
+  );
+}
+
+function ActionSummaryRow({ action }: { action: LocalEnvironmentAction }) {
+  return (
+    <div className="flex items-center gap-2 text-sm text-token-text-secondary">
+      <span className="text-token-text-secondary">
+        <LocalEnvironmentActionIconGlyph icon={action.icon ?? "tool"} />
+      </span>
+      <span>{action.name}</span>
+    </div>
+  );
+}
+
+function LocalEnvironmentSettingsRow({
+  control,
+  label,
+}: {
+  control: ReactNode;
+  label: string;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4 max-sm:flex-col max-sm:items-stretch">
+      <div className="min-w-0 flex-1">
+        <div className="text-[14px]">{label}</div>
+      </div>
+      <div className="shrink-0">{control}</div>
+    </div>
+  );
+}
+
+function SegmentedControl({
+  ariaLabel,
+  options,
+  selectedId,
+  onSelect,
+}: {
+  ariaLabel: string;
+  options: Array<{ id: string; label: string }>;
+  selectedId: string;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div className="app-segmented inline-flex rounded-[12px] p-1" aria-label={ariaLabel}>
+      {options.map((option) => (
+        <button
+          key={option.id}
+          type="button"
+          className={[
+            "rounded-[9px] px-3 py-1.5 text-[13px] transition",
+            option.id === selectedId ? "app-segmented-option-active" : "app-segmented-option-idle",
+          ].join(" ")}
+          onClick={() => onSelect(option.id)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function SetupEnvVarsPopover({
+  open,
+  onOpenChange,
+}: {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
+  const { t } = useI18n();
+  const isControlled = open !== undefined;
+  const [internalOpen, setInternalOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const isOpen = isControlled ? open : internalOpen;
+
+  const setOpen = (nextOpen: boolean) => {
+    if (!isControlled) {
+      setInternalOpen(nextOpen);
+    }
+    onOpenChange?.(nextOpen);
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (containerRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setOpen(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [isOpen]);
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <Button
+        className="w-auto"
+        color="ghost"
+        size="toolbar"
+        onClick={() => setOpen(!isOpen)}
+      >
+        {t("settings.localEnvironments.environment.setup.envVars.button")}
+      </Button>
+      {isOpen ? (
+        <div className="absolute top-[calc(100%+8px)] right-0 z-20 flex w-80 max-w-[min(20rem,var(--radix-popover-content-available-width))] flex-col gap-1 rounded-lg border border-token-border bg-token-bg-fog p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+          <div className="px-2 py-1 text-sm font-medium text-token-text-primary">
+            {t("settings.localEnvironments.environment.setup.envVars.title")}
+          </div>
+          <div className="flex flex-col gap-1">
+            <EnvVarRow
+              description={t("settings.localEnvironments.environment.setup.envVars.sourcePath.description")}
+              variable="CODEX_SOURCE_PATH"
+            />
+            <EnvVarRow
+              description={t("settings.localEnvironments.environment.setup.envVars.worktreePath.description")}
+              variable="CODEX_WORKTREE_PATH"
+            />
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -1690,106 +1973,118 @@ function ActionEditorCard({
   action,
   onChange,
   onDelete,
-  t,
 }: {
   action: EditableLocalEnvironmentAction;
   onChange: (actionId: string, patch: Partial<EditableLocalEnvironmentAction>) => void;
   onDelete: (actionId: string) => void;
-  t: (key: MessageKey, values?: Record<string, number | string>) => string;
 }) {
+  const { t } = useI18n();
   const isPlatformSpecific = action.platform !== null;
   const selectedPlatform = action.platform ?? "darwin";
 
   return (
-    <SurfaceCard>
-      <div className="grid gap-4">
-        <div className="grid gap-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-end">
+    <div className="flex flex-col gap-3 rounded-lg border border-token-border bg-token-input-background p-3">
+      <div className="flex flex-col gap-2">
+        <label
+          className="text-xs font-medium uppercase tracking-[0.12em] text-token-text-secondary"
+          htmlFor={`local-env-action-name-${action.id}`}
+        >
+          {t("settings.localEnvironments.actions.item.name")}
+        </label>
+        <div className="flex items-center gap-2">
           <ActionIconMenu
             ariaLabel={t(getActionIconMessageKey(action.icon ?? "tool"))}
             onChange={(icon) => onChange(action.id, { icon })}
             t={t}
             value={action.icon ?? "tool"}
           />
-
-          <label className="flex flex-col gap-2">
-            <span className="text-xs font-medium uppercase tracking-[0.12em] text-token-text-secondary">
-              {t("settings.localEnvironments.actions.item.name")}
-            </span>
+          <div className="flex-1">
             <input
+              id={`local-env-action-name-${action.id}`}
+              className="focus-visible:ring-token-focus w-full rounded-md border border-token-border bg-token-input-background px-2.5 py-1.5 text-sm text-token-text-primary outline-none focus-visible:ring-2"
               value={action.name}
               onChange={(event) => onChange(action.id, { name: event.target.value })}
-              className="app-control app-text-input rounded-[12px] px-3 py-2 text-[13px] outline-none"
             />
-          </label>
-
-          <button
-            type="button"
-            title={t("settings.localEnvironments.actions.item.tooltip.delete")}
-            aria-label={t("settings.localEnvironments.actions.item.tooltip.delete")}
-            onClick={() => onDelete(action.id)}
-            className="app-control flex h-[40px] w-[40px] items-center justify-center rounded-[11px]"
-          >
-            <TrashIcon className="icon-sm" />
-          </button>
-        </div>
-
-        <label className="flex flex-col gap-2">
-          <span className="text-xs font-medium uppercase tracking-[0.12em] text-token-text-secondary">
-            {t("settings.localEnvironments.actions.item.command")}
-          </span>
-          <textarea
-            value={action.command}
-            rows={4}
-            placeholder={LOCAL_ENVIRONMENT_ACTION_PLACEHOLDER}
-            onChange={(event) => onChange(action.id, { command: event.target.value })}
-            className="app-control app-text-input min-h-[112px] rounded-[12px] px-3 py-2 font-mono text-[13px] outline-none"
-          />
-        </label>
-
-        <div className="flex flex-col gap-3">
-          <div className="text-xs font-medium uppercase tracking-[0.12em] text-token-text-secondary">
-            {t("settings.localEnvironments.actions.item.platforms")}
           </div>
-          <label className="flex items-center gap-3 text-sm text-token-text-primary">
-            <input
-              type="checkbox"
-              checked={isPlatformSpecific}
-              onChange={(event) =>
-                onChange(action.id, {
-                  platform: event.target.checked ? selectedPlatform : null,
-                })
-              }
-              className="h-4 w-4 rounded border border-[var(--app-shell-border)]"
-            />
-            <span>{t("settings.localEnvironments.actions.item.platforms.specific")}</span>
-          </label>
-          <div className="text-sm text-token-text-secondary">
-            {t("settings.localEnvironments.actions.item.platforms.help")}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <label
+          className="text-xs font-medium uppercase tracking-[0.12em] text-token-text-secondary"
+          htmlFor={`local-env-action-command-${action.id}`}
+        >
+          {t("settings.localEnvironments.actions.item.command")}
+        </label>
+        <textarea
+          id={`local-env-action-command-${action.id}`}
+          className="focus-visible:ring-token-focus w-full rounded-md border border-token-border bg-token-input-background px-2.5 py-2 font-mono text-sm text-token-text-primary outline-none focus-visible:ring-2"
+          value={action.command}
+          placeholder={LOCAL_ENVIRONMENT_ACTION_PLACEHOLDER}
+          rows={4}
+          onChange={(event) => onChange(action.id, { command: event.target.value })}
+        />
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-6">
+          <div className="min-w-0">
+            <div className="flex flex-col gap-2">
+              <div className="text-xs font-medium uppercase tracking-[0.12em] text-token-text-secondary">
+                {t("settings.localEnvironments.actions.item.platforms")}
+              </div>
+              <div className="text-xs text-token-text-secondary">
+                {t("settings.localEnvironments.actions.item.platforms.help")}
+              </div>
+              <div className="relative flex items-center gap-2 text-sm">
+                <input
+                  id={`local-env-action-platform-specific-${action.id}`}
+                  type="checkbox"
+                  checked={isPlatformSpecific}
+                  className="h-4 w-4 rounded border border-token-border"
+                  onChange={(event) => {
+                    if (event.target.checked) {
+                      onChange(action.id, { platform: selectedPlatform });
+                      return;
+                    }
+                    onChange(action.id, { platform: null });
+                  }}
+                />
+                <label
+                  className="text-token-text-secondary"
+                  htmlFor={`local-env-action-platform-specific-${action.id}`}
+                >
+                  {t("settings.localEnvironments.actions.item.platforms.specific")}
+                </label>
+              </div>
+            </div>
           </div>
 
           {isPlatformSpecific ? (
-            <div
-              className="flex flex-wrap items-center gap-2"
-              aria-label={t("settings.localEnvironments.actions.item.platforms.selector")}
-            >
-              {LOCAL_ENVIRONMENT_PLATFORMS.map((platform) => (
-                <button
-                  key={platform}
-                  type="button"
-                  onClick={() => onChange(action.id, { platform })}
-                  className={[
-                    "rounded-[11px] px-3 py-1.5 text-[12px]",
-                    platform === selectedPlatform ? "app-nav-item-active" : "app-control",
-                  ].join(" ")}
-                >
-                  {formatPlatformLabel(platform, t)}
-                </button>
-              ))}
+            <div className="flex justify-start">
+              <SegmentedControl
+                ariaLabel={t("settings.localEnvironments.actions.item.platforms.selector")}
+                options={buildPlatformOptions(t)}
+                selectedId={selectedPlatform}
+                onSelect={(value) => onChange(action.id, { platform: value as LocalEnvironmentPlatform })}
+              />
             </div>
           ) : null}
         </div>
+
+        <div className="flex justify-end sm:justify-center">
+          <Button
+            aria-label={t("settings.localEnvironments.actions.item.button.delete")}
+            color="ghost"
+            size="toolbar"
+            onClick={() => onDelete(action.id)}
+            title={t("settings.localEnvironments.actions.item.tooltip.delete")}
+          >
+            <TrashIcon className="icon-sm" />
+          </Button>
+        </div>
       </div>
-    </SurfaceCard>
+    </div>
   );
 }
 
@@ -1881,44 +2176,27 @@ function LocalEnvironmentActionIconGlyph({ icon }: { icon: LocalEnvironmentActio
 
 function EnvVarRow({ description, variable }: { description: string; variable: string }) {
   return (
-    <div className="rounded-[12px] border border-[var(--app-shell-border)] px-3 py-2">
+    <div className="rounded-lg px-2 py-1">
       <div className="text-sm text-token-text-secondary">{description}</div>
-      <code className="mt-2 block overflow-x-auto rounded-[10px] bg-[var(--app-shell-muted-surface)] px-2 py-1.5 text-xs">
-        {variable}
-      </code>
+      <div className="mt-2 overflow-x-auto rounded-md border border-token-input-background bg-token-text-code-block-background px-2 py-1.5">
+        <code className="block whitespace-nowrap text-xs font-medium text-token-text-primary">{variable}</code>
+      </div>
     </div>
   );
 }
 
 function CodeBlock({ script }: { script: string }) {
   return (
-    <SurfaceCard>
-      <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[12px] leading-6 text-token-text-primary">
+    <SettingsSurface>
+      <pre className="max-h-40 overflow-x-auto whitespace-pre-wrap p-3 font-mono text-[12px] leading-6 text-token-text-primary">
         {script}
       </pre>
-    </SurfaceCard>
-  );
-}
-
-function InfoCard({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="app-card rounded-[18px] px-5 py-4">
-      <div className="text-[14px] font-medium">{title}</div>
-      <div className="app-text-muted mt-1 text-[13px] leading-6">{body}</div>
-    </div>
+    </SettingsSurface>
   );
 }
 
 function InlineError({ message }: { message: string }) {
   return <div className="mt-3 text-sm text-token-error-foreground">{message}</div>;
-}
-
-function UnavailableState({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-5 py-5">
-      <InfoCard title={title} body={body} />
-    </div>
-  );
 }
 
 function toEditableDocument(document: LocalEnvironmentDocument): EditableLocalEnvironmentDocument {
@@ -2109,16 +2387,6 @@ function normalizeOptionalRouteValue(value: string | null) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
-function formatScriptPlatformLabel(
-  platform: ScriptPlatformSelection,
-  t: (key: MessageKey, values?: Record<string, number | string>) => string,
-) {
-  if (platform === "default") {
-    return t("settings.localEnvironments.environment.script.default");
-  }
-  return formatPlatformLabel(platform, t);
-}
-
 function formatPlatformLabel(
   platform: LocalEnvironmentPlatform,
   t: (key: MessageKey, values?: Record<string, number | string>) => string,
@@ -2143,6 +2411,34 @@ function getActionIconMessageKey(icon: LocalEnvironmentActionIcon): MessageKey {
     return "settings.localEnvironments.actions.icon.debug";
   }
   return "settings.localEnvironments.actions.icon.test";
+}
+
+function buildScriptPlatformOptions(t: (key: MessageKey, values?: Record<string, number | string>) => string) {
+  return SCRIPT_PLATFORM_OPTIONS.map((platform) => ({
+    id: platform,
+    label:
+      platform === "default"
+        ? t("settings.localEnvironments.environment.script.default")
+        : formatPlatformLabel(platform, t),
+  }));
+}
+
+function buildPlatformOptions(t: (key: MessageKey, values?: Record<string, number | string>) => string) {
+  return LOCAL_ENVIRONMENT_PLATFORMS.map((platform) => ({
+    id: platform,
+    label: formatPlatformLabel(platform, t),
+  }));
+}
+
+function getScriptOverrides(section: LocalEnvironmentScriptSection | null) {
+  if (!section) {
+    return [];
+  }
+
+  return LOCAL_ENVIRONMENT_PLATFORMS.flatMap((platform) => {
+    const script = section[platform]?.script ?? "";
+    return script.length > 0 ? [{ platform, script }] : [];
+  });
 }
 
 function BugIcon({ className }: { className?: string }) {
@@ -2192,10 +2488,3 @@ function ChevronRightIcon({ className }: { className?: string }) {
   );
 }
 
-function WorktreeIcon({ className }: { className?: string }) {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" className={className}>
-      <path d="M15.8 11.535c.367 0 .665.298.665.665v5a.665.665 0 0 1-.665.665h-5a.665.665 0 1 1 0-1.33h3.394l-3.565-3.564a.666.666 0 0 1 .942-.942l3.564 3.565V12.2c0-.367.298-.665.665-.665Zm0-9.4c.367 0 .665.298.665.665v5a.665.665 0 0 1-1.33 0V4.405l-5.128 5.128c-.323.324-.558.565-.842.74a2.668 2.668 0 0 1-.771.319c-.324.078-.662.073-1.12.073H1.93a.665.665 0 1 1 0-1.33h5.345c.52 0 .673-.005.809-.037.136-.033.266-.086.385-.16.12-.072.23-.177.598-.545l5.128-5.128H10.8a.665.665 0 0 1 0-1.33h5Z" />
-    </svg>
-  );
-}

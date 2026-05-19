@@ -51,6 +51,23 @@ export type ChatGptLoginStart = {
   authUrl: string;
 };
 
+export type LoginCompletionResult = {
+  loginId?: string | null;
+  success: boolean;
+  error?: string | null;
+};
+
+export type RemoteChatGptLoginCompletedNotification = {
+  hostId: string;
+  loginId?: string | null;
+  success: boolean;
+  error?: string | null;
+};
+
+export type ChatGptLoginStartWithCompletion = ChatGptLoginStart & {
+  completion: Promise<LoginCompletionResult>;
+};
+
 export type DeviceCodeLoginStart = {
   loginId: string;
   verificationUrl: string;
@@ -183,20 +200,132 @@ export async function loginApiKeyForHost(hostId: string | null, apiKey: string) 
 }
 
 export async function loginChatGpt(params: ChatGptLoginParams = {}) {
-  return invoke<ChatGptLoginStart>("login-with-chatgpt", {
-    params: {
-      hostId: normalizeHostId(params.hostId),
-      useStreamlinedLogin: params.useStreamlinedLogin === true,
+  const normalizedHostId = normalizeHostId(params.hostId);
+  return invoke<ChatGptLoginStart>(
+    normalizedHostId == null ? "login-with-chatgpt" : "login-with-chatgpt-for-host",
+    {
+      params: {
+        hostId: normalizedHostId,
+        useStreamlinedLogin: params.useStreamlinedLogin === true,
+      },
     },
+  );
+}
+
+export async function loginChatGptWithCompletion(
+  params: ChatGptLoginParams & {
+    signal?: AbortSignal;
+  } = {},
+): Promise<ChatGptLoginStartWithCompletion> {
+  const normalizedHostId = normalizeHostId(params.hostId);
+  const start = await loginChatGpt({
+    hostId: normalizedHostId,
+    useStreamlinedLogin: params.useStreamlinedLogin,
   });
+
+  if (normalizedHostId == null) {
+    return {
+      ...start,
+      completion: Promise.resolve({
+        loginId: start.loginId,
+        success: true,
+        error: null,
+      }),
+    };
+  }
+
+  const completion = new Promise<LoginCompletionResult>((resolve, reject) => {
+    let finished = false;
+    let disposeAbortListener: (() => void) | null = null;
+    let disposeEventListener: (() => void) | null = null;
+
+    const finalize = (callback: () => void) => {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      disposeAbortListener?.();
+      disposeEventListener?.();
+      callback();
+    };
+
+    const abort = () => {
+      void cancelLogin(start.loginId, normalizedHostId)
+        .catch((error) => {
+          finalize(() => {
+            reject(error);
+          });
+        })
+        .finally(() => {
+          finalize(() => {
+            const abortError = new Error("Aborted");
+            abortError.name = "AbortError";
+            reject(abortError);
+          });
+        });
+    };
+
+    if (params.signal?.aborted) {
+      abort();
+      return;
+    }
+
+    if (params.signal) {
+      const onAbort = () => {
+        abort();
+      };
+      params.signal.addEventListener("abort", onAbort, { once: true });
+      disposeAbortListener = () => {
+        params.signal?.removeEventListener("abort", onAbort);
+      };
+    }
+
+    void onRemoteChatGptLoginCompleted((event) => {
+      if (event.hostId !== normalizedHostId) {
+        return;
+      }
+      if (event.loginId && event.loginId !== start.loginId) {
+        return;
+      }
+      finalize(() => {
+        resolve({
+          loginId: event.loginId ?? start.loginId,
+          success: event.success,
+          error: event.error ?? null,
+        });
+      });
+    })
+      .then((dispose) => {
+        if (finished) {
+          dispose();
+          return;
+        }
+        disposeEventListener = dispose;
+      })
+      .catch((error) => {
+        finalize(() => {
+          reject(error);
+        });
+      });
+  });
+
+  return {
+    ...start,
+    completion,
+  };
 }
 
 export async function loginChatGptDeviceCode() {
   return invoke<DeviceCodeLoginStart>("login-with-chatgpt-device-code");
 }
 
-export async function cancelLogin(loginId: string) {
-  return invoke<void>("cancel_login", { loginId });
+export async function cancelLogin(loginId: string, hostId?: string | null) {
+  return invoke<void>("cancel_login", {
+    params: {
+      loginId,
+      hostId: normalizeHostId(hostId),
+    },
+  });
 }
 
 export async function logout() {
@@ -217,13 +346,15 @@ export function onAuthSnapshotChange(handler: (snapshot: AuthSnapshot) => void) 
   });
 }
 
-export function isUsageSettingsPlanSupported(plan: string | null) {
-  if (plan == null) {
-    return false;
-  }
-
-  const normalizedPlan = plan.trim().toLowerCase();
-  return normalizedPlan === "plus" || normalizedPlan === "pro" || normalizedPlan === "prolite";
+export function onRemoteChatGptLoginCompleted(
+  handler: (notification: RemoteChatGptLoginCompletedNotification) => void,
+) {
+  return listen<RemoteChatGptLoginCompletedNotification>(
+    "remote-chatgpt-login-completed",
+    (event) => {
+      handler(event.payload);
+    },
+  );
 }
 
 type TranslateMessage = (key: MessageKey, values?: MessageValues) => string;

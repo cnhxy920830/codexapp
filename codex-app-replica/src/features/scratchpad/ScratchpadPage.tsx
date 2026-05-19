@@ -1,5 +1,7 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
+import { Button } from "../../components/Button";
 import { Spinner } from "../../components/Spinner";
+import { Tooltip } from "../../components/Tooltip";
 import type { AppToast } from "../../components/AppToastRegion";
 import { useI18n } from "../../i18n/i18n";
 import {
@@ -19,6 +21,7 @@ import { readAppsSnapshot, type AppInfo } from "../../services/apps";
 import { readProjectlessThreadCwd } from "../../services/projectlessThreads";
 import { generateScratchpadCompletionSummary } from "../../services/scratchpad";
 import { readSkillsSnapshot, type SkillSummary } from "../../services/skills";
+import { ThreadPageHeader } from "../chat/ThreadPageHeader";
 import { ScratchpadPromptContent } from "./ScratchpadPromptContent";
 import { ScratchpadPromptInput } from "./ScratchpadPromptInput";
 import type { RowSummaryState, ScratchpadRow, ThreadRuntimeState } from "./scratchpadTypes";
@@ -27,11 +30,11 @@ const INITIAL_ROW_ID = "scratchpad-0";
 
 export function ScratchpadPage({
   onOpenConversation,
-  onRegisterClearAction,
+  onRegisterHeaderContent,
   onShowToast,
 }: {
   onOpenConversation?: (conversationId: string) => void;
-  onRegisterClearAction?: (action: (() => void) | null) => void;
+  onRegisterHeaderContent?: (content: ReactNode | null) => void;
   onShowToast?: (toast: AppToast) => void;
 }) {
   const { t } = useI18n();
@@ -113,8 +116,8 @@ export function ScratchpadPage({
     let cancelled = false;
 
     void Promise.all([
-      readAppsSnapshot().then((response) => response.data).catch(() => []),
-      readSkillsSnapshot(null).catch(() => []),
+      readAppsSnapshot({ hostId: null }).then((response) => response.data).catch(() => []),
+      readSkillsSnapshot(null, { hostId: null }).catch(() => []),
     ]).then(([nextApps, nextSkills]) => {
       if (cancelled) {
         return;
@@ -191,13 +194,21 @@ export function ScratchpadPage({
         cwd: thread.cwd,
       })
         .then((response) => {
+          const nextSummary = response.summary;
           setSummaryByRowId((current) => ({
             ...current,
-            [row.id]: {
-              status: "ready",
-              message: finalAssistantMessage,
-              summary: response.summary,
-            },
+            [row.id]:
+              nextSummary == null
+                ? {
+                    status: "error",
+                    message: finalAssistantMessage,
+                    summary: null,
+                  }
+                : {
+                    status: "ready",
+                    message: finalAssistantMessage,
+                    summary: nextSummary,
+                  },
           }));
         })
         .catch(() => {
@@ -226,12 +237,31 @@ export function ScratchpadPage({
     setRows([createDraftRow(INITIAL_ROW_ID)]);
   });
 
+  const headerContent = useMemo(
+    () => (
+      <div className="draggable grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 py-2">
+        <ThreadPageHeader
+          compact
+          environmentType={null}
+          secondaryText={t("scratchpadPage.headerSubtitle")}
+          start={t("scratchpadPage.headerTitle")}
+          trailingActions={
+            <Button color="ghost" size="toolbar" onClick={() => clearRows()}>
+              {t("scratchpadPage.clearButton")}
+            </Button>
+          }
+        />
+      </div>
+    ),
+    [clearRows, t],
+  );
+
   useEffect(() => {
-    onRegisterClearAction?.(clearRows);
+    onRegisterHeaderContent?.(headerContent);
     return () => {
-      onRegisterClearAction?.(null);
+      onRegisterHeaderContent?.(null);
     };
-  }, [clearRows, onRegisterClearAction]);
+  }, [headerContent, onRegisterHeaderContent]);
 
   const handleDraftChange = (rowId: string, text: string) => {
     setRows((current) =>
@@ -908,7 +938,7 @@ function ScratchpadPromptRowText({
   }, [text]);
 
   if (conversationId) {
-    return (
+    const button = (
       <button
         ref={(element) => {
           textRef.current = element;
@@ -916,23 +946,33 @@ function ScratchpadPromptRowText({
         type="button"
         className="min-w-0 cursor-interaction truncate text-left text-base text-token-foreground hover:underline"
         onClick={() => onOpenConversation?.(conversationId)}
-        title={isTruncated ? text : undefined}
       >
         <ScratchpadPromptContent apps={apps} hostId={hostId} skills={skills} text={text} />
       </button>
     );
+
+    return (
+      <Tooltip align="start" disabled={!isTruncated} side="top" tooltipContent={text}>
+        {button}
+      </Tooltip>
+    );
   }
 
-  return (
+  const content = (
     <div
       ref={(element) => {
         textRef.current = element;
       }}
       className="min-w-0 truncate text-base text-token-foreground"
-      title={isTruncated ? text : undefined}
     >
       <ScratchpadPromptContent apps={apps} hostId={hostId} skills={skills} text={text} />
     </div>
+  );
+
+  return (
+    <Tooltip align="start" disabled={!isTruncated} side="top" tooltipContent={text}>
+      {content}
+    </Tooltip>
   );
 }
 

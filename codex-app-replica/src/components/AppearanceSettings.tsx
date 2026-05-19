@@ -19,6 +19,12 @@ import {
   type AppearanceVariant,
 } from "../services/appearanceThemes";
 import type { AppToast } from "./AppToastRegion";
+import { Button } from "./Button";
+import { SettingsContentLayout } from "./SettingsContentLayout";
+import { SettingsGroup } from "./SettingsGroup";
+import { SettingsRow } from "./SettingsRow";
+import { SettingsSectionTitle } from "./SettingsSectionTitle";
+import { SettingsSurface } from "./SettingsSurface";
 import { ToggleSwitch } from "./ToggleSwitch";
 import { PetsSection } from "./appearance/PetsSection";
 import { ThemeEditorCard } from "./appearance/ThemeEditorCard";
@@ -41,6 +47,7 @@ export function AppearanceSettings({
   const previewVariant = useResolvedPreviewVariant(state.appearanceTheme);
   const isMacOsPlatform =
     typeof navigator !== "undefined" && (navigator.platform ?? "").startsWith("Mac");
+  const showCodeFont = state.conversationDetailMode === "STEPS_COMMANDS";
 
   useEffect(() => {
     stateRef.current = state;
@@ -261,81 +268,70 @@ export function AppearanceSettings({
   ];
 
   return (
-    <div className="main-surface flex h-full min-h-0 flex-col">
-      <div className="scrollbar-stable flex-1 overflow-y-auto p-5">
-        <div className="mx-auto flex w-full max-w-2xl flex-col">
-          <div className="flex items-center justify-between gap-3 pb-5">
-            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-              <h1 className="text-[20px] font-medium leading-7 text-token-text-primary">
-                {t("settings.section.appearance")}
-              </h1>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-5">
-            <SettingsSurface>
-              <SettingsRow
-                label={t("settings.general.appearance.theme")}
-                description={t("settings.general.appearance.theme.description")}
-              >
-                <div className="inline-flex rounded-lg border border-token-border bg-token-input-background p-1 shadow-sm">
-                  {themeOptions.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      aria-label={option.ariaLabel}
-                      disabled={isLoading || isSaving}
-                      onClick={() => void persistTheme(option.value)}
-                      className={[
-                        "rounded-md px-3 py-1.5 text-sm transition",
-                        option.value === state.appearanceTheme
-                          ? "bg-token-main-surface-primary text-token-text-primary shadow-sm"
-                          : "text-token-text-secondary hover:bg-token-list-hover-background",
-                      ].join(" ")}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </SettingsRow>
-            </SettingsSurface>
-
-            <ThemePreviewCard theme={previewTheme} variant={previewVariant} />
-
-            <div className="flex flex-col gap-2">
-              {editorVariants.map((variant) => (
-                <ThemeEditorCard
-                  key={variant}
-                  codeThemeId={readCodeThemeId(state, variant)}
-                  disabled={isLoading || isSaving}
-                  theme={readChromeTheme(state, variant)}
-                  variant={variant}
-                  onCodeThemeChange={(value) => void persistCodeThemeSelection(variant, value)}
-                  onCopyTheme={() => copyTheme(variant)}
-                  onFontsPatchChange={(patch) => void persistThemeFontsPatch(variant, patch)}
-                  onImportTheme={(value) => importTheme(variant, value)}
-                  onThemePatchChange={(patch) => void persistChromeThemePatch(variant, patch)}
+    <SettingsContentLayout title={<SettingsSectionTitle slug="appearance" />}>
+      <SettingsGroup>
+        <SettingsGroup.Content>
+          <SettingsSurface>
+            <SettingsRow
+              label={t("settings.general.appearance.theme")}
+              description={t("settings.general.appearance.theme.description")}
+              control={
+                <SegmentedControl
+                  ariaLabel={t("settings.general.appearance.theme")}
+                  selectedId={state.appearanceTheme}
+                  onSelect={(value) => {
+                    if (value === "light" || value === "dark" || value === "system") {
+                      void persistTheme(value);
+                    }
+                  }}
+                  options={themeOptions.map((option) => ({
+                    id: option.value,
+                    label: option.label,
+                    ariaLabel: option.ariaLabel,
+                    disabled: isLoading || isSaving,
+                  }))}
                 />
-              ))}
+              }
+            />
+
+            <div className="flex flex-col gap-2 p-1">
+              <ThemePreviewCard theme={previewTheme} variant={previewVariant} />
+              <div className="flex flex-col gap-2">
+                {editorVariants.map((variant) => (
+                  <ThemeEditorCard
+                    key={variant}
+                    codeThemeId={readCodeThemeId(state, variant)}
+                    disabled={isLoading || isSaving}
+                    theme={readChromeTheme(state, variant)}
+                    variant={variant}
+                    showCodeFont={showCodeFont}
+                    onCodeThemeChange={(value) => void persistCodeThemeSelection(variant, value)}
+                    onCopyTheme={() => copyTheme(variant)}
+                    onFontsPatchChange={(patch) => void persistThemeFontsPatch(variant, patch)}
+                    onImportTheme={(value) => importTheme(variant, value)}
+                    onThemePatchChange={(patch) => void persistChromeThemePatch(variant, patch)}
+                  />
+                ))}
+              </div>
             </div>
 
-            <SettingsSurface>
-              <SettingsRow
-                label={t("settings.general.appearance.usePointerCursors.label")}
-                description={t("settings.general.appearance.usePointerCursors.description")}
-              >
+            <SettingsRow
+              label={t("settings.general.appearance.usePointerCursors.label")}
+              description={t("settings.general.appearance.usePointerCursors.description")}
+              control={
                 <ToggleSwitch
                   checked={state.usePointerCursors}
                   disabled={isLoading || isSaving}
                   ariaLabel={t("settings.general.appearance.usePointerCursors.label")}
                   onChange={(checked) => void persistPointerCursors(checked)}
                 />
-              </SettingsRow>
+              }
+            />
 
-              <SettingsRow
-                label={t("settings.general.appearance.sansFontSize.row")}
-                description={t("settings.general.appearance.sansFontSize.row.description")}
-              >
+            <SettingsRow
+              label={t("settings.general.appearance.sansFontSize.row")}
+              description={t("settings.general.appearance.sansFontSize.row.description")}
+              control={
                 <NumberInput
                   ariaLabel={t("settings.general.appearance.sansFontSize")}
                   disabled={isLoading || isSaving}
@@ -345,43 +341,47 @@ export function AppearanceSettings({
                   value={state.uiFontSize}
                   onCommit={(value) => void persistNumber("uiFontSize", value)}
                 />
-              </SettingsRow>
+              }
+            />
 
+            {showCodeFont ? (
               <SettingsRow
                 label={t("settings.general.appearance.codeFontSize.row")}
                 description={t("settings.general.appearance.codeFontSize.row.description")}
-              >
-                <NumberInput
-                  ariaLabel={t("settings.general.appearance.codeFontSize")}
-                  disabled={isLoading || isSaving}
-                  max={24}
-                  min={8}
-                  unitLabel={t("settings.general.appearance.codeFontSize.units")}
-                  value={state.codeFontSize}
-                  onCommit={(value) => void persistNumber("codeFontSize", value)}
-                />
-              </SettingsRow>
+                control={
+                  <NumberInput
+                    ariaLabel={t("settings.general.appearance.codeFontSize")}
+                    disabled={isLoading || isSaving}
+                    max={24}
+                    min={8}
+                    unitLabel={t("settings.general.appearance.codeFontSize.units")}
+                    value={state.codeFontSize}
+                    onCommit={(value) => void persistNumber("codeFontSize", value)}
+                  />
+                }
+              />
+            ) : null}
 
-              {isMacOsPlatform ? (
-                <SettingsRow
-                  label={t("settings.general.appearance.fontSmoothing.label")}
-                  description={t("settings.general.appearance.fontSmoothing.description")}
-                >
+            {isMacOsPlatform ? (
+              <SettingsRow
+                label={t("settings.general.appearance.fontSmoothing.label")}
+                description={t("settings.general.appearance.fontSmoothing.description")}
+                control={
                   <ToggleSwitch
                     checked={state.useFontSmoothing}
                     disabled={isLoading || isSaving}
                     ariaLabel={t("settings.general.appearance.fontSmoothing.label")}
                     onChange={(checked) => void persistFontSmoothing(checked)}
                   />
-                </SettingsRow>
-              ) : null}
-            </SettingsSurface>
+                }
+              />
+            ) : null}
+          </SettingsSurface>
+        </SettingsGroup.Content>
+      </SettingsGroup>
 
-            <PetsSection onOpenChatWithPrompt={onOpenChatWithPrompt} onShowToast={onShowToast} />
-          </div>
-        </div>
-      </div>
-    </div>
+      <PetsSection onOpenChatWithPrompt={onOpenChatWithPrompt} onShowToast={onShowToast} />
+    </SettingsContentLayout>
   );
 }
 
@@ -484,45 +484,56 @@ function resolveSystemAppearanceVariant(): AppearanceVariant {
   return window.matchMedia(SYSTEM_APPEARANCE_MEDIA_QUERY).matches ? "dark" : "light";
 }
 
-function SettingsSurface({ children }: { children: ReactNode }) {
-  return (
-    <div
-      className="border-token-border flex flex-col divide-y-[0.5px] divide-token-border rounded-lg border"
-      style={{
-        backgroundColor: "var(--color-background-panel, var(--color-token-bg-fog))",
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function SettingsRow({
-  label,
-  description,
-  children,
-}: {
-  label: string;
-  description?: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 p-3 max-sm:flex-col max-sm:items-stretch">
-      <div className="min-w-0 flex-1">
-        <div className="text-sm text-token-text-primary">{label}</div>
-        {description ? <div className="mt-1 text-sm text-token-text-secondary">{description}</div> : null}
-      </div>
-      {children}
-    </div>
-  );
-}
-
 function ThemeOptionLabel({ icon, label }: { icon: ReactNode; label: string }) {
   return (
     <span className="flex items-center gap-1.5">
       {icon}
-      <span className="text-[14px]">{label}</span>
+      <span className="text-sm">{label}</span>
     </span>
+  );
+}
+
+function SegmentedControl({
+  ariaLabel,
+  onSelect,
+  options,
+  selectedId,
+}: {
+  ariaLabel: string;
+  onSelect: (id: string) => void;
+  options: Array<{
+    ariaLabel: string;
+    disabled?: boolean;
+    id: string;
+    label: ReactNode;
+  }>;
+  selectedId: string;
+}) {
+  return (
+    <div className="inline-flex items-center gap-0.5" role="group" aria-label={ariaLabel}>
+      {options.map((option) => {
+        const selected = option.id === selectedId;
+        const disabled = option.disabled ?? false;
+
+        return (
+          <Button
+            key={option.id}
+            color={selected ? "secondary" : "ghost"}
+            size="default"
+            aria-label={option.ariaLabel}
+            aria-pressed={selected}
+            disabled={disabled}
+            onClick={() => {
+              if (!disabled) {
+                onSelect(option.id);
+              }
+            }}
+          >
+            {option.label}
+          </Button>
+        );
+      })}
+    </div>
   );
 }
 

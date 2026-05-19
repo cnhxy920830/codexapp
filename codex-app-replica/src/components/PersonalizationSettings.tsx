@@ -1,133 +1,155 @@
-import { useEffect, useRef, useState } from "react";
-import { useI18n } from "../i18n/i18n";
-import { renderInlineLinkMessage } from "../i18n/renderInlineLinkMessage";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AppToast } from "./AppToastRegion";
-import { CheckIcon } from "./AppShellIcons";
+import { Button } from "./Button";
 import { PersonalizationMemorySettings } from "./PersonalizationMemorySettings";
+import { SettingsChoiceMenu } from "./SettingsChoiceMenu";
+import { SettingsContentLayout } from "./SettingsContentLayout";
+import { SettingsGroup } from "./SettingsGroup";
+import { SettingsRow } from "./SettingsRow";
+import { SettingsSectionTitle } from "./SettingsSectionTitle";
+import { SettingsSurface } from "./SettingsSurface";
+import { Spinner } from "./Spinner";
 import {
   REPLICA_STATSIG_GATES,
   useReplicaStatsigGateValue,
 } from "../features/statsig/replicaStatsig";
+import { useI18n } from "../i18n/i18n";
 import {
-  readWorkspaceAgentsMd,
-  writeWorkspaceAgentsMd,
+  readCodexAgentsMd,
+  writeCodexAgentsMd,
   type WorkspaceAgentsMdDocument,
 } from "../services/personalization";
 import {
-  batchWriteConfigValues,
-  buildConfigScopeOptions,
-  chooseDefaultConfigScopeKey,
-  readConfig,
-  setPersonality,
+  batchWriteConfigValueForHost,
+  readConfigForHost,
+  resolveUserConfigWriteTarget,
+  setPersonalityForHost,
   type ConfigPersonality,
 } from "../services/settings";
 
-const AGENTS_MD_DOCS_URL = "https://developers.openai.com/codex/guides/agents-md/#create-global-guidance";
+const AGENTS_MD_DOCS_URL =
+  "https://developers.openai.com/codex/guides/agents-md/#create-global-guidance";
 
 const PERSONALITY_OPTIONS = [
   {
     value: "friendly" as const,
-    labelKey: "composer.personalitySlashCommand.label.friendly" as const,
-    descriptionKey: "composer.personalitySlashCommand.description.friendly" as const,
+    label: "composer.personalitySlashCommand.label.friendly" as const,
+    description: "composer.personalitySlashCommand.description.friendly" as const,
   },
   {
     value: "pragmatic" as const,
-    labelKey: "composer.personalitySlashCommand.label.pragmatic" as const,
-    descriptionKey: "composer.personalitySlashCommand.description.pragmatic" as const,
+    label: "composer.personalitySlashCommand.label.pragmatic" as const,
+    description: "composer.personalitySlashCommand.description.pragmatic" as const,
   },
-];
+] as const;
+
+type SelectablePersonality = Exclude<ConfigPersonality, "none">;
 
 type PersonalityState = {
-  activePersonality: Exclude<ConfigPersonality, "none">;
-  expectedVersion: string | null;
-  filePath: string | null;
-  hasExplicitPersonality: boolean;
+  value: SelectablePersonality;
+  canWrite: boolean;
+  hasLoaded: boolean;
   hasLegacyModelPersonality: boolean;
+  hasScopedPersonality: boolean;
   isLoading: boolean;
   isSaving: boolean;
-  error: string | null;
+  writeTargetExpectedVersion: string | null;
+  writeTargetFilePath: string | null;
 };
 
 const INITIAL_PERSONALITY_STATE: PersonalityState = {
-  activePersonality: "friendly",
-  expectedVersion: null,
-  filePath: null,
-  hasExplicitPersonality: false,
+  value: "friendly",
+  canWrite: false,
+  hasLoaded: false,
   hasLegacyModelPersonality: false,
+  hasScopedPersonality: false,
   isLoading: true,
   isSaving: false,
-  error: null,
+  writeTargetExpectedVersion: null,
+  writeTargetFilePath: null,
 };
 
 export function PersonalizationSettings({
   onOpenChatWithPrompt,
   onShowToast,
-  workspaceRoot,
+  selectedHostId,
 }: {
   onOpenChatWithPrompt?: (prompt: string) => void;
   onShowToast?: (toast: AppToast) => void;
-  workspaceRoot: string | null;
+  selectedHostId: string;
+  workspaceRoot?: string | null;
 }) {
   const { t } = useI18n();
-  const showPersonalityCard = useReplicaStatsigGateValue(
+  const personalityGateEnabled = useReplicaStatsigGateValue(
     REPLICA_STATSIG_GATES.personality,
   );
   const [refreshVersion, setRefreshVersion] = useState(0);
-  const [personalityState, setPersonalityState] = useState<PersonalityState>(INITIAL_PERSONALITY_STATE);
+  const [personalityState, setPersonalityState] = useState<PersonalityState>(
+    INITIAL_PERSONALITY_STATE,
+  );
   const [document, setDocument] = useState<WorkspaceAgentsMdDocument | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isDocumentLoading, setIsDocumentLoading] = useState(true);
+  const [isDocumentSaving, setIsDocumentSaving] = useState(false);
+  const [documentLoadError, setDocumentLoadError] = useState<string | null>(null);
   const personalityMigrationAttemptRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    const loadPersonality = async () => {
+    const loadPersonalityState = async () => {
+      setPersonalityState((current) => ({
+        ...current,
+        isLoading: true,
+        isSaving: false,
+      }));
+
       try {
-        const response = await readConfig(workspaceRoot);
+        const configResponse = await readConfigForHost({
+          hostId: selectedHostId,
+          cwd: null,
+          includeLayers: true,
+        });
         if (cancelled) {
           return;
         }
-        const scopeOptions = buildConfigScopeOptions(response);
-        const selectedScopeKey = chooseDefaultConfigScopeKey(scopeOptions);
-        const selectedScope = scopeOptions.find((scope) => scope.key === selectedScopeKey) ?? null;
-        const scopedConfig = selectedScope?.config;
-        const scopedPersonality = scopedConfig?.personality ?? response.config.personality;
-        const scopedModelPersonality = scopedConfig?.modelPersonality ?? response.config.modelPersonality;
+
+        const writeTarget = resolveUserConfigWriteTarget(configResponse);
+        const scopedPersonality = configResponse.config.personality;
+        const legacyModelPersonality = configResponse.config.modelPersonality;
+
         setPersonalityState({
-          activePersonality: resolveSelectablePersonality(scopedPersonality ?? scopedModelPersonality),
-          expectedVersion: selectedScope?.expectedVersion ?? null,
-          filePath: selectedScope?.kind === "project" ? selectedScope.filePath : null,
-          hasExplicitPersonality: scopedPersonality !== null,
-          hasLegacyModelPersonality: scopedModelPersonality !== null,
+          value: resolveSelectablePersonality(
+            scopedPersonality ?? legacyModelPersonality,
+          ),
+          canWrite: true,
+          hasLoaded: true,
+          hasLegacyModelPersonality: legacyModelPersonality !== null,
+          hasScopedPersonality: scopedPersonality !== null,
           isLoading: false,
           isSaving: false,
-          error: null,
+          writeTargetExpectedVersion: writeTarget?.expectedVersion ?? null,
+          writeTargetFilePath: writeTarget?.filePath ?? null,
         });
-      } catch (error) {
+      } catch {
         if (!cancelled) {
           setPersonalityState((current) => ({
             ...current,
+            canWrite: false,
+            hasLoaded: false,
             isLoading: false,
             isSaving: false,
-            error: error instanceof Error ? error.message : String(error),
           }));
         }
       }
     };
 
-    const load = async () => {
-      setIsLoading(true);
-      setLoadError(null);
-      setPersonalityState((current) => ({
-        ...current,
-        isLoading: true,
-        error: null,
-      }));
+    const loadCodexAgentsDocument = async () => {
+      setIsDocumentLoading(true);
+      setDocumentLoadError(null);
+
       try {
-        const [nextDocument] = await Promise.all([readWorkspaceAgentsMd(workspaceRoot), loadPersonality()]);
+        const nextDocument = await readCodexAgentsMd(selectedHostId);
         if (cancelled) {
           return;
         }
@@ -137,155 +159,181 @@ export function PersonalizationSettings({
         if (!cancelled) {
           setDocument(null);
           setDraft(null);
-          setLoadError(error instanceof Error ? error.message : String(error));
+          setDocumentLoadError(error instanceof Error ? error.message : String(error));
         }
-        await loadPersonality();
       } finally {
         if (!cancelled) {
-          setIsLoading(false);
+          setIsDocumentLoading(false);
         }
       }
     };
 
-    void load();
+    void Promise.all([loadPersonalityState(), loadCodexAgentsDocument()]);
 
     return () => {
       cancelled = true;
     };
-  }, [refreshVersion, workspaceRoot]);
+  }, [refreshVersion, selectedHostId]);
 
   useEffect(() => {
-    if (personalityState.isLoading || personalityState.isSaving || personalityState.error) {
+    if (personalityState.isLoading || !personalityState.hasLoaded) {
       return;
     }
-    void setPersonality(personalityState.activePersonality);
+
+    void setPersonalityForHost({
+      hostId: selectedHostId,
+      personality: personalityGateEnabled ? personalityState.value : null,
+    });
   }, [
-    personalityState.activePersonality,
-    personalityState.error,
+    personalityGateEnabled,
+    personalityState.hasLoaded,
     personalityState.isLoading,
-    personalityState.isSaving,
+    personalityState.value,
+    selectedHostId,
   ]);
 
   useEffect(() => {
-    const migrationKey = `${workspaceRoot ?? ""}:${personalityState.filePath ?? "user"}`;
     if (
       personalityState.isLoading ||
       personalityState.isSaving ||
-      personalityState.hasExplicitPersonality ||
+      !personalityState.hasLoaded ||
       !personalityState.hasLegacyModelPersonality ||
-      personalityMigrationAttemptRef.current === migrationKey
+      personalityMigrationAttemptRef.current === selectedHostId
     ) {
       return;
     }
-    personalityMigrationAttemptRef.current = migrationKey;
-    void batchWriteConfigValues({
-      edits: [
-        {
-          keyPath: "personality",
-          value: personalityState.activePersonality,
-          mergeStrategy: "upsert",
-        },
-        {
-          keyPath: "model_personality",
-          value: null,
-          mergeStrategy: "replace",
-        },
-      ],
-      filePath: personalityState.filePath,
-      expectedVersion: personalityState.expectedVersion,
+
+    personalityMigrationAttemptRef.current = selectedHostId;
+    const edits: Array<{
+      keyPath: string;
+      value: string | null;
+      mergeStrategy: "upsert" | "replace";
+    }> = [];
+
+    if (!personalityState.hasScopedPersonality) {
+      edits.push({
+        keyPath: "personality",
+        value: personalityState.value,
+        mergeStrategy: "upsert",
+      });
+    }
+
+    edits.push({
+      keyPath: "model_personality",
+      value: null,
+      mergeStrategy: "replace",
+    });
+
+    void batchWriteConfigValueForHost({
+      hostId: selectedHostId,
+      edits,
+      filePath: personalityState.writeTargetFilePath,
+      expectedVersion: personalityState.writeTargetExpectedVersion,
       reloadUserConfig: true,
     })
       .then(() => {
         setRefreshVersion((current) => current + 1);
       })
-      .catch((error) => {
-        setPersonalityState((current) => ({
-          ...current,
-          error: error instanceof Error ? error.message : String(error),
-        }));
+      .catch(() => {
+        personalityMigrationAttemptRef.current = null;
       });
   }, [
-    personalityState.activePersonality,
-    personalityState.expectedVersion,
-    personalityState.filePath,
-    personalityState.hasExplicitPersonality,
     personalityState.hasLegacyModelPersonality,
+    personalityState.hasLoaded,
+    personalityState.hasScopedPersonality,
     personalityState.isLoading,
     personalityState.isSaving,
-    workspaceRoot,
+    personalityState.value,
+    personalityState.writeTargetExpectedVersion,
+    personalityState.writeTargetFilePath,
+    selectedHostId,
   ]);
 
+  const personalityOptions = useMemo(
+    () =>
+      PERSONALITY_OPTIONS.map((option) => ({
+        value: option.value,
+        label: t(option.label),
+        description: t(option.description),
+      })),
+    [t],
+  );
+  const selectedPersonalityOption =
+    personalityOptions.find((option) => option.value === personalityState.value) ??
+    personalityOptions[0];
   const loadedContents = document?.contents ?? "";
   const editorValue = draft ?? loadedContents;
-  const canEdit = document !== null && !isSaving;
-  const canSave = document !== null && draft !== null && draft !== loadedContents && !isSaving;
-  const showLoadError = loadError !== null && document === null;
-  const showLoading = isLoading && document === null;
+  const canSaveDocument =
+    document !== null &&
+    draft !== null &&
+    draft !== loadedContents &&
+    !isDocumentSaving;
 
-  const retryLoad = () => {
-    setRefreshVersion((current) => current + 1);
-  };
-
-  const savePersonality = async (nextPersonality: Exclude<ConfigPersonality, "none">) => {
-    if (personalityState.isLoading || personalityState.isSaving || nextPersonality === personalityState.activePersonality) {
+  const savePersonality = async (nextPersonality: SelectablePersonality) => {
+    if (
+      personalityState.isLoading ||
+      personalityState.isSaving ||
+      !personalityState.hasLoaded ||
+      !personalityState.canWrite ||
+      nextPersonality === personalityState.value
+    ) {
       return;
     }
-    const previousPersonality = personalityState.activePersonality;
+
+    const previousPersonality = personalityState.value;
     setPersonalityState((current) => ({
       ...current,
-      activePersonality: nextPersonality,
+      value: nextPersonality,
       isSaving: true,
-      error: null,
     }));
+
     try {
-      await setPersonality(nextPersonality);
-      const edits: Array<{
-        keyPath: string;
-        value: string | null;
-        mergeStrategy: "upsert" | "replace";
-      }> = [
-        {
-          keyPath: "personality",
-          value: nextPersonality,
-          mergeStrategy: "upsert",
-        },
-      ];
-      if (personalityState.hasLegacyModelPersonality) {
-        edits.push({
-          keyPath: "model_personality",
-          value: null,
-          mergeStrategy: "replace",
-        });
-      }
-      await batchWriteConfigValues({
-        edits,
-        filePath: personalityState.filePath,
-        expectedVersion: personalityState.expectedVersion,
+      await setPersonalityForHost({
+        hostId: selectedHostId,
+        personality: nextPersonality,
+      });
+      await batchWriteConfigValueForHost({
+        hostId: selectedHostId,
+        edits: [
+          {
+            keyPath: "personality",
+            value: nextPersonality,
+            mergeStrategy: "upsert",
+          },
+        ],
+        filePath: personalityState.writeTargetFilePath,
+        expectedVersion: personalityState.writeTargetExpectedVersion,
         reloadUserConfig: true,
       });
       setRefreshVersion((current) => current + 1);
-    } catch (error) {
-      void setPersonality(previousPersonality);
+    } catch {
+      void setPersonalityForHost({
+        hostId: selectedHostId,
+        personality: previousPersonality,
+      });
       setPersonalityState((current) => ({
         ...current,
-        activePersonality: previousPersonality,
+        value: previousPersonality,
         isSaving: false,
-        error: error instanceof Error ? error.message : String(error),
       }));
     }
   };
 
-  const saveAgentsMd = async () => {
-    if (!canSave) {
+  const saveCodexAgentsDocument = async () => {
+    if (!canSaveDocument) {
       return;
     }
-    setIsSaving(true);
+
+    setIsDocumentSaving(true);
     try {
-      const nextDocument = await writeWorkspaceAgentsMd({
-        workspaceRoot,
+      const response = await writeCodexAgentsMd({
+        hostId: selectedHostId,
         contents: editorValue,
       });
-      setDocument(nextDocument);
+      setDocument({
+        path: response.path,
+        contents: editorValue,
+      });
       setDraft(null);
       onShowToast?.({
         tone: "success",
@@ -297,147 +345,204 @@ export function PersonalizationSettings({
         message: t("settings.personalization.agents.save.error"),
       });
     } finally {
-      setIsSaving(false);
+      setIsDocumentSaving(false);
     }
   };
 
   useEffect(() => {
-    if (!canSave) {
+    if (!canSaveDocument) {
       return;
     }
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") {
         return;
       }
+
       event.preventDefault();
-      void saveAgentsMd();
+      void saveCodexAgentsDocument();
     };
+
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [canSave, editorValue, workspaceRoot]);
+  }, [canSaveDocument, editorValue, selectedHostId]);
 
   return (
-    <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-5 py-5">
-      <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="app-title text-[14px] font-medium">{t("settings.section.personalization")}</div>
-      </div>
-
-      {showPersonalityCard ? (
-        <div className="app-card rounded-[18px] px-5 py-4">
-          <div className="app-title text-[14px] font-medium">{t("settings.personalization.personality.label")}</div>
-          <div className="app-text-muted mt-1 text-[12px] leading-5">
-            {t("settings.personalization.personality.description")}
-          </div>
-
-          <div className="mt-4 space-y-2">
-            {PERSONALITY_OPTIONS.map((option) => {
-              const isActive = option.value === personalityState.activePersonality;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  disabled={personalityState.isLoading || personalityState.isSaving}
-                  onClick={() => void savePersonality(option.value)}
-                  className={[
-                    "w-full rounded-[14px] px-4 py-3 text-left transition",
-                    isActive ? "app-nav-item-active" : "app-card-muted",
-                    personalityState.isLoading || personalityState.isSaving ? "opacity-60" : "",
-                  ].join(" ")}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="app-title text-[13px] font-medium">{t(option.labelKey)}</div>
-                      <div className="app-text-muted mt-1 text-[12px] leading-5">{t(option.descriptionKey)}</div>
-                    </div>
-                    {isActive ? (
-                      <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
-                    ) : null}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+    <SettingsContentLayout title={<SettingsSectionTitle slug="personalization" />}>
+      {personalityGateEnabled ? (
+        <SettingsGroup>
+          <SettingsGroup.Content>
+            <SettingsSurface>
+              <SettingsRow
+                label={t("settings.personalization.personality.label")}
+                description={t("settings.personalization.personality.description")}
+                control={
+                  <SettingsChoiceMenu
+                    className="w-[260px]"
+                    disabled={
+                      personalityState.isLoading ||
+                      personalityState.isSaving ||
+                      !personalityState.canWrite
+                    }
+                    options={personalityOptions}
+                    value={selectedPersonalityOption.value}
+                    onChange={(value) => {
+                      if (value === "friendly" || value === "pragmatic") {
+                        void savePersonality(value);
+                      }
+                    }}
+                  />
+                }
+              />
+            </SettingsSurface>
+          </SettingsGroup.Content>
+        </SettingsGroup>
       ) : null}
 
+      <CustomInstructionsGroup
+        document={document}
+        draft={draft}
+        editorValue={editorValue}
+        isLoading={isDocumentLoading && document === null}
+        isSaving={isDocumentSaving}
+        loadError={documentLoadError !== null && document === null ? documentLoadError : null}
+        loadedContents={loadedContents}
+        onChangeDraft={setDraft}
+        onRetry={() => setRefreshVersion((current) => current + 1)}
+        onSave={() => void saveCodexAgentsDocument()}
+      />
+
       <PersonalizationMemorySettings
-        workspaceRoot={workspaceRoot}
+        selectedHostId={selectedHostId}
         onOpenChatWithPrompt={onOpenChatWithPrompt}
         onShowToast={onShowToast}
       />
+    </SettingsContentLayout>
+  );
+}
 
-      <div className="app-card rounded-[18px] px-5 py-4">
-        <div className="app-title text-[14px] font-medium">{t("settings.personalization.agents.title")}</div>
-        <div className="app-text-muted mt-1 text-[12px] leading-5">
-          {renderInlineLinkMessage(t("settings.personalization.agents.description"), AGENTS_MD_DOCS_URL)}
-        </div>
-        {document?.path ? (
-          <div className="app-text-muted mt-3 truncate font-mono text-[12px]">{document.path}</div>
-        ) : null}
+function CustomInstructionsGroup({
+  document,
+  draft,
+  editorValue,
+  isLoading,
+  isSaving,
+  loadError,
+  loadedContents,
+  onChangeDraft,
+  onRetry,
+  onSave,
+}: {
+  document: WorkspaceAgentsMdDocument | null;
+  draft: string | null;
+  editorValue: string;
+  isLoading: boolean;
+  isSaving: boolean;
+  loadError: string | null;
+  loadedContents: string;
+  onChangeDraft: (next: string | null) => void;
+  onRetry: () => void;
+  onSave: () => void;
+}) {
+  const { t } = useI18n();
+  const canSave =
+    document !== null &&
+    draft !== null &&
+    draft !== loadedContents &&
+    !isSaving;
 
-        <div className="mt-4">
-          {showLoadError ? (
-            <div className="flex items-center justify-between gap-3">
-              <div className="app-text-muted text-[13px]">{t("settings.personalization.agents.loadError")}</div>
-              <button
-                type="button"
-                onClick={retryLoad}
-                className="app-control shrink-0 rounded-[11px] px-3 py-1.5 text-[12px]"
-              >
-                {t("settings.personalization.agents.retry")}
-              </button>
+  return (
+    <SettingsGroup className="gap-2">
+      <SettingsGroup.Header
+        title={t("settings.personalization.agents.title")}
+        subtitle={renderInlineAgentsDescription(
+          t("settings.personalization.agents.description"),
+        )}
+      />
+      <SettingsGroup.Content>
+        {loadError ? (
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm text-token-text-secondary">
+              {t("settings.personalization.agents.loadError")}
             </div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {showLoading ? (
-                <div className="app-text-muted flex items-center gap-2 text-[13px]">
-                  <span className="text-[12px]">◌</span>
-                  <span>{t("settings.personalization.agents.loading")}</span>
-                </div>
-              ) : (
-                <textarea
-                  id="personal-agents-editor"
-                  aria-label={t("settings.personalization.agents.title")}
-                  rows={12}
-                  value={editorValue}
-                  disabled={!canEdit}
-                  placeholder={t("settings.personalization.agents.placeholder")}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    setDraft(nextValue === loadedContents ? null : nextValue);
-                  }}
-                  className="app-control app-text-input min-h-[280px] w-full resize-y rounded-[14px] px-3 py-3 font-mono text-[13px] leading-6 outline-none disabled:opacity-60"
-                />
-              )}
-
-              <div className="flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => void saveAgentsMd()}
-                  disabled={!canSave}
-                  className="app-control rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
-                >
-                  {isSaving ? t("general.saving") : t("settings.personalization.agents.save")}
-                </button>
+            <Button className="shrink-0" color="secondary" onClick={onRetry} size="toolbar">
+              {t("settings.personalization.agents.retry")}
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {isLoading ? (
+              <div className="flex items-center gap-2 text-sm text-token-text-secondary">
+                <Spinner className="icon-xs" />
+                {t("settings.personalization.agents.loading")}
               </div>
+            ) : (
+              <textarea
+                id="personal-agents-editor"
+                aria-label={t("settings.personalization.agents.title")}
+                className="focus-visible:ring-token-focus w-full rounded-md border border-token-border bg-token-input-background px-2.5 py-2 font-mono text-sm text-token-text-primary outline-none focus-visible:ring-2"
+                disabled={document === null || isSaving}
+                placeholder={t("settings.personalization.agents.placeholder")}
+                rows={12}
+                value={editorValue}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  onChangeDraft(nextValue === loadedContents ? null : nextValue);
+                }}
+              />
+            )}
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                color="primary"
+                disabled={!canSave}
+                loading={isSaving}
+                onClick={onSave}
+                size="toolbar"
+              >
+                {t("settings.personalization.agents.save")}
+              </Button>
             </div>
-          )}
-        </div>
-      </div>
+          </div>
+        )}
+      </SettingsGroup.Content>
+    </SettingsGroup>
+  );
+}
 
-      {personalityState.error ? (
-        <div className="app-card-error rounded-[18px] px-5 py-4 text-[13px]">
-          {personalityState.error}
-        </div>
-      ) : null}
-    </div>
+function renderInlineAgentsDescription(template: string) {
+  const startTag = "<a>";
+  const endTag = "</a>";
+  const startIndex = template.indexOf(startTag);
+  const endIndex = template.indexOf(endTag);
+
+  if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
+    return template;
+  }
+
+  const prefix = template.slice(0, startIndex);
+  const label = template.slice(startIndex + startTag.length, endIndex);
+  const suffix = template.slice(endIndex + endTag.length);
+
+  return (
+    <>
+      {prefix}
+      <a
+        className="inline-flex text-token-text-link-foreground"
+        href={AGENTS_MD_DOCS_URL}
+        target="_blank"
+        rel="noreferrer"
+      >
+        {label}
+      </a>
+      {suffix}
+    </>
   );
 }
 
 function resolveSelectablePersonality(
   value: ConfigPersonality | null | undefined,
-): Exclude<ConfigPersonality, "none"> {
+): SelectablePersonality {
   return value === "pragmatic" ? "pragmatic" : "friendly";
 }

@@ -10,6 +10,7 @@ export type ThreadHistoryEntry = {
   updatedAt: number;
   status: ThreadHistoryStatus;
   cwd: string;
+  hostId?: string | null;
   path: string | null;
   name: string | null;
   source: ThreadHistoryEntrySource | null;

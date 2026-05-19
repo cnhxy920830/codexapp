@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Button } from "../../components/Button";
 import { useI18n } from "../../i18n/i18n";
+import { OpenAiBlossomIcon } from "./OpenAiBlossomIcon";
 import { LoginRouteHelloLogo } from "./LoginRouteHelloLogo";
 
 const codexAppGaLogo = new URL(
@@ -207,12 +208,9 @@ function WelcomeV2Shell({
               type="button"
               onClick={onChatGptSignIn}
             >
-              <img
-                alt=""
+              <OpenAiBlossomIcon
                 aria-hidden="true"
-                className="size-6 shrink-0"
-                draggable={false}
-                src={codexAppGaLogo}
+                className="size-6 shrink-0 text-token-dropdown-background"
               />
               {useStreamlinedCopy
                 ? t("electron.onboarding.login.chatgpt.signIn.streamlined")

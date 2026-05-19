@@ -1,5 +1,4 @@
-import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
-import type { AppToast } from "./AppToastRegion";
+import { useEffect, useEffectEvent, useState } from "react";
 import { Button } from "./Button";
 import { SettingsContentLayout } from "./SettingsContentLayout";
 import { SettingsGroup } from "./SettingsGroup";
@@ -7,7 +6,6 @@ import { SettingsSectionTitle } from "./SettingsSectionTitle";
 import { SettingsSurface } from "./SettingsSurface";
 import { useI18n } from "../i18n/i18n";
 import {
-  clearBrowserChatGptTokenAuth,
   invalidateAccountSettingsQueries,
   logoutForHost,
   onAccountSettingsQueriesInvalidated,
@@ -23,21 +21,25 @@ type SaveState = "idle" | "saved";
 export function AccountSettings({
   authSnapshot,
   onNavigateToLogin,
-  onShowToast,
 }: {
   authSnapshot: AuthSnapshot;
   onNavigateToLogin: () => void;
-  onShowToast?: (toast: AppToast) => void;
 }) {
   const { t } = useI18n();
   const [accountInfo, setAccountInfo] = useState<AccountInfoResponse | null>(null);
   const [tokenDraft, setTokenDraft] = useState("");
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [localAuthMethod, setLocalAuthMethod] = useState<string | null>(null);
 
-  const usesChatGptAuth =
-    authSnapshot.authState.authMethod === "chatgpt" ||
-    authSnapshot.authState.authMethod === "chatgptAuthTokens";
+  const authMethod = localAuthMethod ?? authSnapshot.authState.authMethod;
+  const usesChatGptAuth = authMethod === "chatgpt" || authMethod === "chatgptAuthTokens";
+
+  useEffect(() => {
+    if (localAuthMethod != null && authSnapshot.authState.authMethod != null) {
+      setLocalAuthMethod(null);
+    }
+  }, [localAuthMethod, authSnapshot.authState.authMethod]);
 
   const loadAccountInfo = useEffectEvent(async () => {
     if (!usesChatGptAuth) {
@@ -94,6 +96,7 @@ export function AccountSettings({
       saveBrowserChatGptTokenAuth({
         accessToken: tokenDraft,
       });
+      setLocalAuthMethod("chatgpt");
       setTokenDraft("");
       setTokenError(null);
       setSaveState("saved");
@@ -109,17 +112,9 @@ export function AccountSettings({
       return;
     }
 
-    try {
-      await logoutForHost(LOCAL_SETTINGS_HOST_ID);
-      clearBrowserChatGptTokenAuth();
-      await invalidateAccountSettingsQueries();
-      onNavigateToLogin();
-    } catch (error) {
-      onShowToast?.({
-        message: error instanceof Error ? error.message : String(error),
-        tone: "error",
-      });
-    }
+    await logoutForHost(LOCAL_SETTINGS_HOST_ID);
+    await invalidateAccountSettingsQueries();
+    onNavigateToLogin();
   };
 
   return (
@@ -203,24 +198,10 @@ function SettingsValueRow({
   value: string | null;
 }) {
   return (
-    <SettingsValueShell label={label}>
-      {value != null && value.length > 0 ? value : <UnavailableValue />}
-    </SettingsValueShell>
-  );
-}
-
-function SettingsValueShell({
-  children,
-  label,
-}: {
-  children: ReactNode;
-  label: ReactNode;
-}) {
-  return (
     <div className="grid min-h-14 items-center gap-1 px-4 py-2 sm:grid-cols-[160px_minmax(0,1fr)] sm:gap-6">
       <div className="min-w-0 text-sm text-token-text-secondary">{label}</div>
       <div className="min-w-0 text-sm text-token-text-primary">
-        <div className="truncate">{children}</div>
+        {value != null && value.length > 0 ? <span className="truncate">{value}</span> : <UnavailableValue />}
       </div>
     </div>
   );
