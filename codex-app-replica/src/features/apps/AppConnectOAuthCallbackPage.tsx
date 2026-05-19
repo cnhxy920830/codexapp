@@ -36,10 +36,15 @@ export function AppConnectOAuthCallbackPage({
     }) => {
       if (shouldShowPendingToast && fullRedirectUrl && fullRedirectUrl.length > 0) {
         onShowToast({
+          durationMs: 0,
           tone: "info",
-          message: t("apps.appConnectOAuthCallbackPage.pending", {
-            connector: appName ?? t("apps.appConnectOAuthCallbackPage.fallbackAppName"),
-          }),
+          message: (
+            <span className="loading-shimmer-pure-text">
+              {t("apps.appConnectOAuthCallbackPage.pending", {
+                connector: appName ?? t("apps.appConnectOAuthCallbackPage.fallbackAppName"),
+              })}
+            </span>
+          ),
         });
       }
 

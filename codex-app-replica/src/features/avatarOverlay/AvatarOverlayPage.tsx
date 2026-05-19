@@ -218,7 +218,8 @@ export function AvatarOverlayPage({ initialAvatarId }: AvatarOverlayPageProps) {
         const detailThreads = trimmedThreads.filter(
           (thread) =>
             thread.source?.parentThreadId == null &&
-            thread.status.type !== "idle" &&
+            (thread.status.type !== "idle" ||
+              thread.hasUnreadTurn === true) &&
             thread.status.type !== "notLoaded",
         );
         const detailEntries = await Promise.all(

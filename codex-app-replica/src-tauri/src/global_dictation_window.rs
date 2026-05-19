@@ -37,7 +37,8 @@
 
 use crate::global_dictation_settings::{
     handle_global_dictation_completed, handle_global_dictation_dismiss,
-    handle_global_dictation_failed, GlobalDictationSettingsState,
+    handle_global_dictation_failed, handle_global_dictation_record_history_item,
+    GlobalDictationSettingsState,
 };
 use serde::Deserialize;
 use serde::Serialize;
@@ -309,7 +310,12 @@ pub fn global_dictation_failed(
 pub fn global_dictation_in_app_started() {}
 
 #[tauri::command(rename = "global-dictation-record-history-item")]
-pub fn global_dictation_record_history_item(_params: GlobalDictationRecordHistoryItemParams) {}
+pub fn global_dictation_record_history_item(
+    app: AppHandle,
+    params: GlobalDictationRecordHistoryItemParams,
+) -> Result<(), String> {
+    handle_global_dictation_record_history_item(&app, &params)
+}
 
 #[tauri::command(rename = "global-dictation-enabled-changed")]
 pub fn global_dictation_enabled_changed(_params: GlobalDictationEnabledChangedParams) {}

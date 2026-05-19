@@ -133,9 +133,9 @@ export function WorkModeSelectionStep({
         <PrimaryButton className="w-full" disabled={isContinueDisabled} onClick={onContinue}>
           {t("onboarding.welcome.continue")}
         </PrimaryButton>
-      </div>
-      <div className="mt-4 text-center text-sm leading-normal text-[var(--app-shell-subtle)]">
-        {t("onboarding.welcomeV2.workMode.settingsHint")}
+        <div className="mt-4 text-center text-sm leading-normal text-[var(--app-shell-subtle)]">
+          {t("onboarding.welcomeV2.workMode.settingsHint")}
+        </div>
       </div>
     </WelcomeFrame>
   );

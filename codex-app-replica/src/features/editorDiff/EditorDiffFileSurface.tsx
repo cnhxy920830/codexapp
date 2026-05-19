@@ -1,15 +1,20 @@
 import { useMemo } from "react";
-import { ChevronDownIcon } from "../../components/AppShellIcons";
+import {
+  ChevronDownIcon,
+  OpenInEditorIcon,
+} from "../../components/AppShellIcons";
 import { useI18n } from "../../i18n/i18n";
 import {
   pairDiffBlock,
   type PullRequestDiffFragment,
 } from "../../lib/diffPreviewModel";
 import type { PullRequestDiffFile } from "../../lib/unifiedDiff";
+import { openFile } from "../../services/hostFiles";
 
 type DiffViewMode = "split" | "unified";
 
 type EditorDiffFileSurfaceProps = {
+  cwd: string | null;
   file: PullRequestDiffFile;
   isOpen: boolean;
   onToggleOpen: () => void;
@@ -88,6 +93,7 @@ const PREVIEW_OPTIONS = {
 } as const;
 
 export function EditorDiffFileSurface({
+  cwd,
   file,
   isOpen,
   onToggleOpen,
@@ -96,36 +102,129 @@ export function EditorDiffFileSurface({
   const { t } = useI18n();
   const unifiedRows = useMemo(() => buildUnifiedDiffRows(file), [file]);
   const splitRows = useMemo(() => buildSplitDiffRows(file), [file]);
+  const displayPath = file.path;
+  const displayFileName = useMemo(() => getDisplayFileName(displayPath), [displayPath]);
+  const openFilePath = resolveOpenFilePath(file);
+  const canOpenFile = openFilePath != null;
+  const isAddition = file.status === "added";
+  const isDeletion = file.status === "deleted";
+  const hasDiffBodyContent =
+    file.hunkMetadata.length > 0 || file.additions > 0 || file.deletions > 0;
+  const isRenameWithoutChanges =
+    file.status === "renamed" && file.additions === 0 && file.deletions === 0 && !hasDiffBodyContent;
+  const openFileAriaLabel = t("codex.diff.fileHeader.openInIcon");
+  const openFileTooltip = t("codex.diff.fileHeader.openIn.tooltip");
+  const toggleFileAriaLabel = t(
+    isOpen ? "codex.diff.fileToggle.collapse" : "codex.diff.fileToggle.expand",
+  );
 
   return (
     <section className="group/file-diff overflow-hidden rounded-[14px] border border-[var(--app-shell-border)] bg-[var(--app-shell-surface)]">
-      <button
-        type="button"
+      <div
+        role="button"
         aria-expanded={isOpen}
         onClick={onToggleOpen}
-        className="sticky top-0 z-10 flex w-full items-center gap-3 border-b border-[var(--app-shell-border)] bg-[color:color-mix(in_srgb,var(--app-shell-card-bg-weak)_92%,transparent)] px-4 py-3 text-left backdrop-blur"
+        className="sticky top-0 z-10 cursor-pointer select-none bg-[color:color-mix(in_srgb,var(--app-shell-card-bg-weak)_92%,transparent)] backdrop-blur"
       >
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-medium text-[var(--app-shell-text)]">
-            {file.path}
+        <div className="group relative @container/diff-header flex items-center gap-2 px-4 py-3 text-[13px]">
+          <div className="min-w-0 flex flex-1 items-center gap-2 pb-0.5 text-[var(--app-shell-text)]">
+            <div className="min-w-0 flex-1">
+              <button
+                type="button"
+                disabled={!canOpenFile}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (openFilePath == null) {
+                    return;
+                  }
+                  void openFile({
+                    cwd,
+                    path: openFilePath,
+                  });
+                }}
+                className="min-w-0 cursor-pointer truncate text-left font-medium text-[var(--app-shell-text)] [direction:rtl] disabled:cursor-default"
+                title={displayPath}
+              >
+                <span className="min-w-0 truncate [direction:ltr] [unicode-bidi:plaintext] @xs/diff-header:hidden">
+                  {displayFileName}
+                </span>
+                <span className="hidden min-w-0 truncate [direction:ltr] [unicode-bidi:plaintext] @xs/diff-header:inline">
+                  {displayPath}
+                </span>
+              </button>
+            </div>
+            <span className="ml-auto shrink-0 text-[12px] leading-5 text-[var(--app-shell-subtle)]">
+              +{file.additions} / -{file.deletions}
+            </span>
+            {isAddition ? (
+              <span className="mb-0.5 text-[var(--app-shell-link)]">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" />
+              </span>
+            ) : null}
+            {isDeletion ? (
+              <span className="mb-0.5 text-red-700 dark:text-red-300">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" />
+              </span>
+            ) : null}
           </div>
-          <div className="mt-1 text-[12px] leading-5 text-[var(--app-shell-subtle)]">
-            +{file.additions} / -{file.deletions}
+          <div className="ms-auto flex items-center gap-1">
+            {canOpenFile ? (
+              <div
+                className="shrink-0 opacity-0 transition-opacity duration-200 group-hover/file-diff:opacity-100"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  aria-label={openFileAriaLabel}
+                  title={openFileTooltip}
+                  onClick={() => {
+                    if (openFilePath == null) {
+                      return;
+                    }
+                    void openFile({
+                      cwd,
+                      path: openFilePath,
+                    });
+                  }}
+                  className="app-topbar-button flex h-7 w-7 items-center justify-center rounded-[10px] border border-transparent text-[var(--app-shell-text)] transition-colors"
+                >
+                  <OpenInEditorIcon className="h-4 w-4" />
+                </button>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              aria-label={toggleFileAriaLabel}
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleOpen();
+              }}
+              className="app-topbar-button flex h-7 w-7 items-center justify-center rounded-[10px] border border-transparent text-[var(--app-shell-text)] transition-colors"
+            >
+              <ChevronDownIcon
+                className={[
+                  "h-4 w-4 shrink-0 text-[var(--app-shell-muted)] transition-transform duration-200",
+                  isOpen ? "rotate-180" : "rotate-0",
+                ].join(" ")}
+              />
+            </button>
           </div>
         </div>
-        <ChevronDownIcon
-          className={[
-            "h-4 w-4 shrink-0 text-[var(--app-shell-muted)] transition-transform",
-            isOpen ? "rotate-0" : "-rotate-90",
-          ].join(" ")}
-        />
-      </button>
+      </div>
 
       {isOpen ? (
         <div className="border-t-0">
           {file.isBinary ? (
-            <div className="px-4 py-4 text-[13px] leading-6 text-[var(--app-shell-subtle)]">
+            <div className="flex h-full justify-center bg-[var(--app-shell-card-bg-weak)] py-4 text-sm text-[var(--app-shell-subtle)]">
               {t("wham.diff.binaryFile")}
+            </div>
+          ) : isRenameWithoutChanges ? (
+            <div className="flex h-full justify-center bg-[var(--app-shell-card-bg-weak)] py-4 text-sm text-[var(--app-shell-subtle)]">
+              {t("codex.diff.fileRenamedWithoutChanges")}
+            </div>
+          ) : !hasDiffBodyContent ? (
+            <div className="flex h-full justify-center bg-[var(--app-shell-card-bg-weak)] py-4 text-sm text-[var(--app-shell-subtle)]">
+              {t("wham.diff.noContent")}
             </div>
           ) : viewMode === "split" ? (
             <SplitDiffRowsView rows={splitRows} />
@@ -674,4 +773,18 @@ function fragmentHighlightClassName(
   }
 
   return "";
+}
+
+function getDisplayFileName(path: string) {
+  const normalized = path.replaceAll("\\", "/");
+  const segments = normalized.split("/");
+  return segments[segments.length - 1] ?? normalized;
+}
+
+function resolveOpenFilePath(file: PullRequestDiffFile) {
+  if (file.status === "deleted") {
+    return file.oldPath;
+  }
+
+  return file.newPath ?? file.oldPath;
 }

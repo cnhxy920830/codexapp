@@ -98,6 +98,14 @@ test("open source licenses routing follows extracted settings route behavior", (
     appSource,
     /onNavigateBack=\{\(backPath\) => \{\s*void handleNavigateToRoute\(backPath\);\s*\}\}/s,
   );
+  assert.match(
+    appSource,
+    /function buildSettingsSectionStateFromRouteState\(\s*state: NavigateToRouteState \| null \| undefined,\s*\): SettingsSectionState \{[\s\S]*licensesBackPath[\s\S]*localEnvironmentRouteSearch[\s\S]*pendingViewAction[\s\S]*return Object\.keys\(nextState\)\.length > 0 \? nextState : null;\s*\}/s,
+  );
+  assert.match(
+    appSource,
+    /setSettingsSectionState\(buildSettingsSectionStateFromRouteState\(state\)\);/s,
+  );
   assert.doesNotMatch(
     appSource,
     /backPath === "\/settings\/agent" \? "agent" : "general-settings"/,

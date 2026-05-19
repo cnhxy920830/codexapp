@@ -501,12 +501,11 @@ fn normalized_conversation_id(conversation_id: &str) -> Result<String, String> {
 }
 
 fn normalized_plan_content(plan_content: &str) -> Result<String, String> {
-    let normalized = plan_content.trim().to_string();
-    if normalized.is_empty() {
+    if plan_content.trim().is_empty() {
         return Err("planContent must not be empty".to_string());
     }
 
-    Ok(normalized)
+    Ok(plan_content.to_string())
 }
 
 fn thread_window_label(host_id: &str, path: &str) -> Result<String, String> {
@@ -690,7 +689,7 @@ mod tests {
         );
         assert_eq!(
             normalized_plan_content("  # Plan  "),
-            Ok("# Plan".to_string())
+            Ok("  # Plan  ".to_string())
         );
     }
 

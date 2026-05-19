@@ -7,6 +7,30 @@ type UseWelcomeModeParams = {
   welcomeV2DefaultFlowEnabled: boolean;
 };
 
+export function resolveWelcomeMode({
+  debugOverride,
+  statsigIsLoading,
+  welcomeV2DefaultFlowEnabled,
+}: {
+  debugOverride: string;
+  statsigIsLoading: boolean;
+  welcomeV2DefaultFlowEnabled: boolean;
+}) {
+  if (debugOverride === "on") {
+    return "role";
+  }
+
+  if (debugOverride !== "auto") {
+    return "intent";
+  }
+
+  if (statsigIsLoading) {
+    return null;
+  }
+
+  return welcomeV2DefaultFlowEnabled ? "role" : "intent";
+}
+
 export function useWelcomeMode({
   statsigIsLoading,
   welcomeV2DefaultFlowEnabled,
@@ -29,25 +53,22 @@ export function useWelcomeMode({
         const debugOverride =
           typeof debugOverrideResponse.value === "string" ? debugOverrideResponse.value : "auto";
 
-        if (debugOverride === "on") {
-          setMode("role");
-          return;
-        }
-
-        if (debugOverride !== "auto") {
-          setMode("intent");
-          return;
-        }
-
-        if (statsigIsLoading) {
-          setMode(null);
-          return;
-        }
-
-        setMode(welcomeV2DefaultFlowEnabled ? "intent" : "role");
+        setMode(
+          resolveWelcomeMode({
+            debugOverride,
+            statsigIsLoading,
+            welcomeV2DefaultFlowEnabled,
+          }),
+        );
       } catch {
         if (!cancelled && !statsigIsLoading) {
-          setMode(welcomeV2DefaultFlowEnabled ? "intent" : "role");
+          setMode(
+            resolveWelcomeMode({
+              debugOverride: "auto",
+              statsigIsLoading,
+              welcomeV2DefaultFlowEnabled,
+            }),
+          );
         }
       }
     };

@@ -434,6 +434,8 @@ type NavigateToRouteState = {
   focusComposerNonce?: number;
   initialHostId?: string;
   initialTab?: SkillsRouteInitialTab;
+  licensesBackPath?: string;
+  localEnvironmentRouteSearch?: string;
   pendingViewAction?: "open-create-remote-project-modal";
   pluginDeepLinkAuthBlocked?: boolean;
   prefillCwd?: string | null;
@@ -458,6 +460,33 @@ type WorktreeInitRoute = {
   pendingWorktreeId: string;
   shell: ThreadShellVariant;
 };
+
+function buildSettingsSectionStateFromRouteState(
+  state: NavigateToRouteState | null | undefined,
+): SettingsSectionState {
+  if (state == null) {
+    return null;
+  }
+
+  const nextState: Exclude<SettingsSectionState, null> = {};
+
+  if (
+    typeof state.licensesBackPath === "string" &&
+    state.licensesBackPath.startsWith("/settings/")
+  ) {
+    nextState.licensesBackPath = state.licensesBackPath;
+  }
+
+  if (typeof state.localEnvironmentRouteSearch === "string") {
+    nextState.localEnvironmentRouteSearch = state.localEnvironmentRouteSearch;
+  }
+
+  if (state.pendingViewAction === "open-create-remote-project-modal") {
+    nextState.pendingViewAction = state.pendingViewAction;
+  }
+
+  return Object.keys(nextState).length > 0 ? nextState : null;
+}
 
 type PendingWindowPageKind =
   | "thread"
@@ -2550,9 +2579,13 @@ function App() {
     if (!appToast) {
       return;
     }
+    const durationMs = appToast.durationMs ?? 5000;
+    if (durationMs <= 0) {
+      return;
+    }
     const timeout = window.setTimeout(() => {
       setAppToast(null);
-    }, 5000);
+    }, durationMs);
     return () => {
       window.clearTimeout(timeout);
     };
@@ -4731,13 +4764,7 @@ function App() {
       }
       if (isRemoteConnectionsSettingsVisible) {
         setSettingsSection("connections");
-        setSettingsSectionState(
-          state?.pendingViewAction
-            ? {
-                pendingViewAction: state.pendingViewAction,
-              }
-            : null,
-        );
+        setSettingsSectionState(buildSettingsSectionStateFromRouteState(state));
         setCurrentRoute("settings");
       } else {
         setCurrentRoute("chat");
@@ -4760,13 +4787,7 @@ function App() {
         return;
       }
       setSettingsSection(settingsSection);
-      setSettingsSectionState(
-        state?.pendingViewAction
-          ? {
-              pendingViewAction: state.pendingViewAction,
-            }
-          : null,
-      );
+      setSettingsSectionState(buildSettingsSectionStateFromRouteState(state));
       setCurrentRoute("settings");
       return;
     }

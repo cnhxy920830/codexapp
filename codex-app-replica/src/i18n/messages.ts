@@ -1009,6 +1009,12 @@ export type MessageKey =
   | "codex.diffView.richPreviewToggle"
   | "codex.diffView.switchToSplit"
   | "codex.diffView.switchToUnified"
+  | "codex.diff.fileHeader.openInIcon"
+  | "codex.diff.fileHeader.openIn.tooltip"
+  | "codex.diff.fileRenamedWithoutChanges"
+  | "codex.diff.fileToggle.expand"
+  | "codex.diff.fileToggle.collapse"
+  | "wham.diff.noContent"
   | "wham.diff.contextMenu.copyPath"
   | "wham.diff.contextMenu.toggleWrap"
   | "wham.diff.binaryFile"
@@ -3577,9 +3583,15 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.diffView.richPreviewToggle": "Toggle rich preview",
     "codex.diffView.switchToSplit": "Switch to split diff",
     "codex.diffView.switchToUnified": "Switch to unified diff",
+    "codex.diff.fileHeader.openInIcon": "Open file",
+    "codex.diff.fileHeader.openIn.tooltip": "Open in editor",
+    "codex.diff.fileRenamedWithoutChanges": "File renamed without changes",
+    "codex.diff.fileToggle.expand": "Expand file diff",
+    "codex.diff.fileToggle.collapse": "Collapse file diff",
     "wham.diff.contextMenu.copyPath": "Copy path",
     "wham.diff.contextMenu.toggleWrap": "Toggle word wrap",
     "wham.diff.binaryFile": "Binary file not shown",
+    "wham.diff.noContent": "No content",
     "threadHeader.archiveConfirmCancel": "Cancel",
     "threadHeader.archiveConfirmConfirm": "Archive",
     "threadHeader.archiveConfirmHeartbeatConfirm": "Archive and remove",
@@ -6207,9 +6219,15 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "codex.diffView.richPreviewToggle": "切换富文本预览",
     "codex.diffView.switchToSplit": "切换到分栏差异",
     "codex.diffView.switchToUnified": "切换到统一差异",
+    "codex.diff.fileHeader.openInIcon": "打开文件",
+    "codex.diff.fileHeader.openIn.tooltip": "在编辑器中打开",
+    "codex.diff.fileRenamedWithoutChanges": "文件已重命名，但没有内容变更",
+    "codex.diff.fileToggle.expand": "展开文件差异",
+    "codex.diff.fileToggle.collapse": "折叠文件差异",
     "wham.diff.contextMenu.copyPath": "复制路径",
     "wham.diff.contextMenu.toggleWrap": "切换自动换行",
     "wham.diff.binaryFile": "未显示二进制文件",
+    "wham.diff.noContent": "无内容",
     "threadHeader.archiveConfirmCancel": "取消",
     "threadHeader.archiveConfirmConfirm": "归档",
     "threadHeader.archiveConfirmHeartbeatConfirm": "归档并移除",

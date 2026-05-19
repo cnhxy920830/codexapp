@@ -8,6 +8,7 @@ use crate::keyboard_shortcuts::{
     SetCommandKeybindingParams,
 };
 use serde::{Deserialize, Serialize};
+use std::process::Command;
 use std::sync::mpsc;
 use std::sync::Mutex;
 use std::thread;
@@ -17,7 +18,9 @@ use tauri::{AppHandle, Manager, State};
 const HOLD_COMMAND_ID: &str = "globalDictationHold";
 const TOGGLE_COMMAND_ID: &str = "globalDictationToggle";
 const GLOBAL_DICTATION_HISTORY_KEY: &str = "globalDictationHistory";
-const MAX_GLOBAL_DICTATION_HISTORY_ITEMS: usize = 4;
+const MAX_GLOBAL_DICTATION_HISTORY_ITEMS: usize = 10;
+const GLOBAL_DICTATION_PASTE_INITIAL_DELAY_MS: u64 = 150;
+const GLOBAL_DICTATION_PASTE_FINAL_DELAY_MS: u64 = 700;
 
 #[cfg(target_os = "windows")]
 const WM_APP_REFRESH_HOTKEYS: u32 = WM_APP_BASE + 17;
@@ -362,7 +365,18 @@ pub(crate) fn handle_global_dictation_completed(
     params: &GlobalDictationCompletedParams,
 ) -> Result<(), String> {
     clear_active_session(state, &params.session_id);
-    record_dictation_history_item(app, &params.session_id, &params.text)
+    let transcript = record_dictation_history_item(
+        app,
+        &params.session_id,
+        &params.text,
+        Some(current_unix_time_ms()),
+    )?;
+    if let Some(transcript) = transcript {
+        if let Err(err) = paste_global_dictation_text(&format!("{transcript} ")) {
+            eprintln!("global dictation paste failed: {err}");
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn handle_global_dictation_dismiss(
@@ -379,6 +393,19 @@ pub(crate) fn handle_global_dictation_failed(
     if params.stage != "transcription" {
         clear_active_session(state, &params.session_id);
     }
+}
+
+pub(crate) fn handle_global_dictation_record_history_item(
+    app: &AppHandle,
+    params: &crate::global_dictation_window::GlobalDictationRecordHistoryItemParams,
+) -> Result<(), String> {
+    let _ = record_dictation_history_item(
+        app,
+        &params.session_id,
+        &params.text,
+        params.completed_at_ms.or(Some(current_unix_time_ms())),
+    )?;
+    Ok(())
 }
 
 fn update_dictation_hotkey(
@@ -519,27 +546,24 @@ fn record_dictation_history_item(
     app: &AppHandle,
     session_id: &str,
     text: &str,
-) -> Result<(), String> {
+    created_at_ms: Option<u64>,
+) -> Result<Option<String>, String> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
 
     let mut history = read_dictation_history(app)?;
-    history.retain(|item| item.id != session_id);
-    history.insert(
-        0,
+    push_dictation_history_item(
+        &mut history,
         GlobalDictationHistoryItem {
             id: session_id.to_string(),
             text: trimmed.to_string(),
-            created_at_ms: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64,
+            created_at_ms: created_at_ms.unwrap_or_else(current_unix_time_ms),
         },
     );
-    history.truncate(MAX_GLOBAL_DICTATION_HISTORY_ITEMS);
-    write_dictation_history(app, &history)
+    write_dictation_history(app, &history)?;
+    Ok(Some(trimmed.to_string()))
 }
 
 fn read_dictation_history(app: &AppHandle) -> Result<Vec<GlobalDictationHistoryItem>, String> {
@@ -570,6 +594,83 @@ fn write_dictation_history(
             .map_err(|err| format!("failed to encode dictation history json: {err}"))?,
     );
     write_global_settings(app, &settings)
+}
+
+fn push_dictation_history_item(
+    history: &mut Vec<GlobalDictationHistoryItem>,
+    item: GlobalDictationHistoryItem,
+) {
+    history.retain(|existing| existing.id != item.id);
+    history.insert(0, item);
+    history.truncate(MAX_GLOBAL_DICTATION_HISTORY_ITEMS);
+}
+
+fn current_unix_time_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+fn paste_global_dictation_text(text: &str) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        paste_global_dictation_text_windows(text)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = text;
+        Err("Global dictation paste is not supported on this OS.".to_string())
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn paste_global_dictation_text_windows(text: &str) -> Result<(), String> {
+    let script = format!(
+        concat!(
+            "Add-Type -AssemblyName System.Windows.Forms; ",
+            "$text = [Environment]::GetEnvironmentVariable('CODEX_GLOBAL_DICTATION_TEXT'); ",
+            "$snapshot = $null; ",
+            "try {{ $snapshot = [System.Windows.Forms.Clipboard]::GetDataObject() }} catch {{}}; ",
+            "[System.Windows.Forms.Clipboard]::SetText($text); ",
+            "try {{ ",
+            "Start-Sleep -Milliseconds {initial_delay}; ",
+            "[System.Windows.Forms.SendKeys]::SendWait('^v'); ",
+            "Start-Sleep -Milliseconds {final_delay}; ",
+            "}} finally {{ ",
+            "$current = $null; ",
+            "try {{ if ([System.Windows.Forms.Clipboard]::ContainsText()) {{ $current = [System.Windows.Forms.Clipboard]::GetText() }} }} catch {{}}; ",
+            "if ($current -eq $text) {{ ",
+            "if ($null -ne $snapshot) {{ [System.Windows.Forms.Clipboard]::SetDataObject($snapshot, $true) }} ",
+            "else {{ [System.Windows.Forms.Clipboard]::Clear() }} ",
+            "}} ",
+            "}}"
+        ),
+        initial_delay = GLOBAL_DICTATION_PASTE_INITIAL_DELAY_MS,
+        final_delay = GLOBAL_DICTATION_PASTE_FINAL_DELAY_MS,
+    );
+
+    let status = Command::new("powershell.exe")
+        .args([
+            "-STA",
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &script,
+        ])
+        .env("CODEX_GLOBAL_DICTATION_TEXT", text)
+        .status()
+        .map_err(|err| format!("failed to start global dictation paste helper: {err}"))?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "global dictation paste helper exited with {status}"
+        ))
+    }
 }
 
 fn split_hotkey_shortcut(shortcut: &str) -> Vec<&str> {
@@ -1071,11 +1172,15 @@ fn write_text_to_clipboard_windows(text: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        global_dictation_hotkey_error, normalize_hotkey_segment, parse_windows_hotkey,
-        split_hotkey_shortcut, virtual_key_for_segment, GlobalDictationHistoryItem,
+        global_dictation_hotkey_error, handle_global_dictation_failed, normalize_hotkey_segment,
+        parse_windows_hotkey, push_dictation_history_item, split_hotkey_shortcut,
+        virtual_key_for_segment, ActiveGlobalDictationSession, GlobalDictationHistoryItem,
         GlobalDictationHistoryResponse, GlobalDictationHotkeyStateResponse,
-        GlobalDictationSetHotkeyParams, GlobalDictationSetHotkeyResponse,
+        GlobalDictationSessionSource, GlobalDictationSetHotkeyParams,
+        GlobalDictationSetHotkeyResponse, GlobalDictationSettingsState,
+        MAX_GLOBAL_DICTATION_HISTORY_ITEMS,
     };
+    use crate::global_dictation_window::GlobalDictationFailedParams;
 
     #[test]
     fn splits_shortcuts_into_trimmed_segments() {
@@ -1254,6 +1359,62 @@ mod tests {
             .lock()
             .expect("global dictation settings mutex poisoned");
         assert_eq!(guard.active_session, None);
+    }
+
+    #[test]
+    fn history_push_retains_latest_ten_items() {
+        let mut history = Vec::new();
+        for index in 0..12 {
+            push_dictation_history_item(
+                &mut history,
+                GlobalDictationHistoryItem {
+                    id: format!("session-{index}"),
+                    text: format!("text-{index}"),
+                    created_at_ms: index,
+                },
+            );
+        }
+
+        assert_eq!(history.len(), MAX_GLOBAL_DICTATION_HISTORY_ITEMS);
+        assert_eq!(
+            history.first().map(|item| item.id.as_str()),
+            Some("session-11")
+        );
+        assert_eq!(
+            history.last().map(|item| item.id.as_str()),
+            Some("session-2")
+        );
+    }
+
+    #[test]
+    fn history_push_replaces_existing_item_and_moves_it_to_front() {
+        let mut history = vec![
+            GlobalDictationHistoryItem {
+                id: "session-1".to_string(),
+                text: "old".to_string(),
+                created_at_ms: 1,
+            },
+            GlobalDictationHistoryItem {
+                id: "session-2".to_string(),
+                text: "other".to_string(),
+                created_at_ms: 2,
+            },
+        ];
+
+        push_dictation_history_item(
+            &mut history,
+            GlobalDictationHistoryItem {
+                id: "session-1".to_string(),
+                text: "new".to_string(),
+                created_at_ms: 3,
+            },
+        );
+
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].id, "session-1");
+        assert_eq!(history[0].text, "new");
+        assert_eq!(history[0].created_at_ms, 3);
+        assert_eq!(history[1].id, "session-2");
     }
 
     #[cfg(target_os = "windows")]

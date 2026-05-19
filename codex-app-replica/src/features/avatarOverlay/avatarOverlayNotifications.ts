@@ -242,21 +242,19 @@ function deriveLocalNotificationStatus(
   }
 
   if (conversation == null) {
-    return "idle";
+    return entry.hasUnreadTurn === true ? "review" : "idle";
   }
 
   const latestTurnStatus = conversation.turns.at(-1)?.status;
+  const latestTurnItems = getLatestTurnItems(conversation);
   if (latestTurnStatus === "failed") {
     return "failed";
   }
-  if (hasPendingRequest(conversation.items)) {
+  if (hasPendingRequest(latestTurnItems)) {
     return "waiting";
   }
   if (latestTurnStatus === "inProgress") {
     return "running";
-  }
-  if (conversation.items.some(isFailureItem)) {
-    return "failed";
   }
   if (conversation.hasUnreadTurn === true || entry.hasUnreadTurn === true) {
     return "review";
@@ -297,10 +295,6 @@ function hasPendingRequest(items: ThreadConversationItem[]) {
         return false;
     }
   });
-}
-
-function isFailureItem(item: ThreadConversationItem) {
-  return item.type === "systemError" || item.type === "streamError";
 }
 
 function getNotificationExpiresAtMs(
@@ -368,19 +362,29 @@ function deriveLocalNotificationBody(
     return null;
   }
 
-  const readableText = extractReadableConversationText(conversation.items);
+  const latestTurnItems = getLatestTurnItems(conversation);
+  const readableText = extractReadableConversationText(latestTurnItems);
   if (readableText != null) {
     return readableText;
   }
 
-  for (let index = conversation.items.length - 1; index >= 0; index -= 1) {
-    const description = describeConversationItem(conversation.items[index], translate);
+  for (let index = latestTurnItems.length - 1; index >= 0; index -= 1) {
+    const description = describeConversationItem(latestTurnItems[index], translate);
     if (description != null) {
       return description;
     }
   }
 
   return null;
+}
+
+function getLatestTurnItems(conversation: ThreadConversation) {
+  const latestTurnId = conversation.turns.at(-1)?.id;
+  if (latestTurnId == null) {
+    return [];
+  }
+
+  return conversation.items.filter((item) => item.turnId === latestTurnId);
 }
 
 function extractReadableConversationText(items: ThreadConversationItem[]) {

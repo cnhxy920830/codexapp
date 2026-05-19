@@ -195,7 +195,6 @@ export function EditorDiffPage({ routeState }: EditorDiffPageProps) {
   }
 
   const effectiveCwd = resolvedRouteState.state.cwd ?? workspaceRootCwd;
-  void effectiveCwd;
   const richPreviewToggleLabel = t("codex.diffView.richPreviewToggle");
 
   return (
@@ -279,6 +278,7 @@ export function EditorDiffPage({ routeState }: EditorDiffPageProps) {
         {diffFiles.map((file) => (
           <EditorDiffFileSurface
             key={file.path}
+            cwd={effectiveCwd}
             file={file}
             isOpen={expandedPaths.has(file.path)}
             onToggleOpen={() => {

@@ -1,0 +1,3 @@
+{
+  "page": "<div class=\"flex h-full w-full items-center justify-center\"><div class=\"animate-spin inline-flex h-fit w-fit contain-paint contain-layout contain-style\" style=\"animation-delay:[delay];\"><svg width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" class=\"icon-sm\"><path opacity=\"0.3\" d=\"[path]\" fill=\"currentColor\"></path><path d=\"[path]\" fill=\"currentColor\"></path></svg></div></div>"
+}

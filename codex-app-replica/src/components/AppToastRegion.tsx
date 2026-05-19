@@ -3,6 +3,7 @@ import { useI18n } from "../i18n/i18n";
 
 export type AppToast = {
   description?: ReactNode;
+  durationMs?: number;
   message: ReactNode;
   tone: "success" | "error" | "info";
 };
