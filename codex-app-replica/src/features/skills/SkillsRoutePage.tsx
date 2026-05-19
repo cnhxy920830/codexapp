@@ -69,6 +69,7 @@ import { buildCreatorPrefillPrompt, readStoredBoolean, writeStoredBoolean } from
 import { InstalledSkillCard } from "./components/InstalledSkillCard";
 import { PluginDetailDialog } from "./components/PluginDetailDialog";
 import { PluginsBrowseTab } from "./components/PluginsBrowseTab";
+import { PluginsPage, type ManageTab } from "./PluginsPage";
 import { ThreadPageHeader } from "../chat/ThreadPageHeader";
 import type { SkillsChatRequest } from "./types";
 
@@ -93,7 +94,7 @@ const CONFIG_QUERY_KEY = ["config"] as const;
 const SKILLS_QUERY_KEY = ["skills"] as const;
 const SKILLS_DOCS_URL = "https://developers.openai.com/codex/skills/";
 
-type BrowseTab = "plugins" | "skills";
+type BrowseTab = "plugins" | "skills" | "apps";
 
 type PluginBrowseState = {
   apps: AppInfo[];
@@ -105,6 +106,7 @@ type PluginBrowseState = {
 type SkillsRoutePageProps = {
   authMethod: string | null;
   codexHome: string | null;
+  connectAppId?: string;
   connectedRemoteConnections: RemoteConnection[];
   initialTab?: BrowseTab;
   isPluginsRouteEnabled: boolean;
@@ -121,6 +123,7 @@ type SkillsRoutePageProps = {
 export function SkillsRoutePage({
   authMethod,
   codexHome,
+  connectAppId,
   connectedRemoteConnections,
   initialTab,
   isPluginsRouteEnabled,
@@ -170,6 +173,13 @@ export function SkillsRoutePage({
   );
 
   const canShowUnifiedPluginsPage = isPluginsRouteEnabled && authMethod !== "apikey";
+  const shouldShowManagePluginsPage =
+    canShowUnifiedPluginsPage &&
+    (initialTab === "apps" ||
+      (initialTab != null && initialTab !== "skills") ||
+      (connectAppId != null && connectAppId.trim().length > 0));
+  const initialManageTab: ManageTab | undefined =
+    initialTab === "apps" || initialTab === "plugins" ? initialTab : undefined;
   const canInstallRecommendedSkills = resolvedSelectedHostId === LOCAL_SETTINGS_HOST_ID;
   const skillCreatorPath = useMemo(() => {
     if (!codexHome || resolvedSelectedHostId !== LOCAL_SETTINGS_HOST_ID) {
@@ -635,7 +645,20 @@ export function SkillsRoutePage({
   return (
     <div className="relative h-full min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
       <div className="flex min-h-full w-full flex-col pb-6">
-        {canShowUnifiedPluginsPage ? (
+        {shouldShowManagePluginsPage ? (
+          <PluginsPage
+            codexHome={codexHome}
+            connectedRemoteConnections={connectedRemoteConnections}
+            initialSelectedAppId={connectAppId ?? null}
+            initialTab={initialManageTab}
+            onOpenChatWithPrompt={onOpenChatWithPrompt}
+            onSelectHost={onSelectHost}
+            onShowToast={onShowToast}
+            remoteConnectionHostIds={remoteConnectionHostIds}
+            selectedHostId={resolvedSelectedHostId}
+            workspaceRoot={workspaceRoot}
+          />
+        ) : canShowUnifiedPluginsPage ? (
           <>
             <div className="mx-auto flex w-full max-w-[var(--thread-content-max-width)] flex-col gap-6 px-5 pb-8 pt-6">
               <div className="flex justify-end">

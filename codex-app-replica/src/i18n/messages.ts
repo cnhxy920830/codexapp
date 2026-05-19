@@ -190,6 +190,11 @@ export type MessageKey =
   | "skills.appsPage.categoryDropdown.ariaLabel"
   | "skills.appsPage.browseDropdown.ariaLabel"
   | "skills.appsPage.marketplaceFilter.addMore"
+  | "apps.appConnectOAuthCallbackPage.fallbackAppName"
+  | "apps.appConnectOAuthCallbackPage.missingData"
+  | "apps.appConnectOAuthCallbackPage.pending"
+  | "apps.appConnectOAuthCallbackPage.requestFailed"
+  | "apps.appConnectOAuthCallbackPage.success"
   | "skills.page.heading"
   | "skills.page.subheading"
   | "skills.page.loading"
@@ -2531,6 +2536,11 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.route.remoteConnections.description": "Manage remote hosts from Settings → Connections.",
     "app.route.oauthCallback.title": "Sign-in complete",
     "app.route.oauthCallback.description": "You can close this window and return to Codex.",
+    "apps.appConnectOAuthCallbackPage.fallbackAppName": "App",
+    "apps.appConnectOAuthCallbackPage.missingData": "Missing OAuth callback data.",
+    "apps.appConnectOAuthCallbackPage.pending": "Finishing {connector} setup",
+    "apps.appConnectOAuthCallbackPage.requestFailed": "Failed to finish connecting app.",
+    "apps.appConnectOAuthCallbackPage.success": "{appName} is now connected.",
     "app.route.extensionPanelNew.title": "Extension panel",
     "app.route.extensionPanelNew.description": "This route is reserved for the extension host.",
     "skills.appsPage.heading.plugins": "Plugins",
@@ -5169,6 +5179,11 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "app.route.remoteConnections.description": "请在“设置 → 连接”中管理远程主机。",
     "app.route.oauthCallback.title": "登录完成",
     "app.route.oauthCallback.description": "您可以关闭此窗口并返回 Codex。",
+    "apps.appConnectOAuthCallbackPage.fallbackAppName": "应用",
+    "apps.appConnectOAuthCallbackPage.missingData": "缺少 OAuth 回调数据。",
+    "apps.appConnectOAuthCallbackPage.pending": "正在完成 {connector} 的连接",
+    "apps.appConnectOAuthCallbackPage.requestFailed": "无法完成应用连接。",
+    "apps.appConnectOAuthCallbackPage.success": "{appName} 现已连接。",
     "app.route.extensionPanelNew.title": "扩展面板",
     "app.route.extensionPanelNew.description": "此路由保留给扩展宿主使用。",
     "skills.appsPage.heading.plugins": "插件",

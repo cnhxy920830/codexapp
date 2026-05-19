@@ -19,6 +19,7 @@ export type AuthState = {
 };
 
 export type LaunchContext = {
+  appConnectOAuthCallbackUrl?: string | null;
   openProjectPath: string | null;
 };
 
@@ -223,19 +224,9 @@ export async function loginChatGptWithCompletion(
     useStreamlinedLogin: params.useStreamlinedLogin,
   });
 
-  if (normalizedHostId == null) {
-    return {
-      ...start,
-      completion: Promise.resolve({
-        loginId: start.loginId,
-        success: true,
-        error: null,
-      }),
-    };
-  }
-
   const completion = new Promise<LoginCompletionResult>((resolve, reject) => {
     let finished = false;
+    let aborting = false;
     let disposeAbortListener: (() => void) | null = null;
     let disposeEventListener: (() => void) | null = null;
 
@@ -250,6 +241,7 @@ export async function loginChatGptWithCompletion(
     };
 
     const abort = () => {
+      aborting = true;
       void cancelLogin(start.loginId, normalizedHostId)
         .catch((error) => {
           finalize(() => {
@@ -263,6 +255,43 @@ export async function loginChatGptWithCompletion(
             reject(abortError);
           });
         });
+    };
+
+    const handleLocalSnapshot = (snapshot: AuthSnapshot) => {
+      if (aborting) {
+        return;
+      }
+      if (snapshot.activeLoginId === start.loginId) {
+        return;
+      }
+      if (snapshot.activeLoginId !== null) {
+        return;
+      }
+      finalize(() => {
+        resolve({
+          loginId: start.loginId,
+          success: snapshot.lastLoginError == null,
+          error: snapshot.lastLoginError,
+        });
+      });
+    };
+
+    const handleRemoteCompletion = (
+      event: RemoteChatGptLoginCompletedNotification,
+    ) => {
+      if (event.hostId !== normalizedHostId) {
+        return;
+      }
+      if (event.loginId && event.loginId !== start.loginId) {
+        return;
+      }
+      finalize(() => {
+        resolve({
+          loginId: event.loginId ?? start.loginId,
+          success: event.success,
+          error: event.error ?? null,
+        });
+      });
     };
 
     if (params.signal?.aborted) {
@@ -280,21 +309,12 @@ export async function loginChatGptWithCompletion(
       };
     }
 
-    void onRemoteChatGptLoginCompleted((event) => {
-      if (event.hostId !== normalizedHostId) {
-        return;
-      }
-      if (event.loginId && event.loginId !== start.loginId) {
-        return;
-      }
-      finalize(() => {
-        resolve({
-          loginId: event.loginId ?? start.loginId,
-          success: event.success,
-          error: event.error ?? null,
-        });
-      });
-    })
+    const subscribeCompletion =
+      normalizedHostId == null
+        ? onAuthSnapshotChange(handleLocalSnapshot)
+        : onRemoteChatGptLoginCompleted(handleRemoteCompletion);
+
+    void subscribeCompletion
       .then((dispose) => {
         if (finished) {
           dispose();

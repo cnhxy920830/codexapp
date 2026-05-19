@@ -4,7 +4,10 @@ import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
+import { type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { I18N_CONTEXT } from "../../i18n/i18n";
+import { DEFAULT_LOCALE, MESSAGES, getMessageLocale, type MessageKey } from "../../i18n/messages";
 import { PlanSummaryPage } from "./PlanSummaryPage";
 
 const SNAPSHOT_PATH = path.join(process.cwd(), "src/features/chat/__snapshots__/plan-summary-page.snap.json");
@@ -12,17 +15,24 @@ const UPDATE_SNAPSHOTS = process.env.PLAN_SUMMARY_PAGE_UPDATE_SNAPSHOTS === "1";
 
 test("plan summary page snapshots", async (t) => {
   const actualSnapshots = {
-    loading: renderToStaticMarkup(<PlanSummaryPage planSummary={null} t={translate} />),
-    loaded: renderToStaticMarkup(
-      <PlanSummaryPage
-        planSummary={{
-          conversationId: "conversation-123",
-          planContent: "# Plan\n\n- First\n- Second",
-        }}
-        t={translate}
-      />,
-    ),
+    loading: renderPlanSummaryPage(null),
+    loaded: renderPlanSummaryPage({
+      conversationId: "conversation-123",
+      planContent: "# Plan\n\n- First\n- Second",
+    }),
   };
+
+  await t.test("loaded route state is the only source of truth", () => {
+    const emptyStateMarkup = renderPlanSummaryPage({
+      conversationId: "conversation-123",
+    });
+    assert.match(emptyStateMarkup, /animate-pulse/);
+  });
+
+  await t.test("loaded page hides open button affordance", () => {
+    const markup = actualSnapshots.loaded;
+    assert.doesNotMatch(markup, /Open chat|Open thread|Open conversation/);
+  });
 
   if (UPDATE_SNAPSHOTS) {
     await mkdir(path.dirname(SNAPSHOT_PATH), { recursive: true });
@@ -39,9 +49,41 @@ test("plan summary page snapshots", async (t) => {
   }
 });
 
+function renderPlanSummaryPage(routeState: unknown) {
+  return renderToStaticMarkup(
+    <TestI18nProvider>
+      <PlanSummaryPage routeState={routeState} />
+    </TestI18nProvider>,
+  );
+}
+
+function TestI18nProvider({ children }: { children: ReactNode }) {
+  return (
+    <I18N_CONTEXT.Provider
+      value={{
+        locale: DEFAULT_LOCALE,
+        setLocale: noop,
+        t: (key: MessageKey, values?: Record<string, number | string>) => {
+          const template = MESSAGES[getMessageLocale(DEFAULT_LOCALE)][key];
+          if (!values) {
+            return template;
+          }
+
+          return template.replace(/\{(\w+)\}/g, (match, token) => {
+            const value = values[token];
+            return value === undefined ? match : String(value);
+          });
+        },
+      }}
+    >
+      {children}
+    </I18N_CONTEXT.Provider>
+  );
+}
+
 type SnapshotMap = {
   loading: string;
   loaded: string;
 };
 
-const translate = (key: string) => key;
+const noop = () => undefined;

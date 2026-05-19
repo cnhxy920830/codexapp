@@ -1,16 +1,16 @@
-import type { MessageKey } from "../../i18n/messages";
+import { useI18n } from "../../i18n/i18n";
 import type { PendingPlanSummaryState } from "../../services/windowNavigation";
 import { PlanSummaryItemCard } from "./PlanSummaryItemCard";
 
-type Translate = (key: MessageKey, values?: Record<string, number | string>) => string;
-
 type PlanSummaryPageProps = {
-  planSummary: PendingPlanSummaryState | null;
-  t: Translate;
+  routeState: unknown;
 };
 
-export function PlanSummaryPage({ planSummary, t }: PlanSummaryPageProps) {
-  if (!planSummary?.planContent || !planSummary?.conversationId) {
+export function PlanSummaryPage({ routeState }: PlanSummaryPageProps) {
+  const { t } = useI18n();
+  const planSummary = resolvePlanSummaryRouteState(routeState);
+
+  if (planSummary == null) {
     return <PlanSummaryPageLoading />;
   }
 
@@ -27,13 +27,36 @@ export function PlanSummaryPage({ planSummary, t }: PlanSummaryPageProps) {
     <div className="overflow-y-auto p-[var(--padding-panel)]">
       <PlanSummaryItemCard
         conversationId={planSummary.conversationId}
-        defaultCollapsed={false}
         item={item}
         showOpenButton={false}
         t={t}
       />
     </div>
   );
+}
+
+function resolvePlanSummaryRouteState(routeState: unknown): PendingPlanSummaryState | null {
+  if (routeState == null || typeof routeState !== "object") {
+    return null;
+  }
+
+  const record = routeState as Record<string, unknown>;
+  const rawConversationId = record.conversationId;
+  const rawPlanContent = record.planContent;
+
+  if (typeof rawConversationId !== "string" || typeof rawPlanContent !== "string") {
+    return null;
+  }
+
+  const conversationId = rawConversationId.trim();
+  if (conversationId.length === 0 || rawPlanContent.length === 0) {
+    return null;
+  }
+
+  return {
+    conversationId,
+    planContent: rawPlanContent,
+  };
 }
 
 function PlanSummaryPageLoading() {

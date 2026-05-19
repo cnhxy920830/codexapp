@@ -72,6 +72,10 @@ import {
   loadDebugWindowParityState,
   shouldRefreshDebugWindowParityState,
 } from "./debugWindowPageParityState";
+import {
+  onDebugWindowOriginConversationChanged,
+  takePendingDebugWindowOriginConversation,
+} from "../../services/windowNavigation";
 
 const DEFAULT_APP_ACTION_JSON = `{
   "type": "app.get_summary"
@@ -85,10 +89,10 @@ const RELATIVE_TIME_FORMAT = new Intl.RelativeTimeFormat(undefined, { numeric: "
 
 type DebugWindowPageProps = {
   conversationId: string | null;
-  isLoading: boolean;
+  onConversationChange?: (conversationId: string) => void;
+  onNavigateHome: () => void;
   onOpenConversation?: (threadId: string, hostId: string) => void;
   threadConversation: ThreadConversation | null;
-  onClose: () => void;
 };
 
 type DebugModalProps = {
@@ -156,22 +160,13 @@ type WorkspaceRuntimeActionsMenuProps = {
 
 export function DebugWindowPage({
   conversationId,
-  isLoading,
-  onClose,
+  onConversationChange,
+  onNavigateHome,
   onOpenConversation,
   threadConversation,
 }: DebugWindowPageProps) {
   const isDebugMenuAllowed = allowDebugMenu();
-
-  useEffect(() => {
-    if (isDebugMenuAllowed) {
-      return;
-    }
-
-    if (typeof window !== "undefined") {
-      window.location.replace("/");
-    }
-  }, [isDebugMenuAllowed]);
+  const [conversationIdOverride, setConversationIdOverride] = useState<string | null>(conversationId);
 
   const [authSnapshot, setAuthSnapshot] = useState<AuthSnapshot | null>(null);
   const [workspaceRootOptions, setWorkspaceRootOptions] = useState<WorkspaceRootOptionsResponse | null>(null);
@@ -191,10 +186,58 @@ export function DebugWindowPage({
   const [debugParityState, setDebugParityState] = useState(DEFAULT_DEBUG_WINDOW_PARITY_STATE);
   const [primaryRuntimeInstallProgress, setPrimaryRuntimeInstallProgress] =
     useState<PrimaryRuntimeInstallProgressEvent | null>(null);
-  const [isHydrated, setIsHydrated] = useState(false);
 
   const appFlavor = readAppFlavor();
   const showAmbientSuggestionsSection = appFlavor === "dev" || appFlavor === "nightly";
+
+  useEffect(() => {
+    setConversationIdOverride(conversationId);
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (conversationIdOverride == null || conversationIdOverride === conversationId) {
+      return;
+    }
+
+    onConversationChange?.(conversationIdOverride);
+  }, [conversationId, conversationIdOverride, onConversationChange]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+
+    void takePendingDebugWindowOriginConversation()
+      .then((pendingConversationId) => {
+        if (disposed || pendingConversationId == null) {
+          return;
+        }
+
+        const normalizedConversationId = pendingConversationId.trim();
+        if (normalizedConversationId.length === 0) {
+          return;
+        }
+
+        setConversationIdOverride(normalizedConversationId);
+      })
+      .catch(() => undefined);
+
+    void onDebugWindowOriginConversationChanged((nextConversationId) => {
+      setConversationIdOverride(nextConversationId);
+    })
+      .then((dispose) => {
+        if (disposed) {
+          void dispose();
+          return;
+        }
+        unlisten = dispose;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     if (!isDebugMenuAllowed) {
@@ -238,7 +281,6 @@ export function DebugWindowPage({
       setPrimaryRuntimeStatus(primaryRuntimeStatusResult);
       setIsPackaged(packagedStateResult);
       setDebugParityState(debugParityStateResult);
-      setIsHydrated(true);
     };
 
     void load();
@@ -411,11 +453,7 @@ export function DebugWindowPage({
   };
 
   if (!isDebugMenuAllowed) {
-    return <DebugLoadingState />;
-  }
-
-  if (isLoading || !isHydrated) {
-    return <DebugLoadingState />;
+    return <NavigateHome onNavigateHome={onNavigateHome} />;
   }
 
   return (
@@ -424,7 +462,7 @@ export function DebugWindowPage({
       appActionDraft={appActionDraft}
       appActionResult={appActionResult}
       authSnapshot={authSnapshot}
-      conversationId={conversationId}
+      conversationId={conversationIdOverride}
       debugAppServerInitialThreadStatusesByHostId={undefined}
       globalDictationForceLockEnabled={debugParityState.globalDictationForceLockEnabled}
       hotkeyWindowState={debugParityState.hotkeyWindowState}
@@ -433,7 +471,7 @@ export function DebugWindowPage({
       isPackaged={isPackaged}
       onboardingState={debugParityState.onboardingState}
       onAppActionDraftChange={setAppActionDraft}
-      onClose={onClose}
+      onClose={closeDebugWindow}
       onOpenConversation={onOpenConversation}
       onPopOut={undefined}
       onPrimaryRuntimeInstallReleaseChange={handlePrimaryRuntimeInstallReleaseChange}
@@ -455,6 +493,21 @@ export function DebugWindowPage({
       workspaceRootOptions={workspaceRootOptions}
     />
   );
+}
+
+function NavigateHome({ onNavigateHome }: { onNavigateHome: () => void }) {
+  useEffect(() => {
+    onNavigateHome();
+  }, [onNavigateHome]);
+
+  return null;
+}
+
+function closeDebugWindow() {
+  if (typeof window !== "undefined" && typeof window.close === "function") {
+    window.close();
+    return;
+  }
 }
 
 export function DebugModal({
@@ -1130,16 +1183,6 @@ function WorktreeCleanupSection() {
       </div>
       {error ? <div className="py-1.5 text-xs text-token-error-foreground">{error}</div> : null}
     </DebugSection>
-  );
-}
-
-function DebugLoadingState() {
-  return (
-    <main className="flex h-dvh w-full items-center justify-center bg-token-main-surface-primary text-token-foreground">
-      <div className="rounded-xl border border-token-border bg-token-foreground/[0.03] px-4 py-3 text-sm text-token-foreground-secondary">
-        Loading…
-      </div>
-    </main>
   );
 }
 

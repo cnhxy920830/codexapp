@@ -11,8 +11,10 @@ export type WorkspaceRootOptionView = {
 
 export type SelectWorkspacePageViewProps = {
   addProjectMenuOpen?: boolean;
+  existingPaths?: string[];
   hasAvailableRoots: boolean;
   isEmptyState: boolean;
+  isLoadingExistingPaths?: boolean;
   isLoadingRoots: boolean;
   isRemoteHost?: boolean;
   isSelectAllChecked: boolean;
@@ -21,7 +23,7 @@ export type SelectWorkspacePageViewProps = {
   selectedRoots: string[];
   showPlaygroundCopy: boolean;
   skipErrorMessage: string | null;
-  visibleWorkspaceRootOptions: WorkspaceRootOptionView[];
+  workspaceRootOptions: WorkspaceRootOptionView[];
   onContinue: () => void;
   onOpenFolder: () => void;
   onSkip: () => void;
@@ -32,8 +34,10 @@ export type SelectWorkspacePageViewProps = {
 
 export function SelectWorkspacePageView({
   addProjectMenuOpen,
+  existingPaths = [],
   hasAvailableRoots,
   isEmptyState,
+  isLoadingExistingPaths = false,
   isLoadingRoots,
   isRemoteHost = false,
   isSelectAllChecked,
@@ -42,7 +46,7 @@ export function SelectWorkspacePageView({
   selectedRoots,
   showPlaygroundCopy,
   skipErrorMessage,
-  visibleWorkspaceRootOptions,
+  workspaceRootOptions,
   onContinue,
   onOpenFolder,
   onSkip,
@@ -52,6 +56,7 @@ export function SelectWorkspacePageView({
 }: SelectWorkspacePageViewProps) {
   const { t } = useI18n();
   const selectedRootsSet = new Set(selectedRoots);
+  const normalizedExistingPaths = new Set(existingPaths.map(normalizeComparablePath));
 
   return (
     <div className="fixed inset-0 overflow-hidden select-none">
@@ -106,17 +111,26 @@ export function SelectWorkspacePageView({
                       label={t("electron.onboarding.workspace.selectAll")}
                       onCheckedChange={onToggleSelectAll}
                     />
-                    {visibleWorkspaceRootOptions.map((option, index) => (
-                      <WorkspaceCheckboxRow
-                        key={option.root}
-                        checked={selectedRootsSet.has(option.root)}
-                        checkboxId={`workspace-root-${index}`}
-                        description={option.root}
-                        disabled={isLoadingRoots}
-                        label={option.label}
-                        onCheckedChange={(checked) => onToggleWorkspace(option.root, checked)}
-                      />
-                    ))}
+                    {workspaceRootOptions.map((option, index) => {
+                      if (
+                        !isLoadingExistingPaths &&
+                        !normalizedExistingPaths.has(normalizeComparablePath(option.root))
+                      ) {
+                        return null;
+                      }
+
+                      return (
+                        <WorkspaceCheckboxRow
+                          key={option.root}
+                          checked={selectedRootsSet.has(option.root)}
+                          checkboxId={`workspace-root-${index}`}
+                          description={option.root}
+                          disabled={isLoadingRoots}
+                          label={option.label}
+                          onCheckedChange={(checked) => onToggleWorkspace(option.root, checked)}
+                        />
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="text-center text-sm text-token-description-foreground">
@@ -498,4 +512,8 @@ function AddIcon({ className }: { className?: string }) {
 
 function joinClasses(...values: Array<string | false | null | undefined>) {
   return values.filter((value): value is string => Boolean(value)).join(" ");
+}
+
+function normalizeComparablePath(path: string) {
+  return path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }

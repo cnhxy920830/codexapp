@@ -20,15 +20,17 @@ import {
   buildWorkspaceRootOptions,
   countSelectedRoots,
   deriveCandidateWorkspaceRoots,
+  deriveSelectWorkspacePageState,
   deriveWorkspaceAutoLaunchAction,
-  filterExistingWorkspaceRootOptions,
+  filterWorkspaceRecentThreads,
   mergeWorkspaceRootSelectionsForPersistence,
   normalizeWorkspaceOnboardingExperimentAssignment,
   readWorkspaceOnboardingExperimentArm,
-  WORKSPACE_ONBOARDING_DEFAULT_PROJECT_NAME,
+  readWorkspaceOnboardingSkipProjectName,
   shouldUsePlaygroundCopy,
 } from "./selectWorkspaceModel";
 import { SelectWorkspacePageView } from "./SelectWorkspacePageView";
+import { useReplicaStatsigGateValue } from "../statsig/replicaStatsig";
 
 type SelectWorkspacePageProps = {
   onContinueToHome: (state: { focusComposerNonce: number }) => void;
@@ -37,6 +39,7 @@ type SelectWorkspacePageProps = {
 
 export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectWorkspacePageProps) {
   const { t } = useI18n();
+  const backgroundSubagentsEnabled = useReplicaStatsigGateValue("1221508807");
   const [workspaceRoots, setWorkspaceRoots] = useState<string[]>([]);
   const [workspaceRootLabels, setWorkspaceRootLabels] = useState<Record<string, string>>({});
   const [pendingWorktrees, setPendingWorktrees] = useState<Awaited<ReturnType<typeof readPendingWorktreesSnapshot>>>([]);
@@ -65,15 +68,18 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     workspaceOnboardingExperimentAssignment,
   );
   const usePlaygroundCopy = shouldUsePlaygroundCopy(workspaceOnboardingExperimentArm);
+  const visibleRecentThreads = useMemo(() => {
+    return filterWorkspaceRecentThreads(recentThreads, backgroundSubagentsEnabled);
+  }, [backgroundSubagentsEnabled, recentThreads]);
 
   const inferredRoots = useMemo(() => {
     return deriveCandidateWorkspaceRoots({
       codexHome,
       gitOrigins,
       pendingWorktrees,
-      recentThreads,
+      recentThreads: visibleRecentThreads,
     });
-  }, [codexHome, gitOrigins, pendingWorktrees, recentThreads]);
+  }, [codexHome, gitOrigins, pendingWorktrees, visibleRecentThreads]);
 
   const candidateRoots = useMemo(() => {
     return dedupeWorkspaceRoots([...workspaceRoots, ...inferredRoots, ...pickedRoots]);
@@ -82,12 +88,6 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
   const workspaceRootOptions = useMemo(() => {
     return buildWorkspaceRootOptions(candidateRoots, workspaceRootLabels);
   }, [candidateRoots, workspaceRootLabels]);
-
-  const visibleWorkspaceRootOptions = useMemo(() => {
-    return isLoadingExistingPaths
-      ? workspaceRootOptions
-      : filterExistingWorkspaceRootOptions(workspaceRootOptions, existingPaths);
-  }, [existingPaths, isLoadingExistingPaths, workspaceRootOptions]);
 
   const selectedRootList = useMemo(() => {
     return workspaceRootOptions
@@ -101,15 +101,21 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     workspaceRootOptions.map((option) => option.root),
   );
   const isSelectAllChecked = totalWorkspaceCount > 0 && selectedWorkspaceCount === totalWorkspaceCount;
-  const hasPersistedOrDerivedRoots = workspaceRoots.length > 0 || inferredRoots.length > 0;
   const isLoading =
     isLoadingWorkspaceRoots ||
     isLoadingPendingWorktrees ||
     isLoadingGitOrigins ||
     isLoadingCodexHome ||
     isLoadingExistingPaths;
-  const hasAvailableRoots = visibleWorkspaceRootOptions.length > 0;
-  const isEmptyState = !hasPersistedOrDerivedRoots && !isLoading && candidateRoots.length === 0;
+  const { hasAvailableRoots, hasPersistedOrDerivedRoots, isEmptyState } = useMemo(() => {
+    return deriveSelectWorkspacePageState({
+      candidateRoots,
+      inferredRoots,
+      isLoading,
+      workspaceRootOptions,
+      workspaceRoots,
+    });
+  }, [candidateRoots, inferredRoots, isLoading, workspaceRootOptions, workspaceRoots]);
   const autoLaunchAction = deriveWorkspaceAutoLaunchAction({
     arm: workspaceOnboardingExperimentArm,
     autoLaunchApplied: workspaceOnboardingAutoLaunchApplied,
@@ -306,7 +312,7 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
   useEffect(() => {
     let cancelled = false;
     const dirs = dedupeWorkspaceRoots([
-      ...recentThreads.map((thread) => thread.cwd).filter((cwd) => cwd.trim().length > 0),
+      ...visibleRecentThreads.map((thread) => thread.cwd).filter((cwd) => cwd.trim().length > 0),
       ...pendingWorktrees
         .map((entry) => {
           const cwd = entry.startConversationParamsInput?.cwd;
@@ -317,6 +323,7 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
 
     if (dirs.length === 0) {
       setGitOrigins([]);
+      setIsLoadingGitOrigins(false);
       return;
     }
 
@@ -341,7 +348,7 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     return () => {
       cancelled = true;
     };
-  }, [pendingWorktrees, recentThreads]);
+  }, [pendingWorktrees, visibleRecentThreads]);
 
   useEffect(() => {
     let cancelled = false;
@@ -452,7 +459,9 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
       selectedRoots={selectedRootList}
       showPlaygroundCopy={usePlaygroundCopy}
       skipErrorMessage={skipErrorMessage}
-      visibleWorkspaceRootOptions={visibleWorkspaceRootOptions}
+      existingPaths={existingPaths}
+      isLoadingExistingPaths={isLoadingExistingPaths}
+      workspaceRootOptions={workspaceRootOptions}
       onContinue={() => {
         void handleContinue();
       }}
@@ -500,7 +509,7 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     setIsSkipPending(true);
     try {
       await skipWorkspaceOnboarding(
-        usePlaygroundCopy ? WORKSPACE_ONBOARDING_DEFAULT_PROJECT_NAME : null,
+        readWorkspaceOnboardingSkipProjectName(workspaceOnboardingExperimentArm),
       );
     } catch (error) {
       setIsSkipPending(false);

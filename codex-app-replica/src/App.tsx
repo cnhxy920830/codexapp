@@ -139,6 +139,7 @@ import { ChatConversationMainPane } from "./features/chat/ChatConversationMainPa
 import { ChatRouteHeader } from "./features/chat/ChatRouteHeader";
 import { ChatSidePanel } from "./features/chat/ChatSidePanel";
 import { FilePreviewPage } from "./features/chat/FilePreviewPage";
+import { AppConnectOAuthCallbackPage } from "./features/apps/AppConnectOAuthCallbackPage";
 import { LocalConversationCompactComposerOverlay } from "./features/chat/LocalConversationCompactComposerOverlay";
 import { PlanSummaryPage } from "./features/chat/PlanSummaryPage";
 import { RemoteConversationHeaderActions } from "./features/chat/RemoteConversationHeaderActions";
@@ -182,6 +183,9 @@ import {
   WORKSPACE_ONBOARDING_DEFAULT_PROJECT_NAME,
   type WorkspaceOnboardingExperimentAssignment,
 } from "./features/onboarding/selectWorkspaceModel";
+import {
+  isExplicitWelcomeOnboardingOverride,
+} from "./features/onboarding/welcomeRouteModel";
 import { AvatarOverlayPage } from "./features/avatarOverlay/AvatarOverlayPage";
 import { DebugWindowPage as DebugWindowPageContent } from "./features/debug/DebugWindowPage";
 import {
@@ -267,7 +271,7 @@ import {
   type CommandKeymapState,
 } from "./services/keyboardShortcuts";
 import {
-  DEBUG_WINDOW_ORIGIN_CONVERSATION_CHANGED_EVENT,
+  APP_CONNECT_OAUTH_CALLBACK_ROUTE_PATH,
   AVATAR_OVERLAY_ROUTE_PATH,
   DEBUG_WINDOW_ROUTE_PATH,
   EDITOR_DIFF_ROUTE_PATH,
@@ -285,10 +289,8 @@ import {
   setPrimaryWindowMode,
   WORKTREE_INIT_V2_ROUTE_PREFIX,
   WELCOME_ROUTE_PATH,
-  takePendingDebugWindowOriginConversation,
   takePendingPlanSummary,
   takePendingWindowRoute,
-  type PendingPlanSummaryState,
 } from "./services/windowNavigation";
 import {
   onDebugRunAppActionRequest,
@@ -399,6 +401,7 @@ type SettingsSectionState = {
 } | null;
 type AgentConfigControlErrors = Partial<Record<"approval" | "sandbox" | "network", string>>;
 type AppRoute =
+  | "app-connect-oauth-callback"
   | "chat"
   | "hotkey-home"
   | "hotkey-new-thread"
@@ -418,13 +421,15 @@ type AppRoute =
   | "worktree-init"
   | "avatar-overlay"
   | "debug";
-type SkillsRouteInitialTab = "plugins" | "skills";
+type SkillsRouteInitialTab = "plugins" | "skills" | "apps";
 type SkillsPageRouteState = {
+  connectAppId?: string;
   initialTab?: SkillsRouteInitialTab;
   pluginDeepLinkAuthBlocked?: boolean;
 };
 type NavigateToRouteState = {
   conversationId?: string;
+  connectAppId?: string;
   cwd?: string | null;
   focusComposerNonce?: number;
   initialHostId?: string;
@@ -441,9 +446,6 @@ type NavigateToRouteNotification = {
 };
 type ToggleDiffPanelNotification = {
   open: boolean;
-};
-type DebugWindowOriginConversationChangedNotification = {
-  conversationId: string;
 };
 type ThreadShellVariant = "default" | "hotkey";
 type ThreadShellRoute = {
@@ -706,6 +708,10 @@ function isPullRequestsRoute(path: string) {
   return path === "/pull-requests";
 }
 
+function isAppConnectOAuthCallbackRoute(path: string) {
+  return stripRouteSearchAndHash(path) === APP_CONNECT_OAUTH_CALLBACK_ROUTE_PATH;
+}
+
 function isRemoteConnectionsRoute(path: string) {
   return stripRouteSearchAndHash(path) === "/remote-connections";
 }
@@ -755,6 +761,10 @@ function readInitialAppRoute(): AppRoute {
     return "pull-requests";
   }
 
+  if (typeof window !== "undefined" && isAppConnectOAuthCallbackRoute(window.location.pathname)) {
+    return "app-connect-oauth-callback";
+  }
+
   if (typeof window !== "undefined" && isRemoteConnectionsRoute(window.location.pathname)) {
     return "settings";
   }
@@ -793,6 +803,7 @@ function shouldWindowManagePowerSaveBlocker() {
     isHotkeyNewThreadRoute(pathname) ||
     parseWorktreeInitRoute(pathname) !== null ||
     isFirstRunRoute(pathname) ||
+    isAppConnectOAuthCallbackRoute(pathname) ||
     isLoginRoute(pathname) ||
     isSelectWorkspaceRoute(pathname) ||
     isWelcomeRoute(pathname) ||
@@ -1240,7 +1251,6 @@ function App() {
   const [isActiveWorkspaceRootsLoading, setIsActiveWorkspaceRootsLoading] = useState(true);
   const [hasLoadedInitialWindowRoute, setHasLoadedInitialWindowRoute] = useState(false);
   const [hasLoadedInitialThreadSnapshot, setHasLoadedInitialThreadSnapshot] = useState(false);
-  const [pendingPlanSummary, setPendingPlanSummary] = useState<PendingPlanSummaryState | null>(null);
   const [pageHeaderContent, setPageHeaderContent] = useState<ReactNode | null>(null);
   const [editorDiffRouteState, setEditorDiffRouteState] = useState<unknown | null>(() =>
     typeof window === "undefined" ? null : window.history.state,
@@ -1371,6 +1381,7 @@ function App() {
   const connectedSettingsRemoteConnections = useMemo(() => {
     return filterConnectedSettingsRemoteConnections(settingsRemoteConnections, settingsRemoteConnectionStates);
   }, [settingsRemoteConnectionStates, settingsRemoteConnections]);
+  const hasExplicitWelcomeOnboardingOverride = isExplicitWelcomeOnboardingOverride(loginRouteOverride);
   const hasExplicitLoginRouteOverride = isExplicitLoginRouteOverride(loginRouteOverride);
   const workspaceOnboardingExperimentArm = readWorkspaceOnboardingExperimentArm(
     workspaceOnboardingExperimentAssignment,
@@ -1583,6 +1594,7 @@ function App() {
     !hasLoadedLaunchContext ||
     !hasLoadedInitialWindowRoute ||
     (!hasLoadedInitialThreadSnapshot &&
+      currentRoute !== "app-connect-oauth-callback" &&
       currentRoute !== "hotkey-home" &&
       currentRoute !== "hotkey-new-thread" &&
       currentRoute !== "plan-summary" &&
@@ -1858,7 +1870,12 @@ function App() {
       .finally(() => setHasLoadedAuthSnapshot(true));
     void getLaunchContext()
       .then(setLaunchContext)
-      .catch(() => setLaunchContext({ openProjectPath: null }))
+      .catch(() =>
+        setLaunchContext({
+          appConnectOAuthCallbackUrl: null,
+          openProjectPath: null,
+        }),
+      )
       .finally(() => setHasLoadedLaunchContext(true));
     void onAuthSnapshotChange(setRawAuthSnapshot).then((dispose) => {
       authUnlisten = dispose;
@@ -1867,6 +1884,57 @@ function App() {
       authUnlisten?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (
+      currentRoute !== "app-connect-oauth-callback" ||
+      launchContext?.appConnectOAuthCallbackUrl == null ||
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+
+    const historyState = window.history.state;
+    if (
+      historyState &&
+      typeof historyState === "object" &&
+      typeof Reflect.get(historyState, "fullRedirectUrl") === "string"
+    ) {
+      return;
+    }
+
+    window.history.replaceState(
+      {
+        ...(historyState && typeof historyState === "object" ? historyState : {}),
+        fullRedirectUrl: launchContext.appConnectOAuthCallbackUrl,
+      },
+      "",
+      APP_CONNECT_OAUTH_CALLBACK_ROUTE_PATH,
+    );
+  }, [currentRoute, launchContext]);
+
+  useEffect(() => {
+    if (
+      !hasLoadedLaunchContext ||
+      launchContext?.appConnectOAuthCallbackUrl == null ||
+      typeof window === "undefined" ||
+      isAppConnectOAuthCallbackRoute(window.location.pathname)
+    ) {
+      return;
+    }
+
+    window.history.replaceState(
+      {
+        ...(window.history.state && typeof window.history.state === "object"
+          ? window.history.state
+          : {}),
+        fullRedirectUrl: launchContext.appConnectOAuthCallbackUrl,
+      },
+      "",
+      APP_CONNECT_OAUTH_CALLBACK_ROUTE_PATH,
+    );
+    setCurrentRoute("app-connect-oauth-callback");
+  }, [hasLoadedLaunchContext, launchContext]);
 
   const refreshPinnedThreads = useEffectEvent(async () => {
     try {
@@ -2912,7 +2980,7 @@ function App() {
     };
   }, []);
 
-  const handleDebugWindowOriginConversationChanged = useEffectEvent(async (conversationId: string) => {
+  const handleDebugWindowConversationSelected = useEffectEvent(async (conversationId: string) => {
     const normalizedConversationId = conversationId.trim();
     if (!normalizedConversationId) {
       return;
@@ -2992,33 +3060,6 @@ function App() {
     let disposed = false;
     let unlisten: (() => void) | undefined;
 
-    void listen<DebugWindowOriginConversationChangedNotification>(
-      DEBUG_WINDOW_ORIGIN_CONVERSATION_CHANGED_EVENT,
-      (event) => {
-        void handleDebugWindowOriginConversationChanged(event.payload.conversationId);
-      },
-    )
-      .then((dispose) => {
-        if (disposed) {
-          void dispose();
-          return;
-        }
-        unlisten = dispose;
-      })
-      .catch(() => undefined);
-
-    return () => {
-      disposed = true;
-      if (unlisten) {
-        void unlisten();
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-
     void onDebugRunAppActionRequest((notification) => {
       void handleDebugRunAppActionRequest(notification);
     })
@@ -3039,28 +3080,38 @@ function App() {
     };
   }, []);
 
+  const applyPendingPlanSummary = useEffectEvent(async () => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    const planSummary = await takePendingPlanSummary();
+    if (planSummary == null) {
+      return false;
+    }
+
+    window.history.replaceState(planSummary, "", PLAN_SUMMARY_ROUTE_PATH);
+    return true;
+  });
+
   useEffect(() => {
     let cancelled = false;
 
     void Promise.all([
       takePendingWindowRoute(),
       takePendingPlanSummary(),
-      takePendingDebugWindowOriginConversation(),
     ])
-      .then(([path, planSummary, debugWindowConversationId]) => {
+      .then(([path, planSummary]) => {
         if (cancelled) {
           return;
         }
 
-        const normalizedDebugWindowConversationId =
-          typeof debugWindowConversationId === "string" && debugWindowConversationId.trim().length > 0
-            ? debugWindowConversationId.trim()
-            : null;
-
         if (planSummary) {
+          if (typeof window !== "undefined") {
+            window.history.replaceState(planSummary, "", PLAN_SUMMARY_ROUTE_PATH);
+          }
           setThreadShellVariant("default");
           initialWindowPageKindRef.current = "plan-summary";
-          setPendingPlanSummary(planSummary);
           setCurrentRoute("plan-summary");
         }
 
@@ -3134,6 +3185,12 @@ function App() {
           return;
         }
 
+        if (isAppConnectOAuthCallbackRoute(path)) {
+          setThreadShellVariant("default");
+          setCurrentRoute("app-connect-oauth-callback");
+          return;
+        }
+
         if (isLoginRoute(path)) {
           setThreadShellVariant("default");
           setCurrentRoute("login");
@@ -3155,9 +3212,6 @@ function App() {
         if (isDebugWindowRoute(path)) {
           setThreadShellVariant("default");
           initialWindowPageKindRef.current = "debug";
-          if (normalizedDebugWindowConversationId) {
-            initialWindowThreadIdRef.current = normalizedDebugWindowConversationId;
-          }
           setCurrentRoute("debug");
           return;
         }
@@ -4542,6 +4596,7 @@ function App() {
     }
 
     if (isPlanSummaryRoute(path)) {
+      await applyPendingPlanSummary();
       setThreadShellVariant("default");
       setSkillsRouteState(null);
       setCurrentRoute("plan-summary");
@@ -4608,6 +4663,13 @@ function App() {
       return;
     }
 
+    if (isAppConnectOAuthCallbackRoute(path)) {
+      setThreadShellVariant("default");
+      setSkillsRouteState(null);
+      setCurrentRoute("app-connect-oauth-callback");
+      return;
+    }
+
     if (isLoginRoute(path)) {
       setThreadShellVariant("default");
       setSkillsRouteState(null);
@@ -4649,6 +4711,7 @@ function App() {
         setSelectedSettingsHostId(state.initialHostId);
       }
       setSkillsRouteState({
+        connectAppId: state?.connectAppId,
         initialTab: state?.initialTab,
         pluginDeepLinkAuthBlocked: state?.pluginDeepLinkAuthBlocked,
       });
@@ -6996,8 +7059,19 @@ function App() {
     return (
       <DebugWindowPage
         conversationId={selectedThreadId}
-        isLoading={isThreadConversationLoading}
-        onClose={() => void appWindow.close()}
+        onConversationChange={(nextConversationId) => {
+          void handleDebugWindowConversationSelected(nextConversationId);
+        }}
+        onNavigateHome={() => {
+          if (typeof window !== "undefined" && window.location.pathname !== "/") {
+            window.history.replaceState(window.history.state, "", "/");
+          }
+          setCurrentRoute("chat");
+          setSelectedThreadId(null);
+          setThreadConversation(null);
+          setIsThreadConversationLoading(false);
+          setTurnError(null);
+        }}
         onOpenConversation={(threadId, hostId) => void viewConversationForHost(threadId, hostId)}
         threadConversation={threadConversation}
       />
@@ -7006,6 +7080,10 @@ function App() {
 
   if (currentRoute === "editor-diff") {
     return <EditorDiffPage routeState={editorDiffRouteState} />;
+  }
+
+  if (currentRoute === "plan-summary") {
+    return <PlanSummaryPage routeState={typeof window === "undefined" ? null : window.history.state} />;
   }
 
   if (currentRoute === "file-preview") {
@@ -7025,7 +7103,16 @@ function App() {
       <>
         <LoginRoutePage
           authSnapshot={authSnapshot}
-          onNavigateToWelcome={() => {
+          onNavigateToWelcome={(authMethod) => {
+            setRawAuthSnapshot((current) => ({
+              ...current,
+              authState: {
+                ...current.authState,
+                authMethod,
+              },
+              isLoading: false,
+              lastLoginError: null,
+            }));
             if (typeof window !== "undefined" && window.location.pathname !== WELCOME_ROUTE_PATH) {
               window.history.replaceState(window.history.state, "", WELCOME_ROUTE_PATH);
             }
@@ -7057,7 +7144,7 @@ function App() {
   if (currentRoute === "welcome") {
     return (
       <WelcomePage
-        isWelcomeTarget={baseLoginOnboardingRouteTarget === "welcome"}
+        hasExplicitWelcomeOverride={hasExplicitWelcomeOnboardingOverride}
         onAutoCompleteToHome={() => {
           const completedAt = Math.floor(Date.now() / 1_000);
           void Promise.all([
@@ -7088,10 +7175,11 @@ function App() {
           openNewConversation({ focusComposerNonce: Date.now() });
         }}
         onContinueToWorkspace={() => {
-          void Promise.all([
-            setGlobalState("electron:onboarding-override", "workspace"),
-            setGlobalState("electron:onboarding-welcome-pending", false),
-          ]).catch(() => undefined);
+          const pendingUpdates = [setGlobalState("electron:onboarding-welcome-pending", false)];
+          if (hasExplicitWelcomeOnboardingOverride) {
+            pendingUpdates.unshift(setGlobalState("electron:onboarding-override", "workspace"));
+          }
+          void Promise.all(pendingUpdates).catch(() => undefined);
           if (typeof window !== "undefined") {
             window.history.replaceState(window.history.state, "", SELECT_WORKSPACE_ROUTE_PATH);
           }
@@ -7264,11 +7352,6 @@ function App() {
           </div>
         </header>
 
-        {currentRoute === "plan-summary" ? (
-          <div className="min-h-0 flex-1 overflow-hidden">
-            <PlanSummaryPage planSummary={pendingPlanSummary} t={t} />
-          </div>
-        ) : (
         <div className="flex min-h-0 flex-1">
           {isLeftSidebarOpen ? (
           <aside className="flex min-h-0 w-[var(--app-shell-sidebar-width)] flex-col border-r border-[var(--app-shell-border)] bg-[var(--app-shell-sidebar)] px-3 pt-3 pb-3">
@@ -7874,6 +7957,7 @@ function App() {
                   <SkillsRoutePage
                     authMethod={authSnapshot.authState.authMethod}
                     codexHome={codexHome}
+                    connectAppId={skillsRouteState?.connectAppId}
                     connectedRemoteConnections={connectedSettingsRemoteConnections}
                     initialTab={skillsRouteState?.initialTab}
                     isPluginsRouteEnabled={isPluginsRouteEnabled}
@@ -7893,6 +7977,19 @@ function App() {
                     workspaceRoot={settingsWorkspaceRoot}
                   />
                 </div>
+              ) : currentRoute === "app-connect-oauth-callback" ? (
+                <AppConnectOAuthCallbackPage
+                  locationKey={
+                    typeof window === "undefined"
+                      ? "app-connect-oauth-callback"
+                      : String(window.history.state?.key ?? window.location.href)
+                  }
+                  onNavigate={(path, state) => {
+                    void handleNavigateToRoute(path, (state as NavigateToRouteState | null) ?? null);
+                  }}
+                  onShowToast={(toast) => setAppToast(toast)}
+                  routeState={typeof window === "undefined" ? null : window.history.state}
+                />
               ) : (
                 <div key={selectedSettingsHostId} className="min-h-0 flex-1 overflow-y-auto">
                   {renderSettings()}
@@ -7910,7 +8007,6 @@ function App() {
               ) : null}
           </section>
         </div>
-        )}
       </div>
       {isArchiveDialogOpen ? (
         <div className="fixed inset-0 z-20 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
@@ -8020,22 +8116,22 @@ function App() {
 
 function DebugWindowPage({
   conversationId,
-  isLoading,
-  onClose,
+  onConversationChange,
+  onNavigateHome,
   onOpenConversation,
   threadConversation,
 }: {
   conversationId: string | null;
-  isLoading: boolean;
-  onClose: () => void;
+  onConversationChange?: (conversationId: string) => void;
+  onNavigateHome: () => void;
   onOpenConversation?: (threadId: string, hostId: string) => void;
   threadConversation: ThreadConversation | null;
 }) {
   return (
     <DebugWindowPageContent
       conversationId={conversationId}
-      isLoading={isLoading}
-      onClose={onClose}
+      onConversationChange={onConversationChange}
+      onNavigateHome={onNavigateHome}
       onOpenConversation={onOpenConversation}
       threadConversation={threadConversation}
     />

@@ -91,6 +91,7 @@ export function LoadingPage({
             ? "absolute inset-0 bg-transparent"
             : "relative size-full bg-transparent",
       )}
+      onClick={noop}
     >
       {overlay || fillParent ? null : (
         <div
@@ -104,3 +105,5 @@ export function LoadingPage({
     </div>
   );
 }
+
+const noop = () => {};

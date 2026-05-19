@@ -25,10 +25,15 @@ const OPPOSITE_DIRECTIONS: Record<Direction, Direction> = {
   right: "left",
 };
 
-export function LoginSnakeGame({ onExit }: { onExit: () => void }) {
+export function LoginSnakeGame({
+  audioContextRef,
+  onExit,
+}: {
+  audioContextRef: { current: AudioContext | null };
+  onExit: () => void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
   const snakeRef = useRef<Point[]>([]);
   const foodRef = useRef<Point>({ x: 0, y: 0 });
   const directionRef = useRef<Direction>("right");
@@ -54,8 +59,11 @@ export function LoginSnakeGame({ onExit }: { onExit: () => void }) {
       return;
     }
 
-    const audio_context = audioContextRef.current ?? new window.AudioContext();
-    audioContextRef.current = audio_context;
+    const audio_context = audioContextRef.current;
+    if (audio_context == null) {
+      return;
+    }
+
     if (audio_context.state === "suspended") {
       void audio_context.resume();
     }

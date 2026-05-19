@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, type ClipboardEvent as ReactClipboardEvent } from "react";
 import type { MessageKey } from "../../i18n/messages";
 import { isWorkspaceFilePdbPreview, normalizePreviewText } from "./workspaceFilePreviewUtils";
 
@@ -82,22 +82,45 @@ function FilePreviewCodeSnippet({
   showActionBar = true,
   wrapperClassName = "",
 }: FilePreviewCodeSnippetProps) {
+  const theme = resolveCodeSnippetTheme();
+
   return (
     <div
       className={joinClassNames(
         "relative w-full min-w-0 overflow-clip rounded-lg border contain-inline-size",
         "bg-token-text-code-block-background border-token-input-background",
+        theme,
         wrapperClassName,
       )}
-      data-theme={resolveCodeSnippetTheme()}
+      data-theme={theme}
     >
       <div className={joinClassNames("text-size-chat overflow-auto p-2", codeContainerClassName)} dir="ltr">
-        <code className={joinClassNames(codeClassName, shouldWrapCode ? "whitespace-pre-wrap" : "whitespace-pre")}>
-          {content}
+        <code
+          className={joinClassNames(codeClassName, shouldWrapCode ? "whitespace-pre-wrap" : "whitespace-pre")}
+          onCopy={handleCodeCopy}
+        >
+          <span>{content}</span>
         </code>
       </div>
     </div>
   );
+}
+
+function handleCodeCopy(event: ReactClipboardEvent<HTMLElement>) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  const selectedText = window.getSelection()?.toString();
+  if (!selectedText) {
+    return;
+  }
+
+  const navigatorObject = event.currentTarget.ownerDocument.defaultView?.navigator ?? window.navigator;
+  if (navigatorObject.clipboard?.writeText == null) {
+    return;
+  }
+
+  void navigatorObject.clipboard.writeText(selectedText).catch(() => {});
 }
 
 function parseFilePreviewRouteState(value: unknown): FilePreviewRouteState | null {

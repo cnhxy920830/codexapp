@@ -11,6 +11,7 @@ const TOGGLE_DIFF_PANEL_EVENT: &str = "toggle-diff-panel";
 const DEBUG_WINDOW_LABEL: &str = "debug-window";
 const DEBUG_WINDOW_ROUTE_PATH: &str = "/debug";
 const DEBUG_WINDOW_TITLE: &str = "Debug";
+pub const APP_CONNECT_OAUTH_CALLBACK_ROUTE_PATH: &str = "/app-connect-oauth-callback";
 const DEBUG_WINDOW_ORIGIN_CONVERSATION_CHANGED_EVENT: &str =
     "debug-window-origin-conversation-changed";
 const PLAN_SUMMARY_ROUTE_PATH: &str = "/plan-summary";
@@ -579,6 +580,10 @@ fn is_valid_main_window_route(path: &str) -> bool {
         return true;
     }
 
+    if path == APP_CONNECT_OAUTH_CALLBACK_ROUTE_PATH {
+        return true;
+    }
+
     let Some(id) = path
         .strip_prefix("/local/")
         .or_else(|| path.strip_prefix("/remote/"))
@@ -607,6 +612,7 @@ mod tests {
     use super::PendingPlanSummary;
     use super::ShowDiffParams;
     use super::UpdateDiffIfOpenParams;
+    use super::APP_CONNECT_OAUTH_CALLBACK_ROUTE_PATH;
     use super::DEBUG_WINDOW_ROUTE_PATH;
 
     #[test]
@@ -628,6 +634,10 @@ mod tests {
     #[test]
     fn accepts_page_owned_main_window_routes() {
         assert_eq!(validated_main_window_route("/"), Ok("/".to_string()));
+        assert_eq!(
+            validated_main_window_route(APP_CONNECT_OAUTH_CALLBACK_ROUTE_PATH),
+            Ok(APP_CONNECT_OAUTH_CALLBACK_ROUTE_PATH.to_string())
+        );
         assert_eq!(
             validated_main_window_route("/local/550e8400-e29b-41d4-a716-446655440000"),
             Ok("/local/550e8400-e29b-41d4-a716-446655440000".to_string())

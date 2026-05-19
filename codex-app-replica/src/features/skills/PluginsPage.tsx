@@ -71,7 +71,7 @@ const SKILLS_QUERY_KEY = ["skills"] as const;
 const PLUGIN_CREATOR_PREFILL_STORAGE_KEY = "has-opened-plugin-creator-prefill-v1";
 const SKILL_CREATOR_PREFILL_STORAGE_KEY = "has-opened-skill-creator-prefill-v1";
 
-type ManageTab = "plugins" | "apps" | "mcps" | "skills" | "marketplace";
+export type ManageTab = "plugins" | "apps" | "mcps" | "skills" | "marketplace";
 
 type MarketplaceGroup = PluginMarketplaceEntry & {
   plugins: PluginSummary[];
@@ -174,6 +174,8 @@ async function readPluginsSettingsPageState(
 export function PluginsPage({
   codexHome,
   connectedRemoteConnections,
+  initialSelectedAppId,
+  initialTab,
   onOpenChatWithPrompt,
   onSelectHost,
   onShowToast,
@@ -183,6 +185,8 @@ export function PluginsPage({
 }: {
   codexHome: string | null;
   connectedRemoteConnections: RemoteConnection[];
+  initialSelectedAppId?: string | null;
+  initialTab?: ManageTab;
   onOpenChatWithPrompt?: (request: SkillsChatRequest) => void;
   onSelectHost: (hostId: string) => void;
   onShowToast?: (toast: AppToast) => void;
@@ -196,7 +200,7 @@ export function PluginsPage({
   });
   const effectiveWorkspaceRoot =
     selectedHostId === LOCAL_SETTINGS_HOST_ID ? workspaceRoot : null;
-  const [currentTab, setCurrentTab] = useState<ManageTab>("plugins");
+  const [currentTab, setCurrentTab] = useState<ManageTab>(initialTab ?? "plugins");
   const [pageState, setPageState] = useState<PluginsSettingsPageState | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -217,7 +221,9 @@ export function PluginsPage({
   const [pendingUpgradeMarketplaceName, setPendingUpgradeMarketplaceName] = useState<string | null>(null);
   const [isUpgradingAllMarketplaces, setIsUpgradingAllMarketplaces] = useState(false);
   const [marketplaceToRemove, setMarketplaceToRemove] = useState<ManagedMarketplace | null>(null);
-  const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
+  const [selectedAppId, setSelectedAppId] = useState<string | null>(
+    initialSelectedAppId ?? null,
+  );
   const [hasOpenedPluginCreatorPrefill, setHasOpenedPluginCreatorPrefill] = useState(() =>
     readStoredBoolean(PLUGIN_CREATOR_PREFILL_STORAGE_KEY),
   );
@@ -377,6 +383,18 @@ export function PluginsPage({
     };
   }, [isPluginsRouteEnabled, selectedHostId, workspaceRoot]);
 
+  useEffect(() => {
+    if (initialTab != null) {
+      setCurrentTab(initialTab);
+    }
+  }, [initialTab]);
+
+  useEffect(() => {
+    if (initialSelectedAppId !== undefined) {
+      setSelectedAppId(initialSelectedAppId ?? null);
+    }
+  }, [initialSelectedAppId]);
+
   const managedMarketplaces = useMemo(
     () => buildManagedMarketplaces(pageState?.pluginsSnapshot ?? null, effectiveWorkspaceRoot),
     [effectiveWorkspaceRoot, pageState?.pluginsSnapshot],
@@ -525,10 +543,14 @@ export function PluginsPage({
   }, [selectedAppId, selectedHostId]);
 
   useEffect(() => {
+    if (pageState == null) {
+      return;
+    }
+
     if (selectedAppId != null && selectedApp == null) {
       setSelectedAppId(null);
     }
-  }, [selectedApp, selectedAppId]);
+  }, [pageState, selectedApp, selectedAppId]);
 
   const retryLoad = () => {
     if (!isPluginsRouteEnabled) {

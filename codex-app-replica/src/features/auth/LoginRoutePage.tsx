@@ -14,7 +14,7 @@ import {
 import {
   cancelLogin,
   loginApiKey,
-  loginChatGpt,
+  loginChatGptWithCompletion,
   type AuthSnapshot,
 } from "../../services/auth";
 import {
@@ -37,7 +37,7 @@ const CHATGPT_STREAMLINED_AUTH_URL = "https://chatgpt.com/codex/desktop-auth";
 
 type LoginRoutePageProps = {
   authSnapshot: AuthSnapshot;
-  onNavigateToWelcome: () => void;
+  onNavigateToWelcome: (authMethod: "apikey" | "chatgpt") => void;
   onShowToast: (toast: AppToast) => void;
 };
 
@@ -51,13 +51,13 @@ export function LoginRoutePage({
   const [isApiKeyEntryVisible, setIsApiKeyEntryVisible] = useState(false);
   const [isApiKeySignInPending, setIsApiKeySignInPending] = useState(false);
   const [isSnakeVisible, setIsSnakeVisible] = useState(false);
+  const [browserLoginAbortController, setBrowserLoginAbortController] =
+    useState<AbortController | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const [
     workspaceOnboardingExperimentAssignment,
     setWorkspaceOnboardingExperimentAssignment,
   ] = useState<WorkspaceOnboardingExperimentAssignment>(null);
-  const browserLoginRequestedRef = useRef(false);
-  const welcomeHandoffTriggeredRef = useRef(false);
-  const lastLoginErrorRef = useRef<string | null>(null);
   const showChatGptProviderSignIn = useReplicaStatsigGateValue(
     GATE_LOGIN_PROVIDER_VISIBILITY,
   );
@@ -125,37 +125,7 @@ export function LoginRoutePage({
       ? "welcomeV2"
       : "welcomeV1";
 
-  useEffect(() => {
-    if (
-      authSnapshot.lastLoginError == null ||
-      authSnapshot.lastLoginError === lastLoginErrorRef.current
-    ) {
-      lastLoginErrorRef.current = authSnapshot.lastLoginError;
-      return;
-    }
-
-    browserLoginRequestedRef.current = false;
-    welcomeHandoffTriggeredRef.current = false;
-    showLoginError(authSnapshot.lastLoginError);
-    lastLoginErrorRef.current = authSnapshot.lastLoginError;
-  }, [authSnapshot.lastLoginError]);
-
-  useEffect(() => {
-    if (
-      authSnapshot.authState.authMethod == null ||
-      !browserLoginRequestedRef.current ||
-      welcomeHandoffTriggeredRef.current
-    ) {
-      return;
-    }
-
-    welcomeHandoffTriggeredRef.current = true;
-    void completeLoginSuccess().finally(onNavigateToWelcome);
-  }, [authSnapshot.authState.authMethod, onNavigateToWelcome]);
-
-  const isBrowserSignInPending =
-    authSnapshot.activeLoginId !== null &&
-    authSnapshot.browserAuthUrl !== null;
+  const isBrowserSignInPending = browserLoginAbortController !== null;
 
   const viewModel = useMemo(
     () => ({
@@ -194,14 +164,22 @@ export function LoginRoutePage({
       onChatGptSignIn={() => void handleChatGptSignIn("signin")}
       onGoogleSignIn={() => void handleChatGptSignIn("google")}
       onMicrosoftSignIn={() => void handleChatGptSignIn("microsoft")}
-      onPlaySnake={() => setIsSnakeVisible(true)}
+      onPlaySnake={() => {
+        prepareSnakeAudio();
+        setIsSnakeVisible(true);
+      }}
       onShowApiKeyEntry={() => {
         setIsApiKeyEntryVisible(true);
         setIsApiKeySignInPending(false);
         setIsSnakeVisible(false);
       }}
       onSignUp={() => void handleChatGptSignIn("signup")}
-      snakeGame={<LoginSnakeGame onExit={() => setIsSnakeVisible(false)} />}
+      snakeGame={
+        <LoginSnakeGame
+          audioContextRef={audioContextRef}
+          onExit={() => setIsSnakeVisible(false)}
+        />
+      }
     />
   );
 
@@ -211,18 +189,38 @@ export function LoginRoutePage({
       return;
     }
 
-    welcomeHandoffTriggeredRef.current = false;
-    browserLoginRequestedRef.current = true;
+    if (browserLoginAbortController !== null) {
+      await handleCancelSignIn();
+      return;
+    }
+
+    const controller = new AbortController();
+    setBrowserLoginAbortController(controller);
     setIsApiKeyEntryVisible(false);
 
     try {
-      const result = await loginChatGpt({
+      const result = await loginChatGptWithCompletion({
+        signal: controller.signal,
         useStreamlinedLogin,
       });
       await open(buildChatGptAuthUrl(result.authUrl, mode, useStreamlinedLogin));
+      const completion = await result.completion;
+      if (!completion.success) {
+        showLoginError(completion.error ?? "Unknown error");
+        return;
+      }
+
+      await completeLoginSuccess();
+      onNavigateToWelcome("chatgpt");
     } catch (error) {
-      browserLoginRequestedRef.current = false;
+      if ((error as { name?: string } | null)?.name === "AbortError") {
+        return;
+      }
       showLoginError(error);
+    } finally {
+      setBrowserLoginAbortController((current) =>
+        current === controller ? null : current,
+      );
     }
   }
 
@@ -232,12 +230,11 @@ export function LoginRoutePage({
       return;
     }
 
-    welcomeHandoffTriggeredRef.current = false;
     setIsApiKeySignInPending(true);
     try {
       await loginApiKey({ apiKey: normalizedApiKey });
       await completeLoginSuccess();
-      onNavigateToWelcome();
+      onNavigateToWelcome("apikey");
     } catch (error) {
       showLoginError(error);
     } finally {
@@ -246,11 +243,17 @@ export function LoginRoutePage({
   }
 
   async function handleCancelSignIn() {
+    const pendingController = browserLoginAbortController;
+    setBrowserLoginAbortController(null);
+    if (pendingController !== null) {
+      pendingController.abort();
+      return;
+    }
+
     if (!authSnapshot.activeLoginId) {
       return;
     }
 
-    browserLoginRequestedRef.current = false;
     try {
       await cancelLogin(authSnapshot.activeLoginId);
     } catch (error) {
@@ -259,7 +262,7 @@ export function LoginRoutePage({
   }
 
   async function completeLoginSuccess() {
-    browserLoginRequestedRef.current = false;
+    setBrowserLoginAbortController(null);
     setIsApiKeyEntryVisible(false);
     setIsApiKeySignInPending(false);
 
@@ -273,6 +276,21 @@ export function LoginRoutePage({
     await setGlobalState("electron:onboarding-welcome-pending", true).catch(
       () => undefined,
     );
+  }
+
+  function prepareSnakeAudio() {
+    if (audioContextRef.current != null) {
+      return;
+    }
+
+    if (typeof window === "undefined" || !("AudioContext" in window)) {
+      return;
+    }
+
+    audioContextRef.current = new window.AudioContext();
+    if (audioContextRef.current.state === "suspended") {
+      void audioContextRef.current.resume();
+    }
   }
 
   function showLoginError(error: unknown) {

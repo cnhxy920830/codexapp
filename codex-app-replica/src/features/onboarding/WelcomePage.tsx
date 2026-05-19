@@ -13,10 +13,11 @@ import {
   shouldUseWelcomeV2WorkspaceOnboarding,
   type WorkspaceOnboardingExperimentAssignment,
 } from "./selectWorkspaceModel";
+import { shouldClearActiveWorkspaceRootOnWelcomeCompletion } from "./welcomeRouteModel";
 import { useWelcomeMode } from "./welcome/useWelcomeMode";
 
 type WelcomePageProps = {
-  isWelcomeTarget: boolean;
+  hasExplicitWelcomeOverride: boolean;
   onAutoCompleteToHome: () => void;
   onCompleteToHome: () => void;
   onContinueToWorkspace: () => void;
@@ -24,7 +25,7 @@ type WelcomePageProps = {
 };
 
 export function WelcomePage({
-  isWelcomeTarget,
+  hasExplicitWelcomeOverride,
   onAutoCompleteToHome,
   onCompleteToHome,
   onContinueToWorkspace,
@@ -55,7 +56,7 @@ export function WelcomePage({
   const experimentArm = workspaceOnboardingExperimentAssignment?.arm;
 
   if (!shouldUseWelcomeV2Onboarding) {
-    if (!isWelcomeTarget) {
+    if (!hasExplicitWelcomeOverride) {
       return (
         <AutoCompleteToHome
           experimentArm={experimentArm}
@@ -77,7 +78,9 @@ export function WelcomePage({
 
   return (
     <WelcomeFlow
-      clearActiveWorkspaceRootOnComplete={!isWelcomeTarget}
+      clearActiveWorkspaceRootOnComplete={shouldClearActiveWorkspaceRootOnWelcomeCompletion(
+        hasExplicitWelcomeOverride ? "welcome" : "auto",
+      )}
       externalAgentImportEnabled={externalAgentImportEnabled}
       experimentArm={experimentArm}
       isCoworkMigrationEnabled={externalAgentCoworkMigrationEnabled}

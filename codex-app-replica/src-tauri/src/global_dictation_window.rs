@@ -22,13 +22,18 @@
 //! XV = { compact: 72, error: 312 } // window widths per layout
 //! ```
 //!
-//! The remaining `global-dictation-{recording-stopped,dismiss,completed,
-//! failed,in-app-started,record-history-item,enabled-changed,
-//! force-lock-changed}` desktop messages live in `QV` upstream as no-op
-//! `break;` cases on the desktop side. The replica keeps the same renderer
-//! contract, but uses `dismiss` / `completed` / `failed` to maintain the
-//! Windows-native global hotkey session bookkeeping and recent-history
-//! persistence needed by `P-003-F26`.
+//! The top-level desktop dispatcher lists
+//! `global-dictation-{recording-stopped,dismiss,completed,failed,
+//! in-app-started,record-history-item,enabled-changed,force-lock-changed}`
+//! in `QV` as pass-through `break;` cases, while the dedicated global
+//! dictation controller (`eH.handleMessage(...)` in `main-Bnxe1qAn.js`)
+//! owns the real lifecycle:
+//!
+//! - `dismiss` resets the compact layout and hides the window.
+//! - `completed` clears the active session, hides the window, and records
+//!   history before paste-back.
+//! - `failed` keeps the error bubble open only for transcription failures;
+//!   recording-start failures clear the session and hide immediately.
 
 use crate::global_dictation_settings::{
     handle_global_dictation_completed, handle_global_dictation_dismiss,
@@ -254,6 +259,8 @@ pub fn global_dictation_dismiss(
     state.set_active_session(None);
     handle_global_dictation_dismiss(dictation_settings.inner(), &params.session_id);
     if let Some(window) = app.get_webview_window(GLOBAL_DICTATION_WINDOW_LABEL) {
+        apply_layout(&window, GlobalDictationLayout::Compact)?;
+        state.set_layout(GlobalDictationLayout::Compact);
         window
             .hide()
             .map_err(|err| format!("failed to hide global-dictation window on dismiss: {err}"))?;
@@ -264,18 +271,38 @@ pub fn global_dictation_dismiss(
 #[tauri::command(rename = "global-dictation-completed")]
 pub fn global_dictation_completed(
     app: AppHandle,
+    state: State<'_, GlobalDictationWindowState>,
     dictation_settings: State<'_, GlobalDictationSettingsState>,
     params: GlobalDictationCompletedParams,
 ) -> Result<(), String> {
+    state.set_active_session(None);
+    if let Some(window) = app.get_webview_window(GLOBAL_DICTATION_WINDOW_LABEL) {
+        window.hide().map_err(|err| {
+            format!("failed to hide global-dictation window on completion: {err}")
+        })?;
+    }
     handle_global_dictation_completed(&app, dictation_settings.inner(), &params)
 }
 
 #[tauri::command(rename = "global-dictation-failed")]
 pub fn global_dictation_failed(
+    app: AppHandle,
+    state: State<'_, GlobalDictationWindowState>,
     dictation_settings: State<'_, GlobalDictationSettingsState>,
     params: GlobalDictationFailedParams,
-) {
+) -> Result<(), String> {
+    if params.stage != "transcription" {
+        state.set_active_session(None);
+    }
     handle_global_dictation_failed(dictation_settings.inner(), &params);
+    if params.stage != "transcription" {
+        if let Some(window) = app.get_webview_window(GLOBAL_DICTATION_WINDOW_LABEL) {
+            window.hide().map_err(|err| {
+                format!("failed to hide global-dictation window after failure: {err}")
+            })?;
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command(rename = "global-dictation-in-app-started")]

@@ -30,6 +30,12 @@ export type WorkspaceAutoLaunchAction =
   | "home_open_picker_or_create_default"
   | "select_workspace_skip_to_playground";
 
+export type SelectWorkspacePageState = {
+  hasAvailableRoots: boolean;
+  hasPersistedOrDerivedRoots: boolean;
+  isEmptyState: boolean;
+};
+
 export function normalizeWorkspaceOnboardingExperimentAssignment(
   value: unknown,
 ): WorkspaceOnboardingExperimentAssignment {
@@ -98,6 +104,12 @@ export function shouldUsePlaygroundCopy(arm: WorkspaceOnboardingExperimentArm) {
   return arm === "t4_modal_copy_cta_playground";
 }
 
+export function readWorkspaceOnboardingSkipProjectName(arm: WorkspaceOnboardingExperimentArm) {
+  return shouldUseWorkspaceOnboardingDefaultProjectName(arm)
+    ? WORKSPACE_ONBOARDING_DEFAULT_PROJECT_NAME
+    : null;
+}
+
 export function mergeWorkspaceRootSelectionsForPersistence({
   onboardingOverride,
   persistedRoots,
@@ -136,6 +148,36 @@ export function deriveWorkspaceAutoLaunchAction({
   }
 
   return arm === "t3_auto_playground" ? "select_workspace_skip_to_playground" : "none";
+}
+
+export function deriveSelectWorkspacePageState({
+  candidateRoots,
+  inferredRoots,
+  isLoading,
+  workspaceRootOptions,
+  workspaceRoots,
+}: {
+  candidateRoots: string[];
+  inferredRoots: string[];
+  isLoading: boolean;
+  workspaceRootOptions: WorkspaceRootOption[];
+  workspaceRoots: string[];
+}): SelectWorkspacePageState {
+  const hasPersistedOrDerivedRoots = workspaceRoots.length > 0 || inferredRoots.length > 0;
+  return {
+    hasAvailableRoots: workspaceRootOptions.length > 0,
+    hasPersistedOrDerivedRoots,
+    isEmptyState: !hasPersistedOrDerivedRoots && !isLoading && candidateRoots.length === 0,
+  };
+}
+
+export function filterWorkspaceRecentThreads(
+  recentThreads: ThreadHistoryEntry[],
+  backgroundSubagentsEnabled: boolean,
+) {
+  return recentThreads.filter(
+    (thread) => !isThreadSpawnSubagentConversation(thread, backgroundSubagentsEnabled),
+  );
 }
 
 export function deriveCandidateWorkspaceRoots({
@@ -265,6 +307,14 @@ function normalizeComparablePath(path: string) {
   return normalizePathForComparison(path).replace(/\/+$/, "").toLowerCase();
 }
 
+function shouldUseWorkspaceOnboardingDefaultProjectName(arm: WorkspaceOnboardingExperimentArm) {
+  return (
+    arm === "t2_direct_folder_picker" ||
+    arm === "t3_auto_playground" ||
+    arm === "t4_modal_copy_cta_playground"
+  );
+}
+
 function normalizeWorkspaceOnboardingOverride(value: string | null | undefined) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
@@ -275,4 +325,11 @@ function normalizeWorkspaceRootValue(value: string | null | undefined) {
 
 function isNonEmptyString(value: string | null | undefined): value is string {
   return typeof value === "string" && value.trim().length > 0;
+}
+
+function isThreadSpawnSubagentConversation(
+  thread: ThreadHistoryEntry,
+  backgroundSubagentsEnabled: boolean,
+) {
+  return !backgroundSubagentsEnabled && thread.source?.parentThreadId != null;
 }

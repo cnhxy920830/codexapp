@@ -1,5 +1,6 @@
 mod ambient_suggestions_background_refresh;
 mod ambient_suggestions_connector_personalization;
+mod app_connect_oauth;
 mod app_shell_signals;
 mod app_state_snapshot;
 mod auth_bridge;
@@ -68,6 +69,8 @@ mod worktrees_remote;
 use ambient_suggestions_background_refresh::handle_window_event as handle_ambient_suggestions_background_refresh_window_event;
 use ambient_suggestions_background_refresh::sync_initial_focus_state as sync_ambient_suggestions_background_refresh_state;
 use ambient_suggestions_background_refresh::AmbientSuggestionsBackgroundRefreshState;
+use app_connect_oauth::app_connect_oauth_callback_url;
+use app_connect_oauth::finish_app_connect_oauth_callback;
 use app_shell_signals::electron_window_focus_request;
 use app_shell_signals::view_focused;
 use app_state_snapshot::electron_app_state_snapshot_response;
@@ -432,13 +435,20 @@ use worktrees::worktree_set_owner_thread;
 
 #[derive(Default)]
 struct LaunchState {
+    app_connect_oauth_callback_url: Mutex<Option<String>>,
     open_project_path: Mutex<Option<String>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LaunchContext {
+    app_connect_oauth_callback_url: Option<String>,
     open_project_path: Option<String>,
+}
+
+enum LaunchArgument {
+    AppConnectOAuthCallbackUrl(String),
+    OpenProjectPath(PathBuf),
 }
 
 pub fn run() {
@@ -448,11 +458,22 @@ pub fn run() {
         Arc::new(HeartbeatAutomationSchedulerState::default());
     let app_state_snapshot_state = Arc::new(AppStateSnapshotState::default());
     let automation_run_history_state = Arc::new(AutomationRunHistoryState::default());
-    if let Some(path) = parse_open_project_path() {
-        *launch_state
-            .open_project_path
-            .lock()
-            .expect("launch state mutex poisoned") = Some(path.to_string_lossy().to_string());
+    if let Some(argument) = parse_launch_argument() {
+        match argument {
+            LaunchArgument::OpenProjectPath(path) => {
+                *launch_state
+                    .open_project_path
+                    .lock()
+                    .expect("launch state mutex poisoned") =
+                    Some(path.to_string_lossy().to_string());
+            }
+            LaunchArgument::AppConnectOAuthCallbackUrl(callback_url) => {
+                *launch_state
+                    .app_connect_oauth_callback_url
+                    .lock()
+                    .expect("launch state mutex poisoned") = Some(callback_url);
+            }
+        }
     }
     tauri::Builder::default()
         .on_window_event(|window, event| {
@@ -500,6 +521,7 @@ pub fn run() {
         .manage(ChildProcessMetricsState::default())
         .invoke_handler(tauri::generate_handler![
             get_launch_context,
+            app_connect_oauth_callback_url,
             get_auth_state,
             read_account_info,
             read_account_rate_limits,
@@ -766,6 +788,7 @@ pub fn run() {
             generate_git_commit_message,
             git_origins,
             projectless_thread_cwd,
+            finish_app_connect_oauth_callback,
             open_current_main_window,
             open_debug_window,
             open_in_main_window,
@@ -859,6 +882,7 @@ pub fn run() {
             }
             if cfg!(target_os = "windows") && should_register_windows_context_menu() {
                 let _ = register_windows_folder_context_menu();
+                let _ = register_windows_protocol_handler();
             }
             tauri::async_runtime::spawn({
                 let handle = handle.clone();
@@ -876,6 +900,11 @@ pub fn run() {
 #[tauri::command]
 fn get_launch_context(state: tauri::State<'_, Arc<LaunchState>>) -> LaunchContext {
     LaunchContext {
+        app_connect_oauth_callback_url: state
+            .app_connect_oauth_callback_url
+            .lock()
+            .expect("launch state mutex poisoned")
+            .clone(),
         open_project_path: state
             .open_project_path
             .lock()
@@ -884,11 +913,17 @@ fn get_launch_context(state: tauri::State<'_, Arc<LaunchState>>) -> LaunchContex
     }
 }
 
-fn parse_open_project_path() -> Option<PathBuf> {
+fn parse_launch_argument() -> Option<LaunchArgument> {
     let mut args = env::args_os().skip(1);
     while let Some(arg) = args.next() {
         if arg == "--open-project" {
-            return args.next().map(PathBuf::from);
+            return args
+                .next()
+                .map(PathBuf::from)
+                .map(LaunchArgument::OpenProjectPath);
+        }
+        if let Some(callback_url) = parse_app_connect_oauth_callback_url(&arg.to_string_lossy()) {
+            return Some(LaunchArgument::AppConnectOAuthCallbackUrl(callback_url));
         }
     }
     None
@@ -916,12 +951,52 @@ fn register_windows_folder_context_menu() -> Result<(), String> {
     Ok(())
 }
 
+fn register_windows_protocol_handler() -> Result<(), String> {
+    let exe =
+        env::current_exe().map_err(|err| format!("failed to resolve executable path: {err}"))?;
+    let exe = exe
+        .to_str()
+        .ok_or_else(|| "executable path is not valid utf-8".to_string())?;
+    let key = r"HKCU\Software\Classes\codex";
+    let command = format!(r#""{exe}" "%1""#);
+
+    run_reg(&["add", key, "/ve", "/d", "URL:Codex Protocol", "/f"])?;
+    run_reg(&["add", key, "/v", "URL Protocol", "/d", "", "/f"])?;
+    run_reg(&["add", key, "/v", "Icon", "/d", &format!("{exe},0"), "/f"])?;
+    run_reg(&[
+        "add",
+        &format!(r"{key}\shell\open\command"),
+        "/ve",
+        "/d",
+        &command,
+        "/f",
+    ])?;
+    Ok(())
+}
+
 fn should_register_windows_context_menu() -> bool {
     let Ok(exe) = env::current_exe() else {
         return false;
     };
     let exe = exe.to_string_lossy().to_ascii_lowercase();
     !exe.contains(r"\src-tauri\target\")
+}
+
+fn parse_app_connect_oauth_callback_url(raw_value: &str) -> Option<String> {
+    let trimmed = raw_value.trim();
+    if !trimmed.starts_with("codex://") {
+        return None;
+    }
+
+    let normalized = trimmed.replacen(
+        "codex://app-connect-oauth-callback",
+        "https://chatgpt.com/connector_platform_oauth_redirect",
+        1,
+    );
+    if normalized == trimmed {
+        return None;
+    }
+    Some(normalized)
 }
 
 fn run_reg(args: &[&str]) -> Result<(), String> {

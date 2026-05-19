@@ -67,6 +67,22 @@ test("plugins page owner keeps settings manage controls and host selection", () 
   assert.match(source, /onOpenChatWithPrompt\?\.\(\{\s*cwd:\s*effectiveWorkspaceRoot && effectiveWorkspaceRoot !== "\/" \? effectiveWorkspaceRoot : null,\s*prompt:\s*`/s);
 });
 
+test("plugins page preserves initial selected app until apps data loads", () => {
+  const source = readSource(OWNER_SOURCE_PATH);
+
+  assert.match(source, /useEffect\(\(\) => \{\s*if \(pageState == null\) \{\s*return;\s*\}\s*if \(selectedAppId != null && selectedApp == null\) \{\s*setSelectedAppId\(null\);/s);
+});
+
+test("app connect callback page navigates immediately after starting completion", () => {
+  const source = readSource(
+    path.join(process.cwd(), "src/features/apps/AppConnectOAuthCallbackPage.tsx"),
+  );
+
+  assert.match(source, /void handleCallback\(\{/);
+  assert.doesNotMatch(source, /\.finally\(\(\) => \{/);
+  assert.doesNotMatch(source, /claimAppConnectOAuthCallback/);
+});
+
 function readSource(filePath: string) {
   return readFileSync(filePath, "utf8");
 }

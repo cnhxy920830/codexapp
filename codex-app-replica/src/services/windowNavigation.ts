@@ -1,7 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 export const DEBUG_WINDOW_ORIGIN_CONVERSATION_CHANGED_EVENT = "debug-window-origin-conversation-changed";
 export const AVATAR_OVERLAY_ROUTE_PATH = "/avatar-overlay";
+export const APP_CONNECT_OAUTH_CALLBACK_ROUTE_PATH = "/app-connect-oauth-callback";
 export const DEBUG_WINDOW_ROUTE_PATH = "/debug";
 export const EDITOR_DIFF_ROUTE_PATH = "/editor-diff";
 export const FIRST_RUN_ROUTE_PATH = "/first-run";
@@ -14,6 +16,10 @@ export const PLAN_SUMMARY_ROUTE_PATH = "/plan-summary";
 export const SELECT_WORKSPACE_ROUTE_PATH = "/select-workspace";
 export const WELCOME_ROUTE_PATH = "/welcome";
 export const WORKTREE_INIT_V2_ROUTE_PREFIX = "/worktree-init-v2/";
+
+export type DebugWindowOriginConversationChangedNotification = {
+  conversationId: string;
+};
 
 export type PendingPlanSummaryState = {
   conversationId: string;
@@ -75,6 +81,23 @@ export async function openInHotkeyWindow(path: string) {
 
 export async function notifyDebugWindowOriginConversationChanged(conversationId: string) {
   await invoke("debug-window-origin-conversation-changed", { conversationId });
+}
+
+export function onDebugWindowOriginConversationChanged(
+  handler: (conversationId: string) => void,
+) {
+  return listen<DebugWindowOriginConversationChangedNotification>(
+    DEBUG_WINDOW_ORIGIN_CONVERSATION_CHANGED_EVENT,
+    (event) => {
+      const conversationId =
+        typeof event.payload?.conversationId === "string" ? event.payload.conversationId.trim() : "";
+      if (conversationId.length === 0) {
+        return;
+      }
+
+      handler(conversationId);
+    },
+  );
 }
 
 export async function setPrimaryWindowMode(params: SetPrimaryWindowModeParams) {

@@ -376,8 +376,9 @@ pub(crate) fn handle_global_dictation_failed(
     state: &GlobalDictationSettingsState,
     params: &GlobalDictationFailedParams,
 ) {
-    let _ = &params.stage;
-    clear_active_session(state, &params.session_id);
+    if params.stage != "transcription" {
+        clear_active_session(state, &params.session_id);
+    }
 }
 
 fn update_dictation_hotkey(
@@ -1189,6 +1190,70 @@ mod tests {
                 hotkey: Some("Ctrl+Alt+K".to_string()),
             }
         );
+    }
+
+    #[test]
+    fn transcription_failures_keep_active_session() {
+        let state = GlobalDictationSettingsState::default();
+        {
+            let mut guard = state
+                .inner
+                .lock()
+                .expect("global dictation settings mutex poisoned");
+            guard.active_session = Some(ActiveGlobalDictationSession {
+                session_id: "session-1".to_string(),
+                source: GlobalDictationSessionSource::Toggle,
+            });
+        }
+
+        handle_global_dictation_failed(
+            &state,
+            &GlobalDictationFailedParams {
+                session_id: "session-1".to_string(),
+                stage: "transcription".to_string(),
+            },
+        );
+
+        let guard = state
+            .inner
+            .lock()
+            .expect("global dictation settings mutex poisoned");
+        assert_eq!(
+            guard.active_session,
+            Some(ActiveGlobalDictationSession {
+                session_id: "session-1".to_string(),
+                source: GlobalDictationSessionSource::Toggle,
+            })
+        );
+    }
+
+    #[test]
+    fn recording_failures_clear_active_session() {
+        let state = GlobalDictationSettingsState::default();
+        {
+            let mut guard = state
+                .inner
+                .lock()
+                .expect("global dictation settings mutex poisoned");
+            guard.active_session = Some(ActiveGlobalDictationSession {
+                session_id: "session-1".to_string(),
+                source: GlobalDictationSessionSource::Hold,
+            });
+        }
+
+        handle_global_dictation_failed(
+            &state,
+            &GlobalDictationFailedParams {
+                session_id: "session-1".to_string(),
+                stage: "recording".to_string(),
+            },
+        );
+
+        let guard = state
+            .inner
+            .lock()
+            .expect("global dictation settings mutex poisoned");
+        assert_eq!(guard.active_session, None);
     }
 
     #[cfg(target_os = "windows")]
