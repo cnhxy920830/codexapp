@@ -24,16 +24,15 @@ import type {
   PrimaryRuntimeUpdateStatusResponse,
 } from "../../services/debug";
 import type { DebugOnboardingState } from "./DebugParitySections";
-import { DebugModal } from "./DebugWindowPage";
 
 const SNAPSHOT_PATH = path.join(process.cwd(), "src/features/debug/__snapshots__/debug-window-page.snap.json");
 const UPDATE_SNAPSHOTS = process.env.DEBUG_WINDOW_PAGE_UPDATE_SNAPSHOTS === "1";
 
 test("debug window page snapshot", async (t) => {
   const actualSnapshots = {
-    page: renderDebugModal(),
-    nodeReplOpen: renderDebugModal(["debug-node-repl-section"]),
-    appServerOpen: renderDebugModal([
+    page: await renderDebugModal(),
+    nodeReplOpen: await renderDebugModal(["debug-node-repl-section"]),
+    appServerOpen: await renderDebugModal([
       "debug-app-server-section",
       "debug-app-server-requests-local",
       "debug-app-server-notifications-local",
@@ -460,48 +459,110 @@ const threadConversation: ThreadConversation = {
   ],
 };
 
-function renderDebugModal(openSections: string[] = []) {
+let debugWindowPageModulePromise: Promise<typeof import("./DebugWindowPage")> | null = null;
+
+async function renderDebugModal(openSections: string[] = []) {
+  const { DebugModal, DebugWindowShell } = await loadDebugWindowPageModule();
+
   return withMockSectionStorage(openSections, () =>
     renderToStaticMarkup(
-      <DebugModal
-        ambientSuggestionStatuses={ambientSuggestionStatuses}
-        appActionDraft={`{\n  "type": "app.get_summary"\n}`}
-        appActionResult="Not run yet"
-        authSnapshot={authSnapshot}
-        conversationId="conversation-123"
-        debugAppServerInitialConnectionStatesByHostId={debugAppServerConnectionStatesByHostId}
-        debugAppServerInitialHosts={debugAppServerHosts}
-        debugAppServerInitialThreadStatusesByHostId={debugAppServerThreadStatusesByHostId}
-        globalDictationForceLockEnabled={true}
-        hotkeyWindowState={hotkeyWindowState}
-        isAppActionRunning={false}
-        isAmbientSuggestionsLoading={false}
-        isPackaged={packagedState}
-        onboardingState={onboardingState}
-        refreshingAmbientSuggestionsProjectRoot={null}
-        onAppActionDraftChange={noop}
-        onClose={noop}
-        onOpenConversation={noop}
-        onPopOut={noop}
-        onRefreshAmbientSuggestions={noop}
-        onPrimaryRuntimeInstallReleaseChange={noop}
-        onPrimaryRuntimeRefresh={noop}
-        onPrimaryRuntimeRunNow={noop}
-        onRunAppAction={noop}
-        primaryRuntimeInstallRelease="latest"
-        primaryRuntimeInstallProgress={primaryRuntimeInstallProgress}
-        primaryRuntimeLastTrigger="Not run yet"
-        primaryRuntimeStatus={primaryRuntimeStatus}
-        projectlessThreadCwd={projectlessThreadCwd}
-        realtimeVoiceDebugDisabled={true}
-        remoteConnections={remoteConnections}
-        showHeader={false}
-        showPopOutButton={false}
-        threadConversation={threadConversation}
-        workspaceRootOptions={workspaceRootOptions}
-      />,
+      <DebugWindowShell>
+        <DebugModal
+          ambientSuggestionStatuses={ambientSuggestionStatuses}
+          appActionDraft={`{\n  "type": "app.get_summary"\n}`}
+          appActionResult="Not run yet"
+          authSnapshot={authSnapshot}
+          conversationId="conversation-123"
+          debugAppServerInitialConnectionStatesByHostId={debugAppServerConnectionStatesByHostId}
+          debugAppServerInitialHosts={debugAppServerHosts}
+          debugAppServerInitialThreadStatusesByHostId={debugAppServerThreadStatusesByHostId}
+          globalDictationForceLockEnabled={true}
+          hotkeyWindowState={hotkeyWindowState}
+          isAppActionRunning={false}
+          isAmbientSuggestionsLoading={false}
+          isPackaged={packagedState}
+          onboardingState={onboardingState}
+          refreshingAmbientSuggestionsProjectRoot={null}
+          onAppActionDraftChange={noop}
+          onClose={noop}
+          onOpenConversation={noop}
+          onPopOut={noop}
+          onRefreshAmbientSuggestions={noop}
+          onPrimaryRuntimeInstallReleaseChange={noop}
+          onPrimaryRuntimeRefresh={noop}
+          onPrimaryRuntimeRunNow={noop}
+          onRunAppAction={noop}
+          primaryRuntimeInstallRelease="latest"
+          primaryRuntimeInstallProgress={primaryRuntimeInstallProgress}
+          primaryRuntimeLastTrigger="Not run yet"
+          primaryRuntimeStatus={primaryRuntimeStatus}
+          projectlessThreadCwd={projectlessThreadCwd}
+          realtimeVoiceDebugDisabled={true}
+          remoteConnections={remoteConnections}
+          showHeader={false}
+          showPopOutButton={false}
+          threadConversation={threadConversation}
+          workspaceRootOptions={workspaceRootOptions}
+        />
+      </DebugWindowShell>,
     ),
   );
+}
+
+async function loadDebugWindowPageModule() {
+  if (debugWindowPageModulePromise != null) {
+    return debugWindowPageModulePromise;
+  }
+
+  debugWindowPageModulePromise = withImportWindowStub(async () => import("./DebugWindowPage"));
+  return debugWindowPageModulePromise;
+}
+
+async function withImportWindowStub<T>(load: () => Promise<T>) {
+  const hadWindow = Object.prototype.hasOwnProperty.call(globalThis, "window");
+  const originalWindow = globalThis.window;
+  const eventTarget = new EventTarget();
+  const windowStub = {
+    addEventListener: eventTarget.addEventListener.bind(eventTarget),
+    removeEventListener: eventTarget.removeEventListener.bind(eventTarget),
+    dispatchEvent: eventTarget.dispatchEvent.bind(eventTarget),
+    clearInterval,
+    clearTimeout,
+    CustomEvent,
+    localStorage: {
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    },
+    location: {
+      href: "http://localhost/",
+      origin: "http://localhost",
+      pathname: "/",
+      search: "",
+    },
+    setInterval,
+    setTimeout,
+  } as unknown as Window & typeof globalThis;
+
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    writable: true,
+    value: windowStub,
+  });
+
+  try {
+    return await load();
+  } finally {
+    if (hadWindow) {
+      Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        writable: true,
+        value: originalWindow,
+      });
+    } else {
+      Reflect.deleteProperty(globalThis, "window");
+    }
+  }
 }
 
 function withMockSectionStorage<T>(openSections: string[], render: () => T) {

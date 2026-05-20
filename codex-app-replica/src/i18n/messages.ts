@@ -1549,15 +1549,21 @@ export type MessageKey =
   | "settings.localEnvironments.loading.body"
   | "settings.localEnvironments.unavailable.title"
   | "settings.localEnvironments.unavailable.body"
-  | "settings.localEnvironments.remoteProjectDialog.title"
-  | "settings.localEnvironments.remoteProjectDialog.description"
-  | "settings.localEnvironments.remoteProjectDialog.emptyDescription"
-  | "settings.localEnvironments.remoteProjectDialog.hostLabel"
-  | "settings.localEnvironments.remoteProjectDialog.pathLabel"
-  | "settings.localEnvironments.remoteProjectDialog.note"
-  | "settings.localEnvironments.remoteProjectDialog.cancel"
-  | "settings.localEnvironments.remoteProjectDialog.confirm"
-  | "settings.localEnvironments.remoteProjectDialog.saveError"
+  | "projectSetupDialog.title"
+  | "projectSetupDialog.description"
+  | "projectSetupDialog.description.noConnectedRemotes"
+  | "projectSetupDialog.remoteMode.standalone.description"
+  | "projectSetupDialog.noConnectedRemotes"
+  | "projectSetupDialog.selectedRemoteUnavailable"
+  | "projectSetupDialog.invalidPath.missing"
+  | "projectSetupDialog.conflict.remoteProjectAlreadyMapped.standalone"
+  | "projectSetupDialog.saveError"
+  | "workspaceRootDialog.remoteLabel"
+  | "workspaceRootDialog.pathLabel"
+  | "workspaceRootDialog.remotePlaceholder"
+  | "workspaceRootDialog.remoteEmpty"
+  | "workspaceRootDialog.cancel"
+  | "workspaceRootDialog.confirmAdd"
   | "settings.keyboardShortcuts.subtitle.electron"
   | "settings.keyboardShortcuts.loading"
   | "settings.keyboardShortcuts.search.ariaLabel"
@@ -2093,13 +2099,21 @@ export type MessageKey =
   | "settings.agent.title"
   | "settings.agent.configuration.subtitle.summary"
   | "settings.agent.customConfig"
+  | "settings.agent.customConfig.sectionTitle"
   | "settings.agent.openConfigToml"
+  | "settings.agent.openConfigTomlWsl"
   | "settings.agent.configuration.approval.label"
   | "settings.agent.configuration.approval.definition"
+  | "settings.agent.configuration.approval.restricted"
   | "settings.agent.configuration.sandbox.label"
   | "settings.agent.configuration.sandbox.definition"
+  | "settings.agent.configuration.sandbox.restricted"
   | "settings.agent.configuration.network.label"
   | "settings.agent.configuration.network.definition"
+  | "settings.agent.configuration.network.ariaLabel"
+  | "settings.agent.configuration.notice.fileContext"
+  | "settings.agent.configuration.notice.fileLocationSuffix"
+  | "settings.agent.configuration.notice.openFile"
   | "settings.agent.configuration.scope.projectGroup"
   | "settings.agent.configuration.scope.globalGroup"
   | "settings.agent.configuration.scope.open"
@@ -2186,6 +2200,29 @@ export type MessageKey =
   | "settings.remoteConnections.dialog.field.sshPort.rangeError"
   | "settings.remoteConnections.dialog.field.identity.error"
   | "settings.remoteConnections.delete.error"
+  | "settings.remoteConnections.deviceConnections.signedInDeviceOnlineSubtitle"
+  | "settings.remoteConnections.deviceConnections.signedInDeviceOfflineSubtitle"
+  | "settings.remoteConnections.deviceConnections.signedInDeviceUpdateRequiredSubtitle"
+  | "threadPage.remoteConnectionStatusBadge.disconnected"
+  | "settings.remoteControlConnections.authRequired"
+  | "settings.remoteControlConnections.rename"
+  | "settings.remoteControlConnections.rename.inputLabel"
+  | "settings.remoteControlConnections.rename.save"
+  | "settings.remoteControlConnections.rename.cancel"
+  | "settings.remoteControlConnections.rename.success"
+  | "settings.remoteControlConnections.rename.error"
+  | "settings.remoteControlConnections.delete.success"
+  | "settings.remoteControlConnections.delete.error"
+  | "settings.remoteControlConnections.delete.offlineOnly"
+  | "settings.remoteControlConnections.table.connect.ariaLabel"
+  | "settings.remoteControlConnections.details.host"
+  | "settings.remoteControlConnections.details.platform"
+  | "settings.remoteControlConnections.details.version"
+  | "settings.remoteControlConnections.details.lastSeen"
+  | "settings.remoteControlConnections.availability.online"
+  | "settings.remoteControlConnections.availability.busy"
+  | "settings.remoteControlConnections.availability.offline"
+  | "settings.remoteControlConnections.availability.updateRequired"
   | "settings.remoteControlConnections.deleteDialog.title"
   | "settings.remoteControlConnections.deleteDialog.subtitle"
   | "settings.remoteControlConnections.deleteDialog.cancel"
@@ -4112,18 +4149,24 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.localEnvironments.unavailable.title": "Local environments unavailable",
     "settings.localEnvironments.unavailable.body":
       "We could not load local environment settings for this project.",
-    "settings.localEnvironments.remoteProjectDialog.title": "Add remote project",
-    "settings.localEnvironments.remoteProjectDialog.description":
-      "Choose a connected remote host and enter the folder for this project.",
-    "settings.localEnvironments.remoteProjectDialog.emptyDescription":
+    "projectSetupDialog.title": "Add remote project",
+    "projectSetupDialog.description": "Choose a connected remote host and enter the folder for this project.",
+    "projectSetupDialog.description.noConnectedRemotes":
       "Set up a remote host first. Then you can choose a host and folder here.",
-    "settings.localEnvironments.remoteProjectDialog.hostLabel": "Remote host",
-    "settings.localEnvironments.remoteProjectDialog.pathLabel": "Folder path",
-    "settings.localEnvironments.remoteProjectDialog.note":
+    "projectSetupDialog.remoteMode.standalone.description":
       "This remote folder will appear as its own project in the sidebar.",
-    "settings.localEnvironments.remoteProjectDialog.cancel": "Cancel",
-    "settings.localEnvironments.remoteProjectDialog.confirm": "Add project",
-    "settings.localEnvironments.remoteProjectDialog.saveError": "Failed to save project",
+    "projectSetupDialog.noConnectedRemotes": "No remote hosts are connected right now.",
+    "projectSetupDialog.selectedRemoteUnavailable": "Choose a connected remote host to continue.",
+    "projectSetupDialog.invalidPath.missing": "Choose an existing folder on this remote host.",
+    "projectSetupDialog.conflict.remoteProjectAlreadyMapped.standalone":
+      "This remote project on {remoteName} is already set up for {projectName}. Choose a different folder or remove that setup first.",
+    "projectSetupDialog.saveError": "Failed to save project",
+    "workspaceRootDialog.remoteLabel": "Remote host",
+    "workspaceRootDialog.pathLabel": "Folder path",
+    "workspaceRootDialog.remotePlaceholder": "No connected remote",
+    "workspaceRootDialog.remoteEmpty": "No connected remotes",
+    "workspaceRootDialog.cancel": "Cancel",
+    "workspaceRootDialog.confirmAdd": "Add project",
     "settings.keyboardShortcuts.subtitle.electron": "Customize app shortcuts",
     "settings.keyboardShortcuts.loading": "Loading shortcuts…",
     "settings.keyboardShortcuts.search.ariaLabel": "Search keyboard shortcuts",
@@ -4762,13 +4805,21 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.agent.title": "Configuration",
     "settings.agent.configuration.subtitle.summary": "Configure approval policy and sandbox settings <a>Learn more</a>",
     "settings.agent.customConfig": "Custom config.toml settings",
-    "settings.agent.openConfigToml": "Open Config.toml",
+    "settings.agent.customConfig.sectionTitle": "Custom config.toml settings",
+    "settings.agent.openConfigToml": "Open config.toml",
+    "settings.agent.openConfigTomlWsl": "Open config.toml in WSL environment",
     "settings.agent.configuration.approval.label": "Approval policy",
     "settings.agent.configuration.approval.definition": "Choose when Codex asks for approval",
+    "settings.agent.configuration.approval.restricted": "Approval policy is restricted by this installation.",
     "settings.agent.configuration.sandbox.label": "Sandbox settings",
     "settings.agent.configuration.sandbox.definition": "Choose how much Codex can do when running commands",
+    "settings.agent.configuration.sandbox.restricted": "Sandbox mode is restricted by this installation.",
     "settings.agent.configuration.network.label": "Allow network access",
     "settings.agent.configuration.network.definition": "Allow network access when the sandbox is set to workspace write",
+    "settings.agent.configuration.network.ariaLabel": "Allow network access",
+    "settings.agent.configuration.notice.fileContext": "File: {path}{location}",
+    "settings.agent.configuration.notice.fileLocationSuffix": " (line {line}, column {column})",
+    "settings.agent.configuration.notice.openFile": "Open file",
     "settings.agent.configuration.scope.projectGroup": "Project config",
     "settings.agent.configuration.scope.globalGroup": "Global config",
     "settings.agent.configuration.scope.open": "Open config.toml",
@@ -4855,6 +4906,29 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.remoteConnections.dialog.field.sshPort.rangeError": "SSH port must be between 1 and 65535",
     "settings.remoteConnections.dialog.field.identity.error": "Identity file path is required",
     "settings.remoteConnections.delete.error": "Unable to delete connection",
+    "settings.remoteConnections.deviceConnections.signedInDeviceOnlineSubtitle": "Signed in device (online)",
+    "settings.remoteConnections.deviceConnections.signedInDeviceOfflineSubtitle": "Signed in device (offline)",
+    "settings.remoteConnections.deviceConnections.signedInDeviceUpdateRequiredSubtitle": "Please update app-server version (current: {currentVersion}) to {requiredVersion} or newer",
+    "threadPage.remoteConnectionStatusBadge.disconnected": "Disconnected",
+    "settings.remoteControlConnections.authRequired": "Sign in to ChatGPT in Codex Desktop, then refresh to load remote control environments",
+    "settings.remoteControlConnections.rename": "Rename",
+    "settings.remoteControlConnections.rename.inputLabel": "Display name",
+    "settings.remoteControlConnections.rename.save": "Save",
+    "settings.remoteControlConnections.rename.cancel": "Cancel",
+    "settings.remoteControlConnections.rename.success": "Renamed remote control environment",
+    "settings.remoteControlConnections.rename.error": "Failed to rename remote control environment",
+    "settings.remoteControlConnections.delete.success": "Deleted remote control environment",
+    "settings.remoteControlConnections.delete.error": "Failed to delete remote control environment",
+    "settings.remoteControlConnections.delete.offlineOnly": "Only offline environments can be deleted",
+    "settings.remoteControlConnections.table.connect.ariaLabel": "Connect {connectionName}",
+    "settings.remoteControlConnections.details.host": "Host",
+    "settings.remoteControlConnections.details.platform": "OS / arch",
+    "settings.remoteControlConnections.details.version": "Version",
+    "settings.remoteControlConnections.details.lastSeen": "Last seen",
+    "settings.remoteControlConnections.availability.online": "online",
+    "settings.remoteControlConnections.availability.busy": "busy",
+    "settings.remoteControlConnections.availability.offline": "offline",
+    "settings.remoteControlConnections.availability.updateRequired": "Please update app-server version (current: {currentVersion}) to {requiredVersion} or newer",
     "settings.remoteControlConnections.deleteDialog.title": "Delete {connectionName}?",
     "settings.remoteControlConnections.deleteDialog.subtitle": "This removes the environment and its remote control threads from Codex. This cannot be undone.",
     "settings.remoteControlConnections.deleteDialog.cancel": "Cancel",
@@ -6723,16 +6797,22 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.localEnvironments.loading.body": "正在获取项目配置。",
     "settings.localEnvironments.unavailable.title": "本地环境不可用",
     "settings.localEnvironments.unavailable.body": "我们无法加载此项目的本地环境设置。",
-    "settings.localEnvironments.remoteProjectDialog.title": "添加远程项目",
-    "settings.localEnvironments.remoteProjectDialog.description": "选择一个已连接的远程主机，并输入此项目的文件夹。",
-    "settings.localEnvironments.remoteProjectDialog.emptyDescription":
-      "请先设置远程主机。然后你就可以在这里选择主机和文件夹。",
-    "settings.localEnvironments.remoteProjectDialog.hostLabel": "远程主机",
-    "settings.localEnvironments.remoteProjectDialog.pathLabel": "文件夹路径",
-    "settings.localEnvironments.remoteProjectDialog.note": "这个远程文件夹会作为独立项目显示在侧边栏中。",
-    "settings.localEnvironments.remoteProjectDialog.cancel": "取消",
-    "settings.localEnvironments.remoteProjectDialog.confirm": "添加项目",
-    "settings.localEnvironments.remoteProjectDialog.saveError": "保存项目失败",
+    "projectSetupDialog.title": "添加远程项目",
+    "projectSetupDialog.description": "选择一个已连接的远程主机，并输入此项目的文件夹。",
+    "projectSetupDialog.description.noConnectedRemotes": "请先设置远程主机。然后你就可以在这里选择主机和文件夹。",
+    "projectSetupDialog.remoteMode.standalone.description": "这个远程文件夹会作为独立项目显示在侧边栏中。",
+    "projectSetupDialog.noConnectedRemotes": "当前没有已连接的远程主机。",
+    "projectSetupDialog.selectedRemoteUnavailable": "请选择一个已连接的远程主机以继续。",
+    "projectSetupDialog.invalidPath.missing": "请选择此远程主机上一个已存在的文件夹。",
+    "projectSetupDialog.conflict.remoteProjectAlreadyMapped.standalone":
+      "这个位于 {remoteName} 上的远程项目已经为 {projectName} 设置过了。请选择其他文件夹，或先移除现有设置。",
+    "projectSetupDialog.saveError": "保存项目失败",
+    "workspaceRootDialog.remoteLabel": "远程主机",
+    "workspaceRootDialog.pathLabel": "文件夹路径",
+    "workspaceRootDialog.remotePlaceholder": "没有已连接的远程主机",
+    "workspaceRootDialog.remoteEmpty": "没有已连接的远程主机",
+    "workspaceRootDialog.cancel": "取消",
+    "workspaceRootDialog.confirmAdd": "添加项目",
     "settings.keyboardShortcuts.subtitle.electron": "自定义应用快捷键",
     "settings.keyboardShortcuts.loading": "正在加载快捷键…",
     "settings.keyboardShortcuts.search.ariaLabel": "搜索键盘快捷键",
@@ -7345,13 +7425,21 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.agent.title": "配置",
     "settings.agent.configuration.subtitle.summary": "配置审批策略和沙盒设置 <a>了解更多</a>",
     "settings.agent.customConfig": "自定义 config.toml 设置",
-    "settings.agent.openConfigToml": "打开 Config.toml",
+    "settings.agent.customConfig.sectionTitle": "自定义 config.toml 设置",
+    "settings.agent.openConfigToml": "打开 config.toml",
+    "settings.agent.openConfigTomlWsl": "在 WSL 环境中打开 config.toml",
     "settings.agent.configuration.approval.label": "批准策略",
     "settings.agent.configuration.approval.definition": "选择 Codex 何时请求批准",
+    "settings.agent.configuration.approval.restricted": "当前安装限制了批准策略。",
     "settings.agent.configuration.sandbox.label": "沙盒设置",
     "settings.agent.configuration.sandbox.definition": "选择 Codex 的命令执行权限",
+    "settings.agent.configuration.sandbox.restricted": "当前安装限制了沙盒模式。",
     "settings.agent.configuration.network.label": "允许网络访问",
     "settings.agent.configuration.network.definition": "当沙盒设置为工作区写入时允许网络访问",
+    "settings.agent.configuration.network.ariaLabel": "允许网络访问",
+    "settings.agent.configuration.notice.fileContext": "文件：{path}{location}",
+    "settings.agent.configuration.notice.fileLocationSuffix": "（第 {line} 行，第 {column} 列）",
+    "settings.agent.configuration.notice.openFile": "打开文件",
     "settings.agent.configuration.scope.projectGroup": "项目配置",
     "settings.agent.configuration.scope.globalGroup": "全局配置",
     "settings.agent.configuration.scope.open": "打开 config.toml",
@@ -7438,6 +7526,29 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.remoteConnections.dialog.field.sshPort.rangeError": "SSH 端口必须介于 1 到 65535 之间",
     "settings.remoteConnections.dialog.field.identity.error": "身份文件路径为必填项",
     "settings.remoteConnections.delete.error": "无法删除连接",
+    "settings.remoteConnections.deviceConnections.signedInDeviceOnlineSubtitle": "已登录设备（在线）",
+    "settings.remoteConnections.deviceConnections.signedInDeviceOfflineSubtitle": "已登录设备（离线）",
+    "settings.remoteConnections.deviceConnections.signedInDeviceUpdateRequiredSubtitle": "请将 app-server 版本（当前：{currentVersion}）更新到 {requiredVersion} 或更高版本",
+    "threadPage.remoteConnectionStatusBadge.disconnected": "已断开连接",
+    "settings.remoteControlConnections.authRequired": "请先在 Codex Desktop 中登录 ChatGPT，然后刷新以加载远程控制环境",
+    "settings.remoteControlConnections.rename": "重命名",
+    "settings.remoteControlConnections.rename.inputLabel": "显示名称",
+    "settings.remoteControlConnections.rename.save": "保存",
+    "settings.remoteControlConnections.rename.cancel": "取消",
+    "settings.remoteControlConnections.rename.success": "已重命名远程控制环境",
+    "settings.remoteControlConnections.rename.error": "无法重命名远程控制环境",
+    "settings.remoteControlConnections.delete.success": "已删除远程控制环境",
+    "settings.remoteControlConnections.delete.error": "无法删除远程控制环境",
+    "settings.remoteControlConnections.delete.offlineOnly": "只有离线环境才能删除",
+    "settings.remoteControlConnections.table.connect.ariaLabel": "连接 {connectionName}",
+    "settings.remoteControlConnections.details.host": "主机",
+    "settings.remoteControlConnections.details.platform": "操作系统 / 架构",
+    "settings.remoteControlConnections.details.version": "版本",
+    "settings.remoteControlConnections.details.lastSeen": "上次在线",
+    "settings.remoteControlConnections.availability.online": "在线",
+    "settings.remoteControlConnections.availability.busy": "忙碌",
+    "settings.remoteControlConnections.availability.offline": "离线",
+    "settings.remoteControlConnections.availability.updateRequired": "请将 app-server 版本（当前：{currentVersion}）更新到 {requiredVersion} 或更高版本",
     "settings.remoteControlConnections.deleteDialog.title": "删除 {connectionName}？",
     "settings.remoteControlConnections.deleteDialog.subtitle": "这将从 Codex 中移除该环境及其远程控制对话线程。此操作无法撤消。",
     "settings.remoteControlConnections.deleteDialog.cancel": "取消",

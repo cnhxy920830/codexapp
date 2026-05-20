@@ -10,9 +10,11 @@ export type PromptLinkSegment =
       label: string;
       href: string;
       appId: string;
+      name: string;
       displayLabel: string;
       detail: string | null;
       iconSource: string | null;
+      resolved: boolean;
     }
   | {
       type: "skill";
@@ -24,6 +26,7 @@ export type PromptLinkSegment =
       detail: string | null;
       brandColor: string | null;
       iconSource: string | null;
+      resolved: boolean;
     }
   | {
       type: "plugin";
@@ -34,6 +37,7 @@ export type PromptLinkSegment =
       detail: string | null;
       brandColor: string | null;
       iconSource: string | null;
+      resolved: boolean;
     }
   | {
       type: "agent";
@@ -92,11 +96,13 @@ export function classifyPromptLink({
 
   if (trimmedHref.startsWith("app://")) {
     const appId = decodeURIComponent(trimmedHref.slice("app://".length));
-    const labelKey = stripMentionPrefix(trimmedLabel, "@").toLowerCase();
+    const normalizedAppLabel = stripPromptMentionPrefix(trimmedLabel, ["$", "@"]);
+    const labelKey = normalizedAppLabel.toLowerCase();
     const resolvedApp =
       apps.find((app) => app.id.toLowerCase() === appId.toLowerCase()) ??
       apps.find((app) => app.name.toLowerCase() === labelKey) ??
       null;
+    const displayLabel = resolvedApp?.name ?? (normalizedAppLabel || appId);
 
     return {
       type: "app",
@@ -104,9 +110,11 @@ export function classifyPromptLink({
       label: trimmedLabel,
       href: trimmedHref,
       appId,
-      displayLabel: resolvedApp?.name ?? (stripMentionPrefix(trimmedLabel, "@") || appId),
+      name: normalizeAppMentionName(displayLabel),
+      displayLabel,
       detail: resolvedApp?.description ?? null,
       iconSource: resolvedApp?.logoUrl ?? resolvedApp?.logoUrlDark ?? null,
+      resolved: resolvedApp != null,
     };
   }
 
@@ -130,6 +138,7 @@ export function classifyPromptLink({
       detail: resolvedPlugin?.interface?.shortDescription ?? null,
       brandColor: resolvedPlugin?.interface?.brandColor ?? null,
       iconSource: resolvePluginIconSource(resolvedPlugin),
+      resolved: resolvedPlugin != null,
     };
   }
 
@@ -180,6 +189,7 @@ export function classifyPromptLink({
       detail: resolvedSkill?.shortDescription ?? resolvedSkill?.description ?? null,
       brandColor: resolvedSkill?.brandColor ?? null,
       iconSource: resolvedSkill?.iconSmall ?? resolvedSkill?.iconLarge ?? null,
+      resolved: resolvedSkill != null,
     };
   }
 
@@ -224,6 +234,25 @@ export function classifyPromptLink({
 
 function stripMentionPrefix(value: string, prefix: "@" | "$") {
   return value.startsWith(prefix) ? value.slice(1).trim() : value.trim();
+}
+
+function stripPromptMentionPrefix(value: string, prefixes: readonly ("@" | "$")[]) {
+  let nextValue = value.trim();
+  for (const prefix of prefixes) {
+    if (nextValue.startsWith(prefix)) {
+      nextValue = nextValue.slice(1).trim();
+      break;
+    }
+  }
+  return nextValue;
+}
+
+export function normalizeAppMentionName(value: string) {
+  const normalizedValue = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalizedValue === "" ? "app" : normalizedValue;
 }
 
 function normalizePathKey(value: string) {

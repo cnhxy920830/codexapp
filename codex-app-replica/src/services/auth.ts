@@ -158,6 +158,10 @@ export async function readAccountInfo(): Promise<AccountInfoResponse> {
   return invoke<AccountInfoResponse>("account-info");
 }
 
+export async function invalidateAccountInfoQuery() {
+  await emitQueryCacheInvalidated(ACCOUNT_INFO_QUERY_KEY);
+}
+
 export async function invalidateAccountSettingsQueries() {
   await Promise.all([
     emitQueryCacheInvalidated(ACCOUNT_INFO_QUERY_KEY),

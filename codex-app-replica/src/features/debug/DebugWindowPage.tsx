@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ChevronDownIcon,
   CloseTabIcon,
@@ -157,6 +157,14 @@ type WorkspaceRuntimeActionsMenuProps = {
   onRefresh: () => void;
   onRunNow: () => void;
 };
+
+export function DebugWindowShell({ children }: { children: ReactNode }) {
+  return (
+    <main className="h-dvh w-full overflow-hidden bg-token-main-surface-primary text-token-foreground">
+      {children}
+    </main>
+  );
+}
 
 export function DebugWindowPage({
   conversationId,
@@ -457,41 +465,43 @@ export function DebugWindowPage({
   }
 
   return (
-    <DebugModal
-      ambientSuggestionStatuses={ambientSuggestionStatuses}
-      appActionDraft={appActionDraft}
-      appActionResult={appActionResult}
-      authSnapshot={authSnapshot}
-      conversationId={conversationIdOverride}
-      debugAppServerInitialThreadStatusesByHostId={undefined}
-      globalDictationForceLockEnabled={debugParityState.globalDictationForceLockEnabled}
-      hotkeyWindowState={debugParityState.hotkeyWindowState}
-      isAmbientSuggestionsLoading={showAmbientSuggestionsSection && ambientSuggestionStatuses === null}
-      isAppActionRunning={isAppActionRunning}
-      isPackaged={isPackaged}
-      onboardingState={debugParityState.onboardingState}
-      onAppActionDraftChange={setAppActionDraft}
-      onClose={closeDebugWindow}
-      onOpenConversation={onOpenConversation}
-      onPopOut={undefined}
-      onPrimaryRuntimeInstallReleaseChange={handlePrimaryRuntimeInstallReleaseChange}
-      onPrimaryRuntimeRefresh={() => void handlePrimaryRuntimeRefresh()}
-      onPrimaryRuntimeRunNow={() => void handlePrimaryRuntimeRunNow()}
-      onRefreshAmbientSuggestions={(projectRoot) => void handleAmbientSuggestionsRefresh(projectRoot)}
-      onRunAppAction={() => void handleRunAppAction()}
-      primaryRuntimeInstallRelease={primaryRuntimeInstallRelease}
-      primaryRuntimeInstallProgress={primaryRuntimeInstallProgress}
-      primaryRuntimeLastTrigger={primaryRuntimeLastTrigger}
-      primaryRuntimeStatus={primaryRuntimeStatus}
-      projectlessThreadCwd={projectlessThreadCwd}
-      refreshingAmbientSuggestionsProjectRoot={refreshingAmbientSuggestionsProjectRoot}
-      realtimeVoiceDebugDisabled={debugParityState.realtimeVoiceDebugDisabled}
-      remoteConnections={remoteConnections}
-      showHeader={false}
-      showPopOutButton={false}
-      threadConversation={threadConversation}
-      workspaceRootOptions={workspaceRootOptions}
-    />
+    <DebugWindowShell>
+      <DebugModal
+        ambientSuggestionStatuses={ambientSuggestionStatuses}
+        appActionDraft={appActionDraft}
+        appActionResult={appActionResult}
+        authSnapshot={authSnapshot}
+        conversationId={conversationIdOverride}
+        debugAppServerInitialThreadStatusesByHostId={undefined}
+        globalDictationForceLockEnabled={debugParityState.globalDictationForceLockEnabled}
+        hotkeyWindowState={debugParityState.hotkeyWindowState}
+        isAmbientSuggestionsLoading={showAmbientSuggestionsSection && ambientSuggestionStatuses === null}
+        isAppActionRunning={isAppActionRunning}
+        isPackaged={isPackaged}
+        onboardingState={debugParityState.onboardingState}
+        onAppActionDraftChange={setAppActionDraft}
+        onClose={closeDebugWindow}
+        onOpenConversation={onOpenConversation}
+        onPopOut={undefined}
+        onPrimaryRuntimeInstallReleaseChange={handlePrimaryRuntimeInstallReleaseChange}
+        onPrimaryRuntimeRefresh={() => void handlePrimaryRuntimeRefresh()}
+        onPrimaryRuntimeRunNow={() => void handlePrimaryRuntimeRunNow()}
+        onRefreshAmbientSuggestions={(projectRoot) => void handleAmbientSuggestionsRefresh(projectRoot)}
+        onRunAppAction={() => void handleRunAppAction()}
+        primaryRuntimeInstallRelease={primaryRuntimeInstallRelease}
+        primaryRuntimeInstallProgress={primaryRuntimeInstallProgress}
+        primaryRuntimeLastTrigger={primaryRuntimeLastTrigger}
+        primaryRuntimeStatus={primaryRuntimeStatus}
+        projectlessThreadCwd={projectlessThreadCwd}
+        refreshingAmbientSuggestionsProjectRoot={refreshingAmbientSuggestionsProjectRoot}
+        realtimeVoiceDebugDisabled={debugParityState.realtimeVoiceDebugDisabled}
+        remoteConnections={remoteConnections}
+        showHeader={false}
+        showPopOutButton={false}
+        threadConversation={threadConversation}
+        workspaceRootOptions={workspaceRootOptions}
+      />
+    </DebugWindowShell>
   );
 }
 
@@ -550,8 +560,7 @@ export function DebugModal({
   const showDiagnostics = false;
 
   return (
-    <main className="h-dvh w-full overflow-hidden bg-token-main-surface-primary text-token-foreground">
-      <div className="flex h-full min-h-0 w-full flex-col text-sm">
+    <div className="flex h-full min-h-0 w-full flex-col text-sm">
         {showHeader ? (
           <div
             className={[
@@ -702,8 +711,7 @@ export function DebugModal({
             </DebugSection>
           ) : null}
         </div>
-      </div>
-    </main>
+    </div>
   );
 }
 

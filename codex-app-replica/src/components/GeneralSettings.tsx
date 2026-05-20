@@ -88,9 +88,17 @@ import {
   PlusIcon,
   TrashIcon,
 } from "./AppShellIcons";
+import { Button } from "./Button";
+import { SettingsContentLayout } from "./SettingsContentLayout";
 import { ToggleSwitch } from "./ToggleSwitch";
 import { SettingsChoiceMenu } from "./SettingsChoiceMenu";
+import { SegmentedControl } from "./SegmentedControl";
+import { SettingsGroup } from "./SettingsGroup";
+import { SettingsRow } from "./SettingsRow";
+import { SettingsSectionTitle } from "./SettingsSectionTitle";
+import { SettingsSurface } from "./SettingsSurface";
 import type { AppToast } from "./AppToastRegion";
+import { renderInlineLinkMessage } from "../i18n/renderInlineLinkMessage";
 
 const LOCAL_EXTERNAL_AGENT_IMPORT_HOST_ID = "local";
 const EXTERNAL_AGENT_IMPORT_PROVIDERS = ["claude-code"] as const;
@@ -1382,11 +1390,14 @@ export function GeneralSettings({
     authSnapshot?.authState.authMethod === "chatgpt" &&
     !isSpeedLoading &&
     canUseFastMode;
-  const showAmbientSuggestionsSetting = useReplicaStatsigGateValue(
-    REPLICA_STATSIG_GATES.ambientSuggestions,
-  );
+  const showAmbientSuggestionsSetting =
+    useReplicaStatsigGateValue(REPLICA_STATSIG_GATES.ambientSuggestions) &&
+    isAmbientSuggestionsEligible(authSnapshot ?? null, accountInfo);
   const showGuardianPermissionsModeOption =
     defaultFeatures.guardian_approval === true;
+  const showGlobalDictationHotkeys =
+    showDictationSettings &&
+    !useReplicaStatsigGateValue(REPLICA_STATSIG_GATES.hotkeyWindowSuppress);
   const gpuTearingDebugSettingRows = useMemo(
     () => [
       {
@@ -1446,248 +1457,327 @@ export function GeneralSettings({
 
   return (
     <>
-      <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-5 py-5">
-        <div className="app-card rounded-[18px] px-5 py-4">
-          <div className="app-title text-[14px] font-medium">
-            {t("settings.section.general-settings")}
-          </div>
-        </div>
-        <div className="app-card rounded-[18px] px-5 py-4">
-          <div className="space-y-1">
-            <div className="app-title text-[14px] font-medium">
-              {t("settings.workMode.groupTitle")}
-            </div>
-            <p className="text-[13px] leading-5 text-[var(--app-shell-subtle)]">
-              {t("settings.workMode.groupDescription")}
-            </p>
-          </div>
-        </div>
-        <div className="app-card rounded-[18px] px-5 py-4">
-          <div
-            className="grid grid-cols-2 gap-3 max-sm:grid-cols-1"
-            role="radiogroup"
-            aria-label={t("settings.workMode.radioGroup")}
-          >
-            {WORK_MODE_OPTIONS.map((option) => {
-              const isSelected = selectedWorkModeId === option.id;
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={isSelected}
-                  disabled={isLoading || isSaving}
-                  onClick={() =>
-                    void persistChoice(
-                      "conversationDetailMode",
-                      "conversationDetailMode",
-                      option.value,
-                    )
-                  }
-                  className={[
-                    "flex min-h-[62px] min-w-0 items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left outline-none transition",
-                    "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-shell-control-ring)]",
-                    "disabled:cursor-not-allowed disabled:opacity-70",
-                    isSelected
-                      ? "border-transparent bg-[var(--app-shell-card-bg-muted)]"
-                      : "border-[var(--app-shell-border)] bg-[var(--app-shell-card-bg)] hover:bg-[var(--app-shell-card-bg-muted)]",
-                  ].join(" ")}
-                >
-                  {option.icon}
-                  <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <span className="min-w-0 truncate text-sm text-[var(--app-shell-text)]">
-                      {t(option.titleKey)}
-                    </span>
-                    <span className="min-w-0 truncate text-sm text-[var(--app-shell-subtle)]">
-                      {t(option.descriptionKey)}
-                    </span>
-                  </div>
-                  <span
-                    aria-hidden="true"
+      <SettingsContentLayout title={<SettingsSectionTitle slug="general-settings" />}>
+        <SettingsGroup className="gap-4">
+          <SettingsGroup.Header
+            title={t("settings.workMode.groupTitle")}
+            subtitle={t("settings.workMode.groupDescription")}
+          />
+          <SettingsSurface className="border-0 bg-transparent shadow-none">
+            <div
+              className="grid grid-cols-2 gap-3 p-1 max-sm:grid-cols-1"
+              role="radiogroup"
+              aria-label={t("settings.workMode.radioGroup")}
+            >
+              {WORK_MODE_OPTIONS.map((option) => {
+                const isSelected = selectedWorkModeId === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={isSelected}
+                    disabled={isLoading || isSaving}
+                    onClick={() =>
+                      void persistChoice(
+                        "conversationDetailMode",
+                        "conversationDetailMode",
+                        option.value,
+                      )
+                    }
                     className={[
-                      "flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-full",
+                      "cursor-interaction flex min-h-[62px] min-w-0 items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left outline-none",
+                      "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-token-focus-border",
+                      "disabled:cursor-not-allowed disabled:opacity-70",
                       isSelected
-                        ? "border-2 border-[var(--app-shell-accent)] bg-[var(--app-shell-accent)]"
-                        : "border border-[var(--app-shell-border)]",
+                        ? "border-transparent bg-token-list-hover-background"
+                        : "border-token-border bg-token-main-surface-primary hover:bg-token-list-hover-background",
                     ].join(" ")}
                   >
+                    {option.icon}
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                      <span className="min-w-0 truncate text-sm text-token-text-primary">
+                        {t(option.titleKey)}
+                      </span>
+                      <span className="min-w-0 truncate text-sm text-token-text-secondary">
+                        {t(option.descriptionKey)}
+                      </span>
+                    </div>
                     <span
+                      aria-hidden="true"
                       className={[
-                        "h-[7px] w-[7px] rounded-full bg-white transition-opacity",
-                        isSelected ? "opacity-100" : "opacity-0",
+                        "flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-full",
+                        isSelected
+                          ? "border-2 border-token-charts-blue bg-token-charts-blue"
+                          : "border border-token-description-foreground/40",
                       ].join(" ")}
-                    />
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        <div className="app-card rounded-[18px] px-5 py-4">
-          <div className="app-title text-[14px] font-medium">
-            {t("settings.agent.permissionsMode.groupTitle")}
-          </div>
-        </div>
-        <div className="app-card rounded-[18px] px-5 py-4">
-          <div className="space-y-4 text-[14px]">
-            <SettingRow
+                    >
+                      <span
+                        className={[
+                          "h-[7px] w-[7px] rounded-full bg-[color:var(--gray-0)] transition-opacity",
+                          isSelected ? "opacity-100" : "opacity-0",
+                        ].join(" ")}
+                      />
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </SettingsSurface>
+        </SettingsGroup>
+
+        <SettingsGroup className="gap-2">
+          <SettingsGroup.Header
+            title={t("settings.agent.permissionsMode.groupTitle")}
+          />
+          <SettingsSurface>
+            <SettingsRow
               label={t("settings.agent.permissionsMode.default.title")}
               description={t("settings.agent.permissionsMode.default.description")}
-            >
-              <ToggleSwitch
-                checked
-                disabled
-                ariaLabel={t("settings.agent.permissionsMode.default.toggle")}
-                onChange={() => undefined}
-              />
-            </SettingRow>
+              control={
+                <ToggleSwitch
+                  checked
+                  disabled
+                  ariaLabel={t("settings.agent.permissionsMode.default.toggle")}
+                  onChange={() => undefined}
+                />
+              }
+            />
             {showGuardianPermissionsModeOption ? (
-              <SettingRow
+              <SettingsRow
                 label={t("settings.agent.permissionsMode.autoReview.title")}
-                description={renderLinkedDescription(
+                description={renderInlineLinkMessage(
                   t("settings.agent.permissionsMode.autoReview.description"),
                   PERMISSIONS_MODE_LEARN_MORE_URL,
+                  "inline-flex text-token-text-link-foreground",
                 )}
-              >
-                <ToggleSwitch
-                  checked={composerPermissionModeVisibility["guardian-approvals"]}
-                  disabled={isLoading || isSaving}
-                  ariaLabel={t("settings.agent.permissionsMode.autoReview.toggle")}
-                  onChange={(checked) =>
-                    persistComposerPermissionModeVisibility(
-                      "guardian-approvals",
-                      checked,
-                    )
-                  }
-                />
-              </SettingRow>
-            ) : null}
-            <SettingRow
-              label={t("settings.agent.permissionsMode.fullAccess.title")}
-              description={renderLinkedDescription(
-                t("settings.agent.permissionsMode.fullAccess.description"),
-                PERMISSIONS_MODE_LEARN_MORE_URL,
-              )}
-            >
-              <ToggleSwitch
-                checked={composerPermissionModeVisibility["full-access"]}
-                disabled={isLoading || isSaving}
-                ariaLabel={t("settings.agent.permissionsMode.fullAccess.toggle")}
-                onChange={(checked) =>
-                  persistComposerPermissionModeVisibility("full-access", checked)
+                control={
+                  <ToggleSwitch
+                    checked={composerPermissionModeVisibility["guardian-approvals"]}
+                    disabled={isLoading || isSaving}
+                    ariaLabel={t("settings.agent.permissionsMode.autoReview.toggle")}
+                    onChange={(checked) =>
+                      persistComposerPermissionModeVisibility(
+                        "guardian-approvals",
+                        checked,
+                      )
+                    }
+                  />
                 }
               />
-            </SettingRow>
-          </div>
-        </div>
-        <div className="app-card rounded-[18px] px-5 py-4">
-          <div className="app-title text-[14px] font-medium">
-            {t("settings.general.groupTitle")}
-          </div>
-        </div>
-        <div className="app-card rounded-[18px] px-5 py-4">
-          <div className="space-y-4 text-[14px]">
-            {showDefaultOpenTargetSetting ? (
-              <SettingRow
-                label={t("settings.ide.defaultOpenTarget.label")}
-                description={t("settings.ide.defaultOpenTarget.description")}
-              >
-                <div className="relative w-[220px] max-w-full" ref={openTargetMenuRef}>
-                  <button
-                    type="button"
-                    disabled={isLoading || isSaving || availableOpenTargets.length === 0}
-                    onClick={() => setIsOpenTargetMenuOpen((open) => !open)}
-                    className="app-control flex h-9 w-full items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-[13px]"
-                  >
-                    {selectedOpenTarget ? (
-                      <OpenTargetLabel
-                        icon={selectedOpenTarget.icon}
-                        label={selectedOpenTarget.label}
-                      />
-                    ) : (
-                      <span className="truncate text-left">
-                        {t("settings.ide.defaultOpenTarget.placeholder")}
-                      </span>
-                    )}
-                    <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
-                  </button>
-                  {isOpenTargetMenuOpen ? (
-                    <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-full rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
-                      <div className="max-h-80 overflow-y-auto">
-                        {availableOpenTargets.map((target) => {
-                          const isSelected = target.target === selectedOpenTargetValue;
-                          return (
-                            <button
-                              key={target.id}
-                              type="button"
-                              disabled={isSaving}
-                              onClick={() => {
-                                setIsOpenTargetMenuOpen(false);
-                                void persistPreferredOpenTarget(target.target);
-                              }}
-                              className={[
-                                "flex w-full items-center justify-between rounded-[10px] px-3 py-2 text-left text-[13px]",
-                                isSelected ? "app-nav-item-active" : "app-nav-item-idle",
-                              ].join(" ")}
-                            >
-                              <OpenTargetLabel icon={target.icon} label={target.label} />
-                              {isSelected ? (
-                                <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
-                              ) : null}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </SettingRow>
             ) : null}
-            {showAgentEnvironmentSetting ? (
-              <SettingRow
-                label={t("settings.agentEnvironment.label")}
-                description={agentEnvironmentDescription}
-              >
-                <SettingsChoiceMenu
-                  disabled={isLoading || isSaving || isCheckingWslAvailability}
-                  options={agentEnvironmentOptions}
-                  value={selectedAgentEnvironmentValue}
-                  onChange={(value) =>
-                    void persistAgentEnvironment(value as AgentEnvironmentValue)
+            <SettingsRow
+              label={t("settings.agent.permissionsMode.fullAccess.title")}
+              description={renderInlineLinkMessage(
+                t("settings.agent.permissionsMode.fullAccess.description"),
+                PERMISSIONS_MODE_LEARN_MORE_URL,
+                "inline-flex text-token-text-link-foreground",
+              )}
+              control={
+                <ToggleSwitch
+                  checked={composerPermissionModeVisibility["full-access"]}
+                  disabled={isLoading || isSaving}
+                  ariaLabel={t("settings.agent.permissionsMode.fullAccess.toggle")}
+                  onChange={(checked) =>
+                    persistComposerPermissionModeVisibility("full-access", checked)
                   }
                 />
-              </SettingRow>
+              }
+            />
+          </SettingsSurface>
+        </SettingsGroup>
+
+        <SettingsGroup className="gap-2">
+          <SettingsGroup.Header title={t("settings.general.groupTitle")} />
+          <SettingsSurface>
+            {showDefaultOpenTargetSetting ? (
+              <SettingsRow
+                label={t("settings.ide.defaultOpenTarget.label")}
+                description={t("settings.ide.defaultOpenTarget.description")}
+                control={
+                  <div className="relative w-[240px] max-w-xs" ref={openTargetMenuRef}>
+                    <button
+                      type="button"
+                      disabled={isLoading || isSaving || availableOpenTargets.length === 0}
+                      onClick={() => setIsOpenTargetMenuOpen((open) => !open)}
+                      className="border-token-border bg-token-bg-fog flex h-token-button-composer w-[240px] justify-between rounded-lg border px-2 py-0 text-base leading-[18px] shadow-sm disabled:opacity-40"
+                    >
+                      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                        {selectedOpenTarget ? (
+                          <OpenTargetLabel
+                            icon={selectedOpenTarget.icon}
+                            label={selectedOpenTarget.label}
+                          />
+                        ) : (
+                          <span className="truncate text-left">
+                            {t("settings.ide.defaultOpenTarget.placeholder")}
+                          </span>
+                        )}
+                      </span>
+                      <ChevronDownIcon className="icon-2xs shrink-0 text-token-input-placeholder-foreground" />
+                    </button>
+                    {isOpenTargetMenuOpen ? (
+                      <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-full rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+                        <div className="max-h-80 overflow-y-auto">
+                          {availableOpenTargets.map((target) => {
+                            const isSelected = target.target === selectedOpenTargetValue;
+                            return (
+                              <button
+                                key={target.id}
+                                type="button"
+                                disabled={isSaving}
+                                onClick={() => {
+                                  setIsOpenTargetMenuOpen(false);
+                                  void persistPreferredOpenTarget(target.target);
+                                }}
+                                className={[
+                                  "flex w-full items-center justify-between rounded-[10px] px-3 py-2 text-left text-[13px]",
+                                  isSelected ? "app-nav-item-active" : "app-nav-item-idle",
+                                ].join(" ")}
+                              >
+                                <OpenTargetLabel icon={target.icon} label={target.label} />
+                                {isSelected ? (
+                                  <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
+                                ) : null}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                }
+              />
+            ) : null}
+            {showAgentEnvironmentSetting ? (
+              <SettingsRow
+                label={t("settings.agentEnvironment.label")}
+                description={agentEnvironmentDescription}
+                control={
+                  <SettingsChoiceMenu
+                    className="w-[320px] max-w-xs"
+                    disabled={isLoading || isSaving || isCheckingWslAvailability}
+                    options={agentEnvironmentOptions}
+                    value={selectedAgentEnvironmentValue}
+                    onChange={(value) =>
+                      void persistAgentEnvironment(value as AgentEnvironmentValue)
+                    }
+                  />
+                }
+              />
             ) : null}
             {showIntegratedTerminalShellSetting ? (
-              <SettingRow
+              <SettingsRow
                 label={t("settings.openIn.integratedTerminalShell.label")}
                 description={t("settings.openIn.integratedTerminalShell.description")}
-              >
-                <div className="relative w-[220px] max-w-full" ref={terminalShellMenuRef}>
+                control={
+                  <div className="relative w-[220px] max-w-xs" ref={terminalShellMenuRef}>
+                    <button
+                      type="button"
+                      disabled={isLoading || isSaving || availableTerminalShells.length === 0}
+                      onClick={() => setIsTerminalShellMenuOpen((open) => !open)}
+                      className="border-token-border bg-token-bg-fog flex h-token-button-composer w-[220px] justify-between rounded-lg border px-2 py-0 text-base leading-[18px] shadow-sm disabled:opacity-40"
+                    >
+                      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                        <span className="truncate text-left">
+                          {selectedIntegratedTerminalShellLabel}
+                        </span>
+                      </span>
+                      <ChevronDownIcon className="icon-2xs shrink-0 text-token-input-placeholder-foreground" />
+                    </button>
+                    {isTerminalShellMenuOpen ? (
+                      <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-full rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+                        <div className="max-h-80 overflow-y-auto">
+                          {availableTerminalShells.map((shell) => {
+                            const isSelected = shell === selectedIntegratedTerminalShell;
+                            return (
+                              <button
+                                key={shell}
+                                type="button"
+                                disabled={isSaving}
+                                onClick={() => {
+                                  setIsTerminalShellMenuOpen(false);
+                                  void persistIntegratedTerminalShell(shell);
+                                }}
+                                className={[
+                                  "flex w-full items-center justify-between rounded-[10px] px-3 py-2 text-left text-[13px]",
+                                  isSelected ? "app-nav-item-active" : "app-nav-item-idle",
+                                ].join(" ")}
+                              >
+                                <span className="truncate">
+                                  {TERMINAL_SHELL_LABELS[shell]}
+                                </span>
+                                {isSelected ? (
+                                  <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
+                                ) : null}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                }
+              />
+            ) : null}
+            <SettingsRow
+              label={t("settings.ide.language.label")}
+              description={t("settings.ide.language.description")}
+              control={
+                <div className="relative w-[320px] max-w-xs" ref={languageMenuRef}>
                   <button
                     type="button"
-                    disabled={isLoading || isSaving || availableTerminalShells.length === 0}
-                    onClick={() => setIsTerminalShellMenuOpen((open) => !open)}
-                    className="app-control flex h-9 w-full items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-[13px]"
+                    disabled={isLoading || isSaving}
+                    onClick={() => setIsLanguageMenuOpen((open) => !open)}
+                    className="border-token-border bg-token-bg-fog flex h-token-button-composer w-[240px] justify-between rounded-lg border px-2 py-0 text-base leading-[18px] shadow-sm disabled:opacity-40"
                   >
-                    <span className="truncate text-left">
-                      {selectedIntegratedTerminalShellLabel}
+                    <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                      <span className="truncate text-left">{selectedLocaleLabel}</span>
                     </span>
-                    <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
+                    <ChevronDownIcon className="icon-2xs shrink-0 text-token-input-placeholder-foreground" />
                   </button>
-                  {isTerminalShellMenuOpen ? (
+                  {isLanguageMenuOpen ? (
                     <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-full rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
-                      <div className="max-h-80 overflow-y-auto">
-                        {availableTerminalShells.map((shell) => {
-                          const isSelected = shell === selectedIntegratedTerminalShell;
+                      <div className="pb-1">
+                        <input
+                          type="text"
+                          value={languageSearch}
+                          autoFocus
+                          onChange={(event) => setLanguageSearch(event.target.value)}
+                          placeholder={t("settings.ide.language.search")}
+                          className="app-control w-full rounded-[10px] px-3 py-2 text-[13px]"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        disabled={isSaving}
+                        onClick={() => {
+                          setIsLanguageMenuOpen(false);
+                          void persistLocale("auto");
+                        }}
+                        className={[
+                          "flex w-full items-center justify-between rounded-[10px] px-3 py-2 text-left text-[13px]",
+                          normalizedLocaleOverride == null
+                            ? "app-nav-item-active"
+                            : "app-nav-item-idle",
+                        ].join(" ")}
+                      >
+                        <span>{t("settings.ide.language.autoOption")}</span>
+                        {normalizedLocaleOverride == null ? (
+                          <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
+                        ) : null}
+                      </button>
+                      <div className="mt-1 max-h-80 overflow-y-auto">
+                        {filteredLocaleEntries.map((entry) => {
+                          const isSelected = entry.code === normalizedLocaleOverride;
                           return (
                             <button
-                              key={shell}
+                              key={entry.code}
                               type="button"
                               disabled={isSaving}
                               onClick={() => {
-                                setIsTerminalShellMenuOpen(false);
-                                void persistIntegratedTerminalShell(shell);
+                                setIsLanguageMenuOpen(false);
+                                void persistLocale(entry.code);
                               }}
                               className={[
                                 "flex w-full items-center justify-between rounded-[10px] px-3 py-2 text-left text-[13px]",
@@ -1695,7 +1785,10 @@ export function GeneralSettings({
                               ].join(" ")}
                             >
                               <span className="truncate">
-                                {TERMINAL_SHELL_LABELS[shell]}
+                                {entry.nativeLabel}
+                                {entry.localizedLabel === entry.nativeLabel
+                                  ? ""
+                                  : ` • ${entry.localizedLabel}`}
                               </span>
                               {isSelected ? (
                                 <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
@@ -1707,551 +1800,484 @@ export function GeneralSettings({
                     </div>
                   ) : null}
                 </div>
-              </SettingRow>
-            ) : null}
-            <SettingRow
-              label={t("settings.ide.language.label")}
-              description={t("settings.ide.language.description")}
-            >
-              <div className="relative w-[320px] max-w-full" ref={languageMenuRef}>
-                <button
-                  type="button"
-                  disabled={isLoading || isSaving}
-                  onClick={() => setIsLanguageMenuOpen((open) => !open)}
-                  className="app-control flex w-full items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-[13px]"
-                >
-                  <span className="truncate text-left">{selectedLocaleLabel}</span>
-                  <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
-                </button>
-                {isLanguageMenuOpen ? (
-                  <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-full rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
-                    <div className="pb-1">
-                      <input
-                        type="text"
-                        value={languageSearch}
-                        autoFocus
-                        onChange={(event) => setLanguageSearch(event.target.value)}
-                        placeholder={t("settings.ide.language.search")}
-                        className="app-control w-full rounded-[10px] px-3 py-2 text-[13px]"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      disabled={isSaving}
-                      onClick={() => {
-                        setIsLanguageMenuOpen(false);
-                        void persistLocale("auto");
-                      }}
-                      className={[
-                        "flex w-full items-center justify-between rounded-[10px] px-3 py-2 text-left text-[13px]",
-                        normalizedLocaleOverride == null
-                          ? "app-nav-item-active"
-                          : "app-nav-item-idle",
-                      ].join(" ")}
-                    >
-                      <span>{t("settings.ide.language.autoOption")}</span>
-                      {normalizedLocaleOverride == null ? (
-                        <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
-                      ) : null}
-                    </button>
-                    <div className="mt-1 max-h-80 overflow-y-auto">
-                      {filteredLocaleEntries.map((entry) => {
-                        const isSelected = entry.code === normalizedLocaleOverride;
-                        return (
-                          <button
-                            key={entry.code}
-                            type="button"
-                            disabled={isSaving}
-                            onClick={() => {
-                              setIsLanguageMenuOpen(false);
-                              void persistLocale(entry.code);
-                            }}
-                            className={[
-                              "flex w-full items-center justify-between rounded-[10px] px-3 py-2 text-left text-[13px]",
-                              isSelected ? "app-nav-item-active" : "app-nav-item-idle",
-                            ].join(" ")}
-                          >
-                            <span className="truncate">
-                              {entry.nativeLabel}
-                              {entry.localizedLabel === entry.nativeLabel
-                                ? ""
-                                : ` • ${entry.localizedLabel}`}
-                            </span>
-                            {isSelected ? (
-                              <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </SettingRow>
+              }
+            />
             {isMacOsPlatform ? (
-              <SettingRow
+              <SettingsRow
                 label={t("settings.general.macMenuBar.label")}
                 description={t("settings.general.macMenuBar.description")}
-              >
-                <ToggleSwitch
-                  checked={macMenuBarEnabled}
-                  disabled={isLoading || isSaving}
-                  ariaLabel={t("settings.general.macMenuBar.ariaLabel")}
-                  onChange={(checked) => void persistMacMenuBarEnabled(checked)}
-                />
-              </SettingRow>
+                control={
+                  <ToggleSwitch
+                    checked={macMenuBarEnabled}
+                    disabled={isLoading || isSaving}
+                    ariaLabel={t("settings.general.macMenuBar.ariaLabel")}
+                    onChange={(checked) => void persistMacMenuBarEnabled(checked)}
+                  />
+                }
+              />
             ) : null}
             {showHotkeyWindowHotkeySetting ? (
-              <SettingRow
+              <SettingsRow
                 label={t(
                   "settings.general.experimentalFeatures.hotkeyWindowHotkey.label",
                 )}
                 description={hotkeyWindowHotkeyDescription}
-              >
-                {isCapturingHotkeyWindowHotkey ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      autoFocus
-                      value={t(
-                        "settings.general.experimentalFeatures.hotkeyWindowHotkey.capturePrompt",
-                      )}
-                      aria-label={t(
-                        "settings.general.experimentalFeatures.hotkeyWindowHotkey.captureAriaLabel",
-                      )}
-                      onBlur={() => setIsCapturingHotkeyWindowHotkey(false)}
-                      onKeyDown={(event) => {
-                        if (event.repeat) {
-                          return;
-                        }
-                        event.preventDefault();
-                        event.stopPropagation();
-                        if (event.key === "Escape") {
+                control={
+                  isCapturingHotkeyWindowHotkey ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        autoFocus
+                        value={t(
+                          "settings.general.experimentalFeatures.hotkeyWindowHotkey.capturePrompt",
+                        )}
+                        aria-label={t(
+                          "settings.general.experimentalFeatures.hotkeyWindowHotkey.captureAriaLabel",
+                        )}
+                        onBlur={() => setIsCapturingHotkeyWindowHotkey(false)}
+                        onKeyDown={(event) => {
+                          if (event.repeat) {
+                            return;
+                          }
+                          event.preventDefault();
+                          event.stopPropagation();
+                          if (event.key === "Escape") {
+                            setIsCapturingHotkeyWindowHotkey(false);
+                            return;
+                          }
+                          const accelerator = buildAcceleratorFromKeyboardEvent(
+                            event.nativeEvent,
+                          );
+                          if (accelerator == null) {
+                            return;
+                          }
                           setIsCapturingHotkeyWindowHotkey(false);
-                          return;
-                        }
-                        const accelerator = buildAcceleratorFromKeyboardEvent(
-                          event.nativeEvent,
-                        );
-                        if (accelerator == null) {
-                          return;
-                        }
-                        setIsCapturingHotkeyWindowHotkey(false);
-                        void persistHotkeyWindowHotkey(accelerator);
-                      }}
-                      className="app-control h-9 w-36 rounded-[10px] px-3 py-2 text-[13px]"
-                    />
-                    <button
-                      type="button"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => setIsCapturingHotkeyWindowHotkey(false)}
-                      className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
-                    >
-                      {t(
-                        "settings.general.experimentalFeatures.hotkeyWindowHotkey.cancel",
-                      )}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="min-w-20 text-right text-[13px] text-token-text-secondary">
-                      {hotkeyWindowHotkeyStatusLabel}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={isUpdatingHotkeyWindowHotkey}
-                      onClick={() => {
-                        setHotkeyWindowHotkeyError(null);
-                        setIsCapturingHotkeyWindowHotkey(true);
-                      }}
-                      className="app-control rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
-                    >
-                      {configuredHotkeyWindowHotkey == null
-                        ? t(
-                            "settings.general.experimentalFeatures.hotkeyWindowHotkey.set",
-                          )
-                        : t(
-                            "settings.general.experimentalFeatures.hotkeyWindowHotkey.change",
-                          )}
-                    </button>
-                    {configuredHotkeyWindowHotkey != null ? (
-                      <button
-                        type="button"
-                        disabled={isUpdatingHotkeyWindowHotkey}
-                        onClick={() => void persistHotkeyWindowHotkey(null)}
-                        className="app-control rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
+                          void persistHotkeyWindowHotkey(accelerator);
+                        }}
+                        className="app-control h-9 w-36 rounded-[10px] px-3 py-2 text-[13px]"
+                      />
+                      <Button
+                        color="ghost"
+                        size="toolbar"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => setIsCapturingHotkeyWindowHotkey(false)}
                       >
                         {t(
-                          "settings.general.experimentalFeatures.hotkeyWindowHotkey.clear",
+                          "settings.general.experimentalFeatures.hotkeyWindowHotkey.cancel",
                         )}
-                      </button>
-                    ) : null}
-                  </div>
-                )}
-              </SettingRow>
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="min-w-20 text-right text-sm text-token-text-secondary">
+                        {hotkeyWindowHotkeyStatusLabel}
+                      </span>
+                      <Button
+                        color="secondary"
+                        size="toolbar"
+                        disabled={isUpdatingHotkeyWindowHotkey}
+                        onClick={() => {
+                          setHotkeyWindowHotkeyError(null);
+                          setIsCapturingHotkeyWindowHotkey(true);
+                        }}
+                      >
+                        {configuredHotkeyWindowHotkey == null
+                          ? t(
+                              "settings.general.experimentalFeatures.hotkeyWindowHotkey.set",
+                            )
+                          : t(
+                              "settings.general.experimentalFeatures.hotkeyWindowHotkey.change",
+                            )}
+                      </Button>
+                      {configuredHotkeyWindowHotkey != null ? (
+                        <Button
+                          color="ghost"
+                          size="toolbar"
+                          disabled={isUpdatingHotkeyWindowHotkey}
+                          onClick={() => void persistHotkeyWindowHotkey(null)}
+                        >
+                          {t(
+                            "settings.general.experimentalFeatures.hotkeyWindowHotkey.clear",
+                          )}
+                        </Button>
+                      ) : null}
+                    </div>
+                  )
+                }
+              />
             ) : null}
             {isWindowsPlatform ? null : (
-              <SettingRow
+              <SettingsRow
                 label={t("settings.general.power.preventSleepWhileRunning.label")}
                 description={t(
                   "settings.general.power.preventSleepWhileRunning.description",
                 )}
-              >
-                <ToggleSwitch
-                  checked={state.preventSleepWhileRunning}
-                  disabled={isLoading || isSaving}
-                  ariaLabel={t(
-                    "settings.general.power.preventSleepWhileRunning.label",
-                  )}
-                  onChange={(checked) =>
-                    void persistChoice(
-                      "preventSleepWhileRunning",
-                      "preventSleepWhileRunning",
-                      checked,
-                    )
-                  }
-                />
-              </SettingRow>
-            )}
-            {shouldRenderExternalImportRow ? (
-              <SettingRow
-                label={
-                  hasPriorExternalImport
-                    ? t("settings.general.importExternalAgent.importedRowLabel")
-                    : t("settings.general.importExternalAgent.rowLabel")
+                control={
+                  <ToggleSwitch
+                    checked={state.preventSleepWhileRunning}
+                    disabled={isLoading || isSaving}
+                    ariaLabel={t(
+                      "settings.general.power.preventSleepWhileRunning.label",
+                    )}
+                    onChange={(checked) =>
+                      void persistChoice(
+                        "preventSleepWhileRunning",
+                        "preventSleepWhileRunning",
+                        checked,
+                      )
+                    }
+                  />
                 }
-                description={externalImportDescription}
-              >
-                <button
-                  type="button"
-                  disabled={isExternalImportButtonDisabled}
-                  onClick={handleExternalImportButtonClick}
-                  className="app-control rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
-                >
-                  {externalImportButtonLabel}
-                </button>
-              </SettingRow>
-            ) : null}
-            <SettingRow
+              />
+            )}
+            <SettingsRow
               label={t("settings.general.enterBehavior.label", {
                 modifierSymbol: composerModifierLabel,
               })}
               description={t("settings.general.enterBehavior.description", {
                 modifierSymbol: composerModifierLabel,
               })}
-            >
-              <ToggleSwitch
-                checked={state.composerEnterBehavior === "cmdIfMultiline"}
-                disabled={isLoading || isSaving}
-                ariaLabel={t("settings.general.enterBehavior.label", {
-                  modifierSymbol: composerModifierLabel,
-                })}
-                onChange={(checked) =>
-                  void persistChoice(
-                    "composerEnterBehavior",
-                    "composerEnterBehavior",
-                    checked ? "cmdIfMultiline" : "enter",
-                  )
-                }
-              />
-            </SettingRow>
-          </div>
-        </div>
-        <div className="app-card rounded-[18px] px-5 py-4">
-          <div className="space-y-4 text-[14px]">
-            {showSpeedSetting ? (
-              <SettingRow
-                label={t("settings.agent.speed.label")}
-                description={t("settings.agent.speed.description")}
-              >
-                <SettingsChoiceMenu
-                  disabled={isLoading || isSaving || isSpeedLoading}
-                  options={speedOptions}
-                  triggerLabel={speedTriggerLabel}
-                  value={selectedSpeedMenuValue}
-                  onChange={(value) =>
-                    void persistServiceTier(value as SpeedMenuValue)
+              control={
+                <ToggleSwitch
+                  checked={state.composerEnterBehavior === "cmdIfMultiline"}
+                  disabled={isLoading || isSaving}
+                  ariaLabel={t("settings.general.enterBehavior.label", {
+                    modifierSymbol: composerModifierLabel,
+                  })}
+                  onChange={(checked) =>
+                    void persistChoice(
+                      "composerEnterBehavior",
+                      "composerEnterBehavior",
+                      checked ? "cmdIfMultiline" : "enter",
+                    )
                   }
                 />
-              </SettingRow>
+              }
+            />
+            {showSpeedSetting ? (
+              <SettingsRow
+                label={t("settings.agent.speed.label")}
+                description={t("settings.agent.speed.description")}
+                control={
+                  <SettingsChoiceMenu
+                    className="w-[240px] max-w-xs"
+                    disabled={isLoading || isSaving || isSpeedLoading}
+                    options={speedOptions}
+                    triggerLabel={speedTriggerLabel}
+                    value={selectedSpeedMenuValue}
+                    onChange={(value) =>
+                      void persistServiceTier(value as SpeedMenuValue)
+                    }
+                  />
+                }
+              />
             ) : null}
-            <SettingRow
+            <SettingsRow
+              className="gap-6"
               label={t("settings.general.followUpQueueMode.label")}
               description={t("settings.general.followUpQueueMode.description", {
                 invertFollowUpShortcutLabel,
               })}
-            >
-              <SegmentedControl
-                value={state.followUpQueueMode}
-                disabled={isLoading || isSaving}
-                options={[
-                  { value: "queue", label: t("settings.general.followUpQueueMode.queue") },
-                  {
-                    value: "steer",
-                    label: t("settings.general.followUpQueueMode.interrupt"),
-                  },
-                ]}
-                onChange={(value) =>
-                  void persistChoice(
-                    "followUpQueueMode",
-                    "followUpQueueMode",
-                    value as FollowUpQueueMode,
-                  )
-                }
-              />
-            </SettingRow>
-            <SettingRow
+              control={
+                <SegmentedControl
+                  selectedId={state.followUpQueueMode}
+                  size="toolbar"
+                  onSelect={(value) =>
+                    void persistChoice(
+                      "followUpQueueMode",
+                      "followUpQueueMode",
+                      value as FollowUpQueueMode,
+                    )
+                  }
+                  options={[
+                    {
+                      id: "queue",
+                      label: t("settings.general.followUpQueueMode.queue"),
+                    },
+                    {
+                      id: "steer",
+                      label: t("settings.general.followUpQueueMode.interrupt"),
+                    },
+                  ]}
+                />
+              }
+            />
+            <SettingsRow
+              className="flex gap-6"
               label={t("settings.general.reviewDelivery.label")}
               description={t("settings.general.reviewDelivery.description")}
-            >
-              <SegmentedControl
-                value={state.reviewDelivery}
-                disabled={isLoading || isSaving}
-                options={[
-                  { value: "inline", label: t("settings.general.reviewDelivery.inline") },
-                  {
-                    value: "detached",
-                    label: t("settings.general.reviewDelivery.detached"),
-                  },
-                ]}
-                onChange={(value) =>
-                  void persistChoice(
-                    "reviewDelivery",
-                    "reviewDelivery",
-                    value as ReviewDelivery,
-                  )
-                }
-              />
-            </SettingRow>
+              control={
+                <SegmentedControl
+                  selectedId={state.reviewDelivery}
+                  size="toolbar"
+                  onSelect={(value) =>
+                    void persistChoice(
+                      "reviewDelivery",
+                      "reviewDelivery",
+                      value as ReviewDelivery,
+                    )
+                  }
+                  options={[
+                    {
+                      id: "inline",
+                      label: t("settings.general.reviewDelivery.inline"),
+                    },
+                    {
+                      id: "detached",
+                      label: t("settings.general.reviewDelivery.detached"),
+                    },
+                  ]}
+                />
+              }
+            />
             {showAmbientSuggestionsSetting ? (
-              <SettingRow
+              <SettingsRow
                 label={t("settings.agent.ambientSuggestions.groupTitle")}
                 description={t("settings.agent.ambientSuggestions.rowLabel")}
-              >
-                <ToggleSwitch
-                  checked={ambientSuggestionsEnabled}
-                  disabled={isLoading || isSaving}
-                  ariaLabel={t("settings.agent.ambientSuggestions.toggleLabel")}
-                  onChange={(checked) =>
-                    void persistAmbientSuggestionsEnabled(checked)
-                  }
-                />
-              </SettingRow>
+                control={
+                  <ToggleSwitch
+                    checked={ambientSuggestionsEnabled}
+                    disabled={isLoading || isSaving}
+                    ariaLabel={t("settings.agent.ambientSuggestions.toggleLabel")}
+                    onChange={(checked) =>
+                      void persistAmbientSuggestionsEnabled(checked)
+                    }
+                  />
+                }
+              />
             ) : null}
-          </div>
-        </div>
+            {shouldRenderExternalImportRow ? (
+              <SettingsRow
+                id="external-agent-config-import-settings"
+                label={
+                  hasPriorExternalImport
+                    ? t("settings.general.importExternalAgent.importedRowLabel")
+                    : t("settings.general.importExternalAgent.rowLabel")
+                }
+                description={externalImportDescription}
+                control={
+                  <Button
+                    color="secondary"
+                    size="toolbar"
+                    disabled={isExternalImportButtonDisabled}
+                    loading={isImportingExternalItems}
+                    onClick={handleExternalImportButtonClick}
+                  >
+                    {externalImportButtonLabel}
+                  </Button>
+                }
+              />
+            ) : null}
+          </SettingsSurface>
+        </SettingsGroup>
+
         {showDictationSettings ? (
-          <>
-            <div className="app-card rounded-[18px] px-5 py-4">
-              <div className="app-title text-[14px] font-medium">
-                {t("settings.general.dictation")}
-              </div>
-            </div>
-            <div className="app-card overflow-hidden rounded-[18px]">
-              <div className="divide-y divide-[var(--app-shell-border)]">
-                <SettingRow
+          <SettingsGroup className="gap-2">
+            <SettingsGroup.Header title={t("settings.general.dictation")} />
+            <SettingsSurface>
+              {showGlobalDictationHotkeys ? (
+                <SettingsRow
                   label={t("settings.general.globalDictationHotkey.label")}
                   description={globalDictationHotkeyDescription}
-                >
-                  <DictationHotkeyControl
-                    capturePrompt={t(
-                      "settings.general.globalDictationHotkey.capturePrompt",
-                    )}
-                    captureAriaLabel={t(
-                      "settings.general.globalDictationHotkey.captureAriaLabel",
-                    )}
-                    cancelLabel={t(
-                      "settings.general.globalDictationHotkey.cancel",
-                    )}
-                    changeLabel={t(
-                      "settings.general.globalDictationHotkey.change",
-                    )}
-                    clearLabel={t(
-                      "settings.general.globalDictationHotkey.clear",
-                    )}
-                    configuredHotkey={configuredGlobalDictationHotkey}
-                    disabled={!isGlobalDictationHotkeySupported}
-                    isCapturing={isCapturingGlobalDictationHotkey}
-                    isUpdating={isUpdatingGlobalDictationHotkey}
-                    setLabel={t("settings.general.globalDictationHotkey.set")}
-                    statusLabel={globalDictationHotkeyStatusLabel}
-                    onCancelCapture={() =>
-                      setIsCapturingGlobalDictationHotkey(false)
-                    }
-                    onClear={() =>
-                      void persistGlobalDictationHotkey({
-                        hotkey: null,
-                        kind: "hold",
-                      })
-                    }
-                    onStartCapture={() => {
-                      setGlobalDictationHotkeyError(null);
-                      setIsCapturingGlobalDictationHotkey(true);
-                    }}
-                    onSubmit={(hotkey) =>
-                      void persistGlobalDictationHotkey({
-                        hotkey,
-                        kind: "hold",
-                      })
-                    }
-                  />
-                </SettingRow>
-                <SettingRow
+                  control={
+                    <DictationHotkeyControl
+                      capturePrompt={t(
+                        "settings.general.globalDictationHotkey.capturePrompt",
+                      )}
+                      captureAriaLabel={t(
+                        "settings.general.globalDictationHotkey.captureAriaLabel",
+                      )}
+                      cancelLabel={t(
+                        "settings.general.globalDictationHotkey.cancel",
+                      )}
+                      changeLabel={t(
+                        "settings.general.globalDictationHotkey.change",
+                      )}
+                      clearLabel={t(
+                        "settings.general.globalDictationHotkey.clear",
+                      )}
+                      configuredHotkey={configuredGlobalDictationHotkey}
+                      disabled={!isGlobalDictationHotkeySupported}
+                      isCapturing={isCapturingGlobalDictationHotkey}
+                      isUpdating={isUpdatingGlobalDictationHotkey}
+                      setLabel={t("settings.general.globalDictationHotkey.set")}
+                      statusLabel={globalDictationHotkeyStatusLabel}
+                      onCancelCapture={() =>
+                        setIsCapturingGlobalDictationHotkey(false)
+                      }
+                      onClear={() =>
+                        void persistGlobalDictationHotkey({
+                          hotkey: null,
+                          kind: "hold",
+                        })
+                      }
+                      onStartCapture={() => {
+                        setGlobalDictationHotkeyError(null);
+                        setIsCapturingGlobalDictationHotkey(true);
+                      }}
+                      onSubmit={(hotkey) =>
+                        void persistGlobalDictationHotkey({
+                          hotkey,
+                          kind: "hold",
+                        })
+                      }
+                    />
+                  }
+                />
+              ) : null}
+              {showGlobalDictationHotkeys ? (
+                <SettingsRow
                   label={t("settings.general.globalDictationToggleHotkey.label")}
                   description={globalDictationToggleHotkeyDescription}
-                >
-                  <DictationHotkeyControl
-                    capturePrompt={t(
-                      "settings.general.globalDictationHotkey.capturePrompt",
-                    )}
-                    captureAriaLabel={t(
-                      "settings.general.globalDictationToggleHotkey.captureAriaLabel",
-                    )}
-                    cancelLabel={t(
-                      "settings.general.globalDictationHotkey.cancel",
-                    )}
-                    changeLabel={t(
-                      "settings.general.globalDictationToggleHotkey.change",
-                    )}
-                    clearLabel={t(
-                      "settings.general.globalDictationToggleHotkey.clear",
-                    )}
-                    configuredHotkey={configuredGlobalDictationToggleHotkey}
-                    disabled={!isGlobalDictationHotkeySupported}
-                    isCapturing={isCapturingGlobalDictationToggleHotkey}
-                    isUpdating={isUpdatingGlobalDictationToggleHotkey}
-                    setLabel={t(
-                      "settings.general.globalDictationToggleHotkey.set",
-                    )}
-                    statusLabel={globalDictationToggleHotkeyStatusLabel}
-                    onCancelCapture={() =>
-                      setIsCapturingGlobalDictationToggleHotkey(false)
-                    }
-                    onClear={() =>
-                      void persistGlobalDictationHotkey({
-                        hotkey: null,
-                        kind: "toggle",
-                      })
-                    }
-                    onStartCapture={() => {
-                      setGlobalDictationToggleHotkeyError(null);
-                      setIsCapturingGlobalDictationToggleHotkey(true);
-                    }}
-                    onSubmit={(hotkey) =>
-                      void persistGlobalDictationHotkey({
-                        hotkey,
-                        kind: "toggle",
-                      })
-                    }
-                  />
-                </SettingRow>
-                <GlobalDictationHistorySetting
-                  copyingItemId={copyingGlobalDictationHistoryItemId}
-                  items={globalDictationHistoryItems}
-                  onCopy={(id) => void handleCopyGlobalDictationHistoryItem(id)}
-                  t={t}
+                  control={
+                    <DictationHotkeyControl
+                      capturePrompt={t(
+                        "settings.general.globalDictationHotkey.capturePrompt",
+                      )}
+                      captureAriaLabel={t(
+                        "settings.general.globalDictationToggleHotkey.captureAriaLabel",
+                      )}
+                      cancelLabel={t(
+                        "settings.general.globalDictationHotkey.cancel",
+                      )}
+                      changeLabel={t(
+                        "settings.general.globalDictationToggleHotkey.change",
+                      )}
+                      clearLabel={t(
+                        "settings.general.globalDictationToggleHotkey.clear",
+                      )}
+                      configuredHotkey={configuredGlobalDictationToggleHotkey}
+                      disabled={!isGlobalDictationHotkeySupported}
+                      isCapturing={isCapturingGlobalDictationToggleHotkey}
+                      isUpdating={isUpdatingGlobalDictationToggleHotkey}
+                      setLabel={t(
+                        "settings.general.globalDictationToggleHotkey.set",
+                      )}
+                      statusLabel={globalDictationToggleHotkeyStatusLabel}
+                      onCancelCapture={() =>
+                        setIsCapturingGlobalDictationToggleHotkey(false)
+                      }
+                      onClear={() =>
+                        void persistGlobalDictationHotkey({
+                          hotkey: null,
+                          kind: "toggle",
+                        })
+                      }
+                      onStartCapture={() => {
+                        setGlobalDictationToggleHotkeyError(null);
+                        setIsCapturingGlobalDictationToggleHotkey(true);
+                      }}
+                      onSubmit={(hotkey) =>
+                        void persistGlobalDictationHotkey({
+                          hotkey,
+                          kind: "toggle",
+                        })
+                      }
+                    />
+                  }
                 />
-                <DictationDictionarySetting
-                  entries={visibleDictationDictionaryEntries}
-                  isExpanded={isDictationDictionaryExpanded}
-                  isSaving={isSaving}
-                  onChange={setDictationDictionaryDraft}
-                  onPersist={persistDictationDictionary}
-                  onToggle={() => {
-                    setIsDictationDictionaryExpanded((current) => !current);
-                    setDictationDictionaryDraft(null);
-                  }}
-                  skipNextBlurPersistRef={skipNextDictationDictionaryBlurPersistRef}
-                  t={t}
-                />
-              </div>
-            </div>
-          </>
+              ) : null}
+              <DictationDictionarySetting
+                entries={visibleDictationDictionaryEntries}
+                isExpanded={isDictationDictionaryExpanded}
+                isSaving={isSaving}
+                onChange={setDictationDictionaryDraft}
+                onPersist={persistDictationDictionary}
+                onToggle={() => {
+                  setIsDictationDictionaryExpanded((current) => !current);
+                  setDictationDictionaryDraft(null);
+                }}
+                skipNextBlurPersistRef={skipNextDictationDictionaryBlurPersistRef}
+                t={t}
+              />
+              <GlobalDictationHistorySetting
+                copyingItemId={copyingGlobalDictationHistoryItemId}
+                items={globalDictationHistoryItems}
+                onCopy={(id) => void handleCopyGlobalDictationHistoryItem(id)}
+                t={t}
+              />
+            </SettingsSurface>
+          </SettingsGroup>
         ) : null}
-        <div className="app-card rounded-[18px] px-5 py-4">
-          <div className="app-title text-[14px] font-medium">
-            {t("settings.general.notifications")}
-          </div>
-        </div>
-        <div className="app-card rounded-[18px] px-5 py-4">
-          <div className="space-y-4 text-[14px]">
-            <SettingRow
+
+        <SettingsGroup className="gap-2">
+          <SettingsGroup.Header title={t("settings.general.notifications")} />
+          <SettingsSurface>
+            <SettingsRow
               label={t("notifications.turnMode.label")}
               description={t("notifications.turnMode.description")}
-            >
-              <SettingsChoiceMenu
-                disabled={isLoading || isSaving}
-                options={notificationTurnModeOptions}
-                value={notificationTurnMode}
-                onChange={(value) =>
-                  void persistNotificationSetting(
-                    "notifications-turn-mode",
-                    value as NotificationTurnMode,
-                    notificationTurnMode,
-                    (nextValue) => setNotificationTurnMode(nextValue),
-                  )
-                }
-              />
-            </SettingRow>
-            <SettingRow
+              control={
+                <SettingsChoiceMenu
+                  className="w-[152px]"
+                  disabled={isLoading || isSaving}
+                  options={notificationTurnModeOptions}
+                  value={notificationTurnMode}
+                  onChange={(value) =>
+                    void persistNotificationSetting(
+                      "notifications-turn-mode",
+                      value as NotificationTurnMode,
+                      notificationTurnMode,
+                      (nextValue) => setNotificationTurnMode(nextValue),
+                    )
+                  }
+                />
+              }
+            />
+            <SettingsRow
               label={t("notifications.permissions.label")}
               description={t("notifications.permissions.description")}
-            >
-              <ToggleSwitch
-                checked={notificationsPermissionsEnabled}
-                disabled={isLoading || isSaving}
-                ariaLabel={t("notifications.permissions.label")}
-                onChange={(checked) =>
-                  void persistNotificationSetting(
-                    "notifications-permissions-enabled",
-                    checked,
-                    notificationsPermissionsEnabled,
-                    (nextValue) => setNotificationsPermissionsEnabled(nextValue),
-                  )
-                }
-              />
-            </SettingRow>
-            <SettingRow
+              control={
+                <ToggleSwitch
+                  checked={notificationsPermissionsEnabled}
+                  disabled={isLoading || isSaving}
+                  ariaLabel={t("notifications.permissions.label")}
+                  onChange={(checked) =>
+                    void persistNotificationSetting(
+                      "notifications-permissions-enabled",
+                      checked,
+                      notificationsPermissionsEnabled,
+                      (nextValue) => setNotificationsPermissionsEnabled(nextValue),
+                    )
+                  }
+                />
+              }
+            />
+            <SettingsRow
               label={t("notifications.questions.label")}
               description={t("notifications.questions.description")}
-            >
-              <ToggleSwitch
-                checked={notificationsQuestionsEnabled}
-                disabled={isLoading || isSaving}
-                ariaLabel={t("notifications.questions.label")}
-                onChange={(checked) =>
-                  void persistNotificationSetting(
-                    "notifications-questions-enabled",
-                    checked,
-                    notificationsQuestionsEnabled,
-                    (nextValue) => setNotificationsQuestionsEnabled(nextValue),
-                  )
-                }
-              />
-            </SettingRow>
-          </div>
-        </div>
+              control={
+                <ToggleSwitch
+                  checked={notificationsQuestionsEnabled}
+                  disabled={isLoading || isSaving}
+                  ariaLabel={t("notifications.questions.label")}
+                  onChange={(checked) =>
+                    void persistNotificationSetting(
+                      "notifications-questions-enabled",
+                      checked,
+                      notificationsQuestionsEnabled,
+                      (nextValue) => setNotificationsQuestionsEnabled(nextValue),
+                    )
+                  }
+                />
+              }
+            />
+          </SettingsSurface>
+        </SettingsGroup>
+
         {showGpuTearingDebugSettings ? (
-          <>
-            <div className="app-card rounded-[18px] px-5 py-4">
-              <div className="space-y-1">
-                <div className="app-title text-[14px] font-medium">
-                  {t("settings.general.gpuTearingDebug")}
-                </div>
-                <p className="text-[13px] leading-5 text-[var(--app-shell-subtle)]">
-                  {t("settings.general.gpuTearingDebug.subtitle")}
-                </p>
-              </div>
-            </div>
-            <div className="app-card rounded-[18px] px-5 py-4">
-              <div className="space-y-4 text-[14px]">
-                {gpuTearingDebugSettingRows.map((setting) => (
-                  <SettingRow
-                    key={setting.key}
-                    label={setting.label}
-                    description={setting.description}
-                  >
+          <SettingsGroup className="gap-2">
+            <SettingsGroup.Header
+              title={t("settings.general.gpuTearingDebug")}
+              subtitle={t("settings.general.gpuTearingDebug.subtitle")}
+            />
+            <SettingsSurface>
+              {gpuTearingDebugSettingRows.map((setting) => (
+                <SettingsRow
+                  key={setting.key}
+                  label={setting.label}
+                  description={setting.description}
+                  control={
                     <ToggleSwitch
                       checked={gpuTearingDebugSettings[setting.key]}
                       disabled={false}
@@ -2262,18 +2288,19 @@ export function GeneralSettings({
                         persistGpuTearingDebugSetting(setting.key, checked)
                       }
                     />
-                  </SettingRow>
-                ))}
-              </div>
-            </div>
-          </>
+                  }
+                />
+              ))}
+            </SettingsSurface>
+          </SettingsGroup>
         ) : null}
+
         {error ? (
           <div className="app-card-error rounded-[18px] px-5 py-4 text-[13px]">
             {error}
           </div>
         ) : null}
-      </div>
+      </SettingsContentLayout>
       {isExternalImportDialogOpen ? (
         <ExternalImportDialog
           errorMessage={externalImportDialogError}
@@ -2668,84 +2695,6 @@ function hasSupportedAmbientSuggestionsPlan(plan: string | null | undefined): bo
     return false;
   }
   return AMBIENT_SUGGESTIONS_SUPPORTED_PLANS.has(plan.trim().toLowerCase());
-}
-
-function SettingRow({
-  label,
-  description,
-  children,
-}: {
-  label: string;
-  description?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <div className="min-w-0 flex-1">
-        <div>{label}</div>
-        {description ? (
-          <div className="app-text-muted mt-1 text-[12px] leading-5">{description}</div>
-        ) : null}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function renderLinkedDescription(description: string, href: string): ReactNode {
-  const match = description.match(/^(.*)<a>(.*)<\/a>(.*)$/);
-  if (!match) {
-    return description;
-  }
-
-  const [, prefix, linkText, suffix] = match;
-  return (
-    <>
-      {prefix}
-      <a
-        className="inline-flex text-[var(--app-shell-accent)]"
-        href={href}
-        target="_blank"
-        rel="noreferrer"
-      >
-        {linkText}
-      </a>
-      {suffix}
-    </>
-  );
-}
-
-function SegmentedControl({
-  disabled,
-  onChange,
-  options,
-  value,
-}: {
-  disabled: boolean;
-  onChange: (value: string) => void;
-  options: Array<{ value: string; label: string }>;
-  value: string;
-}) {
-  return (
-    <div className="app-segmented inline-flex rounded-[12px] p-1">
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          disabled={disabled}
-          onClick={() => onChange(option.value)}
-          className={[
-            "rounded-[9px] px-3 py-1.5 text-[13px] transition",
-            option.value === value
-              ? "app-segmented-option-active"
-              : "app-segmented-option-idle",
-          ].join(" ")}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 function OpenTargetLabel({

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { BrowserTabIcon, CloseTabIcon, CopyPathIcon } from "../../components/AppShellIcons";
+import { BrowserTabIcon, CloseTabIcon, CopyPathIcon, FolderIcon } from "../../components/AppShellIcons";
 import { ToggleSwitch } from "../../components/ToggleSwitch";
+import { Tooltip } from "../../components/Tooltip";
 import { useI18n } from "../../i18n/i18n";
 import type {
   PullRequestActivityComment,
@@ -28,6 +29,12 @@ type PullRequestReplyTarget = {
   reviewThreadId: string;
 } | null;
 
+type PullRequestRelatedThread = {
+  hostId: string;
+  id: string;
+  title: string;
+};
+
 export function PullRequestDetailPane({
   boardItem,
   codeReviewError,
@@ -39,6 +46,7 @@ export function PullRequestDetailPane({
   diffFiles,
   isCodeReviewLoading,
   onClose,
+  onOpenConversationForHost,
   onCopyGitApplyCommand,
   onCopyUrl,
   onMarkAsDraft,
@@ -49,6 +57,7 @@ export function PullRequestDetailPane({
   onPostComment,
   onPostReply,
   onRefreshCodeReview,
+  relatedThreads,
   hostId,
   onToggleAutoMerge,
   onSelectTab,
@@ -66,6 +75,7 @@ export function PullRequestDetailPane({
   diffFiles: PullRequestDiffFile[];
   isCodeReviewLoading: boolean;
   onClose: () => void;
+  onOpenConversationForHost: (threadId: string, hostId: string) => void | Promise<void>;
   onCopyGitApplyCommand: (() => void | Promise<void>) | null;
   onCopyUrl: () => void | Promise<void>;
   onMarkAsDraft: () => void | Promise<void>;
@@ -76,6 +86,7 @@ export function PullRequestDetailPane({
   onPostComment: (body: string) => void | Promise<void>;
   onPostReply: (reviewThreadId: string, body: string) => void | Promise<void>;
   onRefreshCodeReview: () => void;
+  relatedThreads: PullRequestRelatedThread[];
   hostId: string | null;
   onSelectTab: (tab: PullRequestDetailTab) => void;
   onToggleAutoMerge: () => void | Promise<void>;
@@ -87,6 +98,7 @@ export function PullRequestDetailPane({
   const [replyDraft, setReplyDraft] = useState("");
   const [replyTarget, setReplyTarget] = useState<PullRequestReplyTarget>(null);
   const [isPostingReply, setIsPostingReply] = useState(false);
+  const [isFileTreeVisible, setIsFileTreeVisible] = useState(false);
   const currentPullRequest = detail ?? null;
   const hasOpenPullRequest = detail?.hasOpenPr ?? boardItem !== null;
   const effectiveBoardItem = detail?.boardItem ?? boardItem;
@@ -102,12 +114,13 @@ export function PullRequestDetailPane({
     setCommentDraft("");
     setReplyDraft("");
     setReplyTarget(null);
+    setIsFileTreeVisible(false);
   }, [detailKey]);
 
   const headerSubtitle =
-    effectiveBoardItem != null && effectiveBoardItem.repo != null
-      ? effectiveBoardItem.repo
-      : currentPullRequest?.repo ?? null;
+    effectiveBoardItem != null
+      ? `${effectiveBoardItem.headBranch} -> ${effectiveBoardItem.baseBranch}`
+      : null;
 
   const handleSubmitComment = async () => {
     const body = commentDraft.trim();
@@ -221,30 +234,60 @@ export function PullRequestDetailPane({
         ) : null}
 
         <div className="mt-4 flex items-center justify-between gap-3">
-          <div className="inline-flex rounded-[12px] border border-[var(--app-shell-border)] bg-[var(--app-shell-card-bg-weak)] p-1">
-            <button
-              type="button"
-              aria-label={t("pullRequestsPage.detail.viewToggle.ariaLabel")}
-              aria-pressed={selectedTab === "pullRequest"}
-              onClick={() => onSelectTab("pullRequest")}
-              className={[
-                "rounded-[10px] px-3 py-1.5 text-[12px] transition-colors",
-                selectedTab === "pullRequest" ? "app-nav-item-active" : "app-nav-item-idle",
-              ].join(" ")}
-            >
-              {t("pullRequestsPage.detail.viewToggle.pullRequest")}
-            </button>
-            <button
-              type="button"
-              aria-pressed={selectedTab === "codeReview"}
-              onClick={() => onSelectTab("codeReview")}
-              className={[
-                "rounded-[10px] px-3 py-1.5 text-[12px] transition-colors",
-                selectedTab === "codeReview" ? "app-nav-item-active" : "app-nav-item-idle",
-              ].join(" ")}
-            >
-              {t("pullRequestsPage.detail.viewToggle.codeReview")}
-            </button>
+          <div className="flex items-center gap-px">
+            <div className="inline-flex rounded-[12px] border border-[var(--app-shell-border)] bg-[var(--app-shell-card-bg-weak)] p-1">
+              <button
+                type="button"
+                aria-label={t("pullRequestsPage.detail.viewToggle.ariaLabel")}
+                aria-pressed={selectedTab === "pullRequest"}
+                onClick={() => onSelectTab("pullRequest")}
+                className={[
+                  "rounded-[10px] px-3 py-1.5 text-[12px] transition-colors",
+                  selectedTab === "pullRequest" ? "app-nav-item-active" : "app-nav-item-idle",
+                ].join(" ")}
+              >
+                {t("pullRequestsPage.detail.viewToggle.pullRequest")}
+              </button>
+              <button
+                type="button"
+                aria-pressed={selectedTab === "codeReview"}
+                onClick={() => onSelectTab("codeReview")}
+                className={[
+                  "rounded-[10px] px-3 py-1.5 text-[12px] transition-colors",
+                  selectedTab === "codeReview" ? "app-nav-item-active" : "app-nav-item-idle",
+                ].join(" ")}
+              >
+                {t("pullRequestsPage.detail.viewToggle.codeReview")}
+              </button>
+            </div>
+            {selectedTab === "codeReview" ? (
+              <Tooltip
+                tooltipContent={
+                  isFileTreeVisible
+                    ? t("pullRequestsPage.codeReview.hideFileTree")
+                    : t("pullRequestsPage.codeReview.showFileTree")
+                }
+              >
+                <button
+                  type="button"
+                  aria-label={
+                    isFileTreeVisible
+                      ? t("pullRequestsPage.codeReview.hideFileTree")
+                      : t("pullRequestsPage.codeReview.showFileTree")
+                  }
+                  aria-pressed={isFileTreeVisible}
+                  onClick={() => setIsFileTreeVisible((value) => !value)}
+                  className={[
+                    "border-token-border user-select-none no-drag cursor-interaction flex h-token-button-composer aspect-square items-center justify-center gap-1 rounded-lg border px-0 py-0 text-base leading-[18px] focus:outline-none",
+                    isFileTreeVisible
+                      ? "text-token-foreground bg-token-foreground/5 enabled:hover:bg-token-foreground/10 data-[state=open]:bg-token-foreground/10"
+                      : "text-token-text-tertiary enabled:hover:bg-token-list-hover-background data-[state=open]:bg-token-list-hover-background border-transparent",
+                  ].join(" ")}
+                >
+                  <FolderIcon className="icon-xs" />
+                </button>
+              </Tooltip>
+            ) : null}
           </div>
         </div>
 
@@ -263,6 +306,30 @@ export function PullRequestDetailPane({
                 </div>
               )}
             </div>
+
+            {relatedThreads.length > 0 ? (
+              <PullRequestSection title={t("pullRequestsPage.detail.relatedThreads")}>
+                <div className="space-y-2">
+                  {relatedThreads.map((thread) => (
+                    <button
+                      key={`${thread.hostId}:${thread.id}`}
+                      type="button"
+                      onClick={() => void onOpenConversationForHost(thread.id, thread.hostId)}
+                      className="app-card-muted flex w-full items-center justify-between gap-3 rounded-[14px] px-4 py-3 text-left"
+                    >
+                      <div className="min-w-0">
+                        <div className="app-title truncate text-[13px] font-medium leading-6">
+                          {thread.title || t("pullRequestsPage.detail.relatedThreads.untitled")}
+                        </div>
+                        <div className="app-text-muted mt-1 text-[12px] leading-5">
+                          {thread.id}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </PullRequestSection>
+            ) : null}
 
             <PullRequestSection title={t("pullRequestsPage.detail.reviewers")}>
               {isInitialLoading ? (
@@ -390,6 +457,7 @@ export function PullRequestDetailPane({
             diffFiles={diffFiles}
             isCodeReviewLoading={isCodeReviewLoading}
             hostId={hostId}
+            showFileTree={isFileTreeVisible}
             onCopyGitApplyCommand={onCopyGitApplyCommand}
             onRefreshCodeReview={onRefreshCodeReview}
             onOpenCommentUrl={(url) => void openCommentUrl(url)}

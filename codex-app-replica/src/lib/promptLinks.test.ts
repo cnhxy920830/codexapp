@@ -4,7 +4,7 @@ import { classifyPromptLink } from "./promptLinks";
 
 test("classifyPromptLink resolves app and skill mentions from local snapshots", () => {
   const appSegment = classifyPromptLink({
-    label: "@Calendar",
+    label: "$Calendar",
     href: "app://google-calendar",
     apps: [
       {
@@ -23,13 +23,15 @@ test("classifyPromptLink resolves app and skill mentions from local snapshots", 
 
   assert.deepEqual(appSegment, {
     type: "app",
-    raw: "[@Calendar](app://google-calendar)",
-    label: "@Calendar",
+    raw: "[$Calendar](app://google-calendar)",
+    label: "$Calendar",
     href: "app://google-calendar",
     appId: "google-calendar",
+    name: "google-calendar",
     displayLabel: "Google Calendar",
     detail: "Manage events from markdown",
     iconSource: "https://cdn.example.com/google-calendar.png",
+    resolved: true,
   });
 
   const skillSegment = classifyPromptLink({
@@ -57,6 +59,7 @@ test("classifyPromptLink resolves app and skill mentions from local snapshots", 
   assert.equal(skillSegment.displayLabel, "Notebook Helper");
   assert.equal(skillSegment.path, "D:\\skills\\notebook-helper\\SKILL.md");
   assert.equal(skillSegment.iconSource, null);
+  assert.equal(skillSegment.resolved, true);
 });
 
 test("classifyPromptLink keeps plugin mentions and file references distinct", () => {
@@ -108,6 +111,7 @@ test("classifyPromptLink keeps plugin mentions and file references distinct", ()
     detail: "Inspect and control browser sessions",
     brandColor: "#00AAFF",
     iconSource: "https://cdn.example.com/browser-use.png",
+    resolved: true,
   });
 
   const agentSegment = classifyPromptLink({
@@ -154,4 +158,28 @@ test("classifyPromptLink keeps plugin mentions and file references distinct", ()
     column: null,
     locationSuffix: ":14",
   });
+});
+
+test("classifyPromptLink marks unresolved app, plugin, and skill mentions for raw-text fallback owners", () => {
+  const unresolvedAppSegment = classifyPromptLink({
+    label: "$Calendar",
+    href: "app://google-calendar",
+  });
+  assert.equal(unresolvedAppSegment.type, "app");
+  assert.equal(unresolvedAppSegment.resolved, false);
+  assert.equal(unresolvedAppSegment.name, "calendar");
+
+  const unresolvedPluginSegment = classifyPromptLink({
+    label: "@Browser Use",
+    href: "plugin://browser-use",
+  });
+  assert.equal(unresolvedPluginSegment.type, "plugin");
+  assert.equal(unresolvedPluginSegment.resolved, false);
+
+  const unresolvedSkillSegment = classifyPromptLink({
+    label: "$Code Review",
+    href: "D:/skills/code-review",
+  });
+  assert.equal(unresolvedSkillSegment.type, "skill");
+  assert.equal(unresolvedSkillSegment.resolved, false);
 });

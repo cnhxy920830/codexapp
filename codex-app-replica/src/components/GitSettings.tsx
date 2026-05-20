@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useId, useState, type ReactNode } from "react";
 import { useI18n } from "../i18n/i18n";
 import {
   DEFAULT_GIT_SETTINGS,
@@ -20,8 +20,11 @@ import {
 } from "../services/worktrees";
 import type { AppToast } from "./AppToastRegion";
 import { Button } from "./Button";
+import { useHotkey } from "../hooks/useHotkey";
+import { SegmentedControl } from "./SegmentedControl";
 import { SettingsContentLayout } from "./SettingsContentLayout";
 import { SettingsGroup } from "./SettingsGroup";
+import { SettingsRow } from "./SettingsRow";
 import { SettingsSectionTitle } from "./SettingsSectionTitle";
 import { SettingsSurface } from "./SettingsSurface";
 import { ToggleSwitch } from "./ToggleSwitch";
@@ -393,37 +396,16 @@ export function GitSettings({
     ]);
   });
 
-  useEffect(() => {
-    const canSaveWithHotkey =
-      (isBranchPrefixDirty && !isBranchPrefixDisabled) ||
-      (isCommitInstructionsDirty && !isCommitInstructionsDisabled) ||
-      (isPullRequestInstructionsDirty && !isPullRequestInstructionsDisabled);
+  const canSaveWithHotkey =
+    (isBranchPrefixDirty && !isBranchPrefixDisabled) ||
+    (isCommitInstructionsDirty && !isCommitInstructionsDisabled) ||
+    (isPullRequestInstructionsDirty && !isPullRequestInstructionsDisabled);
 
-    if (!canSaveWithHotkey) {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") {
-        return;
-      }
-
-      saveWithHotkey(event);
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [
-    isBranchPrefixDirty,
-    isBranchPrefixDisabled,
-    isCommitInstructionsDirty,
-    isCommitInstructionsDisabled,
-    isPullRequestInstructionsDirty,
-    isPullRequestInstructionsDisabled,
-    saveWithHotkey,
-  ]);
+  useHotkey({
+    accelerator: "CmdOrCtrl+S",
+    enabled: canSaveWithHotkey,
+    onKeyDown: saveWithHotkey,
+  });
 
   return (
     <SettingsContentLayout title={<SettingsSectionTitle slug="git-settings" />}>
@@ -536,7 +518,7 @@ export function GitSettings({
               }
             />
 
-            <div className="electron:block hidden">
+            <DesktopOnly>
               <SettingsRow
                 label={t("settings.worktrees.autoCleanup.label")}
                 description={t("settings.worktrees.autoCleanup.description")}
@@ -602,7 +584,7 @@ export function GitSettings({
                   </div>
                 }
               />
-            </div>
+            </DesktopOnly>
           </SettingsSurface>
         </SettingsGroup.Content>
       </SettingsGroup>
@@ -701,78 +683,6 @@ export function GitSettings({
   );
 }
 
-function SettingsRow({
-  className,
-  control,
-  description,
-  label,
-}: {
-  className?: string;
-  control: ReactNode;
-  description?: ReactNode;
-  label: ReactNode;
-}) {
-  return (
-    <div className={joinClasses("flex items-center justify-between gap-4 p-3", className)}>
-      <div className="flex min-w-0 items-center gap-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <div className="min-w-0 text-sm text-token-text-primary">{label}</div>
-          {description ? (
-            <div className="text-token-text-secondary min-w-0 text-sm">
-              {description}
-            </div>
-          ) : null}
-        </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">{control}</div>
-    </div>
-  );
-}
-
-function SegmentedControl({
-  ariaLabel,
-  onSelect,
-  options,
-  selectedId,
-}: {
-  ariaLabel: string;
-  onSelect: (id: string) => void;
-  options: Array<{
-    ariaLabel: string;
-    disabled?: boolean;
-    id: string;
-    label: ReactNode;
-  }>;
-  selectedId: string;
-}) {
-  return (
-    <div className="inline-flex items-center gap-0.5" role="group" aria-label={ariaLabel}>
-      {options.map((option) => {
-        const selected = option.id === selectedId;
-        const disabled = option.disabled ?? false;
-
-        return (
-          <Button
-            key={option.id}
-            color={selected ? "secondary" : "ghost"}
-            size="default"
-            aria-pressed={selected}
-            aria-label={option.ariaLabel}
-            disabled={disabled}
-            onClick={() => {
-              if (!disabled) {
-                onSelect(option.id);
-              }
-            }}
-          >
-            {option.label}
-          </Button>
-        );
-      })}
-    </div>
-  );
-}
-
 function DisableAutoCleanupDialog({
   open,
   onConfirm,
@@ -783,6 +693,8 @@ function DisableAutoCleanupDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { t } = useI18n();
+  const titleId = useId();
+  const descriptionId = useId();
 
   if (!open) {
     return null;
@@ -793,30 +705,31 @@ function DisableAutoCleanupDialog({
       <div
         aria-modal="true"
         role="dialog"
-        aria-label={t("settings.worktrees.autoCleanup.confirm.title")}
-        className="w-full max-w-[460px] rounded-[18px] border border-token-border bg-token-main-surface-primary px-5 py-5 shadow-[0_16px_40px_rgba(0,0,0,0.22)]"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+        className="w-[520px] max-w-[92vw] rounded-3xl border border-token-border bg-token-dropdown-background/90 text-token-foreground shadow-lg backdrop-blur-xl outline-none"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex flex-col gap-5">
-          <div>
-            <div className="text-[18px] font-medium text-token-text-primary">
-              {t("settings.worktrees.autoCleanup.confirm.title")}
+        <div className="flex flex-col gap-0 px-5 py-5 text-base leading-normal tracking-normal">
+          <div className="flex flex-col items-start gap-3">
+            <div className="flex min-w-0 flex-1 flex-col gap-1 self-stretch">
+              <h2 id={titleId} className="heading-dialog min-w-0 font-semibold">
+                {t("settings.worktrees.autoCleanup.confirm.title")}
+              </h2>
             </div>
           </div>
 
-          <div className="text-token-description-foreground">
+          <div id={descriptionId} className="flex w-full flex-col pt-3 first:pt-0">
             <p>{t("settings.worktrees.autoCleanup.confirm.body")}</p>
           </div>
 
-          <div>
-            <div className="flex items-center justify-end gap-2">
-              <Button color="ghost" onClick={() => onOpenChange(false)}>
-                {t("settings.worktrees.autoCleanup.confirm.cancel")}
-              </Button>
-              <Button color="danger" onClick={onConfirm}>
-                {t("settings.worktrees.autoCleanup.confirm.confirm")}
-              </Button>
-            </div>
+          <div className="flex w-full items-center justify-end gap-3 pt-3">
+            <Button color="ghost" size="toolbar" onClick={() => onOpenChange(false)}>
+              {t("settings.worktrees.autoCleanup.confirm.cancel")}
+            </Button>
+            <Button color="danger" size="toolbar" onClick={onConfirm}>
+              {t("settings.worktrees.autoCleanup.confirm.confirm")}
+            </Button>
           </div>
         </div>
       </div>
@@ -833,7 +746,7 @@ function DialogOverlay({
 }) {
   return (
     <div
-      className="fixed inset-0 z-30 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4"
+      className="codex-dialog-overlay fixed inset-0 z-50 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4"
       onClick={onDismiss}
     >
       {children}
@@ -841,6 +754,6 @@ function DialogOverlay({
   );
 }
 
-function joinClasses(...values: Array<string | false | null | undefined>) {
-  return values.filter((value): value is string => Boolean(value)).join(" ");
+function DesktopOnly({ children }: { children: ReactNode }) {
+  return <>{children}</>;
 }

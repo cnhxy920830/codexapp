@@ -593,15 +593,17 @@ function commitNumberValue(
   onCommit: (value: number) => void,
   setDraft: (value: string) => void,
 ) {
-  const parsed = Number(draft);
+  void min;
+  void max;
+
+  const parsed = Number.parseFloat(draft);
   if (!Number.isFinite(parsed)) {
     setDraft(String(fallback));
     return;
   }
-  const clamped = Math.min(max, Math.max(min, Math.round(parsed)));
-  setDraft(String(clamped));
-  if (clamped !== fallback) {
-    onCommit(clamped);
+  setDraft(String(parsed));
+  if (parsed !== fallback) {
+    onCommit(parsed);
   }
 }
 

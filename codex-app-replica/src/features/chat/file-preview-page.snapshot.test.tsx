@@ -158,11 +158,12 @@ function makePdbAtomLine({
   element: string;
 }) {
   return [
-    "ATOM  ",
+    "ATOM".padEnd(6, " "),
     String(serial).padStart(5, " "),
-    "  ",
-    atomName.padEnd(4, " "),
-    residueName.padStart(4, " "),
+    " ",
+    atomName.padStart(4, " "),
+    " ",
+    residueName.padStart(3, " "),
     " ",
     chainId.slice(0, 1),
     String(residueNumber).padStart(4, " "),
@@ -170,7 +171,7 @@ function makePdbAtomLine({
     x.toFixed(3).padStart(8, " "),
     y.toFixed(3).padStart(8, " "),
     z.toFixed(3).padStart(8, " "),
-    "  1.00",
+    "1.00".padStart(6, " "),
     bFactor.toFixed(2).padStart(6, " "),
     "          ",
     element.padStart(2, " "),

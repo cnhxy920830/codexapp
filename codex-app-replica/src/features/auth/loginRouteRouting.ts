@@ -3,20 +3,20 @@ import type { AuthState } from "../../services/auth";
 export type LoginOnboardingRouteTarget = "app" | "login" | "select-workspace" | "welcome";
 
 type ResolveLoginOnboardingRouteTargetParams = {
-  activeWorkspaceRootCount: number | null;
+  workspaceRootCount: number | null;
   authState: Pick<AuthState, "authMethod" | "requiresAuth">;
   forcedOverride: string | null;
-  isActiveWorkspaceRootsLoading: boolean;
+  isWorkspaceRootsLoading: boolean;
   isAuthLoading: boolean;
   postLoginWelcomePending: boolean;
   projectlessOnboardingCompleted: boolean;
 };
 
 export function resolveLoginOnboardingRouteTarget({
-  activeWorkspaceRootCount,
+  workspaceRootCount,
   authState,
   forcedOverride,
-  isActiveWorkspaceRootsLoading,
+  isWorkspaceRootsLoading,
   isAuthLoading,
   postLoginWelcomePending,
   projectlessOnboardingCompleted,
@@ -38,15 +38,15 @@ export function resolveLoginOnboardingRouteTarget({
     return "app";
   }
 
-  if (isActiveWorkspaceRootsLoading || activeWorkspaceRootCount === null) {
+  if (isWorkspaceRootsLoading || workspaceRootCount === null) {
     return null;
   }
 
-  if (postLoginWelcomePending && activeWorkspaceRootCount === 0) {
+  if (postLoginWelcomePending && workspaceRootCount === 0) {
     return "welcome";
   }
 
-  return activeWorkspaceRootCount === 0 ? "select-workspace" : "app";
+  return workspaceRootCount === 0 ? "select-workspace" : "app";
 }
 
 export function isLoginOnboardingRoute(pathname: string) {

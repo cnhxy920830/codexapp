@@ -43,6 +43,14 @@ test("data controls settings keeps extracted archived row structure and optimist
   assert.match(source, /className="truncate text-token-text-secondary"/);
   assert.match(source, /size="toolbar"/);
   assert.match(source, /loading=\{isPending\}/);
+  assert.match(
+    source,
+    /thread\.name\?\.trim\(\) \|\| thread\.preview\.trim\(\) \|\| t\("settings\.dataControls\.archivedChats\.untitled"\)/,
+  );
+  assert.doesNotMatch(
+    source,
+    /\(thread\.name \?\? thread\.preview\)\.trim\(\) \|\| t\("settings\.dataControls\.archivedChats\.untitled"\)/,
+  );
   assert.match(source, /t\("settings\.dataControls\.archivedChats\.untitled"\)/);
   assert.match(source, /t\("settings\.dataControls\.archivedChats\.dateTimeWithRepo"/);
   assert.match(source, /t\("settings\.dataControls\.archivedChats\.dateTime"/);

@@ -553,17 +553,13 @@ export function ComputerUseSettings({
             </SettingsGroup.Content>
           </SettingsGroup>
 
-          <SettingsGroup>
-            <SettingsGroup.Content>
-              <SoundModeSelector
-                isLoading={soundModeLoading}
-                isPending={soundModePending}
-                onChange={(value) => void handleSoundModeChange(value)}
-                options={soundOptions}
-                value={soundMode}
-              />
-            </SettingsGroup.Content>
-          </SettingsGroup>
+          <SoundModeSelector
+            isLoading={soundModeLoading}
+            isPending={soundModePending}
+            onChange={(value) => void handleSoundModeChange(value)}
+            options={soundOptions}
+            value={soundMode}
+          />
         </>
       ) : null}
     </SettingsContentLayout>
@@ -1125,8 +1121,9 @@ function ComputerUseAllowedAppsList({
         />
       ) : (
         approvedApps.map((approvedApp) => (
-          <ComputerUseSettingsRow
+          <SettingsRow
             key={approvedApp.bundleIdentifier}
+            className="items-start max-sm:flex-col max-sm:items-stretch"
             control={
               <Button
                 aria-label={t("settings.computerUse.allowedApps.removeAriaLabel", {
@@ -1229,46 +1226,6 @@ function StatusBadge({ installed }: { installed: boolean }) {
       />
       {installed ? t("settings.computerUse.chrome.connected") : t("settings.computerUse.chrome.notConnected")}
     </span>
-  );
-}
-
-function ComputerUseSettingsRow({
-  control,
-  description,
-  descriptionTone,
-  icon,
-  label,
-}: {
-  control?: ReactNode;
-  description?: ReactNode;
-  descriptionTone?: "danger" | "success";
-  icon?: ReactNode;
-  label: ReactNode;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4 p-3 max-sm:flex-col max-sm:items-stretch">
-      <div className="flex min-w-0 flex-1 items-start gap-3">
-        {icon ? <div className="shrink-0">{icon}</div> : null}
-        <div className="min-w-0 flex-1">
-          <div className="text-sm text-token-text-primary">{label}</div>
-          {description ? (
-            <div
-              className={joinClasses(
-                "mt-1 text-sm leading-6",
-                descriptionTone === "success"
-                  ? "text-[var(--color-text-success)]"
-                  : descriptionTone === "danger"
-                    ? "text-token-charts-red"
-                    : "text-token-text-secondary",
-              )}
-            >
-              {description}
-            </div>
-          ) : null}
-        </div>
-      </div>
-      {control ? <div className="shrink-0">{control}</div> : null}
-    </div>
   );
 }
 

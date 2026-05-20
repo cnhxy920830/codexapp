@@ -70,6 +70,26 @@ export type AutomationsPageMessageKey =
   | "settings.automations.timePicker.setTime"
   | "settings.automations.scheduleCustomLabel"
   | "settings.automations.scheduleCustomPlaceholder"
+  | "settings.automations.saveTooltip.combined.create"
+  | "settings.automations.saveTooltip.combined.save"
+  | "settings.automations.saveTooltip.item.name.create"
+  | "settings.automations.saveTooltip.item.name.save"
+  | "settings.automations.saveTooltip.item.prompt.create"
+  | "settings.automations.saveTooltip.item.prompt.save"
+  | "settings.automations.saveTooltip.item.cwd.create"
+  | "settings.automations.saveTooltip.item.cwd.save"
+  | "settings.automations.saveTooltip.item.thread.create"
+  | "settings.automations.saveTooltip.item.thread.save"
+  | "settings.automations.saveTooltip.item.executionEnvironment.create"
+  | "settings.automations.saveTooltip.item.executionEnvironment.save"
+  | "settings.automations.saveTooltip.item.model.create"
+  | "settings.automations.saveTooltip.item.model.save"
+  | "settings.automations.saveTooltip.item.schedule.create"
+  | "settings.automations.saveTooltip.item.schedule.save"
+  | "settings.automations.banner.tooltipLabel"
+  | "settings.automations.banner.danger"
+  | "settings.automations.banner.defaultHowTo.readOnly"
+  | "settings.automations.banner.defaultHowTo.default"
   | "inbox.rightPanel.quickStart.section.statusReports"
   | "inbox.rightPanel.quickStart.section.releasePrep"
   | "inbox.rightPanel.quickStart.section.incidentsAndTriage"
@@ -268,6 +288,31 @@ Constraints:
     "settings.automations.scheduleCustomLabel": "Custom RRULE",
     "settings.automations.scheduleCustomPlaceholder":
       "RRULE:FREQ=MONTHLY;BYMONTHDAY=1;BYHOUR=9;BYMINUTE=0",
+    "settings.automations.saveTooltip.combined.create": "{requirements} to create",
+    "settings.automations.saveTooltip.combined.save": "{requirements} to save",
+    "settings.automations.saveTooltip.item.name.create": "Create title",
+    "settings.automations.saveTooltip.item.name.save": "create title",
+    "settings.automations.saveTooltip.item.prompt.create": "Add prompt",
+    "settings.automations.saveTooltip.item.prompt.save": "add prompt",
+    "settings.automations.saveTooltip.item.cwd.create": "Select project",
+    "settings.automations.saveTooltip.item.cwd.save": "select project",
+    "settings.automations.saveTooltip.item.thread.create": "Select chat",
+    "settings.automations.saveTooltip.item.thread.save": "select chat",
+    "settings.automations.saveTooltip.item.executionEnvironment.create":
+      "Choose where to run it",
+    "settings.automations.saveTooltip.item.executionEnvironment.save":
+      "choose where to run it",
+    "settings.automations.saveTooltip.item.model.create": "Choose a model",
+    "settings.automations.saveTooltip.item.model.save": "choose a model",
+    "settings.automations.saveTooltip.item.schedule.create": "Fix the schedule",
+    "settings.automations.saveTooltip.item.schedule.save": "fix the schedule",
+    "settings.automations.banner.tooltipLabel": "Automation sandbox details",
+    "settings.automations.banner.danger":
+      "Automations run with the default sandbox mode (currently full access). Full access background automations are high risk: Codex may modify files, execute commands, and access the network without asking. We recommend changing the sandbox mode to workspace write and using <rulesDocsLink>rules</rulesDocsLink> to selectively define which commands agents can run with full access.",
+    "settings.automations.banner.defaultHowTo.readOnly":
+      "Automations run with the default sandbox mode (currently read-only). If tool calls need to modify files, access the network, or use computer applications, they will fail. We recommend updating the sandbox to workspace write.",
+    "settings.automations.banner.defaultHowTo.default":
+      "Automations run with the default sandbox mode. If tool calls need to modify files outside the workspace, access the network, or use computer applications, they will fail. You can use <rulesDocsLink>rules</rulesDocsLink> to selectively allow specific commands to run outside the sandbox.",
     "inbox.rightPanel.quickStart.section.statusReports": "Status reports",
     "inbox.rightPanel.quickStart.section.releasePrep": "Release prep",
     "inbox.rightPanel.quickStart.section.incidentsAndTriage":
@@ -478,6 +523,31 @@ Constraints:
     "settings.automations.scheduleCustomLabel": "自定义 RRULE",
     "settings.automations.scheduleCustomPlaceholder":
       "RRULE:FREQ=MONTHLY;BYMONTHDAY=1;BYHOUR=9;BYMINUTE=0",
+    "settings.automations.saveTooltip.combined.create": "{requirements} to create",
+    "settings.automations.saveTooltip.combined.save": "{requirements} to save",
+    "settings.automations.saveTooltip.item.name.create": "创建标题",
+    "settings.automations.saveTooltip.item.name.save": "创建标题",
+    "settings.automations.saveTooltip.item.prompt.create": "添加提示词",
+    "settings.automations.saveTooltip.item.prompt.save": "添加提示词",
+    "settings.automations.saveTooltip.item.cwd.create": "选择项目",
+    "settings.automations.saveTooltip.item.cwd.save": "选择项目",
+    "settings.automations.saveTooltip.item.thread.create": "选择对话",
+    "settings.automations.saveTooltip.item.thread.save": "选择对话",
+    "settings.automations.saveTooltip.item.executionEnvironment.create":
+      "选择运行位置",
+    "settings.automations.saveTooltip.item.executionEnvironment.save":
+      "选择运行位置",
+    "settings.automations.saveTooltip.item.model.create": "选择模型",
+    "settings.automations.saveTooltip.item.model.save": "选择模型",
+    "settings.automations.saveTooltip.item.schedule.create": "修复计划",
+    "settings.automations.saveTooltip.item.schedule.save": "修复计划",
+    "settings.automations.banner.tooltipLabel": "自动化沙盒详情",
+    "settings.automations.banner.danger":
+      "自动化任务以默认沙盒设置（当前为全权限）运行。全权限后台自动化存在较高风险，Codex 可能无需询问即修改文件、执行命令及访问网络。建议将沙盒设置为工作空间写入权限，并通过<rulesDocsLink>规则</rulesDocsLink>选择性定义代理可全权限运行的命令。",
+    "settings.automations.banner.defaultHowTo.readOnly":
+      "自动化任务以默认沙盒设置（当前为只读）运行。若工具调用需修改文件、访问网络或操作电脑应用，该操作将执行失败。建议将沙盒更新为工作空间写入权限。",
+    "settings.automations.banner.defaultHowTo.default":
+      "自动化任务以默认沙盒设置运行。若工具调用需修改工作空间外文件、访问网络或操作电脑应用，该操作将执行失败。可通过<rulesDocsLink>规则</rulesDocsLink>选择性允许特定命令在沙盒外运行。",
     "inbox.rightPanel.quickStart.section.statusReports": "Status reports",
     "inbox.rightPanel.quickStart.section.releasePrep": "Release prep",
     "inbox.rightPanel.quickStart.section.incidentsAndTriage":

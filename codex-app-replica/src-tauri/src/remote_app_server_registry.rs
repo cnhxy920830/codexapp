@@ -56,6 +56,7 @@ pub struct RemoteAppServerHostStatus {
     pub auto_connect: bool,
     pub app_server_version: Option<String>,
     pub installed_codex_version: Option<String>,
+    pub codex_home: Option<String>,
 }
 
 #[derive(Default)]
@@ -75,6 +76,7 @@ struct RegistryEntry {
     auto_connect: bool,
     app_server_version: Option<String>,
     installed_codex_version: Option<String>,
+    codex_home: Option<String>,
 }
 
 impl RemoteAppServerRegistry {
@@ -88,6 +90,7 @@ impl RemoteAppServerRegistry {
             auto_connect: entry.auto_connect,
             app_server_version: entry.app_server_version,
             installed_codex_version: entry.installed_codex_version,
+            codex_home: entry.codex_home,
         }
     }
 
@@ -103,6 +106,7 @@ impl RemoteAppServerRegistry {
                 auto_connect: entry.auto_connect,
                 app_server_version: entry.app_server_version.clone(),
                 installed_codex_version: entry.installed_codex_version.clone(),
+                codex_home: entry.codex_home.clone(),
             })
             .collect();
         entries.sort_by(|left, right| left.host_id.cmp(&right.host_id));
@@ -137,11 +141,13 @@ impl RemoteAppServerRegistry {
         host_id: &str,
         app_server_version: Option<String>,
         installed_codex_version: Option<String>,
+        codex_home: Option<String>,
     ) {
         let mut guard = self.inner.lock().expect("registry mutex poisoned");
         let entry = guard.hosts.entry(host_id.to_string()).or_default();
         entry.app_server_version = app_server_version;
         entry.installed_codex_version = installed_codex_version;
+        entry.codex_home = codex_home;
     }
 
     pub fn forget(&self, host_id: &str) {
@@ -209,6 +215,7 @@ mod tests {
         assert!(response.error.is_none());
         assert!(response.app_server_version.is_none());
         assert!(response.installed_codex_version.is_none());
+        assert!(response.codex_home.is_none());
     }
 
     #[test]
@@ -225,6 +232,7 @@ mod tests {
         assert!(!entries[0].auto_connect);
         assert!(entries[0].app_server_version.is_none());
         assert!(entries[0].installed_codex_version.is_none());
+        assert!(entries[0].codex_home.is_none());
     }
 
     #[test]
@@ -293,6 +301,7 @@ mod tests {
         assert!(value["error"].is_null());
         assert!(value["appServerVersion"].is_null());
         assert!(value["installedCodexVersion"].is_null());
+        assert!(value["codexHome"].is_null());
     }
 
     #[test]
@@ -304,6 +313,7 @@ mod tests {
             auto_connect: true,
             app_server_version: Some("0.129.0".into()),
             installed_codex_version: Some("0.130.0".into()),
+            codex_home: Some("D:/Users/demo/.codex".into()),
         };
         let value = serde_json::to_value(&status).expect("serialize");
         assert_eq!(value["hostId"], "h");
@@ -312,6 +322,7 @@ mod tests {
         assert_eq!(value["autoConnect"], true);
         assert_eq!(value["appServerVersion"], "0.129.0");
         assert_eq!(value["installedCodexVersion"], "0.130.0");
+        assert_eq!(value["codexHome"], "D:/Users/demo/.codex");
     }
 
     #[test]
@@ -321,10 +332,12 @@ mod tests {
             "host-f",
             Some("0.129.0".to_string()),
             Some("0.130.0".to_string()),
+            Some("D:/Users/demo/.codex".to_string()),
         );
 
         let snapshot = registry.snapshot("host-f");
         assert_eq!(snapshot.app_server_version.as_deref(), Some("0.129.0"));
         assert_eq!(snapshot.installed_codex_version.as_deref(), Some("0.130.0"));
+        assert_eq!(snapshot.codex_home.as_deref(), Some("D:/Users/demo/.codex"));
     }
 }

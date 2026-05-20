@@ -10,6 +10,7 @@ import {
   WorktreeIcon,
 } from "./AppShellIcons";
 import { Button } from "./Button";
+import { CodeSnippet } from "./CodeSnippet";
 import { SettingsContentLayout } from "./SettingsContentLayout";
 import { SettingsGroup } from "./SettingsGroup";
 import { SettingsSectionTitle } from "./SettingsSectionTitle";
@@ -98,6 +99,7 @@ type EditableLocalEnvironmentDocument = Omit<LocalEnvironmentDocument, "actions"
 export function LocalEnvironmentsSettings({
   codexHome,
   onConsumePendingViewAction,
+  onRequestOpenRemoteProjectDialog,
   pendingViewAction,
   routeSearch,
   selectedHostId,
@@ -107,6 +109,7 @@ export function LocalEnvironmentsSettings({
 }: {
   codexHome: string | null;
   onConsumePendingViewAction?: () => void;
+  onRequestOpenRemoteProjectDialog?: () => void;
   pendingViewAction?: "open-create-remote-project-modal" | null;
   routeSearch?: string;
   selectedHostId: string;
@@ -860,7 +863,7 @@ export function LocalEnvironmentsSettings({
 
   const handleAddProject = async () => {
     if (isRemoteHost) {
-      setIsRemoteProjectDialogOpen(true);
+      onRequestOpenRemoteProjectDialog?.();
       return;
     }
     await addNewWorkspaceRootOption();
@@ -869,48 +872,29 @@ export function LocalEnvironmentsSettings({
   const handleSaveRemoteProject = async ({ hostId, remotePath }: { hostId: string; remotePath: string }) => {
     setIsRemoteProjectSaving(true);
     try {
-      const response = await saveRemoteProject({
+      await saveRemoteProject({
         hostId,
         remotePath,
       });
       setIsRemoteProjectDialogOpen(false);
-      setIsEditMode(false);
-      setSelectedConfigPath(null);
-      setSelectedWorkspaceRoot(response.project.remotePath);
-      setReloadVersion((current) => current + 1);
-      onUpdateRouteSearch?.(
-        buildLocalEnvironmentRouteSearch({
-          workspaceRoot: response.project.remotePath,
-          mode: "preview",
-        }),
-      );
-      if (hostId !== selectedHostId) {
-        onSelectHostId?.(hostId);
-      }
     } catch {
       onShowToast?.({
         tone: "error",
-        message: t("settings.localEnvironments.remoteProjectDialog.saveError"),
+        message: t("projectSetupDialog.saveError"),
       });
     } finally {
       setIsRemoteProjectSaving(false);
     }
   };
 
-  if (isWorkspaceRootsLoading) {
-    return (
-      <LocalEnvironmentsPageFrame subtitle={t("settings.localEnvironments.workspaceSelect.description")}>
-        <LoadingOrUnavailableGroup
-          body={t("settings.localEnvironments.loading.body")}
-          title={t("settings.localEnvironments.loading.title")}
-        />
-      </LocalEnvironmentsPageFrame>
-    );
-  }
-
   if (isSelectProjectMode) {
     return (
-      <LocalEnvironmentsPageFrame subtitle={renderLearnMoreDescription(t("settings.localEnvironments.workspaceSelect.description"))}>
+      <LocalEnvironmentsPageFrame
+        subtitle={renderLearnMoreDescription(
+          t("settings.localEnvironments.workspaceSelect.description"),
+          t("settings.localEnvironments.workspaceSelect.learnMore"),
+        )}
+      >
         <WorkspaceSelectionCard
           groups={workspaceProjectGroups}
           hostId={selectedHostId}
@@ -919,7 +903,6 @@ export function LocalEnvironmentsSettings({
           onCreateEnvironment={createWorkspaceEnvironment}
           onSelectEnvironment={selectWorkspaceEnvironment}
         />
-        {workspaceRootsErrorMessage ? <InlineError message={workspaceRootsErrorMessage} /> : null}
       </LocalEnvironmentsPageFrame>
     );
   }
@@ -1025,6 +1008,7 @@ export function LocalEnvironmentsSettings({
           connectedRemoteConnections={connectedRemoteConnections}
           initialHostId={isRemoteHost ? selectedHostId : connectedRemoteConnections[0]?.hostId ?? LOCAL_SETTINGS_HOST_ID}
           isSaving={isRemoteProjectSaving}
+          remoteProjects={remoteProjects}
           onClose={() => {
             if (!isRemoteProjectSaving) {
               setIsRemoteProjectDialogOpen(false);
@@ -1275,9 +1259,7 @@ function WorkspaceSelectionProjectCard({
           onClick={() => {
             if (preferredProjectEntry) {
               onSelectEnvironment(workspaceRoot, preferredProjectEntry.configPath);
-              return;
             }
-            setIsExpanded((current) => !current);
           }}
           className="flex min-w-0 items-center gap-3 text-left"
         >
@@ -2187,16 +2169,13 @@ function EnvVarRow({ description, variable }: { description: string; variable: s
 
 function CodeBlock({ script }: { script: string }) {
   return (
-    <SettingsSurface>
-      <pre className="max-h-40 overflow-x-auto whitespace-pre-wrap p-3 font-mono text-[12px] leading-6 text-token-text-primary">
-        {script}
-      </pre>
-    </SettingsSurface>
+    <CodeSnippet
+      codeContainerClassName="max-h-40"
+      content={script}
+      language="bash"
+      shouldWrapCode
+    />
   );
-}
-
-function InlineError({ message }: { message: string }) {
-  return <div className="mt-3 text-sm text-token-error-foreground">{message}</div>;
 }
 
 function toEditableDocument(document: LocalEnvironmentDocument): EditableLocalEnvironmentDocument {
@@ -2290,15 +2269,14 @@ function getWorkspaceRootLabel(workspaceRoot: string, labels: Record<string, str
   return getLocalEnvironmentProjectName(workspaceRoot) ?? workspaceRoot;
 }
 
-function renderLearnMoreDescription(description: string) {
-  const marker = "Learn more.";
-  const markerIndex = description.indexOf(marker);
+function renderLearnMoreDescription(description: string, learnMoreLabel: string) {
+  const markerIndex = description.indexOf(learnMoreLabel);
   if (markerIndex === -1) {
     return description;
   }
 
   const prefix = description.slice(0, markerIndex);
-  const suffix = description.slice(markerIndex + marker.length);
+  const suffix = description.slice(markerIndex + learnMoreLabel.length);
   return (
     <>
       {prefix}
@@ -2308,7 +2286,7 @@ function renderLearnMoreDescription(description: string) {
         target="_blank"
         rel="noreferrer"
       >
-        {marker}
+        {learnMoreLabel}
       </a>
       {suffix}
     </>

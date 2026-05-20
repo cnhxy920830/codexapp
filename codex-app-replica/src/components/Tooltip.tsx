@@ -11,10 +11,39 @@ import { createPortal } from "react-dom";
 
 type TooltipAlign = "start" | "center" | "end";
 type TooltipSide = "top" | "bottom";
+type TooltipKeycapVariant = "default" | "button";
+
+export function TooltipKeycap({
+  className,
+  keysLabel,
+  variant = "default",
+}: {
+  className?: string;
+  keysLabel: string;
+  variant?: TooltipKeycapVariant;
+}) {
+  const variantClass =
+    variant === "button"
+      ? "h-4 min-w-4 items-center justify-center !px-1.5 !py-0 !leading-4"
+      : "!px-1.5 !py-0.5 !leading-none";
+
+  return (
+    <kbd
+      className={joinClasses(
+        "inline-flex !rounded-md !border-0 !bg-current/10 !font-sans !text-xs !text-current !shadow-none",
+        variantClass,
+        className,
+      )}
+    >
+      {keysLabel}
+    </kbd>
+  );
+}
 
 export function Tooltip({
   align = "center",
   children,
+  delayDuration = 0,
   disabled = false,
   side = "top",
   sideOffset = 2,
@@ -24,6 +53,7 @@ export function Tooltip({
 }: {
   align?: TooltipAlign;
   children: ReactElement;
+  delayDuration?: number;
   disabled?: boolean;
   side?: TooltipSide;
   sideOffset?: number;
@@ -35,10 +65,20 @@ export function Tooltip({
   const triggerRef = useRef<HTMLSpanElement | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
+  const openTimeoutRef = useRef<number | null>(null);
   const [position, setPosition] = useState<{
     left: number;
     top: number;
   } | null>(null);
+
+  useLayoutEffect(() => {
+    return () => {
+      if (openTimeoutRef.current !== null && typeof window !== "undefined") {
+        window.clearTimeout(openTimeoutRef.current);
+        openTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   useLayoutEffect(() => {
     if (disabled || !isOpen || typeof window === "undefined") {
@@ -94,6 +134,31 @@ export function Tooltip({
     return children;
   }
 
+  const clearScheduledOpen = () => {
+    if (openTimeoutRef.current !== null && typeof window !== "undefined") {
+      window.clearTimeout(openTimeoutRef.current);
+      openTimeoutRef.current = null;
+    }
+  };
+
+  const openTooltip = () => {
+    clearScheduledOpen();
+    if (delayDuration <= 0 || typeof window === "undefined") {
+      setIsOpen(true);
+      return;
+    }
+
+    openTimeoutRef.current = window.setTimeout(() => {
+      openTimeoutRef.current = null;
+      setIsOpen(true);
+    }, delayDuration);
+  };
+
+  const closeTooltip = () => {
+    clearScheduledOpen();
+    setIsOpen(false);
+  };
+
   const describedChild = cloneElement(
     children as ReactElement<{ "aria-describedby"?: string }>,
     {
@@ -106,23 +171,15 @@ export function Tooltip({
       <span
         ref={triggerRef}
         className="inline-flex min-w-0"
-        onBlur={() => {
-          setIsOpen(false);
-        }}
-        onFocus={() => {
-          setIsOpen(true);
-        }}
+        onBlur={closeTooltip}
+        onFocus={openTooltip}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
-            setIsOpen(false);
+            closeTooltip();
           }
         }}
-        onPointerEnter={() => {
-          setIsOpen(true);
-        }}
-        onPointerLeave={() => {
-          setIsOpen(false);
-        }}
+        onPointerEnter={openTooltip}
+        onPointerLeave={closeTooltip}
       >
         {describedChild}
       </span>
@@ -154,4 +211,8 @@ function clampTooltipPosition(value: number, minimum: number, maximum: number) {
   }
 
   return Math.max(minimum, Math.min(value, maximum));
+}
+
+function joinClasses(...values: Array<string | false | null | undefined>) {
+  return values.filter((value): value is string => Boolean(value)).join(" ");
 }

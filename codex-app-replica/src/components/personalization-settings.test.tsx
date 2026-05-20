@@ -33,7 +33,8 @@ test("personalization settings keeps extracted shared shell and section order", 
   );
   assert.match(source, /<CustomInstructionsGroup/);
   assert.match(source, /<PersonalizationMemorySettings/);
-  assert.match(source, /SettingsChoiceMenu[\s\S]*className="w-\[260px\]"/);
+  assert.match(source, /SettingsChoiceMenu[\s\S]*className="w-\[240px\]"/);
+  assert.match(source, /SettingsChoiceMenu[\s\S]*menuClassName="w-\[260px\] max-w-xs"/);
 
   const personalityIndex = source.indexOf(
     'label={t("settings.personalization.personality.label")}',
@@ -53,7 +54,9 @@ test("personalization settings uses extracted host-aware services and hotkey sav
   assert.match(source, /setPersonalityForHost\(\{\s*hostId: selectedHostId,/s);
   assert.match(source, /readCodexAgentsMd\(selectedHostId\)/);
   assert.match(source, /writeCodexAgentsMd\(\{\s*hostId: selectedHostId,/s);
-  assert.match(source, /event\.key\.toLowerCase\(\) !== "s"/);
+  assert.match(source, /useHotkey\(\{\s*accelerator: "CmdOrCtrl\+S",/s);
+  assert.match(source, /onKeyDown: \(event\) => \{\s*event\.preventDefault\(\);\s*void saveCodexAgentsDocument\(\);/s);
+  assert.doesNotMatch(source, /window\.addEventListener\("keydown", handleKeyDown\)/);
   assert.doesNotMatch(source, /workspaceRoot\]/);
 });
 
@@ -68,6 +71,11 @@ test("personalization memory settings keeps extracted host-aware memory and chro
     /!enabled && isLocalHost[\s\S]*keyPath: "features\.chronicle"[\s\S]*value: false/s,
   );
   assert.match(source, /disabled=\{isBusy \|\| !state\.featureEnabled\}/);
+  assert.match(source, /role="dialog"/);
+  assert.match(source, /aria-modal="true"/);
+  assert.match(source, /w-\[420px\] max-w-\[92vw\] rounded-3xl border border-token-border bg-token-dropdown-background\/90 text-token-foreground shadow-lg backdrop-blur-xl outline-none/);
+  assert.match(source, /<Button color="ghost" disabled=\{isResetting\} onClick=\{onCancel\} size="toolbar">/);
+  assert.match(source, /<Button color="danger" loading=\{isResetting\} onClick=\{onConfirm\} size="toolbar">/);
 });
 
 test("chronicle settings renders as extracted shared settings row", () => {

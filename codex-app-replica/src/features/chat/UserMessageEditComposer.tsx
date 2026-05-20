@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "../../components/Button";
-import { ScratchpadPromptInput } from "../scratchpad/ScratchpadPromptInput";
+import { PromptEditor } from "../promptEditor";
 import { readAppsSnapshot, type AppInfo } from "../../services/apps";
 import { readSkillsSnapshot, type SkillSummary } from "../../services/skills";
 import type { MessageKey } from "../../i18n/messages";
@@ -70,9 +70,10 @@ export function UserMessageEditComposer({
     >
       <div className="relative z-10 flex min-h-0 flex-1 flex-col">
         <div className="mb-2 flex-grow overflow-y-auto px-3 pt-3">
-          <ScratchpadPromptInput
+          <PromptEditor
             ariaLabel={t("app.chat.userMessage.editTextareaAriaLabel")}
             autoFocus
+            hostId={hostId}
             isIndented={false}
             onChange={handleDraftChange}
             onIndent={() => undefined}
@@ -82,6 +83,7 @@ export function UserMessageEditComposer({
             value={value}
             apps={apps}
             skills={skills}
+            t={t}
           />
         </div>
         <div className="flex justify-end gap-1.5 px-3 pb-3">

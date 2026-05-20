@@ -7,6 +7,7 @@ import test from "node:test";
 
 const COMPONENT_SOURCE_PATH = path.join(process.cwd(), "src/components/BrowserUseSettings.tsx");
 const SERVICE_SOURCE_PATH = path.join(process.cwd(), "src/services/browserUseSettings.ts");
+const STATSIG_SOURCE_PATH = path.join(process.cwd(), "src/features/statsig/replicaStatsig.ts");
 
 test("browser use settings keeps extracted page shell and browser plugin ownership", () => {
   const source = readSource(COMPONENT_SOURCE_PATH);
@@ -44,8 +45,24 @@ test("browser use settings keeps extracted data and permissions row structure", 
 test("browser use settings keeps extracted approval learn-more link and warning row", () => {
   const source = readSource(COMPONENT_SOURCE_PATH);
 
+  assert.match(
+    source,
+    /const BROWSER_USE_APPROVAL_LINK_DYNAMIC_CONFIG = "4168530037";/,
+  );
+  assert.match(
+    source,
+    /const browserUseLearnMoreDynamicConfig = useReplicaStatsigDynamicConfigValue\(\s*BROWSER_USE_APPROVAL_LINK_DYNAMIC_CONFIG,\s*\)/s,
+  );
+  assert.match(
+    source,
+    /const browserUseLearnMoreUrl = resolveBrowserUseLearnMoreUrl\(\s*browserUseLearnMoreDynamicConfig,\s*\)/s,
+  );
   assert.match(source, /renderInlineTagButton\(\s*t\("settings\.browserUse\.approval\.description"\),\s*"learnMoreLink"/s);
-  assert.match(source, /openInBrowser\(BROWSER_USE_LEARN_MORE_URL\)/);
+  assert.match(source, /openInBrowser\(browserUseLearnMoreUrl\)/);
+  assert.match(source, /function resolveBrowserUseLearnMoreUrl\(dynamicConfig: unknown\)/);
+  assert.match(source, /const parsedUrl = new URL\(configuredUrl\);/);
+  assert.match(source, /if \(parsedUrl\.protocol === "https:"\)/);
+  assert.match(source, /return BROWSER_USE_LEARN_MORE_URL;/);
   assert.match(source, /warning:\s*t\("settings\.browserUse\.approval\.neverAsk\.elevatedRiskDisclaimer"\)/);
   assert.match(source, /warningIcon:\s*\(\s*<ElevatedRiskIcon className="icon-xs shrink-0 text-token-editor-warning-foreground" \/>/s);
 });
@@ -81,6 +98,22 @@ test("browser use settings service uses extracted browser-use command contract",
   assert.match(source, /invoke<BrowserUseSettingsState>\("browser-use-file-transfer-origin-add", \{/);
   assert.match(source, /invoke<BrowserUseSettingsState>\("browser-use-file-transfer-origin-remove", \{/);
   assert.match(source, /targetOrigin: params\.origin/);
+});
+
+test("replica statsig exposes dynamic config values needed by browser use settings", () => {
+  const source = readSource(STATSIG_SOURCE_PATH);
+
+  assert.match(source, /dynamicConfigs: Record<string, unknown>;/);
+  assert.match(source, /dynamicConfigs: \{\},/);
+  assert.match(source, /export function useReplicaStatsigDynamicConfigValue\(name: string\)/);
+  assert.match(
+    source,
+    /const state = useReplicaStatsigState\(\);\s*return state\.dynamicConfigs\[name\];/s,
+  );
+  assert.match(source, /const dynamicConfigs = extractDynamicConfigValues\(response\);/);
+  assert.match(source, /dynamicConfigs,/);
+  assert.match(source, /function extractDynamicConfigValues\(response: unknown\)/);
+  assert.match(source, /readNamedValueCollection\(response, "dynamic_configs"\)/);
 });
 
 function readSource(filePath: string) {

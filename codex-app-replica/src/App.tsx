@@ -1,7 +1,6 @@
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
-import { open } from "@tauri-apps/plugin-shell";
 import {
   clearBrowserChatGptTokenAuth,
   formatAuthDetail,
@@ -68,8 +67,6 @@ import {
 import {
   applyGpuTearingDebugSettings,
   applyAppearanceSettingsSnapshot,
-  buildConfigScopeOptions,
-  chooseDefaultConfigScopeKey,
   getConfigRequirementsForHost,
   getGlobalState,
   setGlobalState,
@@ -82,16 +79,13 @@ import {
   type FollowUpQueueMode,
   type ReviewDelivery,
   readAppearanceSettingsSnapshot,
-  readConfig,
   readGpuTearingDebugSettings,
   readSelectedAvatarId,
   setPowerSaveBlocker,
-  writeConfigValue,
-  type ConfigScopeOption,
   type ConfigSnapshot,
 } from "./services/settings";
+import { AgentSettings } from "./components/AgentSettings";
 import { AppearanceSettings } from "./components/AppearanceSettings";
-import { AgentExperimentalFeaturesSettings } from "./components/AgentExperimentalFeaturesSettings";
 import { AccountSettings } from "./components/AccountSettings";
 import {
   DEFAULT_AVATAR_ID,
@@ -114,7 +108,6 @@ import {
 } from "./components/AppShellIcons";
 import { AppToastRegion, type AppToast } from "./components/AppToastRegion";
 import { AppShellRightPanelLayout } from "./components/AppShellRightPanelLayout";
-import { ConfigScopeMenu } from "./components/ConfigScopeMenu";
 import { DataControlsSettings } from "./components/DataControlsSettings";
 import { GitSettings } from "./components/GitSettings";
 import { GeneralSettings } from "./components/GeneralSettings";
@@ -132,9 +125,6 @@ import { RemoteConnectionsSettings } from "./components/RemoteConnectionsSetting
 import { BackToAppIcon, SettingsSectionIcon } from "./components/SettingsSectionIcons";
 import { SkillsSettings } from "./components/SkillsSettings";
 import { UsageSettings } from "./components/UsageSettings";
-import { WorkspaceDependenciesSettings } from "./components/WorkspaceDependenciesSettings";
-import { SettingsChoiceMenu } from "./components/SettingsChoiceMenu";
-import { ToggleSwitch } from "./components/ToggleSwitch";
 import { ChatConversationMainPane } from "./features/chat/ChatConversationMainPane";
 import { ChatRouteHeader } from "./features/chat/ChatRouteHeader";
 import { ChatSidePanel } from "./features/chat/ChatSidePanel";
@@ -325,11 +315,11 @@ import {
   type RemoteConnection,
 } from "./services/settingsHosts";
 import {
-  onActiveWorkspaceRootsUpdated,
   onOnboardingPickWorkspaceOrCreateDefaultResult,
+  onWorkspaceRootOptionsUpdated,
   clearActiveWorkspaceRoot,
   pickWorkspaceOrCreateDefault,
-  readActiveWorkspaceRoots,
+  readWorkspaceRootOptions,
 } from "./services/workspaceRoots";
 import { createPendingWorktree, type PendingWorktreeStartingState } from "./services/pendingWorktrees";
 import type { BrowserSidebarTarget } from "./services/browserSidebar";
@@ -349,8 +339,6 @@ import {
 } from "./services/customAvatars";
 
 const appWindow = getCurrentWindow();
-const AGENT_SETTINGS_DOCS_URL = "https://developers.openai.com/codex/app/local-environments";
-const CONFIG_TOML_DOCS_URL = "https://developers.openai.com/codex/config-basic";
 const IMPLEMENT_PLAN_PROMPT_PREFIX = "PLEASE IMPLEMENT THIS PLAN:";
 const USER_MESSAGE_REQUEST_HEADING = "## My request for Codex:";
 const NAVIGATE_TO_ROUTE_EVENT = "navigate-to-route";
@@ -399,7 +387,6 @@ type SettingsSectionState = {
   localEnvironmentRouteSearch?: string;
   pendingViewAction?: "open-create-remote-project-modal";
 } | null;
-type AgentConfigControlErrors = Partial<Record<"approval" | "sandbox" | "network", string>>;
 type AppRoute =
   | "app-connect-oauth-callback"
   | "chat"
@@ -573,19 +560,6 @@ type NavItem = {
   tooltipKey?: MessageKey;
 };
 
-const approvalPolicyOptions = [
-  { value: "untrusted", label: "Untrusted", description: "Always ask before taking action" },
-  { value: "on-failure", label: "On failure", description: "Ask only when a command fails" },
-  { value: "on-request", label: "On request", description: "Ask when escalation is requested" },
-  { value: "never", label: "Never", description: "Run without asking for approval" },
-];
-
-const sandboxModeOptions = [
-  { value: "read-only", label: "Read only", description: "Can read files, but cannot edit them" },
-  { value: "workspace-write", label: "Workspace write", description: "Can edit files, but only in this workspace" },
-  { value: "danger-full-access", label: "Full access", description: "Can edit files outside this workspace" },
-];
-
 const settingsSectionLabelKeys: Record<SettingsSection, MessageKey> = {
   "general-settings": "settings.section.general-settings",
   account: "settings.section.account",
@@ -596,7 +570,7 @@ const settingsSectionLabelKeys: Record<SettingsSection, MessageKey> = {
   "open-source-licenses": "settings.openSourceLicenses.title",
   personalization: "settings.section.personalization",
   "browser-use": "settings.section.browser-use",
-  "computer-use": "settings.section.computer-use",
+  "computer-use": "computerUse.label",
   usage: "settings.section.usage",
   "plugins-settings": "settings.section.plugins-settings",
   "skills-settings": "settings.section.skills-settings",
@@ -987,92 +961,6 @@ function buildRemoteThreadRoutePath(threadId: string, shell: ThreadShellVariant)
     : `/remote/${encodedThreadId}`;
 }
 
-function getConfigScopeLabel(
-  scope: ConfigScopeOption,
-  t: (key: MessageKey, values?: Record<string, number | string>) => string,
-) {
-  if (scope.kind === "user") {
-    return t("settings.agent.configuration.scope.user");
-  }
-  if (scope.kind === "managed") {
-    return t("settings.agent.configuration.scope.managed");
-  }
-  return scope.label;
-}
-
-function getConfigScopeTitle(
-  scope: ConfigScopeOption,
-  t: (key: MessageKey, values?: Record<string, number | string>) => string,
-) {
-  if (scope.kind === "managed") {
-    return t("settings.agent.configuration.scope.managedDescription");
-  }
-  return scope.filePath;
-}
-
-function renderInlineLinkMessage(template: string, href: string) {
-  const startTag = "<a>";
-  const endTag = "</a>";
-  const startIndex = template.indexOf(startTag);
-  const endIndex = template.indexOf(endTag);
-
-  if (startIndex === -1 || endIndex === -1 || endIndex < startIndex) {
-    return template;
-  }
-
-  const prefix = template.slice(0, startIndex);
-  const linkLabel = template.slice(startIndex + startTag.length, endIndex);
-  const suffix = template.slice(endIndex + endTag.length);
-
-  return (
-    <>
-      {prefix}
-      <a
-        className="text-[var(--app-shell-accent)] underline underline-offset-2"
-        href={href}
-        target="_blank"
-        rel="noreferrer"
-      >
-        {linkLabel}
-      </a>
-      {suffix}
-    </>
-  );
-}
-
-function getAgentConfigControlLockReason(
-  scope: ConfigScopeOption | null,
-  t: (key: MessageKey, values?: Record<string, number | string>) => string,
-) {
-  if (!scope) {
-    return t("settings.agent.configuration.scope.unavailable");
-  }
-  if (!scope.filePath) {
-    return t("settings.agent.configuration.scope.readOnly");
-  }
-  if (scope.kind === "managed") {
-    return t("settings.agent.configuration.control.managed");
-  }
-  return null;
-}
-
-function renderConfigTomlDescription(t: (key: MessageKey, values?: Record<string, number | string>) => string) {
-  return (
-    <>
-      {t("settings.agent.configuration.configToml.description")}{" "}
-      {t("settings.agent.configuration.configToml.restartNote")}{" "}
-      <a
-        className="text-[var(--app-shell-accent)] underline underline-offset-2"
-        href={CONFIG_TOML_DOCS_URL}
-        target="_blank"
-        rel="noreferrer"
-      >
-        {t("settings.agent.configuration.configToml.docs")}
-      </a>
-    </>
-  );
-}
-
 function readPersistedWorkspaceFileRightPanelTabState(storageKey: string) {
   try {
     const rawValue = window.localStorage.getItem(storageKey);
@@ -1266,6 +1154,7 @@ function App() {
   const [hasLoadedAuthSnapshot, setHasLoadedAuthSnapshot] = useState(false);
   const [hasLoadedLaunchContext, setHasLoadedLaunchContext] = useState(false);
   const [loginRouteOverride, setLoginRouteOverride] = useState<string | null>("auto");
+  const [hasLoadedLoginOnboardingState, setHasLoadedLoginOnboardingState] = useState(false);
   const [postLoginWelcomePending, setPostLoginWelcomePending] = useState(false);
   const [projectlessOnboardingCompleted, setProjectlessOnboardingCompleted] = useState(false);
   const [
@@ -1276,8 +1165,8 @@ function App() {
     workspaceOnboardingAutoLaunchApplied,
     setWorkspaceOnboardingAutoLaunchApplied,
   ] = useState(false);
-  const [activeWorkspaceRootCount, setActiveWorkspaceRootCount] = useState<number | null>(null);
-  const [isActiveWorkspaceRootsLoading, setIsActiveWorkspaceRootsLoading] = useState(true);
+  const [persistedWorkspaceRootCount, setPersistedWorkspaceRootCount] = useState<number | null>(null);
+  const [isPersistedWorkspaceRootsLoading, setIsPersistedWorkspaceRootsLoading] = useState(true);
   const [hasLoadedInitialWindowRoute, setHasLoadedInitialWindowRoute] = useState(false);
   const [hasLoadedInitialThreadSnapshot, setHasLoadedInitialThreadSnapshot] = useState(false);
   const [pageHeaderContent, setPageHeaderContent] = useState<ReactNode | null>(null);
@@ -1394,10 +1283,6 @@ function App() {
     useState<Awaited<ReturnType<typeof getConfigRequirementsForHost>>["requirements"]>(null);
   const [selectedLocalPermissionMode, setSelectedLocalPermissionMode] =
     useState<HotkeyPermissionAgentMode | null>(null);
-  const [configScopeOptions, setConfigScopeOptions] = useState<ConfigScopeOption[]>([]);
-  const [selectedConfigScopeKey, setSelectedConfigScopeKey] = useState<string>("user");
-  const [agentConfigControlErrors, setAgentConfigControlErrors] = useState<AgentConfigControlErrors>({});
-  const [configError, setConfigError] = useState<string | null>(null);
   const [commandKeymapState, setCommandKeymapState] = useState<CommandKeymapState | null>(null);
   const avatarOptions = useMemo(
     () => buildAvatarOptions(customAvatarsSnapshot.avatars),
@@ -1423,10 +1308,10 @@ function App() {
     welcomeV2FlowEnabled: workspaceOnboardingWelcomeV2FlowEnabled,
   });
   const baseLoginOnboardingRouteTarget = resolveLoginOnboardingRouteTarget({
-    activeWorkspaceRootCount,
+    workspaceRootCount: persistedWorkspaceRootCount,
     authState: authSnapshot.authState,
     forcedOverride: loginRouteOverride,
-    isActiveWorkspaceRootsLoading,
+    isWorkspaceRootsLoading: isPersistedWorkspaceRootsLoading,
     isAuthLoading: !hasLoadedAuthSnapshot || authSnapshot.isLoading,
     postLoginWelcomePending,
     projectlessOnboardingCompleted,
@@ -1440,8 +1325,9 @@ function App() {
   const workspaceOnboardingAutoLaunchAction = deriveWorkspaceAutoLaunchAction({
     arm: workspaceOnboardingExperimentArm,
     autoLaunchApplied: workspaceOnboardingAutoLaunchApplied,
-    hasPersistedRoots: activeWorkspaceRootCount !== null && activeWorkspaceRootCount > 0,
-    isLoadingRoots: isActiveWorkspaceRootsLoading || activeWorkspaceRootCount === null,
+    hasPersistedRoots: persistedWorkspaceRootCount !== null && persistedWorkspaceRootCount > 0,
+    isLoadingRoots:
+      isPersistedWorkspaceRootsLoading || persistedWorkspaceRootCount === null,
     isRemoteHost: false,
   });
   const isPluginsRouteEnabled = usePluginsRouteEnabled(selectedSettingsHostId, {
@@ -2068,34 +1954,36 @@ function App() {
       setWorkspaceOnboardingAutoLaunchApplied(
         workspaceAutoLaunchAppliedResponse.value === true,
       );
+      setHasLoadedLoginOnboardingState(true);
     } catch {
       setLoginRouteOverride("auto");
       setPostLoginWelcomePending(false);
       setProjectlessOnboardingCompleted(false);
       setWorkspaceOnboardingExperimentAssignment(null);
       setWorkspaceOnboardingAutoLaunchApplied(false);
+      setHasLoadedLoginOnboardingState(true);
     }
   });
 
-  const refreshActiveWorkspaceRoots = useEffectEvent(async () => {
-    setIsActiveWorkspaceRootsLoading(true);
+  const refreshPersistedWorkspaceRoots = useEffectEvent(async () => {
+    setIsPersistedWorkspaceRootsLoading(true);
     try {
-      const response = await readActiveWorkspaceRoots();
-      setActiveWorkspaceRootCount(response.roots.length);
+      const response = await readWorkspaceRootOptions();
+      setPersistedWorkspaceRootCount(response.roots.length);
     } catch {
-      setActiveWorkspaceRootCount(0);
+      setPersistedWorkspaceRootCount(0);
     } finally {
-      setIsActiveWorkspaceRootsLoading(false);
+      setIsPersistedWorkspaceRootsLoading(false);
     }
   });
 
   useEffect(() => {
     let disposed = false;
     let unlistenGlobalState: (() => void) | undefined;
-    let unlistenActiveWorkspaceRoots: (() => void) | undefined;
+    let unlistenWorkspaceRootOptions: (() => void) | undefined;
 
     void refreshLoginOnboardingState();
-    void refreshActiveWorkspaceRoots();
+    void refreshPersistedWorkspaceRoots();
 
     void onGlobalStateUpdated((notification) => {
       if (
@@ -2117,22 +2005,22 @@ function App() {
       unlistenGlobalState = dispose;
     });
 
-    void onActiveWorkspaceRootsUpdated(() => {
-      void refreshActiveWorkspaceRoots();
+    void onWorkspaceRootOptionsUpdated(() => {
+      void refreshPersistedWorkspaceRoots();
     }).then((dispose) => {
       if (disposed) {
         void dispose();
         return;
       }
-      unlistenActiveWorkspaceRoots = dispose;
+      unlistenWorkspaceRootOptions = dispose;
     });
 
     return () => {
       disposed = true;
       unlistenGlobalState?.();
-      unlistenActiveWorkspaceRoots?.();
+      unlistenWorkspaceRootOptions?.();
     };
-  }, [refreshActiveWorkspaceRoots, refreshLoginOnboardingState]);
+  }, [refreshLoginOnboardingState, refreshPersistedWorkspaceRoots]);
 
   useEffect(() => {
     if (
@@ -3872,42 +3760,6 @@ function App() {
       cancelled = true;
     };
   }, [currentRoute, hasLoadedInitialWindowRoute, locale, syntheticRequestItemsByThreadId, t]);
-
-  useEffect(() => {
-    if (currentRoute !== "settings") {
-      return;
-    }
-    let cancelled = false;
-    void readConfig(settingsWorkspaceRoot)
-      .then((response) => {
-        if (cancelled) {
-          return;
-        }
-        setConfigSnapshot(response.config);
-        const scopeOptions = buildConfigScopeOptions(response);
-        setConfigScopeOptions(scopeOptions);
-        setSelectedConfigScopeKey((current) => {
-          if (scopeOptions.some((scope) => scope.key === current)) {
-            return current;
-          }
-          return chooseDefaultConfigScopeKey(scopeOptions);
-        });
-        setAgentConfigControlErrors({});
-        setConfigError(null);
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setConfigSnapshot(null);
-          setConfigScopeOptions([]);
-          setSelectedConfigScopeKey("user");
-          setAgentConfigControlErrors({});
-          setConfigError(error instanceof Error ? error.message : String(error));
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [currentRoute, settingsWorkspaceRoot]);
 
   useEffect(() => {
     let cancelled = false;
@@ -6235,83 +6087,11 @@ function App() {
     }
   };
 
-  const openConfigToml = async () => {
-    const selectedScope = configScopeOptions.find((scope) => scope.key === selectedConfigScopeKey) ?? null;
-    if (!selectedScope?.filePath) {
-      return;
-    }
-    try {
-      await open(selectedScope.filePath);
-    } catch (error) {
-      setConfigError(error instanceof Error ? error.message : String(error));
-    }
-  };
-
-  const openSourceLicenses = () => {
-    void handleNavigateToRoute("/settings/open-source-licenses");
-  };
-
-  const updateConfigValue = async (keyPath: string, value: string | boolean) => {
-    const controlErrorKey =
-      keyPath === "approval_policy"
-        ? "approval"
-        : keyPath === "sandbox_mode"
-          ? "sandbox"
-          : keyPath === "sandbox_workspace_write.network_access"
-            ? "network"
-            : null;
-    setConfigError(null);
-    if (controlErrorKey) {
-      setAgentConfigControlErrors((current) => {
-        if (!(controlErrorKey in current)) {
-          return current;
-        }
-        const next = { ...current };
-        delete next[controlErrorKey];
-        return next;
-      });
-    }
-    const selectedScope = configScopeOptions.find((scope) => scope.key === selectedConfigScopeKey) ?? null;
-    try {
-      await writeConfigValue({
-        keyPath,
-        value,
-        mergeStrategy: "upsert",
-        filePath: selectedScope?.kind === "project" ? selectedScope.filePath : null,
-        expectedVersion: selectedScope?.expectedVersion ?? null,
-      });
-    } catch (error) {
-      if (controlErrorKey) {
-        setAgentConfigControlErrors((current) => ({
-          ...current,
-          [controlErrorKey]: error instanceof Error ? error.message : String(error),
-        }));
-        return;
-      }
-      setConfigError(error instanceof Error ? error.message : String(error));
-      return;
-    }
-    try {
-      const response = await readConfig(settingsCwd);
-      setConfigSnapshot(response.config);
-      const scopeOptions = buildConfigScopeOptions(response);
-      setConfigScopeOptions(scopeOptions);
-      setSelectedConfigScopeKey((current) => {
-        if (scopeOptions.some((scope) => scope.key === current)) {
-          return current;
-        }
-        return chooseDefaultConfigScopeKey(scopeOptions);
-      });
-      setAgentConfigControlErrors({});
-    } catch (error) {
-      setConfigError(error instanceof Error ? error.message : String(error));
-    }
-  };
-
   const renderSettings = () => {
     if (settingsSection === "general-settings") {
       return (
         <GeneralSettings
+          authSnapshot={authSnapshot}
           codexHome={codexHome}
           workspaceRoot={settingsWorkspaceRoot}
           onComposerEnterBehaviorChange={setComposerEnterBehavior}
@@ -6479,6 +6259,12 @@ function App() {
                 : null,
             );
           }}
+          onRequestOpenRemoteProjectDialog={() => {
+            setSettingsSectionState((currentState) => ({
+              localEnvironmentRouteSearch: currentState?.localEnvironmentRouteSearch,
+              pendingViewAction: "open-create-remote-project-modal",
+            }));
+          }}
           pendingViewAction={
             settingsSectionState != null &&
             typeof settingsSectionState === "object" &&
@@ -6540,8 +6326,8 @@ function App() {
     if (settingsSection === "worktrees") {
       return (
         <WorktreesSettingsPage
+          cachedConversations={Array.from(loadedConversationsByIdRef.current.values())}
           isRecentThreadsLoading={!hasLoadedInitialThreadSnapshot}
-          onDismissToast={() => setAppToast(null)}
           onShowToast={(toast) => setAppToast(toast)}
           onViewConversation={(threadId, hostId) => void viewConversationForHost(threadId, hostId)}
           recentThreads={recentThreadEntries}
@@ -6562,189 +6348,16 @@ function App() {
     }
 
     if (settingsSection === "agent") {
-      const selectedScope = configScopeOptions.find((scope) => scope.key === selectedConfigScopeKey) ?? null;
-      const scopedConfig = selectedScope?.config;
-      const scopeMenuOptions = configScopeOptions.map((scope) => ({
-        group: scope.kind === "project" ? "project" as const : "global" as const,
-        key: scope.key,
-        label: getConfigScopeLabel(scope, t),
-        title: getConfigScopeTitle(scope, t),
-      }));
-      const approvalPolicy = scopedConfig?.approvalPolicy ?? configSnapshot?.approvalPolicy ?? "on-request";
-      const approvalPolicyValue =
-        typeof approvalPolicy === "string"
-          ? approvalPolicy
-          : "on-request";
-      const sandboxMode = scopedConfig?.sandboxMode ?? configSnapshot?.sandboxMode ?? "read-only";
-      const controlLockReason = getAgentConfigControlLockReason(selectedScope, t);
-      const showNetworkAccess = sandboxMode === "workspace-write";
-      const networkAccess =
-        scopedConfig?.sandboxWorkspaceWrite?.networkAccess ??
-        configSnapshot?.sandboxWorkspaceWrite?.networkAccess ??
-        false;
-      const isScopeReadOnly = controlLockReason !== null || selectedScope?.disabledReason !== null;
       return (
-        <div className="mx-auto flex max-w-[820px] flex-col gap-4 px-5 py-5">
-          <div className="app-card rounded-[18px] px-5 py-4">
-            <div className="app-title text-[14px] font-medium">{t("settings.agent.title")}</div>
-            <div className="app-text-muted mt-1 text-[13px] leading-6">
-              {renderInlineLinkMessage(t("settings.agent.configuration.subtitle.summary"), AGENT_SETTINGS_DOCS_URL)}
-            </div>
-          </div>
-          <div className="app-card rounded-[18px] px-5 py-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="text-[12px] uppercase tracking-[0.16em] text-[var(--app-shell-subtle)]">
-                {t("settings.agent.customConfig")}
-              </div>
-              <ConfigScopeMenu
-                selectedKey={selectedScope?.key ?? null}
-                options={scopeMenuOptions}
-                loadingLabel={t("settings.agent.configuration.scope.loading")}
-                projectGroupLabel={t("settings.agent.configuration.scope.projectGroup")}
-                globalGroupLabel={t("settings.agent.configuration.scope.globalGroup")}
-                onSelect={(key) => {
-                  setSelectedConfigScopeKey(key);
-                  setAgentConfigControlErrors({});
-                }}
-              />
-            </div>
-            <div className="mt-3 flex items-center justify-between gap-4">
-              <div className="min-w-0 flex-1">
-                <div className="text-[14px] leading-6">{t("settings.agent.configuration.configToml")}</div>
-                <div className="app-text-muted mt-1 text-[12px] leading-5">
-                  {renderConfigTomlDescription(t)}
-                </div>
-              </div>
-              <button
-                type="button"
-                disabled={!selectedScope?.filePath}
-                onClick={() => void openConfigToml()}
-                className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
-              >
-                {t("settings.agent.configuration.scope.open")}
-              </button>
-            </div>
-            {selectedScope?.disabledReason ? (
-              <div className="app-card-muted app-text-muted mt-3 rounded-[12px] px-3 py-2 text-[12px]">
-                {selectedScope.disabledReason}
-              </div>
-            ) : null}
-              <div className="mt-4 space-y-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[14px] leading-6">
-                      {t("settings.agent.configuration.approval.label")}
-                    </div>
-                    <div className="app-text-muted mt-1 text-[12px] leading-5">
-                      {t("settings.agent.configuration.approval.definition")}
-                    </div>
-                    {controlLockReason ? (
-                      <div className="mt-1 text-[12px] leading-5 text-[var(--app-shell-warning-text)]">
-                        {controlLockReason}
-                      </div>
-                    ) : null}
-                    {agentConfigControlErrors.approval ? (
-                      <div className="mt-1 text-[12px] leading-5 text-[var(--app-shell-error-text)]">
-                        {agentConfigControlErrors.approval}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="shrink-0">
-                    <SettingsChoiceMenu
-                      value={approvalPolicyValue}
-                      options={approvalPolicyOptions}
-                      disabled={isScopeReadOnly}
-                      onChange={(value) => void updateConfigValue("approval_policy", value)}
-                    />
-                  </div>
-                </div>
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[14px] leading-6">
-                      {t("settings.agent.configuration.sandbox.label")}
-                    </div>
-                    <div className="app-text-muted mt-1 text-[12px] leading-5">
-                      {t("settings.agent.configuration.sandbox.definition")}
-                    </div>
-                    {controlLockReason ? (
-                      <div className="mt-1 text-[12px] leading-5 text-[var(--app-shell-warning-text)]">
-                        {controlLockReason}
-                      </div>
-                    ) : null}
-                    {agentConfigControlErrors.sandbox ? (
-                      <div className="mt-1 text-[12px] leading-5 text-[var(--app-shell-error-text)]">
-                        {agentConfigControlErrors.sandbox}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="shrink-0">
-                    <SettingsChoiceMenu
-                      value={sandboxMode}
-                      options={sandboxModeOptions}
-                      disabled={isScopeReadOnly}
-                      onChange={(value) => void updateConfigValue("sandbox_mode", value)}
-                    />
-                  </div>
-                </div>
-                {showNetworkAccess ? (
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[14px] leading-6">
-                        {t("settings.agent.configuration.network.label")}
-                      </div>
-                      <div className="app-text-muted mt-1 text-[12px] leading-5">
-                        {t("settings.agent.configuration.network.definition")}
-                      </div>
-                      {controlLockReason ? (
-                        <div className="mt-1 text-[12px] leading-5 text-[var(--app-shell-warning-text)]">
-                          {controlLockReason}
-                        </div>
-                      ) : null}
-                      {agentConfigControlErrors.network ? (
-                        <div className="mt-1 text-[12px] leading-5 text-[var(--app-shell-error-text)]">
-                          {agentConfigControlErrors.network}
-                        </div>
-                      ) : null}
-                    </div>
-                    <div className="shrink-0">
-                      <ToggleSwitch
-                        checked={networkAccess}
-                        disabled={isScopeReadOnly}
-                        ariaLabel={t("settings.agent.configuration.network.label")}
-                        onChange={(checked) => void updateConfigValue("sandbox_workspace_write.network_access", checked)}
-                      />
-                    </div>
-                  </div>
-                ) : null}
-                <div className="h-px bg-[var(--app-shell-border)]" />
-                <div className="flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="text-[14px] leading-6">{t("settings.openSourceLicenses.rowLabel")}</div>
-                    <div className="app-text-muted mt-1 text-[12px] leading-5">
-                      {t("settings.openSourceLicenses.rowDescription")}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={openSourceLicenses}
-                    className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
-                  >
-                    {t("settings.openSourceLicenses.view")}
-                  </button>
-                </div>
-              </div>
-            </div>
-          <AgentExperimentalFeaturesSettings hostId={selectedSettingsHostId} />
-          <WorkspaceDependenciesSettings
-            hostId={selectedSettingsHostId}
-            onShowToast={(toast) => setAppToast(toast)}
-          />
-          {configError ? (
-            <div className="app-card-error rounded-[18px] px-5 py-4 text-[13px]">
-              {configError}
-            </div>
-          ) : null}
-        </div>
+        <AgentSettings
+          hostId={selectedSettingsHostId}
+          onNavigateToOpenSourceLicenses={() => {
+            void handleNavigateToRoute("/settings/open-source-licenses");
+          }}
+          onShowToast={(toast) => setAppToast(toast)}
+          settingsCwd={settingsCwd}
+          settingsWorkspaceRoot={settingsWorkspaceRoot}
+        />
       );
     }
 
@@ -7124,6 +6737,11 @@ function App() {
       <>
         <LoginRoutePage
           authSnapshot={authSnapshot}
+          hasPreviouslyCompletedOnboarding={
+            hasLoadedLoginOnboardingState && persistedWorkspaceRootCount !== null
+              ? projectlessOnboardingCompleted || persistedWorkspaceRootCount !== 0
+              : null
+          }
           onNavigateToWelcome={(authMethod) => {
             setRawAuthSnapshot((current) => ({
               ...current,
@@ -7324,7 +6942,7 @@ function App() {
                 }
                 workspaceRoot={openProjectPath}
               />
-            ) : currentRoute === "scratchpad" ? (
+            ) : currentRoute === "scratchpad" || currentRoute === "pull-requests" ? (
               pageHeaderContent
             ) : null}
           </div>
@@ -7937,10 +7555,17 @@ function App() {
                   separatorAriaLabel={t("thread.sidePanel.toggle")}
                 >
                   <PullRequestsRoutePage
+                    onRegisterHeaderContent={(content) => {
+                      setPageHeaderContent(content);
+                    }}
+                    onOpenConversationForHost={(threadId, hostId) =>
+                      void viewConversationForHost(threadId, hostId)
+                    }
                     onSetRightPanelCloseAction={setPageRightPanelCloseAction}
                     onSetRightPanelVisible={setPageRightPanelVisible}
-                    rightPanelHost={pageRightPanelContentRef}
                     onShowToast={(toast) => setAppToast(toast)}
+                    recentThreads={recentThreadEntries}
+                    rightPanelHost={pageRightPanelContentRef}
                   />
                 </AppShellRightPanelLayout>
               ) : currentRoute === "automations" ? (

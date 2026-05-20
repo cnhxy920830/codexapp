@@ -112,6 +112,19 @@ test("open source licenses routing follows extracted settings route behavior", (
   );
 });
 
+test("local environments route state keeps extracted pending remote-project action bridge", () => {
+  const appSource = readFileSync(APP_SOURCE_PATH, "utf8");
+
+  assert.match(
+    appSource,
+    /onNavigateToCreateRemoteProject=\{\(\) => \{\s*void handleNavigateToRoute\("\/settings\/local-environments", \{\s*pendingViewAction: "open-create-remote-project-modal",\s*\}\);\s*\}\}/s,
+  );
+  assert.match(
+    appSource,
+    /onRequestOpenRemoteProjectDialog=\{\(\) => \{\s*setSettingsSectionState\(\(currentState\) => \(\{\s*localEnvironmentRouteSearch: currentState\?\.localEnvironmentRouteSearch,\s*pendingViewAction: "open-create-remote-project-modal",\s*\}\)\);\s*\}\}/s,
+  );
+});
+
 type SnapshotMap = {
   loading: string;
   missing: string;

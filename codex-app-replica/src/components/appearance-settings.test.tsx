@@ -7,6 +7,8 @@ import test from "node:test";
 
 const APPEARANCE_SOURCE_PATH = path.join(process.cwd(), "src/components/AppearanceSettings.tsx");
 const THEME_EDITOR_SOURCE_PATH = path.join(process.cwd(), "src/components/appearance/ThemeEditorCard.tsx");
+const COLOR_INPUT_SOURCE_PATH = path.join(process.cwd(), "src/components/appearance/ChromeThemeColorInput.tsx");
+const THEME_PREVIEW_SOURCE_PATH = path.join(process.cwd(), "src/components/appearance/ThemePreviewCard.tsx");
 const PETS_SOURCE_PATH = path.join(process.cwd(), "src/components/appearance/PetsSection.tsx");
 
 test("appearance settings keeps extracted page shell and section order", () => {
@@ -44,6 +46,17 @@ test("appearance settings uses extracted detail-mode and segmented toggle owners
   assert.doesNotMatch(source, /function SettingsRow\(/);
 });
 
+test("appearance settings number inputs keep extracted parseFloat commit behavior", () => {
+  const source = readSource(APPEARANCE_SOURCE_PATH);
+
+  assert.match(source, /const parsed = Number\.parseFloat\(draft\);/);
+  assert.match(source, /setDraft\(String\(parsed\)\);/);
+  assert.match(source, /if \(parsed !== fallback\) \{\s*onCommit\(parsed\);/s);
+  assert.doesNotMatch(source, /Math\.round/);
+  assert.doesNotMatch(source, /Math\.min/);
+  assert.doesNotMatch(source, /Math\.max/);
+});
+
 test("theme editor keeps extracted shared button shell and nested settings rows", () => {
   const source = readSource(THEME_EDITOR_SOURCE_PATH);
 
@@ -55,7 +68,37 @@ test("theme editor keeps extracted shared button shell and nested settings rows"
     source,
     /<SettingsRow[\s\S]*label=\{t\("settings\.general\.appearance\.chromeTheme\.accent\.short"\)\}[\s\S]*variant="nested"/s,
   );
+  assert.match(source, /role="dialog"/);
+  assert.match(source, /aria-modal="true"/);
+  assert.match(source, /const handleKeyDown = \(event: KeyboardEvent\) => \{/);
+  assert.match(source, /if \(event\.key === "Escape"\)/);
   assert.doesNotMatch(source, /function EditorRow\(/);
+});
+
+test("theme color input replaces native color control with extracted popover picker structure", () => {
+  const source = readSource(COLOR_INPUT_SOURCE_PATH);
+
+  assert.match(source, /aria-haspopup="dialog"/);
+  assert.match(source, /className="react-colorful__saturation/);
+  assert.match(source, /className="react-colorful__hue react-colorful__last-control/);
+  assert.match(source, /className="react-colorful__interactive absolute inset-0/);
+  assert.match(source, /function hsvaToHex/);
+  assert.match(source, /function hexToHsva/);
+  assert.doesNotMatch(source, /type="color"/);
+});
+
+test("theme preview uses split diff-style preview rows instead of hand-built before-after panes", () => {
+  const source = readSource(THEME_PREVIEW_SOURCE_PATH);
+
+  assert.match(source, /const THEME_PREVIEW_PATCH = `--- a\/src\/theme-preview\.ts/);
+  assert.match(source, /pairDiffBlock\(\s*additions\.map\(\(line\) => line\.text\),\s*deletions\.map\(\(line\) => line\.text\),\s*PREVIEW_OPTIONS,\s*\)/s);
+  assert.match(source, /grid-cols-\[4\.5rem_minmax\(0,1fr\)_4\.5rem_minmax\(0,1fr\)\]/);
+  assert.match(source, /function parseHunkHeader\(text: string\)/);
+  assert.match(source, /leftLineNumber: deletion\?\.lineNumber \?\? null/);
+  assert.match(source, /rightLineNumber: addition\?\.lineNumber \?\? null/);
+  assert.match(source, /data-testid="theme-preview"/);
+  assert.doesNotMatch(source, /BEFORE_PREVIEW_LINES/);
+  assert.doesNotMatch(source, /AFTER_PREVIEW_LINES/);
 });
 
 test("pets section keeps extracted shared shells, controls, and expanded container wiring", () => {
@@ -71,6 +114,12 @@ test("pets section keeps extracted shared shells, controls, and expanded contain
   assert.match(source, /<Button[\s\S]*color="secondary"[\s\S]*loading=\{isCreatingCustomAvatar\}[\s\S]*size="toolbar"/s);
   assert.match(source, /<Button color="ghost" onClick=\{onOpenFolder\} size="toolbar">/);
   assert.match(source, /<SettingsRow[\s\S]*icon=\{<AvatarSprite avatar=\{avatar\} size="sm" \/>\}/s);
+  assert.match(source, /readRecommendedSkills\(\{\s*hostId: LOCAL_SETTINGS_HOST_ID,/s);
+  assert.match(source, /installRecommendedSkill\(\{\s*hostId: LOCAL_SETTINGS_HOST_ID,/s);
+  assert.match(source, /findInstalledSkillByName\(HATCH_PET_SKILL_NAME, true\)/);
+  assert.match(source, /skill\.name\.toLowerCase\(\) === normalizedName/);
+  assert.match(source, /skill\.name\.toLowerCase\(\)\.endsWith\(`:\$\{normalizedName\}`\)/);
+  assert.match(source, /return `\[\$\$\{name\}\]\(\$\{normalizedSkillPath\}\)`;/);
   assert.doesNotMatch(source, /function ToolbarButton\(/);
   assert.doesNotMatch(source, /function InlineSpinner\(/);
 });

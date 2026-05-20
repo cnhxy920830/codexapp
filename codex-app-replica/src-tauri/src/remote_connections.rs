@@ -17,10 +17,17 @@ use crate::pending_worktrees::{
     pending_worktrees_shared_object_key, pending_worktrees_snapshot_value,
 };
 use crate::remote_app_server_runtime;
+use crate::remote_control::{
+    delete_remote_control_environment, load_remote_control_connections_snapshot,
+    rename_remote_control_environment, DeleteRemoteControlEnvironmentParams,
+    RemoteControlConnectionsState, RemoteControlEnvironment, RenameRemoteControlEnvironmentParams,
+};
 
 const CODEX_MANAGED_REMOTE_CONNECTIONS_KEY: &str = "codex-managed-remote-connections";
 const SHARED_OBJECT_UPDATED_EVENT: &str = "shared-object-updated";
 const REMOTE_CONNECTIONS_SHARED_OBJECT_KEY: &str = "remote_connections";
+const REMOTE_CONTROL_CONNECTIONS_SHARED_OBJECT_KEY: &str = "remote_control_connections";
+const REMOTE_CONTROL_CONNECTIONS_STATE_SHARED_OBJECT_KEY: &str = "remote_control_connections_state";
 const REMOTE_CONNECTION_AUTO_CONNECT_BY_HOST_ID_KEY: &str =
     "remote-connection-auto-connect-by-host-id";
 const REMOTE_PROJECTS_KEY: &str = "remote-projects";
@@ -194,6 +201,20 @@ pub struct SaveRemoteProjectResponse {
     pub project: RemoteProject,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteWorkspaceDirectoryEntriesParams {
+    pub host_id: String,
+    pub directory_path: String,
+    pub directories_only: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteWorkspaceDirectoryEntriesResponse {
+    pub directory_path: String,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct SharedObjectUpdatedNotification {
@@ -210,6 +231,8 @@ struct SaveCodexManagedRemoteSshConnectionsCommandResult {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RemoteConnectionsState {
     remote_connections: Vec<RemoteConnection>,
+    remote_control_connections: Vec<RemoteControlEnvironment>,
+    remote_control_connections_state: RemoteControlConnectionsState,
     remote_projects: Vec<RemoteProject>,
 }
 
@@ -233,6 +256,29 @@ pub async fn refresh_remote_connections(
     app: AppHandle,
 ) -> Result<RefreshRemoteConnectionsResponse, String> {
     refresh_remote_connections_runtime(&app).await
+}
+
+#[tauri::command(rename = "refresh-remote-control-connections")]
+pub async fn refresh_remote_control_connections(app: AppHandle) -> Result<(), String> {
+    let settings = read_global_settings(&app)?;
+    let auto_connect_by_host_id = read_auto_connect_by_host_id(&settings);
+    let (remote_control_connections, remote_control_connections_state) =
+        tauri::async_runtime::block_on(load_remote_control_connections_snapshot(&app))?;
+    let remote_control_connections = overlay_auto_connect_on_remote_control_connections(
+        remote_control_connections,
+        &auto_connect_by_host_id,
+    );
+    emit_shared_object_updated(
+        &app,
+        REMOTE_CONTROL_CONNECTIONS_SHARED_OBJECT_KEY,
+        &remote_control_connections,
+    )?;
+    emit_shared_object_updated(
+        &app,
+        REMOTE_CONTROL_CONNECTIONS_STATE_SHARED_OBJECT_KEY,
+        &remote_control_connections_state,
+    )?;
+    Ok(())
 }
 
 #[tauri::command(rename = "save-codex-managed-remote-ssh-connections")]
@@ -274,6 +320,19 @@ pub async fn save_remote_project(
     Ok(SaveRemoteProjectResponse { project })
 }
 
+#[tauri::command(rename = "remote-workspace-directory-entries")]
+pub async fn remote_workspace_directory_entries(
+    app: AppHandle,
+    params: RemoteWorkspaceDirectoryEntriesParams,
+) -> Result<RemoteWorkspaceDirectoryEntriesResponse, String> {
+    let blocking_app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        remote_workspace_directory_entries_blocking(&blocking_app, params)
+    })
+    .await
+    .map_err(|err| format!("remote-workspace-directory-entries task failed: {err}"))?
+}
+
 #[tauri::command(rename = "set-remote-connection-auto-connect")]
 pub async fn set_remote_connection_auto_connect(
     app: AppHandle,
@@ -284,7 +343,7 @@ pub async fn set_remote_connection_auto_connect(
     let host_id = params.host_id;
     let host_id_for_write = host_id.clone();
     let auto_connect = params.auto_connect;
-    let remote_connections = tauri::async_runtime::spawn_blocking(move || {
+    let refreshed_state = tauri::async_runtime::spawn_blocking(move || {
         let mut settings = read_global_settings(&blocking_app)?;
         let mut auto_connect_by_host_id = read_auto_connect_by_host_id(&settings);
         if auto_connect {
@@ -301,16 +360,20 @@ pub async fn set_remote_connection_auto_connect(
     })
     .await
     .map_err(|err| format!("set-remote-connection-auto-connect task failed: {err}"))??;
-    let refreshed = apply_remote_connections_runtime(&app, remote_connections).await?;
-    if !refreshed
+    let host_in_ssh = refreshed_state
         .remote_connections
         .iter()
-        .any(|connection| connection.host_id == host_id)
-    {
+        .any(|connection| connection.host_id == host_id);
+    let host_in_remote_control = refreshed_state
+        .remote_control_connections
+        .iter()
+        .any(|connection| connection.host_id == host_id);
+    let refreshed = apply_remote_connections_runtime(&app, refreshed_state).await?;
+    if !host_in_ssh && !host_in_remote_control {
         return Err(format!("remote connection for host ID {host_id} not found"));
     }
 
-    if auto_connect {
+    if auto_connect && host_in_ssh {
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
         loop {
             let snapshot = registry.snapshot(&host_id);
@@ -338,6 +401,29 @@ pub async fn set_remote_connection_auto_connect(
         state: connection_state.state,
         error: connection_state.error,
     })
+}
+
+#[tauri::command(rename = "rename-remote-control-environment")]
+pub async fn rename_remote_control_environment_command(
+    app: AppHandle,
+    params: RenameRemoteControlEnvironmentParams,
+) -> Result<(), String> {
+    let env_id = normalize_required_value(&params.env_id, "env_id")?;
+    let name = normalize_required_value(&params.name, "name")?;
+    rename_remote_control_environment(&env_id, &name).await?;
+    refresh_remote_connections_runtime(&app).await?;
+    Ok(())
+}
+
+#[tauri::command(rename = "delete-remote-control-environment")]
+pub async fn delete_remote_control_environment_command(
+    app: AppHandle,
+    params: DeleteRemoteControlEnvironmentParams,
+) -> Result<(), String> {
+    let env_id = normalize_required_value(&params.env_id, "env_id")?;
+    delete_remote_control_environment(&env_id).await?;
+    refresh_remote_connections_runtime(&app).await?;
+    Ok(())
 }
 
 #[tauri::command(rename = "app-server-connection-state")]
@@ -438,6 +524,16 @@ async fn apply_remote_connections_runtime(
         REMOTE_CONNECTIONS_SHARED_OBJECT_KEY,
         &state.remote_connections,
     )?;
+    emit_shared_object_updated(
+        app,
+        REMOTE_CONTROL_CONNECTIONS_SHARED_OBJECT_KEY,
+        &state.remote_control_connections,
+    )?;
+    emit_shared_object_updated(
+        app,
+        REMOTE_CONTROL_CONNECTIONS_STATE_SHARED_OBJECT_KEY,
+        &state.remote_control_connections_state,
+    )?;
     emit_shared_object_updated(app, REMOTE_PROJECTS_KEY, &state.remote_projects)?;
     Ok(RefreshRemoteConnectionsResponse {
         remote_connections: state.remote_connections,
@@ -509,11 +605,19 @@ fn refresh_remote_connections_blocking(app: &AppHandle) -> Result<RemoteConnecti
     )?;
     let auto_connect = ensure_remote_project_hosts_auto_connect(&mut settings, &remote_projects);
     let remote_connections = load_remote_connections(&saved, &auto_connect)?;
+    let (remote_control_connections, remote_control_connections_state) =
+        tauri::async_runtime::block_on(load_remote_control_connections_snapshot(app))?;
+    let remote_control_connections = overlay_auto_connect_on_remote_control_connections(
+        remote_control_connections,
+        &auto_connect,
+    );
     sync_remote_projects_snapshot(&mut settings, &remote_projects)?;
     sync_project_order(&mut settings, &remote_projects);
     write_global_settings(app, &settings)?;
     Ok(RemoteConnectionsState {
         remote_connections,
+        remote_control_connections,
+        remote_control_connections_state,
         remote_projects,
     })
 }
@@ -565,11 +669,69 @@ fn save_remote_project_blocking(
     refresh_remote_connections_blocking(app)
 }
 
+fn remote_workspace_directory_entries_blocking(
+    app: &AppHandle,
+    params: RemoteWorkspaceDirectoryEntriesParams,
+) -> Result<RemoteWorkspaceDirectoryEntriesResponse, String> {
+    let host_id = normalize_required_value(&params.host_id, "host_id")?;
+    let directory_path = normalize_remote_project_path(&params.directory_path)?;
+    let remote_connections_state = refresh_remote_connections_blocking(app)?;
+    let connection = remote_connections_state
+        .remote_connections
+        .iter()
+        .find(|connection| connection.host_id == host_id)
+        .cloned()
+        .ok_or_else(|| format!("remote connection for host ID {host_id} not found"))?;
+    let quoted_path = format!("'{}'", directory_path.replace('\'', "'\\''"));
+    let test_flag = if params.directories_only { "-d" } else { "-e" };
+    let script = format!(
+        "if [ {test_flag} {quoted_path} ]; then\n  cd {quoted_path}\n  pwd\nelse\n  exit 3\nfi"
+    );
+    let command = format!("sh -lc '{}'", script.replace('\'', "'\\''"));
+    let output = crate::remote_ssh::run_ssh_command(&connection, &command)?;
+    if !output.status.success() {
+        let status = output.status.code().map_or_else(
+            || "terminated without exit code".to_string(),
+            |code| format!("exit code {code}"),
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.is_empty() {
+            return Err(format!(
+                "remote workspace directory validation failed for {}: {status}",
+                connection.host_id
+            ));
+        }
+        return Err(format!(
+            "remote workspace directory validation failed for {}: {status}: {stderr}",
+            connection.host_id
+        ));
+    }
+    let stdout = String::from_utf8(output.stdout).map_err(|err| {
+        format!(
+            "remote workspace directory validation returned non-UTF-8 stdout for {}: {err}",
+            connection.host_id
+        )
+    })?;
+    Ok(RemoteWorkspaceDirectoryEntriesResponse {
+        directory_path: normalize_remote_project_path(stdout.trim())?,
+    })
+}
+
 fn shared_object_snapshot_value_blocking(app: &AppHandle, key: &str) -> Result<Value, String> {
     let state = refresh_remote_connections_blocking(app)?;
     match key {
         REMOTE_CONNECTIONS_SHARED_OBJECT_KEY => serde_json::to_value(state.remote_connections)
             .map_err(|err| format!("failed to encode remote_connections shared object: {err}")),
+        REMOTE_CONTROL_CONNECTIONS_SHARED_OBJECT_KEY => {
+            serde_json::to_value(state.remote_control_connections).map_err(|err| {
+                format!("failed to encode remote_control_connections shared object: {err}")
+            })
+        }
+        REMOTE_CONTROL_CONNECTIONS_STATE_SHARED_OBJECT_KEY => {
+            serde_json::to_value(state.remote_control_connections_state).map_err(|err| {
+                format!("failed to encode remote_control_connections_state shared object: {err}")
+            })
+        }
         REMOTE_PROJECTS_KEY => serde_json::to_value(state.remote_projects)
             .map_err(|err| format!("failed to encode remote-projects shared object: {err}")),
         _ => Err(format!("unsupported shared object key: {key}")),
@@ -607,10 +769,7 @@ fn load_remote_connections(
                 host_id: connection.host_id.clone(),
                 display_name: connection.display_name.clone(),
                 source: SOURCE_CODEX_MANAGED.to_string(),
-                auto_connect: auto_connect_by_host_id
-                    .get(&connection.host_id)
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
+                auto_connect: is_auto_connect_enabled(auto_connect_by_host_id, &connection.host_id),
                 ssh_alias: None,
                 ssh_host: Some(hostname),
                 ssh_port: connection.ssh_port,
@@ -628,15 +787,27 @@ fn load_remote_connections(
         };
         resolved.host_id = connection.host_id.clone();
         resolved.display_name = connection.display_name.clone();
-        resolved.auto_connect = auto_connect_by_host_id
-            .get(&connection.host_id)
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
+        resolved.auto_connect =
+            is_auto_connect_enabled(auto_connect_by_host_id, &connection.host_id);
         discovered.push(resolved);
     }
 
     codex_managed.extend(discovered);
     Ok(codex_managed)
+}
+
+fn overlay_auto_connect_on_remote_control_connections(
+    remote_control_connections: Vec<RemoteControlEnvironment>,
+    auto_connect_by_host_id: &Map<String, Value>,
+) -> Vec<RemoteControlEnvironment> {
+    remote_control_connections
+        .into_iter()
+        .map(|mut connection| {
+            connection.auto_connect =
+                is_auto_connect_enabled(auto_connect_by_host_id, &connection.host_id);
+            connection
+        })
+        .collect()
 }
 
 fn load_saved_remote_connections(settings: &mut Map<String, Value>) -> Vec<SavedRemoteConnection> {
@@ -983,6 +1154,13 @@ fn read_auto_connect_by_host_id(settings: &Map<String, Value>) -> Map<String, Va
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default()
+}
+
+fn is_auto_connect_enabled(auto_connect_by_host_id: &Map<String, Value>, host_id: &str) -> bool {
+    auto_connect_by_host_id
+        .get(host_id)
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
 }
 
 fn normalize_saved_remote_connection(
@@ -1613,6 +1791,7 @@ mod tests {
     use super::load_remote_connections;
     use super::map_app_server_connection_error;
     use super::normalize_saved_remote_connection;
+    use super::overlay_auto_connect_on_remote_control_connections;
     use super::parse_resolved_ssh_config;
     use super::split_ssh_values;
     use super::AppServerConnectionError;
@@ -1624,6 +1803,7 @@ mod tests {
     use super::SavedRemoteConnectionInput;
     use super::SetRemoteConnectionAutoConnectResponse;
     use super::SharedObjectSnapshotResponse;
+    use crate::remote_control::RemoteControlEnvironment;
     use serde_json::json;
     use serde_json::Map;
     use std::fs;
@@ -1765,6 +1945,51 @@ mod tests {
                 ssh_host: Some("demo.example.com".to_string()),
                 ssh_port: Some(2200),
                 identity: Some("~/.ssh/id_demo".to_string()),
+            }]
+        );
+    }
+
+    #[test]
+    fn remote_control_connections_apply_auto_connect_flags() {
+        let remote_control_connections = vec![RemoteControlEnvironment {
+            host_id: "remote-control:env-1".to_string(),
+            display_name: "Office Mac".to_string(),
+            host_name: Some("MacBook Pro".to_string()),
+            auto_connect: false,
+            source: "remote-control".to_string(),
+            env_id: "env-1".to_string(),
+            environment_kind: Some("desktop".to_string()),
+            online: true,
+            busy: false,
+            os: Some("darwin".to_string()),
+            arch: Some("arm64".to_string()),
+            app_server_version: Some("0.129.0".to_string()),
+            last_seen_at: Some("2026-05-20T00:00:00Z".to_string()),
+        }];
+        let mut auto_connect_by_host_id = Map::new();
+        auto_connect_by_host_id.insert("remote-control:env-1".to_string(), json!(true));
+
+        let remote_control_connections = overlay_auto_connect_on_remote_control_connections(
+            remote_control_connections,
+            &auto_connect_by_host_id,
+        );
+
+        assert_eq!(
+            remote_control_connections,
+            vec![RemoteControlEnvironment {
+                host_id: "remote-control:env-1".to_string(),
+                display_name: "Office Mac".to_string(),
+                host_name: Some("MacBook Pro".to_string()),
+                auto_connect: true,
+                source: "remote-control".to_string(),
+                env_id: "env-1".to_string(),
+                environment_kind: Some("desktop".to_string()),
+                online: true,
+                busy: false,
+                os: Some("darwin".to_string()),
+                arch: Some("arm64".to_string()),
+                app_server_version: Some("0.129.0".to_string()),
+                last_seen_at: Some("2026-05-20T00:00:00Z".to_string()),
             }]
         );
     }

@@ -55,11 +55,16 @@ const SOURCE_PATH = path.join(
   process.cwd(),
   "src/components/KeyboardShortcutsSettings.tsx",
 );
+const TOOLTIP_SOURCE_PATH = path.join(
+  process.cwd(),
+  "src/components/Tooltip.tsx",
+);
 const UPDATE_SNAPSHOTS =
   process.env.KEYBOARD_SHORTCUTS_SETTINGS_UPDATE_SNAPSHOTS === "1";
 
-test("keyboard shortcuts source uses extracted title owner and compact kbd chip", async () => {
+test("keyboard shortcuts source uses extracted title owner and shared keycap owner", async () => {
   const source = await readFile(SOURCE_PATH, "utf8");
+  const tooltipSource = await readFile(TOOLTIP_SOURCE_PATH, "utf8");
 
   assert.match(
     source,
@@ -67,7 +72,11 @@ test("keyboard shortcuts source uses extracted title owner and compact kbd chip"
   );
   assert.match(
     source,
-    /<kbd className="inline-flex !rounded-md !border-0 !bg-current\/10 !px-1\.5 !py-0\.5 !font-sans !text-xs !leading-none !text-current !shadow-none">/,
+    /<TooltipKeycap keysLabel=\{shortcutLabel\} \/>/,
+  );
+  assert.match(
+    tooltipSource,
+    /export function TooltipKeycap/,
   );
 });
 
@@ -107,7 +116,7 @@ test("keyboard shortcuts settings snapshots", async (t) => {
         assert.match(actual, /Ctrl\+Alt\+F/);
         assert.match(
           actual,
-          /<kbd class=\"inline-flex !rounded-md !border-0 !bg-current\/10 !px-1\.5 !py-0\.5 !font-sans !text-xs !leading-none !text-current !shadow-none\">Ctrl\+Alt\+F<\/kbd>/,
+          /<kbd class=\"inline-flex !rounded-md !border-0 !bg-current\/10 !font-sans !text-xs !text-current !shadow-none !px-1\.5 !py-0\.5 !leading-none\">Ctrl\+Alt\+F<\/kbd>/,
         );
         assert.match(actual, /Clear shortcut for Find/);
         assert.match(actual, /Reset shortcut for Find/);

@@ -9,11 +9,17 @@ import {
 import {
   BrowserTabIcon,
   FolderIcon,
+  InfoIcon,
   SettingsCogIcon,
   WorkspaceFileIcon,
 } from "../../components/AppShellIcons";
+import { Tooltip } from "../../components/Tooltip";
 import type { AutomationInboxItem, AutomationRecord } from "../../services/automations";
-import type { ModelListEntry } from "../../services/settings";
+import {
+  readConfigForHost,
+  type ConfigSnapshot,
+  type ModelListEntry,
+} from "../../services/settings";
 import { SettingsHostDropdown } from "../../components/SettingsHostDropdown";
 import { AutomationLocalEnvironmentSelector } from "./AutomationLocalEnvironmentSelector";
 import {
@@ -108,7 +114,7 @@ function CompactRailRow({
   label,
   children,
 }: {
-  label: string;
+  label: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -172,6 +178,11 @@ export function AutomationsDetailPane({
     useState<ScheduleConfig | null>(() =>
       draft.kind === "heartbeat" ? getScheduleConfigForAutomation(draft) : null,
     );
+  const [sandboxTooltipContent, setSandboxTooltipContent] = useState<string | null>(
+    null,
+  );
+  const cronWorkspaceRoot =
+    draft.kind === "cron" ? draft.cwds[0] ?? localEnvironmentState.workspaceRoot ?? null : null;
 
   useEffect(() => {
     if (draft.kind === "cron") {
@@ -190,6 +201,43 @@ export function AutomationsDetailPane({
 
     setHeartbeatScheduleConfig(null);
   }, [draft.id, draft.kind, draft.rrule]);
+
+  useEffect(() => {
+    if (draft.kind !== "cron") {
+      setSandboxTooltipContent(null);
+      return;
+    }
+
+    let disposed = false;
+
+    void readConfigForHost({
+      hostId: selectedHostId,
+      cwd: cronWorkspaceRoot,
+      includeLayers: true,
+    })
+      .then((response) => {
+        if (disposed) {
+          return;
+        }
+        setSandboxTooltipContent(getSandboxTooltipContent(response.config, t));
+      })
+      .catch(() => {
+        if (disposed) {
+          return;
+        }
+        setSandboxTooltipContent(getSandboxTooltipContent(null, t));
+      });
+
+    return () => {
+      disposed = true;
+    };
+  }, [
+    draft.id,
+    draft.kind,
+    cronWorkspaceRoot,
+    selectedHostId,
+    t,
+  ]);
 
   const effectiveCronScheduleConfig =
     draft.kind === "cron"
@@ -316,7 +364,26 @@ export function AutomationsDetailPane({
                 </CompactSectionLabel>
                 {draft.kind === "cron" ? (
                   <CompactRailRow
-                    label={t("inbox.automations.executionEnvironment.label")}
+                    label={
+                      <span className="flex items-center gap-1.5">
+                        <span>{t("inbox.automations.executionEnvironment.label")}</span>
+                        {sandboxTooltipContent ? (
+                          <Tooltip
+                            align="start"
+                            tooltipContent={sandboxTooltipContent}
+                            tooltipMaxWidth={360}
+                          >
+                            <span
+                              aria-label={t("settings.automations.banner.tooltipLabel")}
+                              className="inline-flex text-token-text-secondary"
+                              tabIndex={0}
+                            >
+                              <InfoIcon className="h-4 w-4" />
+                            </span>
+                          </Tooltip>
+                        ) : null}
+                      </span>
+                    }
                   >
                     <CompactRailSelect
                       align="end"
@@ -650,4 +717,22 @@ export function AutomationsDetailPane({
       </div>
     </div>
   );
+}
+
+function getSandboxTooltipContent(
+  config: ConfigSnapshot | null,
+  t: TranslateFn,
+) {
+  const key =
+    config?.sandboxMode === "danger-full-access"
+      ? "settings.automations.banner.danger"
+      : config?.sandboxMode === "read-only"
+        ? "settings.automations.banner.defaultHowTo.readOnly"
+        : "settings.automations.banner.defaultHowTo.default";
+
+  return stripRulesDocsLinkTags(t(key));
+}
+
+function stripRulesDocsLinkTags(value: string) {
+  return value.replaceAll("<rulesDocsLink>", "").replaceAll("</rulesDocsLink>", "");
 }

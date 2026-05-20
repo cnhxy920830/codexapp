@@ -8,6 +8,7 @@ import {
   TrashIcon,
   UnselectedCircleIcon,
 } from "../../components/AppShellIcons";
+import { renderInlineLinkMessage } from "../../i18n/renderInlineLinkMessage";
 import type { AutomationRecord, CronAutomationRecord } from "../../services/automations";
 import { AutomationsQuickStartTemplates } from "./AutomationsQuickStartTemplates";
 import { SectionedPage, SectionedPageSection, type SectionedPageSection as SectionedPageSectionConfig } from "./SectionedPage";
@@ -18,6 +19,8 @@ import {
   formatStatusLabel,
   isPaused,
 } from "./automationsPageUtils";
+
+const AUTOMATIONS_HELP_URL = "https://developers.openai.com/codex/app/automations";
 
 type AutomationsOverviewPaneProps = {
   isLoading: boolean;
@@ -275,6 +278,14 @@ function AutomationRow({
   );
 }
 
+function AutomationsOverviewHeader({ t }: { t: TranslateFn }) {
+  return (
+    <div className="heading-xl font-normal text-token-foreground">
+      {t("inbox.mode.automations")}
+    </div>
+  );
+}
+
 export function AutomationsOverviewPane({
   isLoading,
   isRunningNowId,
@@ -311,108 +322,122 @@ export function AutomationsOverviewPane({
     });
   }
 
-  return (
-    <div className="flex min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
-      <div className="mx-auto flex min-h-full w-full max-w-[var(--thread-content-max-width)] flex-col gap-8 px-panel pt-panel pb-8">
-        <div className="flex flex-col gap-3">
-          <div className="heading-xl font-normal text-[var(--app-shell-title)]">
-            {t("inbox.automations.header.root")}
+  if (isLoading) {
+    return (
+      <div className="mx-auto flex w-full max-w-[var(--thread-content-max-width)] flex-1 flex-col gap-2 px-panel pt-panel pb-panel">
+        <AutomationsOverviewHeader t={t} />
+        <div className="app-text-muted flex items-center gap-2 rounded-md px-2 py-2 text-[13px]">
+          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--app-shell-border-heavy)] border-t-transparent" />
+          {t("inbox.automations.loading")}
+        </div>
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="flex h-full min-h-0 flex-col overflow-hidden">
+        <div className="mx-auto flex w-full max-w-[var(--thread-content-max-width)] flex-col gap-1 px-panel pt-panel pb-6">
+          <AutomationsOverviewHeader t={t} />
+          <div className="text-lg font-normal text-token-description-foreground">
+            {renderInlineLinkMessage(
+              t("inbox.automations.emptySubtitle.learnMore"),
+              AUTOMATIONS_HELP_URL,
+            )}
           </div>
         </div>
-
-        {isLoading ? (
-          <div className="app-text-muted flex items-center gap-2 rounded-md px-2 py-2 text-[13px]">
-            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--app-shell-border-heavy)] border-t-transparent" />
-            {t("inbox.automations.loading")}
-          </div>
-        ) : items.length === 0 ? (
+        <div className="mx-auto flex min-h-0 w-full max-w-[var(--thread-content-max-width)] flex-1 flex-col gap-4 px-panel pb-panel">
           <AutomationsQuickStartTemplates
             baseDraft={quickStartBaseDraft}
+            className=""
             onSelectAction={onSelectQuickStart}
             t={t}
           />
-        ) : (
-          <SectionedPage
-            ariaLabel={t("inbox.automations.sectionsNav")}
-            className="[--sectioned-page-leading-inset:0]"
-            contentInnerClassName="flex flex-col gap-8 px-panel pb-panel [&>section]:gap-2"
-            sections={sections}
-            showNav={false}
-          >
-            {currentItems.length > 0 ? (
-              <SectionedPageSection
-                id="current-automations"
-                title={t("inbox.automations.current")}
-              >
-                <div className="-mx-3 flex flex-col gap-1" role="list">
-                  {currentItems.map((automation) => (
-                    <div key={automation.id} role="listitem">
-                      <AutomationRow
-                        automation={automation}
-                        defaultOpenMenu={defaultOpenRowMenuId === automation.id}
-                        locale={locale}
-                        isRunNowDisabled={isRunNowDisabled}
-                        isRunNowPending={isRunningNowId === automation.id}
-                        isSelected={selectedId === automation.id}
-                        onDelete={onDeleteAutomation}
-                        onEdit={onSelectAutomation}
-                        onPause={onPauseAutomation}
-                        onResume={onResumeAutomation}
-                        onRunNow={onRunAutomationNow}
-                        onSelect={onSelectAutomation}
-                        secondaryLabel={describeAutomation(
-                          automation,
-                          threadNameById,
-                          locale,
-                          workspaceRootLabels,
-                          t,
-                        )}
-                        t={t}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </SectionedPageSection>
-            ) : null}
-
-            {pausedItems.length > 0 ? (
-              <SectionedPageSection
-                id="paused-automations"
-                title={t("inbox.automations.pausedSection")}
-              >
-                <div className="-mx-3 flex flex-col gap-1" role="list">
-                  {pausedItems.map((automation) => (
-                    <div key={automation.id} role="listitem">
-                      <AutomationRow
-                        automation={automation}
-                        defaultOpenMenu={defaultOpenRowMenuId === automation.id}
-                        locale={locale}
-                        isRunNowDisabled={isRunNowDisabled}
-                        isRunNowPending={isRunningNowId === automation.id}
-                        isSelected={selectedId === automation.id}
-                        onDelete={onDeleteAutomation}
-                        onEdit={onSelectAutomation}
-                        onPause={onPauseAutomation}
-                        onResume={onResumeAutomation}
-                        onRunNow={onRunAutomationNow}
-                        onSelect={onSelectAutomation}
-                        secondaryLabel={describeAutomation(
-                          automation,
-                          threadNameById,
-                          locale,
-                          workspaceRootLabels,
-                          t,
-                        )}
-                        t={t}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </SectionedPageSection>
-            ) : null}
-          </SectionedPage>
-        )}
+        </div>
       </div>
-    </div>
+    );
+  }
+
+  return (
+    <SectionedPage
+      ariaLabel={t("inbox.automations.sectionsNav")}
+      className="[--sectioned-page-leading-inset:0]"
+      contentInnerClassName="flex flex-col gap-8 px-panel pb-panel [&>section]:gap-2"
+      header={<AutomationsOverviewHeader t={t} />}
+      sections={sections}
+      showNav={false}
+    >
+      {currentItems.length > 0 ? (
+        <SectionedPageSection
+          id="current-automations"
+          title={t("inbox.automations.current")}
+        >
+          <div className="-mx-3 flex flex-col gap-1" role="list">
+            {currentItems.map((automation) => (
+              <div key={automation.id} role="listitem">
+                <AutomationRow
+                  automation={automation}
+                  defaultOpenMenu={defaultOpenRowMenuId === automation.id}
+                  locale={locale}
+                  isRunNowDisabled={isRunNowDisabled}
+                  isRunNowPending={isRunningNowId === automation.id}
+                  isSelected={selectedId === automation.id}
+                  onDelete={onDeleteAutomation}
+                  onEdit={onSelectAutomation}
+                  onPause={onPauseAutomation}
+                  onResume={onResumeAutomation}
+                  onRunNow={onRunAutomationNow}
+                  onSelect={onSelectAutomation}
+                  secondaryLabel={describeAutomation(
+                    automation,
+                    threadNameById,
+                    locale,
+                    workspaceRootLabels,
+                    t,
+                  )}
+                  t={t}
+                />
+              </div>
+            ))}
+          </div>
+        </SectionedPageSection>
+      ) : null}
+
+      {pausedItems.length > 0 ? (
+        <SectionedPageSection
+          id="paused-automations"
+          title={t("inbox.automations.pausedSection")}
+        >
+          <div className="-mx-3 flex flex-col gap-1" role="list">
+            {pausedItems.map((automation) => (
+              <div key={automation.id} role="listitem">
+                <AutomationRow
+                  automation={automation}
+                  defaultOpenMenu={defaultOpenRowMenuId === automation.id}
+                  locale={locale}
+                  isRunNowDisabled={isRunNowDisabled}
+                  isRunNowPending={isRunningNowId === automation.id}
+                  isSelected={selectedId === automation.id}
+                  onDelete={onDeleteAutomation}
+                  onEdit={onSelectAutomation}
+                  onPause={onPauseAutomation}
+                  onResume={onResumeAutomation}
+                  onRunNow={onRunAutomationNow}
+                  onSelect={onSelectAutomation}
+                  secondaryLabel={describeAutomation(
+                    automation,
+                    threadNameById,
+                    locale,
+                    workspaceRootLabels,
+                    t,
+                  )}
+                  t={t}
+                />
+              </div>
+            ))}
+          </div>
+        </SectionedPageSection>
+      ) : null}
+    </SectionedPage>
   );
 }

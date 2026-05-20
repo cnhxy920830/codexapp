@@ -439,22 +439,33 @@ function MemoryResetDialog({
   const { t } = useI18n();
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
-      <div className="w-full max-w-[420px] rounded-[18px] border border-token-border bg-token-main-surface-primary px-5 py-5 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
-        <div className="flex flex-col gap-5">
-          <div className="flex flex-col gap-2">
-            <div className="text-[15px] font-medium text-token-text-primary">
-              {t("settings.memory.resetDialogTitle")}
-            </div>
-            <div className="text-sm text-token-text-secondary">
-              {t("settings.memory.resetDialogSubtitle")}
+    <div
+      className="codex-dialog-overlay fixed inset-0 z-50 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4"
+      onClick={onCancel}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="w-[420px] max-w-[92vw] rounded-3xl border border-token-border bg-token-dropdown-background/90 text-token-foreground shadow-lg backdrop-blur-xl outline-none"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex flex-col gap-0 px-5 py-5 text-base leading-normal tracking-normal">
+          <div className="flex flex-col items-start gap-3">
+            <div className="flex min-w-0 flex-1 flex-col gap-1 self-stretch">
+              <h2 className="heading-dialog min-w-0 font-semibold">
+                {t("settings.memory.resetDialogTitle")}
+              </h2>
+              <div className="text-base leading-normal tracking-normal text-token-description-foreground">
+                {t("settings.memory.resetDialogSubtitle")}
+              </div>
             </div>
           </div>
-          <div className="flex items-center justify-end gap-2">
-            <Button color="ghost" disabled={isResetting} onClick={onCancel}>
+
+          <div className="flex w-full items-center justify-end gap-3 pt-3">
+            <Button color="ghost" disabled={isResetting} onClick={onCancel} size="toolbar">
               {t("settings.memory.resetDialogCancel")}
             </Button>
-            <Button color="danger" loading={isResetting} onClick={onConfirm}>
+            <Button color="danger" loading={isResetting} onClick={onConfirm} size="toolbar">
               {t("settings.memory.resetDialogConfirm")}
             </Button>
           </div>

@@ -14,6 +14,7 @@ type SettingsChoiceMenuOption = {
 export function SettingsChoiceMenu({
   className,
   disabled,
+  menuClassName,
   onChange,
   options,
   triggerLabel,
@@ -21,6 +22,7 @@ export function SettingsChoiceMenu({
 }: {
   className?: string;
   disabled: boolean;
+  menuClassName?: string;
   onChange: (value: string) => void;
   options: SettingsChoiceMenuOption[];
   triggerLabel?: string;
@@ -66,7 +68,12 @@ export function SettingsChoiceMenu({
         <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
       </button>
       {isOpen ? (
-        <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-full rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+        <div
+          className={joinClasses(
+            "app-card absolute top-[calc(100%+8px)] right-0 z-20 w-full rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]",
+            menuClassName,
+          )}
+        >
           <div className="max-h-80 overflow-y-auto">
             {options.map((option) => {
               const isSelected = option.value === value;

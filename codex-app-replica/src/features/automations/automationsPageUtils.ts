@@ -32,11 +32,78 @@ export type HeartbeatThreadOption = {
   unavailable: boolean;
 };
 
+export type AutomationMissingRequirement =
+  | "cwd"
+  | "executionEnvironment"
+  | "model"
+  | "name"
+  | "prompt"
+  | "schedule"
+  | "thread";
+
+export type AutomationSaveAction = "create" | "save";
+
+export type AutomationSaveState = {
+  trimmedName: string;
+  trimmedPrompt: string;
+  missingRequirements: AutomationMissingRequirement[];
+  canSave: boolean;
+};
+
 const WEEKDAY_ORDER = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const;
 const ALL_WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"] as const;
 const BUSINESS_WEEKDAYS = ["MO", "TU", "WE", "TH", "FR"] as const;
 const WEEKEND_DAYS = ["SA", "SU"] as const;
 const DEFAULT_SCHEDULE_TIME = "09:00";
+const RRULE_FREQUENCIES = new Set([
+  "SECONDLY",
+  "MINUTELY",
+  "HOURLY",
+  "DAILY",
+  "WEEKLY",
+  "MONTHLY",
+  "YEARLY",
+]);
+const RRULE_BYDAY_PATTERN = /^([+-]?\d{1,2})?(MO|TU|WE|TH|FR|SA|SU)$/;
+
+const SAVE_TOOLTIP_ITEM_KEY_BY_REQUIREMENT = {
+  cwd: {
+    create: "settings.automations.saveTooltip.item.cwd.create",
+    save: "settings.automations.saveTooltip.item.cwd.save",
+  },
+  executionEnvironment: {
+    create: "settings.automations.saveTooltip.item.executionEnvironment.create",
+    save: "settings.automations.saveTooltip.item.executionEnvironment.save",
+  },
+  model: {
+    create: "settings.automations.saveTooltip.item.model.create",
+    save: "settings.automations.saveTooltip.item.model.save",
+  },
+  name: {
+    create: "settings.automations.saveTooltip.item.name.create",
+    save: "settings.automations.saveTooltip.item.name.save",
+  },
+  prompt: {
+    create: "settings.automations.saveTooltip.item.prompt.create",
+    save: "settings.automations.saveTooltip.item.prompt.save",
+  },
+  schedule: {
+    create: "settings.automations.saveTooltip.item.schedule.create",
+    save: "settings.automations.saveTooltip.item.schedule.save",
+  },
+  thread: {
+    create: "settings.automations.saveTooltip.item.thread.create",
+    save: "settings.automations.saveTooltip.item.thread.save",
+  },
+} satisfies Record<
+  AutomationMissingRequirement,
+  Record<AutomationSaveAction, MessageKey>
+>;
+
+const SAVE_TOOLTIP_COMBINED_KEY_BY_ACTION = {
+  create: "settings.automations.saveTooltip.combined.create",
+  save: "settings.automations.saveTooltip.combined.save",
+} satisfies Record<AutomationSaveAction, MessageKey>;
 
 export function isPaused(automation: AutomationRecord) {
   return automation.status === "PAUSED";
@@ -219,6 +286,23 @@ export function describeScheduleConfig(
   return describeRruleSummary(scheduleConfigToRrule(scheduleConfig), locale, t);
 }
 
+export function isScheduleConfigValid(scheduleConfig: ScheduleConfig) {
+  switch (scheduleConfig.mode) {
+    case "hourly":
+      return (
+        normalizeScheduleIntervalHours(scheduleConfig.intervalHours) !== null ||
+        (scheduleConfig.intervalMinutes !== null &&
+          normalizeScheduleIntervalMinutes(scheduleConfig.intervalMinutes) !== null)
+      );
+    case "daily":
+    case "weekdays":
+    case "weekly":
+      return parseTimeValue(scheduleConfig.time) !== null;
+    case "custom":
+      return isCustomRruleValid(scheduleConfig.customRrule.trim());
+  }
+}
+
 export function formatWorkspaceRootsLabel(
   workspaceRoots: string[],
   locale: string,
@@ -320,6 +404,88 @@ export function getWorkspaceRootLabel(
   }
 
   return getLocalEnvironmentProjectName(workspaceRoot) ?? workspaceRoot;
+}
+
+export function getAutomationSaveState(
+  automation: AutomationRecord,
+): AutomationSaveState {
+  const trimmedName = automation.name.trim();
+  const trimmedPrompt = automation.prompt.trim();
+  const missingRequirements: AutomationMissingRequirement[] = [];
+
+  if (trimmedName.length === 0) {
+    missingRequirements.push("name");
+  }
+
+  if (trimmedPrompt.length === 0) {
+    missingRequirements.push("prompt");
+  }
+
+  if (automation.kind === "heartbeat") {
+    if (automation.targetThreadId.trim().length === 0) {
+      missingRequirements.push("thread");
+    }
+  } else {
+    if (automation.cwds.length === 0) {
+      missingRequirements.push("cwd");
+    }
+    if (automation.executionEnvironment.trim().length === 0) {
+      missingRequirements.push("executionEnvironment");
+    }
+    if ((automation.model?.trim() ?? "").length === 0) {
+      missingRequirements.push("model");
+    }
+  }
+
+  if (!isScheduleConfigValid(getScheduleConfigForAutomation(automation))) {
+    missingRequirements.push("schedule");
+  }
+
+  return {
+    trimmedName,
+    trimmedPrompt,
+    missingRequirements,
+    canSave: missingRequirements.length === 0,
+  };
+}
+
+export function getAutomationSaveTooltip({
+  action,
+  locale,
+  missingRequirements,
+  t,
+}: {
+  action: AutomationSaveAction;
+  locale: string;
+  missingRequirements: AutomationMissingRequirement[];
+  t: TranslateFn;
+}) {
+  if (missingRequirements.length === 0) {
+    return null;
+  }
+
+  const requirements = new Intl.ListFormat(locale, {
+    type: "conjunction",
+  }).format(
+    missingRequirements.map((requirement) =>
+      t(SAVE_TOOLTIP_ITEM_KEY_BY_REQUIREMENT[requirement][action]),
+    ),
+  );
+
+  return t(SAVE_TOOLTIP_COMBINED_KEY_BY_ACTION[action], {
+    requirements,
+  });
+}
+
+export function getAutomationSaveRequestDraft(
+  automation: AutomationRecord,
+): AutomationRecord {
+  const { trimmedName, trimmedPrompt } = getAutomationSaveState(automation);
+  return {
+    ...copyAutomation(automation),
+    name: trimmedName,
+    prompt: trimmedPrompt,
+  };
 }
 
 export function formatErrorMessage(prefix: string, error: unknown) {
@@ -537,6 +703,104 @@ function normalizeRrule(rrule: string) {
     : trimmed;
 }
 
+function isCustomRruleValid(rrule: string) {
+  const normalizedRrule = normalizeRrule(rrule);
+  if (normalizedRrule.length === 0) {
+    return false;
+  }
+
+  const fields = new Map<string, string>();
+  for (const part of normalizedRrule.split(";")) {
+    const [rawKey, rawValue] = part.split("=", 2);
+    const key = rawKey?.trim().toUpperCase() ?? "";
+    const value = rawValue?.trim() ?? "";
+    if (key.length === 0 || value.length === 0 || fields.has(key)) {
+      return false;
+    }
+    fields.set(key, value);
+  }
+
+  const frequency = fields.get("FREQ");
+  if (!frequency || !RRULE_FREQUENCIES.has(frequency)) {
+    return false;
+  }
+
+  for (const [key, value] of fields) {
+    switch (key) {
+      case "FREQ":
+        if (!RRULE_FREQUENCIES.has(value)) {
+          return false;
+        }
+        break;
+      case "INTERVAL":
+      case "COUNT":
+        if (!isIntegerInRange(value, 1)) {
+          return false;
+        }
+        break;
+      case "UNTIL":
+        if (!/^\d{8}(T\d{6}Z?)?$/.test(value)) {
+          return false;
+        }
+        break;
+      case "BYSECOND":
+        if (!isIntegerListInRange(value, 0, 60)) {
+          return false;
+        }
+        break;
+      case "BYMINUTE":
+        if (!isIntegerListInRange(value, 0, 59)) {
+          return false;
+        }
+        break;
+      case "BYHOUR":
+        if (!isIntegerListInRange(value, 0, 23)) {
+          return false;
+        }
+        break;
+      case "BYDAY":
+        if (!isBydayListValid(value)) {
+          return false;
+        }
+        break;
+      case "BYMONTHDAY":
+        if (!isIntegerListInRange(value, -31, 31, { disallowZero: true })) {
+          return false;
+        }
+        break;
+      case "BYYEARDAY":
+        if (!isIntegerListInRange(value, -366, 366, { disallowZero: true })) {
+          return false;
+        }
+        break;
+      case "BYWEEKNO":
+        if (!isIntegerListInRange(value, -53, 53, { disallowZero: true })) {
+          return false;
+        }
+        break;
+      case "BYMONTH":
+        if (!isIntegerListInRange(value, 1, 12)) {
+          return false;
+        }
+        break;
+      case "BYSETPOS":
+        if (!isIntegerListInRange(value, -366, 366, { disallowZero: true })) {
+          return false;
+        }
+        break;
+      case "WKST":
+        if (!WEEKDAY_ORDER.includes(value as (typeof WEEKDAY_ORDER)[number])) {
+          return false;
+        }
+        break;
+      default:
+        return false;
+    }
+  }
+
+  return true;
+}
+
 function parseByday(byday: string | undefined) {
   if (!byday) {
     return [];
@@ -565,10 +829,58 @@ function parseTimeValue(value: string) {
   const [hourText, minuteText] = value.split(":");
   const hour = Number(hourText);
   const minute = Number(minuteText);
-  if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+  if (
+    !Number.isInteger(hour) ||
+    !Number.isInteger(minute) ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59
+  ) {
     return null;
   }
   return { hour, minute };
+}
+
+function isBydayListValid(value: string) {
+  return value
+    .split(",")
+    .every((entry) => RRULE_BYDAY_PATTERN.test(entry.trim().toUpperCase()));
+}
+
+function isIntegerInRange(
+  value: string,
+  minimum: number,
+  maximum = Number.POSITIVE_INFINITY,
+  options?: { disallowZero?: boolean },
+) {
+  if (!/^[+-]?\d+$/.test(value.trim())) {
+    return false;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum) {
+    return false;
+  }
+
+  return options?.disallowZero === true ? parsed !== 0 : true;
+}
+
+function isIntegerListInRange(
+  value: string,
+  minimum: number,
+  maximum: number,
+  options?: { disallowZero?: boolean },
+) {
+  const entries = value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+
+  return (
+    entries.length > 0 &&
+    entries.every((entry) => isIntegerInRange(entry, minimum, maximum, options))
+  );
 }
 
 function formatTimeValue(hour: number | null, minute: number | null) {
@@ -774,19 +1086,7 @@ function formatPluralWeekdayLabel(day: string, t: TranslateFn) {
 }
 
 export function hasAutomationRequiredFields(automation: AutomationRecord) {
-  if (
-    automation.name.trim().length === 0 ||
-    automation.prompt.trim().length === 0 ||
-    automation.rrule.trim().length === 0
-  ) {
-    return false;
-  }
-
-  if (automation.kind === "heartbeat") {
-    return automation.targetThreadId.trim().length > 0;
-  }
-
-  return automation.executionEnvironment.trim().length > 0;
+  return getAutomationSaveState(automation).canSave;
 }
 
 export function areAutomationsEqual(

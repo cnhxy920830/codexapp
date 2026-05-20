@@ -13,6 +13,7 @@ const UPDATE_SNAPSHOTS = process.env.LOADING_PAGE_UPDATE_SNAPSHOTS === "1";
 
 test("loading page snapshots", async (t) => {
   const actualSnapshots = buildSnapshots();
+  const debugNameMarkup = renderSnapshot(<LoadingPage debugName="PersistedStateProvider" />);
 
   if (UPDATE_SNAPSHOTS) {
     await mkdir(path.dirname(SNAPSHOT_PATH), { recursive: true });
@@ -51,6 +52,11 @@ test("loading page snapshots", async (t) => {
       }
     });
   }
+
+  await t.test("debugName remains hidden", () => {
+    assert.equal(debugNameMarkup, actualSnapshots.defaultState);
+    assert.doesNotMatch(debugNameMarkup, /PersistedStateProvider/);
+  });
 });
 
 type SnapshotMap = {

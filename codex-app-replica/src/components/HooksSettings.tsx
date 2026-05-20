@@ -4,8 +4,10 @@ import { CheckIcon, ChevronDownIcon, MoreActionsIcon, RefreshIcon } from "./AppS
 import type { AppToast } from "./AppToastRegion";
 import { SettingsContentLayout } from "./SettingsContentLayout";
 import { SettingsRow } from "./SettingsRow";
+import { SettingsSectionTitle } from "./SettingsSectionTitle";
 import { SettingsSurface } from "./SettingsSurface";
 import { ToggleSwitch } from "./ToggleSwitch";
+import { Tooltip } from "./Tooltip";
 import { useI18n } from "../i18n/i18n";
 import type { MessageKey, MessageValues } from "../i18n/messages";
 import { renderInlineLinkMessage } from "../i18n/renderInlineLinkMessage";
@@ -435,8 +437,12 @@ function HooksSettingsContent({
 
   return (
     <SettingsContentLayout
-      title={t("settings.section.hooks-settings")}
-      subtitle={renderInlineLinkMessage(t("settings.hooks.subtitle"), HOOKS_DOCS_URL)}
+      title={<SettingsSectionTitle slug="hooks-settings" />}
+      subtitle={renderInlineLinkMessage(
+        t("settings.hooks.subtitle"),
+        HOOKS_DOCS_URL,
+        "inline-flex text-token-text-link-foreground",
+      )}
       subtitleClassName="whitespace-normal"
       action={
         <div className="flex items-center gap-2">
@@ -446,17 +452,18 @@ function HooksSettingsContent({
             selectedProjectRoot={selectedProjectRoot}
             onSelectProjectRoot={onSelectProjectRoot}
           />
-          <Button
-            aria-label={t("settings.hooks.refresh")}
-            color="ghost"
-            disabled={refreshDisabled}
-            onClick={onRefreshHooks}
-            size="icon"
-            title={t("settings.hooks.refresh")}
-            uniform
-          >
-            <RefreshIcon className="icon-xs" />
-          </Button>
+          <Tooltip tooltipContent={t("settings.hooks.refresh")}>
+            <Button
+              aria-label={t("settings.hooks.refresh")}
+              color="ghost"
+              disabled={refreshDisabled}
+              onClick={onRefreshHooks}
+              size="icon"
+              uniform
+            >
+              <RefreshIcon className="icon-xs" />
+            </Button>
+          </Tooltip>
         </div>
       }
     >
@@ -613,18 +620,16 @@ function HookRow({
           />
         </div>
         {hook.isManaged ? (
-          <span
-            title={t("settings.hooks.event.managedTooltip")}
-            className="inline-flex cursor-not-allowed"
-            tabIndex={0}
-          >
-            <ToggleSwitch
-              ariaLabel={t("settings.hooks.event.fallbackHookTitle", { index: index + 1 })}
-              checked
-              disabled
-              onChange={() => undefined}
-            />
-          </span>
+          <Tooltip delayDuration={0} tooltipContent={t("settings.hooks.event.managedTooltip")}>
+            <span className="inline-flex cursor-not-allowed" tabIndex={0}>
+              <ToggleSwitch
+                ariaLabel={t("settings.hooks.event.fallbackHookTitle", { index: index + 1 })}
+                checked
+                disabled
+                onChange={() => undefined}
+              />
+            </span>
+          </Tooltip>
         ) : (
           <ToggleSwitch
             ariaLabel={t("settings.hooks.event.fallbackHookTitle", { index: index + 1 })}
@@ -680,7 +685,7 @@ function HookRowActionsMenu({
           setIsOpen((current) => !current);
         }}
       >
-        <MoreActionsIcon className="h-3.5 w-3.5" />
+        <MoreActionsIcon className="icon-xs" />
       </Button>
       {isOpen ? (
         <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 min-w-[180px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
@@ -724,6 +729,9 @@ function HookProjectSelector({
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const triggerLabel = selectedProjectRoot === null
+    ? t("settings.hooks.project.loading")
+    : getProjectRootLabel(selectedProjectRoot, projectRootLabels);
 
   useEffect(() => {
     if (!isOpen) {
@@ -744,22 +752,21 @@ function HookProjectSelector({
   }, [isOpen]);
 
   return (
-    <div className="relative w-[280px] max-w-full" ref={containerRef}>
-      <button
-        type="button"
+    <div className="relative w-[240px] max-w-full" ref={containerRef}>
+      <Button
         disabled={projectRoots.length === 0}
+        color="secondary"
         onClick={() => setIsOpen((current) => !current)}
-        className="app-control flex w-full items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-[13px] disabled:cursor-not-allowed disabled:opacity-50"
+        size="toolbar"
+        className="w-[240px] justify-between"
       >
-        <span className="truncate text-left">
-          {selectedProjectRoot === null
-            ? t("settings.hooks.project.loading")
-            : getProjectRootLabel(selectedProjectRoot, projectRootLabels)}
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+          <span className="truncate">{triggerLabel}</span>
         </span>
-        <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" />
-      </button>
+        <ChevronDownIcon className="icon-2xs shrink-0 text-token-input-placeholder-foreground" />
+      </Button>
       {isOpen ? (
-        <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-full rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+        <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-[240px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
           <div className="px-3 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--app-shell-subtle)]">
             {t("settings.hooks.project.group")}
           </div>

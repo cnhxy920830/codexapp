@@ -17,9 +17,17 @@ import {
   buildAutomationDraft,
   type AutomationRecord,
   type CronAutomationRecord,
+  type HeartbeatAutomationRecord,
 } from "../../services/automations";
 import type { ModelListEntry } from "../../services/settings";
 import { AutomationsCreateDialog } from "./AutomationsCreateDialog";
+import {
+  getAutomationSaveRequestDraft,
+  getAutomationSaveState,
+  getAutomationSaveTooltip,
+  getScheduleConfigForAutomation,
+  isScheduleConfigValid,
+} from "./automationsPageUtils";
 import type { AutomationLocalEnvironmentState } from "./useAutomationLocalEnvironmentSelection";
 
 const ROUTE_PAGE_SOURCE_PATH = path.join(
@@ -29,6 +37,10 @@ const ROUTE_PAGE_SOURCE_PATH = path.join(
 const CREATE_DIALOG_SOURCE_PATH = path.join(
   process.cwd(),
   "src/features/automations/AutomationsCreateDialog.tsx",
+);
+const DETAIL_PANE_SOURCE_PATH = path.join(
+  process.cwd(),
+  "src/features/automations/AutomationsDetailPane.tsx",
 );
 
 test("cron automation drafts default to worktree execution environment", () => {
@@ -68,6 +80,7 @@ test("automations create dialog keeps extracted shell sizing and pointer-dismiss
 
   assert.match(source, /event\.preventDefault\(\)/);
   assert.match(source, /document\.addEventListener\("pointerdown", handlePointerDown, true\)/);
+  assert.match(source, /automation-form/);
   assert.match(source, /max-h-\[95vh\]/);
   assert.match(source, /max-w-\[800px\]/);
   assert.match(source, /top-\[22px\]/);
@@ -92,6 +105,7 @@ test("automations create dialog renders extracted worktree-first cron defaults",
         onOpenLocalEnvironmentsSettings={noopOpenSettings}
         onSelectTemplateDraft={noopSelectTemplateDraft}
         quickStartBaseDraft={draft}
+        saveTooltip="Select project and choose a model to create"
         t={translate}
         workspaceRootLabels={{}}
         workspaceRootOptions={[]}
@@ -99,8 +113,115 @@ test("automations create dialog renders extracted worktree-first cron defaults",
     </StaticI18nProvider>,
   );
 
+  assert.match(markup, /role="textbox"/);
+  assert.match(markup, /What should Codex do\?/);
+  assert.match(markup, /Runs in/);
+  assert.match(markup, /Project/);
+  assert.match(markup, /Repeats/);
+  assert.match(markup, /Model/);
+  assert.match(markup, /Reasoning/);
   assert.match(markup, /Worktree/);
   assert.doesNotMatch(markup, /<button[^>]*>Local<\/button>/);
+});
+
+test("automation save state requires project and model for cron automations", () => {
+  const draft = {
+    ...(buildAutomationDraft("cron") as CronAutomationRecord),
+    name: "  Daily triage  ",
+    prompt: "  Check CI  ",
+    executionEnvironment: "worktree",
+    rrule: "FREQ=DAILY;INTERVAL=1;BYHOUR=9;BYMINUTE=0;BYDAY=MO,TU,WE,TH,FR",
+  };
+
+  const saveState = getAutomationSaveState(draft);
+
+  assert.equal(saveState.trimmedName, "Daily triage");
+  assert.equal(saveState.trimmedPrompt, "Check CI");
+  assert.deepEqual(saveState.missingRequirements, ["cwd", "model"]);
+  assert.equal(saveState.canSave, false);
+});
+
+test("automation save state requires target thread for heartbeat automations", () => {
+  const draft = {
+    ...(buildAutomationDraft("heartbeat") as HeartbeatAutomationRecord),
+    name: "Heartbeat",
+    prompt: "Summarize the thread.",
+  };
+
+  const saveState = getAutomationSaveState(draft);
+
+  assert.deepEqual(saveState.missingRequirements, ["thread"]);
+  assert.equal(saveState.canSave, false);
+});
+
+test("automation save state rejects invalid custom schedules", () => {
+  const draft = {
+    ...(buildAutomationDraft("cron") as CronAutomationRecord),
+    name: "Monthly audit",
+    prompt: "Check the monthly report.",
+    cwds: ["D:\\workspace\\codex-app"],
+    executionEnvironment: "worktree",
+    model: "gpt-5.4",
+    rrule: "RRULE:FREQ=MONTHLY;BYMONTHDAY=1;BYHOUR=9;BYMINUTE=",
+  };
+
+  const saveState = getAutomationSaveState(draft);
+
+  assert.deepEqual(saveState.missingRequirements, ["schedule"]);
+  assert.equal(saveState.canSave, false);
+  assert.equal(isScheduleConfigValid(getScheduleConfigForAutomation(draft)), false);
+});
+
+test("custom monthly schedule stays valid when full RRULE is parseable", () => {
+  const draft = {
+    ...(buildAutomationDraft("cron") as CronAutomationRecord),
+    name: "Monthly audit",
+    prompt: "Check the monthly report.",
+    cwds: ["D:\\workspace\\codex-app"],
+    executionEnvironment: "worktree",
+    model: "gpt-5.4",
+    rrule: "RRULE:FREQ=MONTHLY;BYMONTHDAY=1;BYHOUR=9;BYMINUTE=0",
+  };
+
+  assert.equal(isScheduleConfigValid(getScheduleConfigForAutomation(draft)), true);
+  assert.equal(getAutomationSaveState(draft).canSave, true);
+});
+
+test("automation create tooltip uses extracted list wording", () => {
+  const tooltip = getAutomationSaveTooltip({
+    action: "create",
+    locale: "en-US",
+    missingRequirements: ["cwd", "model"],
+    t: translate,
+  });
+
+  assert.equal(tooltip, "Select project and Choose a model to create");
+});
+
+test("automation save request draft trims name and prompt before persistence", () => {
+  const requestDraft = getAutomationSaveRequestDraft({
+    ...(buildAutomationDraft("cron") as CronAutomationRecord),
+    name: "  Daily triage  ",
+    prompt: "  Check CI  ",
+    cwds: ["D:\\workspace\\codex-app"],
+    executionEnvironment: "worktree",
+    model: "gpt-5.4",
+  });
+
+  assert.equal(requestDraft.name, "Daily triage");
+  assert.equal(requestDraft.prompt, "Check CI");
+});
+
+test("automations route page keeps extracted save-state and sandbox wiring", () => {
+  const routePageSource = readSource(ROUTE_PAGE_SOURCE_PATH);
+  const detailPaneSource = readSource(DETAIL_PANE_SOURCE_PATH);
+
+  assert.match(routePageSource, /getAutomationSaveState/);
+  assert.match(routePageSource, /getAutomationSaveRequestDraft/);
+  assert.match(routePageSource, /getAutomationSaveTooltip/);
+  assert.match(detailPaneSource, /readConfigForHost/);
+  assert.match(detailPaneSource, /settings\.automations\.banner\.tooltipLabel/);
+  assert.match(detailPaneSource, /InfoIcon/);
 });
 
 function readSource(filePath: string) {

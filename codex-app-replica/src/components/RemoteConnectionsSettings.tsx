@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { AppToast } from "./AppToastRegion";
 import {
+  CheckIcon,
+  CloseTabIcon,
   InfoIcon,
   LogoutIcon,
   MoreActionsIcon,
@@ -47,19 +49,27 @@ import {
 } from "../services/settings";
 import {
   discoverRemoteSshConnections,
+  deleteRemoteControlConnection,
   onRemoteAppServerConnectionStateChanged,
   onSharedObjectUpdated,
-  readSettingsRemoteConnectionStateResponses,
+  readAppServerConnectionState,
   readSettingsRemoteConnectionsSnapshot,
+  readSettingsRemoteControlConnectionsSnapshot,
+  readSettingsRemoteControlConnectionsStateSnapshot,
   refreshRemoteConnections,
+  refreshRemoteControlConnections,
+  REMOTE_CONNECTIONS_SHARED_OBJECT_KEY,
+  REMOTE_CONTROL_CONNECTIONS_SHARED_OBJECT_KEY,
+  REMOTE_CONTROL_CONNECTIONS_STATE_SHARED_OBJECT_KEY,
+  renameRemoteControlConnection,
   saveCodexManagedRemoteSshConnections,
   setRemoteConnectionAutoConnect,
-  REMOTE_CONNECTIONS_SHARED_OBJECT_KEY,
   LOCAL_SETTINGS_HOST_ID,
   type AppServerConnectionState,
   type AppServerConnectionStateResponse,
   type RemoteConnection,
-  type SavedRemoteConnection,
+  type RemoteControlConnection,
+  type RemoteControlConnectionsState,
   type SavedRemoteConnectionInput,
 } from "../services/settingsHosts";
 
@@ -107,11 +117,15 @@ type SshValidationError =
   | "duplicateDisplayName";
 
 type ConnectionDetailRow = {
-  id: "alias" | "host" | "port" | "identity" | "version";
+  id: "alias" | "host" | "port" | "identity" | "platform" | "version" | "lastSeen";
   label: MessageKey;
-  value: string | null;
+  value: ReactNode;
   copyValue: string | null;
 };
+
+type DeviceConnection = RemoteConnection | RemoteControlConnection;
+
+type DeviceConnectionStateByHostId = Record<string, AppServerConnectionStateResponse>;
 
 type LocalDeviceSetupStep =
   | "initial"
@@ -127,8 +141,15 @@ export function RemoteConnectionsSettings({
   onShowToast,
 }: RemoteConnectionsSettingsProps) {
   const { t } = useI18n();
-  const [connections, setConnections] = useState<RemoteConnection[]>([]);
-  const [connectionStates, setConnectionStates] = useState<Record<string, AppServerConnectionStateResponse>>({});
+  const [sshConnections, setSshConnections] = useState<RemoteConnection[]>([]);
+  const [remoteControlConnections, setRemoteControlConnections] = useState<RemoteControlConnection[]>([]);
+  const [connectionStates, setConnectionStates] = useState<DeviceConnectionStateByHostId>({});
+  const [remoteControlConnectionsState, setRemoteControlConnectionsState] =
+    useState<RemoteControlConnectionsState>({
+      available: false,
+      authRequired: false,
+      clientAuthorized: false,
+    });
   const [isLoadingConnections, setIsLoadingConnections] = useState(true);
   const [connectionsError, setConnectionsError] = useState<string | null>(null);
   const [remoteControlClients, setRemoteControlClients] = useState<RemoteControlClient[] | null>(null);
@@ -140,8 +161,8 @@ export function RemoteConnectionsSettings({
   const [sshDialogMode, setSshDialogMode] = useState<SshDialogMode>("add");
   const [isSshDialogOpen, setIsSshDialogOpen] = useState(false);
   const [isSavingSshConnection, setIsSavingSshConnection] = useState(false);
-  const [detailsConnectionHostId, setDetailsConnectionHostId] = useState<string | null>(null);
-  const [connectionToDelete, setConnectionToDelete] = useState<RemoteConnection | null>(null);
+  const [detailsConnection, setDetailsConnection] = useState<DeviceConnection | null>(null);
+  const [connectionToDelete, setConnectionToDelete] = useState<DeviceConnection | null>(null);
   const [isDeletingConnection, setIsDeletingConnection] = useState(false);
   const [pendingAutoConnectHostId, setPendingAutoConnectHostId] = useState<string | null>(null);
   const connectedSettings = useConnectedSettings({
@@ -149,32 +170,48 @@ export function RemoteConnectionsSettings({
     onShowToast,
   });
 
-  const sortedConnections = useMemo(() => {
-    return [...connections].sort((left, right) => left.displayName.localeCompare(right.displayName));
-  }, [connections]);
+  const sortedSshConnections = useMemo(() => {
+    return [...sshConnections].sort((left, right) => left.displayName.localeCompare(right.displayName));
+  }, [sshConnections]);
+
+  const sortedRemoteControlConnections = useMemo(() => {
+    return sortRemoteControlConnections(remoteControlConnections);
+  }, [remoteControlConnections]);
+
+  const deviceConnections = useMemo<DeviceConnection[]>(() => {
+    return [...sortedSshConnections, ...sortedRemoteControlConnections];
+  }, [sortedRemoteControlConnections, sortedSshConnections]);
 
   const editingConnection = useMemo(() => {
-    return sortedConnections.find((connection) => connection.hostId === editingConnectionHostId) ?? null;
-  }, [editingConnectionHostId, sortedConnections]);
-
-  const detailsConnection = useMemo(() => {
-    return sortedConnections.find((connection) => connection.hostId === detailsConnectionHostId) ?? null;
-  }, [detailsConnectionHostId, sortedConnections]);
+    return sortedSshConnections.find((connection) => connection.hostId === editingConnectionHostId) ?? null;
+  }, [editingConnectionHostId, sortedSshConnections]);
 
   useEffect(() => {
     let disposed = false;
     let disposeSharedObject: (() => void) | null = null;
     let disposeConnectionState: (() => void) | null = null;
+    let refreshIntervalId: number | null = null;
 
     const load = async () => {
       setIsLoadingConnections(true);
       try {
-        const nextConnections = await readSettingsRemoteConnectionsSnapshot();
+        const [
+          nextSshConnections,
+          nextRemoteControlConnections,
+          nextRemoteControlConnectionsState,
+        ] = await Promise.all([
+          readSettingsRemoteConnectionsSnapshot(),
+          readSettingsRemoteControlConnectionsSnapshot(),
+          readSettingsRemoteControlConnectionsStateSnapshot(),
+        ]);
         if (disposed) {
           return;
         }
-        setConnections(nextConnections);
-        const nextStates = await readSettingsRemoteConnectionStateResponses(nextConnections);
+        setSshConnections(nextSshConnections);
+        setRemoteControlConnections(nextRemoteControlConnections);
+        setRemoteControlConnectionsState(nextRemoteControlConnectionsState);
+        const allConnections = [...nextSshConnections, ...nextRemoteControlConnections];
+        const nextStates = await readConnectionStateResponses(allConnections);
         if (disposed) {
           return;
         }
@@ -184,14 +221,27 @@ export function RemoteConnectionsSettings({
         if (disposed) {
           return;
         }
-        setConnections([]);
+        setSshConnections([]);
+        setRemoteControlConnections([]);
         setConnectionStates({});
+        setRemoteControlConnectionsState({
+          available: false,
+          authRequired: false,
+          clientAuthorized: false,
+        });
         setConnectionsError(getErrorMessage(error));
       } finally {
         if (!disposed) {
           setIsLoadingConnections(false);
         }
       }
+    };
+
+    const refreshAllConnections = async () => {
+      await Promise.all([
+        refreshRemoteConnections(),
+        refreshRemoteControlConnections(),
+      ]);
     };
 
     const loadRemoteControl = async () => {
@@ -213,9 +263,18 @@ export function RemoteConnectionsSettings({
     };
 
     void Promise.all([load(), loadRemoteControl()]);
+    refreshIntervalId = window.setInterval(() => {
+      void refreshAllConnections().catch(() => {
+        // Shared-object refresh will reconcile page state once either command completes.
+      });
+    }, 15_000);
 
     void onSharedObjectUpdated((notification) => {
-      if (notification.key === REMOTE_CONNECTIONS_SHARED_OBJECT_KEY) {
+      if (
+        notification.key === REMOTE_CONNECTIONS_SHARED_OBJECT_KEY ||
+        notification.key === REMOTE_CONTROL_CONNECTIONS_SHARED_OBJECT_KEY ||
+        notification.key === REMOTE_CONTROL_CONNECTIONS_STATE_SHARED_OBJECT_KEY
+      ) {
         void load();
       }
     }).then((dispose) => {
@@ -238,6 +297,9 @@ export function RemoteConnectionsSettings({
 
     return () => {
       disposed = true;
+      if (refreshIntervalId != null) {
+        window.clearInterval(refreshIntervalId);
+      }
       disposeSharedObject?.();
       disposeConnectionState?.();
     };
@@ -246,7 +308,10 @@ export function RemoteConnectionsSettings({
   const handleRefreshConnections = async () => {
     setIsRefreshingConnections(true);
     try {
-      await refreshRemoteConnections();
+      await Promise.all([
+        refreshRemoteConnections(),
+        refreshRemoteControlConnections(),
+      ]);
       onShowToast?.({
         tone: "success",
         message: t("settings.remoteConnections.refresh.success"),
@@ -277,6 +342,23 @@ export function RemoteConnectionsSettings({
     }
   };
 
+  const handleRenameRemoteControl = async (connection: RemoteControlConnection, name: string) => {
+    try {
+      await renameRemoteControlConnection(connection.envId, name);
+      onShowToast?.({
+        tone: "success",
+        message: t("settings.remoteControlConnections.rename.success"),
+      });
+    } catch (error) {
+      onShowToast?.({
+        tone: "error",
+        message: t("settings.remoteControlConnections.rename.error"),
+        description: getErrorMessage(error),
+      });
+      throw error;
+    }
+  };
+
   const handleOpenAddDialog = async () => {
     try {
       await discoverRemoteSshConnections();
@@ -291,14 +373,14 @@ export function RemoteConnectionsSettings({
   const handleSaveSshConnection = async (draft: SshDraft) => {
     const errors = validateSshDraft({
       draft,
-      existingConnections: sortedConnections,
+      existingConnections: sortedSshConnections,
       editingHostId: sshDialogMode === "edit" ? editingConnectionHostId : null,
     });
     if (errors.length > 0) {
       throw new Error(errors[0]);
     }
 
-    const existingSavedConnections = toSavedConnections(sortedConnections);
+    const existingSavedConnections = toSavedConnections(sortedSshConnections);
     const nextConnection = toSavedConnectionInput(
       draft,
       sshDialogMode === "edit" ? editingConnectionHostId : null,
@@ -337,15 +419,25 @@ export function RemoteConnectionsSettings({
 
     setIsDeletingConnection(true);
     try {
-      const nextSavedConnections = toSavedConnections(sortedConnections).filter(
-        (connection) => connection.hostId !== connectionToDelete.hostId,
-      );
-      await saveCodexManagedRemoteSshConnections(nextSavedConnections);
+      if (isRemoteControlConnection(connectionToDelete)) {
+        await deleteRemoteControlConnection(connectionToDelete.envId);
+        onShowToast?.({
+          tone: "success",
+          message: t("settings.remoteControlConnections.delete.success"),
+        });
+      } else {
+        const nextSavedConnections = toSavedConnections(sortedSshConnections).filter(
+          (connection) => connection.hostId !== connectionToDelete.hostId,
+        );
+        await saveCodexManagedRemoteSshConnections(nextSavedConnections);
+      }
       setConnectionToDelete(null);
     } catch (error) {
       onShowToast?.({
         tone: "error",
-        message: t("settings.remoteConnections.delete.error"),
+        message: isRemoteControlConnection(connectionToDelete)
+          ? t("settings.remoteControlConnections.delete.error")
+          : t("settings.remoteConnections.delete.error"),
         description: getErrorMessage(error),
       });
     } finally {
@@ -381,7 +473,8 @@ export function RemoteConnectionsSettings({
         />
         <DeviceConnectionsSection
           connectionStates={connectionStates}
-          connections={sortedConnections}
+          connections={deviceConnections}
+          remoteControlConnectionsState={remoteControlConnectionsState}
           isLoading={isLoadingConnections}
           onDeleteConnection={setConnectionToDelete}
           onEditConnection={(hostId) => {
@@ -389,8 +482,8 @@ export function RemoteConnectionsSettings({
             setSshDialogMode("edit");
             setIsSshDialogOpen(true);
           }}
-          onOpenDetails={(hostId) => {
-            setDetailsConnectionHostId(hostId);
+          onOpenDetails={(connection) => {
+            setDetailsConnection(connection);
           }}
           onLoginRequired={(hostId) => {
             setAuthDialogHostId(hostId);
@@ -408,6 +501,9 @@ export function RemoteConnectionsSettings({
             }
           }}
           onNavigateToCreateRemoteProject={onNavigateToCreateRemoteProject}
+          onRenameRemoteControlConnection={(connection, name) =>
+            void handleRenameRemoteControl(connection, name)
+          }
           onRefreshConnections={() => void handleRefreshConnections()}
           onRestartConnection={(hostId) => void handleRestartConnection(hostId)}
           onToggleAutoConnect={(hostId, autoConnect) => void handleToggleAutoConnect(hostId, autoConnect)}
@@ -431,7 +527,7 @@ export function RemoteConnectionsSettings({
       />
 
       <SshConnectionDialog
-        existingConnections={sortedConnections}
+        existingConnections={sortedSshConnections}
         mode={sshDialogMode}
         connection={editingConnection}
         isOpen={isSshDialogOpen}
@@ -462,7 +558,7 @@ export function RemoteConnectionsSettings({
         open={detailsConnection != null}
         onOpenChange={(open) => {
           if (!open) {
-            setDetailsConnectionHostId(null);
+            setDetailsConnection(null);
           }
         }}
         onShowToast={onShowToast}
@@ -739,9 +835,11 @@ function RemoteControlClientsSection({
               description={
                 client.last_seen_at == null
                   ? t("settings.remoteConnections.remoteControlClients.authorized")
-                  : t("settings.remoteConnections.remoteControlClients.lastSeen", {
-                      date: formatAbsoluteDateTime(client.last_seen_at),
-                    })
+                  : (
+                    <RemoteControlClientLastSeen
+                      timestampMs={Date.parse(client.last_seen_at)}
+                    />
+                  )
               }
               control={null}
             />
@@ -754,6 +852,7 @@ function RemoteControlClientsSection({
 
 function DeviceConnectionsSection({
   connections,
+  remoteControlConnectionsState,
   connectionStates,
   isLoading,
   onAddConnection,
@@ -763,6 +862,7 @@ function DeviceConnectionsSection({
   onLoginRequired,
   onLogoutConnection,
   onNavigateToCreateRemoteProject,
+  onRenameRemoteControlConnection,
   onRefreshConnections,
   onRestartConnection,
   onToggleAutoConnect,
@@ -770,16 +870,21 @@ function DeviceConnectionsSection({
   pendingAutoConnectHostId,
   statusError,
 }: {
-  connections: RemoteConnection[];
-  connectionStates: Record<string, AppServerConnectionStateResponse>;
+  connections: DeviceConnection[];
+  remoteControlConnectionsState: RemoteControlConnectionsState;
+  connectionStates: DeviceConnectionStateByHostId;
   isLoading: boolean;
   onAddConnection: () => void;
-  onDeleteConnection: (connection: RemoteConnection) => void;
+  onDeleteConnection: (connection: DeviceConnection) => void;
   onEditConnection: (hostId: string) => void;
-  onOpenDetails: (hostId: string) => void;
+  onOpenDetails: (connection: DeviceConnection) => void;
   onLoginRequired: (hostId: string) => void;
   onLogoutConnection: (hostId: string) => Promise<void> | void;
   onNavigateToCreateRemoteProject?: () => void;
+  onRenameRemoteControlConnection: (
+    connection: RemoteControlConnection,
+    name: string,
+  ) => Promise<void> | void;
   onRefreshConnections: () => void;
   onRestartConnection: (hostId: string) => void;
   onToggleAutoConnect: (hostId: string, autoConnect: boolean) => void;
@@ -788,16 +893,56 @@ function DeviceConnectionsSection({
   statusError: string | null;
 }) {
   const { t } = useI18n();
+  const [editingEnvId, setEditingEnvId] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState("");
+  const [savingEnvId, setSavingEnvId] = useState<string | null>(null);
+  const trimmedDraftName = draftName.trim();
   const hasConnectedConnection = connections.some((connection) => {
-    return connectionStates[connection.hostId]?.state === "connected";
+    return (
+      !isRemoteControlConnection(connection) &&
+      connectionStates[connection.hostId]?.state === "connected"
+    );
   });
+  const showEmptyState =
+    connections.length === 0 && !remoteControlConnectionsState.authRequired;
+
+  const handleStartEditing = (connection: RemoteControlConnection) => {
+    setEditingEnvId(connection.envId);
+    setDraftName(connection.displayName);
+  };
+
+  const handleCancelEditing = () => {
+    setEditingEnvId(null);
+    setDraftName("");
+  };
+
+  const handleSaveRemoteControlConnection = async (
+    connection: RemoteControlConnection,
+  ) => {
+    if (trimmedDraftName.length === 0 || savingEnvId != null) {
+      return;
+    }
+    if (trimmedDraftName === connection.displayName) {
+      handleCancelEditing();
+      return;
+    }
+
+    setSavingEnvId(connection.envId);
+    try {
+      await onRenameRemoteControlConnection(connection, trimmedDraftName);
+      handleCancelEditing();
+    } catch {
+      // Toast is owned by the mutation caller.
+    } finally {
+      setSavingEnvId(null);
+    }
+  };
 
   return (
     <SettingsGroup className="gap-2">
       <SettingsGroup.Header
         className="h-auto"
         title={t("settings.remoteConnections.deviceConnections.header.title")}
-        subtitle={t("settings.remoteConnections.deviceConnections.sshSubtitle")}
         actions={
           <div className="flex items-center gap-2">
             <Button
@@ -839,82 +984,322 @@ function DeviceConnectionsSection({
               {t("settings.remoteConnections.deviceConnections.loading")}
             </div>
           ) : null}
-          {!isLoading && connections.length === 0 ? (
+          {!isLoading && showEmptyState ? (
             <SettingsRow
               label={t("settings.remoteConnections.deviceConnections.empty")}
               control={null}
             />
           ) : null}
           {connections.map((connection) => {
-            const response = connectionStates[connection.hostId] ?? {
-              state: "disconnected" as const,
-              error: null,
-              appServerVersion: null,
-              installedCodexVersion: null,
-            };
-            const connectionError = normalizeConnectionError(response.error);
-            const meta = buildConnectionMeta(t, response.state, connectionError);
-            const isPendingAutoConnect = pendingAutoConnectHostId === connection.hostId;
-            const canRestart =
-              response.state === "connected" ||
-              connectionError?.code === "login-required" ||
-              connectionError?.code === "update-required" ||
-              connectionError?.code === "restart-required";
+            if (isRemoteControlConnection(connection)) {
+              return (
+                <RemoteControlConnectionRow
+                  key={connection.hostId}
+                  connection={connection}
+                  clientAuthorized={remoteControlConnectionsState.clientAuthorized}
+                  draftName={draftName}
+                  editingEnvId={editingEnvId}
+                  pendingAutoConnectHostId={pendingAutoConnectHostId}
+                  response={connectionStates[connection.hostId] ?? null}
+                  savingEnvId={savingEnvId}
+                  trimmedDraftName={trimmedDraftName}
+                  onCancelEditing={handleCancelEditing}
+                  onDeleteConnection={onDeleteConnection}
+                  onDraftNameChange={setDraftName}
+                  onLogoutConnection={onLogoutConnection}
+                  onOpenDetails={onOpenDetails}
+                  onSave={handleSaveRemoteControlConnection}
+                  onStartEditing={handleStartEditing}
+                  onToggleAutoConnect={onToggleAutoConnect}
+                />
+              );
+            }
 
             return (
-              <SettingsRow
+              <SshConnectionRow
                 key={connection.hostId}
-                label={connection.displayName}
-                description={
-                  t("settings.remoteConnections.deviceConnections.sshSubtitle")
-                }
-                status={
-                  <span
-                    className={buildConnectionDotClassName(response.state, connectionError)}
-                    aria-hidden="true"
-                    title={meta.label}
-                  />
-                }
-                banner={
-                  statusError != null ? (
-                    <div className="rounded-md border border-token-border-error p-2 text-sm text-token-error-foreground">
-                      {statusError}
-                    </div>
-                  ) : connectionError?.code === "login-required" ? (
-                    <button
-                      type="button"
-                      className="text-left text-sm text-token-text-secondary underline underline-offset-2"
-                      onClick={() => onLoginRequired(connection.hostId)}
-                    >
-                      {t("settings.remoteConnections.loginRequiredCta")}
-                    </button>
-                  ) : null
-                }
-                control={
-                  <div className="flex items-center gap-2">
-                    <ConnectionActionsMenu
-                      canLogout={response.state === "connected"}
-                      canRestart={canRestart}
-                      onDetails={() => onOpenDetails(connection.hostId)}
-                      onDelete={() => onDeleteConnection(connection)}
-                      onEdit={() => onEditConnection(connection.hostId)}
-                      onLogout={() => void onLogoutConnection(connection.hostId)}
-                      onRestart={() => onRestartConnection(connection.hostId)}
-                    />
-                    <ToggleSwitch
-                      ariaLabel={t("settings.remoteConnections.table.autoConnect.ariaLabel")}
-                      checked={connection.autoConnect}
-                      disabled={isPendingAutoConnect}
-                      onChange={(checked) => onToggleAutoConnect(connection.hostId, checked)}
-                    />
-                  </div>
-                }
+                connection={connection}
+                pendingAutoConnectHostId={pendingAutoConnectHostId}
+                response={connectionStates[connection.hostId] ?? null}
+                statusError={statusError}
+                onDeleteConnection={onDeleteConnection}
+                onEditConnection={onEditConnection}
+                onLoginRequired={onLoginRequired}
+                onLogoutConnection={onLogoutConnection}
+                onOpenDetails={onOpenDetails}
+                onRestartConnection={onRestartConnection}
+                onToggleAutoConnect={onToggleAutoConnect}
               />
             );
           })}
+          {!isLoading && remoteControlConnectionsState.authRequired ? (
+            <div className="p-3 text-sm text-token-text-secondary">
+              {t("settings.remoteControlConnections.authRequired")}
+            </div>
+          ) : null}
         </SettingsSurface>
       </SettingsGroup.Content>
     </SettingsGroup>
+  );
+}
+
+function SshConnectionRow({
+  connection,
+  pendingAutoConnectHostId,
+  response,
+  statusError,
+  onDeleteConnection,
+  onEditConnection,
+  onLoginRequired,
+  onLogoutConnection,
+  onOpenDetails,
+  onRestartConnection,
+  onToggleAutoConnect,
+}: {
+  connection: RemoteConnection;
+  pendingAutoConnectHostId: string | null;
+  response: AppServerConnectionStateResponse | null;
+  statusError: string | null;
+  onDeleteConnection: (connection: DeviceConnection) => void;
+  onEditConnection: (hostId: string) => void;
+  onLoginRequired: (hostId: string) => void;
+  onLogoutConnection: (hostId: string) => Promise<void> | void;
+  onOpenDetails: (connection: DeviceConnection) => void;
+  onRestartConnection: (hostId: string) => void;
+  onToggleAutoConnect: (hostId: string, autoConnect: boolean) => void;
+}) {
+  const { t } = useI18n();
+  const resolvedResponse = response ?? {
+    state: "disconnected" as const,
+    error: null,
+    appServerVersion: null,
+    installedCodexVersion: null,
+  };
+  const connectionError = normalizeConnectionError(resolvedResponse.error);
+  const meta = buildConnectionMeta(t, resolvedResponse.state, connectionError);
+  const isPendingAutoConnect = pendingAutoConnectHostId === connection.hostId;
+  const canRestart =
+    resolvedResponse.state === "connected" ||
+    connectionError?.code === "login-required" ||
+    connectionError?.code === "update-required" ||
+    connectionError?.code === "restart-required";
+
+  return (
+    <SettingsRow
+      label={connection.displayName}
+      description={t("settings.remoteConnections.deviceConnections.sshSubtitle")}
+      status={
+        <span
+          className={buildConnectionDotClassName(
+            resolvedResponse.state,
+            connectionError,
+          )}
+          aria-hidden="true"
+          title={meta.label}
+        />
+      }
+      banner={
+        statusError != null ? (
+          <div className="rounded-md border border-token-border-error p-2 text-sm text-token-error-foreground">
+            {statusError}
+          </div>
+        ) : connectionError?.code === "login-required" ? (
+          <button
+            type="button"
+            className="text-left text-sm text-token-text-secondary underline underline-offset-2"
+            onClick={() => onLoginRequired(connection.hostId)}
+          >
+            {t("settings.remoteConnections.loginRequiredCta")}
+          </button>
+        ) : null
+      }
+      control={
+        <div className="flex items-center gap-2">
+          <ConnectionActionsMenu
+            actionsLabel={t("settings.remoteConnections.table.actions.ariaLabel", {
+              connectionName: connection.displayName,
+            })}
+            detailsLabel={t("settings.remoteConnections.detailsMenu")}
+            deleteLabel={t("settings.remoteConnections.deleteConnection")}
+            deleteTooltip={t("settings.remoteConnections.deleteConnection")}
+            editLabel={t("settings.remoteConnections.editConnection")}
+            editTooltip={t("settings.remoteConnections.editConnection")}
+            editDisabled={false}
+            deleteDisabled={false}
+            onDelete={() => onDeleteConnection(connection)}
+            onDetails={() => onOpenDetails(connection)}
+            onEdit={() => onEditConnection(connection.hostId)}
+            onLogout={
+              resolvedResponse.state === "connected"
+                ? () => void onLogoutConnection(connection.hostId)
+                : undefined
+            }
+            onRestart={
+              canRestart ? () => onRestartConnection(connection.hostId) : undefined
+            }
+            restartLabel={t("settings.remoteConnections.restartConnection")}
+          />
+          <ToggleSwitch
+            ariaLabel={t("settings.remoteConnections.table.autoConnect.ariaLabel", {
+              connectionName: connection.displayName,
+            })}
+            checked={connection.autoConnect}
+            disabled={isPendingAutoConnect}
+            onChange={(checked) => onToggleAutoConnect(connection.hostId, checked)}
+          />
+        </div>
+      }
+    />
+  );
+}
+
+function RemoteControlConnectionRow({
+  connection,
+  clientAuthorized,
+  draftName,
+  editingEnvId,
+  pendingAutoConnectHostId,
+  response,
+  savingEnvId,
+  trimmedDraftName,
+  onCancelEditing,
+  onDeleteConnection,
+  onDraftNameChange,
+  onLogoutConnection,
+  onOpenDetails,
+  onSave,
+  onStartEditing,
+  onToggleAutoConnect,
+}: {
+  connection: RemoteControlConnection;
+  clientAuthorized: boolean;
+  draftName: string;
+  editingEnvId: string | null;
+  pendingAutoConnectHostId: string | null;
+  response: AppServerConnectionStateResponse | null;
+  savingEnvId: string | null;
+  trimmedDraftName: string;
+  onCancelEditing: () => void;
+  onDeleteConnection: (connection: DeviceConnection) => void;
+  onDraftNameChange: (value: string) => void;
+  onLogoutConnection: (hostId: string) => Promise<void> | void;
+  onOpenDetails: (connection: DeviceConnection) => void;
+  onSave: (connection: RemoteControlConnection) => Promise<void> | void;
+  onStartEditing: (connection: RemoteControlConnection) => void;
+  onToggleAutoConnect: (hostId: string, autoConnect: boolean) => void;
+}) {
+  const { t } = useI18n();
+  const resolvedResponse = response ?? {
+    state: "disconnected" as const,
+    error: null,
+    appServerVersion: null,
+    installedCodexVersion: null,
+  };
+  const compatibleVersion = isCompatibleRemoteControlVersion(
+    connection.appServerVersion,
+  );
+  const canConnect =
+    clientAuthorized && connection.online && compatibleVersion;
+  const isEditing = editingEnvId === connection.envId;
+  const isSaving = savingEnvId === connection.envId;
+  const deleteDisabled =
+    isEditing || savingEnvId != null || connection.online;
+  const editDisabled = isEditing || savingEnvId != null;
+
+  return (
+    <SettingsRow
+      className={canConnect ? undefined : "text-token-text-secondary opacity-60"}
+      label={
+        isEditing ? (
+          <input
+            aria-label={t("settings.remoteControlConnections.rename.inputLabel")}
+            className="min-w-0 rounded-md border border-token-input-border bg-token-input-background px-2 py-1 text-sm text-token-input-foreground outline-none placeholder:text-token-input-placeholder-foreground focus:border-token-focus-border disabled:bg-token-foreground/5 disabled:text-token-text-secondary disabled:opacity-100"
+            value={draftName}
+            disabled={isSaving}
+            onChange={(event) => onDraftNameChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void onSave(connection);
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                onCancelEditing();
+              }
+            }}
+            autoFocus
+          />
+        ) : (
+          connection.displayName
+        )
+      }
+      description={buildRemoteControlConnectionSubtitle(t, connection, compatibleVersion)}
+      status={
+        <RemoteControlConnectionStatus
+          connection={connection}
+          state={resolvedResponse.state}
+        />
+      }
+      control={
+        isEditing ? (
+          <div className="flex items-center gap-1">
+            <Button
+              aria-label={t("settings.remoteControlConnections.rename.save")}
+              color="ghost"
+              size="icon"
+              loading={isSaving}
+              disabled={trimmedDraftName.length === 0 || savingEnvId != null}
+              onClick={() => void onSave(connection)}
+            >
+              <CheckIcon className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              aria-label={t("settings.remoteControlConnections.rename.cancel")}
+              color="ghost"
+              size="icon"
+              disabled={isSaving}
+              onClick={onCancelEditing}
+            >
+              <CloseTabIcon className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <ConnectionActionsMenu
+              actionsLabel={t("settings.remoteConnections.table.actions.ariaLabel", {
+                connectionName: connection.displayName,
+              })}
+              detailsLabel={t("settings.remoteConnections.detailsMenu")}
+              deleteLabel={t("settings.remoteConnections.deleteConnection")}
+              deleteTooltip={
+                connection.online
+                  ? t("settings.remoteControlConnections.delete.offlineOnly")
+                  : t("settings.remoteConnections.deleteConnection")
+              }
+              editLabel={t("settings.remoteControlConnections.rename")}
+              editTooltip={t("settings.remoteControlConnections.rename")}
+              editDisabled={editDisabled}
+              deleteDisabled={deleteDisabled}
+              onDelete={() => onDeleteConnection(connection)}
+              onDetails={() => onOpenDetails(connection)}
+              onEdit={() => onStartEditing(connection)}
+              onLogout={
+                resolvedResponse.state === "connected"
+                  ? () => void onLogoutConnection(connection.hostId)
+                  : undefined
+              }
+            />
+            <ToggleSwitch
+              ariaLabel={t("settings.remoteControlConnections.table.connect.ariaLabel", {
+                connectionName: connection.displayName,
+              })}
+              checked={connection.autoConnect}
+              disabled={!canConnect || pendingAutoConnectHostId === connection.hostId}
+              onChange={(checked) => onToggleAutoConnect(connection.hostId, checked)}
+            />
+          </div>
+        )
+      }
+    />
   );
 }
 
@@ -1264,7 +1649,7 @@ function DeleteConnectionDialog({
   onConfirm,
   onOpenChange,
 }: {
-  connection: RemoteConnection | null;
+  connection: DeviceConnection | null;
   isDeleting: boolean;
   open: boolean;
   onConfirm: () => void;
@@ -1281,18 +1666,26 @@ function DeleteConnectionDialog({
       <div
         aria-modal="true"
         role="dialog"
-        aria-label={t("settings.remoteControlConnections.deleteDialog.title", {
-          connectionName: connection.displayName,
-        })}
+        aria-label={
+          isRemoteControlConnection(connection)
+            ? t("settings.remoteControlConnections.deleteDialog.title", {
+                connectionName: connection.displayName,
+              })
+            : t("settings.remoteConnections.deleteConnection")
+        }
         className="app-card w-full max-w-[460px] rounded-[18px] px-5 py-5 shadow-[0_16px_40px_rgba(0,0,0,0.22)]"
       >
         <div className="text-[18px] font-medium text-token-text-primary">
-          {t("settings.remoteControlConnections.deleteDialog.title", {
-            connectionName: connection.displayName,
-          })}
+          {isRemoteControlConnection(connection)
+            ? t("settings.remoteControlConnections.deleteDialog.title", {
+                connectionName: connection.displayName,
+              })
+            : t("settings.remoteConnections.deleteConnection")}
         </div>
         <div className="mt-2 text-[13px] leading-6 text-token-text-secondary">
-          {t("settings.remoteControlConnections.deleteDialog.subtitle")}
+          {isRemoteControlConnection(connection)
+            ? t("settings.remoteControlConnections.deleteDialog.subtitle")
+            : connection.displayName}
         </div>
 
         <div className="mt-5 flex justify-end gap-2">
@@ -1301,14 +1694,18 @@ function DeleteConnectionDialog({
             disabled={isDeleting}
             onClick={() => onOpenChange(false)}
           >
-            {t("settings.remoteControlConnections.deleteDialog.cancel")}
+            {isRemoteControlConnection(connection)
+              ? t("settings.remoteControlConnections.deleteDialog.cancel")
+              : t("settings.remoteConnections.dialog.cancel")}
           </Button>
           <Button
             color="danger"
             loading={isDeleting}
             onClick={onConfirm}
           >
-            {t("settings.remoteControlConnections.deleteDialog.confirm")}
+            {isRemoteControlConnection(connection)
+              ? t("settings.remoteControlConnections.deleteDialog.confirm")
+              : t("settings.remoteConnections.deleteConnection")}
           </Button>
         </div>
       </div>
@@ -1323,7 +1720,7 @@ function ConnectionDetailsDialog({
   onOpenChange,
   onShowToast,
 }: {
-  connection: RemoteConnection | null;
+  connection: DeviceConnection | null;
   response: AppServerConnectionStateResponse | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -1337,7 +1734,17 @@ function ConnectionDetailsDialog({
 
   const connectionError = normalizeConnectionError(response?.error ?? null);
   const detailRows = buildConnectionDetailRows(connection, response);
-  const badgeLabel = buildConnectionMeta(t, response?.state ?? "disconnected", connectionError).label;
+  const badgeLabel = isRemoteControlConnection(connection)
+    ? buildRemoteControlAvailabilityLabel(
+        t,
+        connection,
+        response?.state ?? "disconnected",
+      )
+    : buildConnectionMeta(
+        t,
+        response?.state ?? "disconnected",
+        connectionError,
+      ).label;
 
   const handleCopy = async (
     value: string,
@@ -1405,18 +1812,26 @@ function ConnectionDetailsDialog({
               </div>
               <div className="max-w-[80%] min-w-0 text-right text-sm text-token-text-primary">
                 {row.copyValue == null ? (
-                  <span className="block max-w-full min-w-0 truncate">
-                    {row.value?.trim().length ? row.value : "—"}
-                  </span>
+                  typeof row.value === "string" ? (
+                    <span className="block max-w-full min-w-0 truncate">
+                      {row.value.trim().length ? row.value : "—"}
+                    </span>
+                  ) : (
+                    row.value ?? "—"
+                  )
                 ) : (
                   <button
                     type="button"
                     className="block max-w-full min-w-0 cursor-interaction text-right"
                     onClick={(event) => void handleCopy(row.copyValue!, event)}
                   >
-                    <span className="block max-w-full min-w-0 truncate">
-                      {row.value?.trim().length ? row.value : "—"}
-                    </span>
+                    {typeof row.value === "string" ? (
+                      <span className="block max-w-full min-w-0 truncate">
+                        {row.value.trim().length ? row.value : "—"}
+                      </span>
+                    ) : (
+                      row.value ?? "—"
+                    )}
                   </button>
                 )}
               </div>
@@ -1438,21 +1853,35 @@ function ConnectionDetailsDialog({
 }
 
 function ConnectionActionsMenu({
-  canLogout,
-  canRestart,
-  onDetails,
+  actionsLabel,
+  deleteDisabled,
+  deleteLabel,
+  deleteTooltip,
+  detailsLabel,
+  editDisabled,
+  editLabel,
+  editTooltip,
   onDelete,
+  onDetails,
   onEdit,
   onLogout,
   onRestart,
+  restartLabel,
 }: {
-  canLogout: boolean;
-  canRestart: boolean;
+  actionsLabel: string;
+  deleteDisabled: boolean;
+  deleteLabel: string;
+  deleteTooltip: string;
+  detailsLabel: string;
+  editDisabled: boolean;
+  editLabel: string;
+  editTooltip: string;
   onDetails: () => void;
   onDelete: () => void;
   onEdit: () => void;
-  onLogout: () => void;
-  onRestart: () => void;
+  onLogout?: () => void;
+  onRestart?: () => void;
+  restartLabel?: string;
 }) {
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
@@ -1479,7 +1908,7 @@ function ConnectionActionsMenu({
   return (
     <div className="relative" ref={containerRef}>
       <Button
-        aria-label={t("settings.remoteConnections.table.actions.ariaLabel")}
+        aria-label={actionsLabel}
         title={t("settings.remoteConnections.detailsMenu")}
         color="ghost"
         size="toolbar"
@@ -1493,7 +1922,7 @@ function ConnectionActionsMenu({
         <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 min-w-[220px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
           <MenuButton
             icon={<InfoIcon className="h-3.5 w-3.5" />}
-            label={t("settings.remoteConnections.detailsMenu")}
+            label={detailsLabel}
             onSelect={() => {
               setIsOpen(false);
               onDetails();
@@ -1501,23 +1930,25 @@ function ConnectionActionsMenu({
           />
           <MenuButton
             icon={<PencilIcon className="h-3.5 w-3.5" />}
-            label={t("settings.remoteConnections.editConnection")}
+            disabled={editDisabled}
+            label={editLabel}
+            tooltip={editDisabled ? editTooltip : undefined}
             onSelect={() => {
               setIsOpen(false);
               onEdit();
             }}
           />
-          {canRestart ? (
+          {onRestart != null && restartLabel != null ? (
             <MenuButton
               icon={<RefreshIcon className="h-3.5 w-3.5" />}
-              label={t("settings.remoteConnections.restartConnection")}
+              label={restartLabel}
               onSelect={() => {
                 setIsOpen(false);
                 onRestart();
               }}
             />
           ) : null}
-          {canLogout ? (
+          {onLogout != null ? (
             <MenuButton
               icon={<LogoutIcon className="h-3.5 w-3.5" />}
               label={t("settings.remoteConnections.logout")}
@@ -1529,8 +1960,10 @@ function ConnectionActionsMenu({
           ) : null}
           <MenuButton
             danger
+            disabled={deleteDisabled}
             icon={<TrashIcon className="h-3.5 w-3.5" />}
-            label={t("settings.remoteConnections.deleteConnection")}
+            label={deleteLabel}
+            tooltip={deleteDisabled ? deleteTooltip : undefined}
             onSelect={() => {
               setIsOpen(false);
               onDelete();
@@ -1548,17 +1981,20 @@ function MenuButton({
   icon,
   label,
   onSelect,
+  tooltip,
 }: {
   danger?: boolean;
   disabled?: boolean;
   icon: ReactNode;
   label: string;
   onSelect: () => void;
+  tooltip?: string;
 }) {
   return (
     <button
       type="button"
       disabled={disabled}
+      title={tooltip}
       onClick={() => {
         if (!disabled) {
           onSelect();
@@ -1738,10 +2174,46 @@ function buildConnectionDotClassName(
   return "block size-2 rounded-full bg-gray-400";
 }
 
+function isRemoteControlConnection(
+  connection: DeviceConnection,
+): connection is RemoteControlConnection {
+  return "envId" in connection;
+}
+
 function buildConnectionDetailRows(
-  connection: RemoteConnection,
+  connection: DeviceConnection,
   response: AppServerConnectionStateResponse | null,
 ): ConnectionDetailRow[] {
+  if (isRemoteControlConnection(connection)) {
+    const platform = buildRemoteControlPlatformLabel(connection);
+    return [
+      {
+        id: "host",
+        label: "settings.remoteControlConnections.details.host",
+        value: connection.hostName ?? "—",
+        copyValue: connection.hostName,
+      },
+      {
+        id: "platform",
+        label: "settings.remoteControlConnections.details.platform",
+        value: platform,
+        copyValue: platform === "—" ? null : platform,
+      },
+      {
+        id: "version",
+        label: "settings.remoteControlConnections.details.version",
+        value: connection.appServerVersion ?? "—",
+        copyValue: connection.appServerVersion,
+      },
+      {
+        id: "lastSeen",
+        label: "settings.remoteControlConnections.details.lastSeen",
+        value: formatRelativeDateTime(connection.lastSeenAt),
+        copyValue: connection.lastSeenAt,
+      },
+    ];
+  }
+
   const rows: ConnectionDetailRow[] = [];
 
   if (connection.source === "discovered" && connection.sshAlias != null) {
@@ -1788,6 +2260,220 @@ function buildConnectionDetailRows(
   }
 
   return rows;
+}
+
+function buildRemoteControlPlatformLabel(connection: RemoteControlConnection) {
+  const values = [connection.os, connection.arch].filter(
+    (value): value is string => value != null && value.trim().length > 0,
+  );
+  return values.length > 0 ? values.join(" / ") : "—";
+}
+
+function formatDetailDateTime(value: string | null) {
+  if (value == null) {
+    return "—";
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function formatRelativeDateTime(value: string | null) {
+  if (value == null) {
+    return "—";
+  }
+
+  const timestampMs = Date.parse(value);
+  if (!Number.isFinite(timestampMs)) {
+    return value;
+  }
+
+  return <RelativeDateTimeValue timestampMs={timestampMs} />;
+}
+
+function sortRemoteControlConnections(
+  connections: RemoteControlConnection[],
+) {
+  return [...connections].sort((left, right) => {
+    if (left.online !== right.online) {
+      return left.online ? -1 : 1;
+    }
+    if (left.lastSeenAt != null && right.lastSeenAt == null) {
+      return -1;
+    }
+    if (left.lastSeenAt == null && right.lastSeenAt != null) {
+      return 1;
+    }
+    if (
+      left.lastSeenAt != null &&
+      right.lastSeenAt != null &&
+      left.lastSeenAt !== right.lastSeenAt
+    ) {
+      return right.lastSeenAt.localeCompare(left.lastSeenAt);
+    }
+    return left.displayName.localeCompare(right.displayName);
+  });
+}
+
+async function readConnectionStateResponses(
+  connections: DeviceConnection[],
+): Promise<DeviceConnectionStateByHostId> {
+  const states = await Promise.all(
+    connections.map(async (connection) => {
+      const response = await readAppServerConnectionState(connection.hostId).catch(
+        () => null,
+      );
+      return [
+        connection.hostId,
+        response ?? {
+          state: "disconnected" as const,
+          error: null,
+          appServerVersion: null,
+          installedCodexVersion: null,
+        },
+      ] as const;
+    }),
+  );
+
+  return Object.fromEntries(states);
+}
+
+function isCompatibleRemoteControlVersion(version: string | null) {
+  if (version == null) {
+    return false;
+  }
+
+  const current = parseLooseVersion(version);
+  const required = parseLooseVersion(REMOTE_CONNECTION_MIN_REQUIRED_VERSION);
+  if (current == null || required == null) {
+    return false;
+  }
+
+  const maxLength = Math.max(current.numbers.length, required.numbers.length);
+  for (let index = 0; index < maxLength; index += 1) {
+    const left = current.numbers[index] ?? 0;
+    const right = required.numbers[index] ?? 0;
+    if (left !== right) {
+      return left > right;
+    }
+  }
+
+  if (current.prerelease == null && required.prerelease == null) {
+    return true;
+  }
+  if (current.prerelease == null) {
+    return true;
+  }
+  if (required.prerelease == null) {
+    return false;
+  }
+
+  return current.prerelease.localeCompare(required.prerelease) >= 0;
+}
+
+function parseLooseVersion(version: string) {
+  const match = version.trim().match(/^(\d+(?:\.\d+)*)(?:-([0-9A-Za-z.-]+))?/);
+  if (match == null) {
+    return null;
+  }
+
+  return {
+    numbers: match[1].split(".").map((value) => Number.parseInt(value, 10)),
+    prerelease: match[2] ?? null,
+  };
+}
+
+function buildRemoteControlAvailabilityLabel(
+  t: (key: MessageKey, values?: MessageValues) => string,
+  connection: RemoteControlConnection,
+  state: AppServerConnectionState,
+) {
+  if (connection.online) {
+    if (isCompatibleRemoteControlVersion(connection.appServerVersion)) {
+      if (state === "connected") {
+        return connection.busy
+          ? t("settings.remoteControlConnections.availability.busy")
+          : t("settings.remoteControlConnections.availability.online");
+      }
+      return t("threadPage.remoteConnectionStatusBadge.disconnected");
+    }
+
+    return t("settings.remoteControlConnections.availability.updateRequired", {
+      currentVersion: connection.appServerVersion ?? "—",
+      requiredVersion: REMOTE_CONNECTION_MIN_REQUIRED_VERSION,
+    });
+  }
+
+  return t("settings.remoteControlConnections.availability.offline");
+}
+
+function buildRemoteControlDotClassName(
+  connection: RemoteControlConnection,
+  state: AppServerConnectionState,
+) {
+  if (
+    !connection.online ||
+    !isCompatibleRemoteControlVersion(connection.appServerVersion) ||
+    state !== "connected"
+  ) {
+    return "block size-2 rounded-full bg-gray-400";
+  }
+  if (connection.busy) {
+    return "block size-2 rounded-full bg-token-charts-yellow";
+  }
+  return "block size-2 rounded-full bg-token-charts-green";
+}
+
+function buildRemoteControlConnectionSubtitle(
+  t: (key: MessageKey, values?: MessageValues) => string,
+  connection: RemoteControlConnection,
+  compatibleVersion: boolean,
+) {
+  if (connection.online) {
+    if (compatibleVersion) {
+      return t(
+        "settings.remoteConnections.deviceConnections.signedInDeviceOnlineSubtitle",
+      );
+    }
+    return t(
+      "settings.remoteConnections.deviceConnections.signedInDeviceUpdateRequiredSubtitle",
+      {
+        currentVersion: connection.appServerVersion ?? "—",
+        requiredVersion: REMOTE_CONNECTION_MIN_REQUIRED_VERSION,
+      },
+    );
+  }
+
+  return t(
+    "settings.remoteConnections.deviceConnections.signedInDeviceOfflineSubtitle",
+  );
+}
+
+function RemoteControlConnectionStatus({
+  connection,
+  state,
+}: {
+  connection: RemoteControlConnection;
+  state: AppServerConnectionState;
+}) {
+  const { t } = useI18n();
+  const label = buildRemoteControlAvailabilityLabel(t, connection, state);
+
+  return (
+    <span
+      aria-label={label}
+      className={buildRemoteControlDotClassName(connection, state)}
+      role="img"
+      title={label}
+    />
+  );
 }
 
 function normalizeConnectionError(value: unknown): ConnectionError | null {
@@ -1941,15 +2627,105 @@ function getSshValidationMessageKey(error: SshValidationError): MessageKey {
   }
 }
 
-function formatAbsoluteDateTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
+function RemoteControlClientLastSeen({
+  timestampMs,
+}: {
+  timestampMs: number;
+}) {
+  const { t } = useI18n();
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNow(Date.now());
+    }, 60_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  if (!Number.isFinite(timestampMs)) {
+    return "—";
   }
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
+
+  return t("settings.remoteConnections.remoteControlClients.lastSeen", {
+    date: formatCompactRelativeTime(timestampMs, now, t),
+  });
+}
+
+function RelativeDateTimeValue({
+  timestampMs,
+}: {
+  timestampMs: number;
+}) {
+  const { t } = useI18n();
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setNow(Date.now());
+    }, 60_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  if (!Number.isFinite(timestampMs)) {
+    return "—";
+  }
+
+  return formatCompactRelativeTime(timestampMs, now, t);
+}
+
+function formatCompactRelativeTime(
+  timestampMs: number,
+  now: number,
+  t: (key: MessageKey, values?: MessageValues) => string,
+) {
+  const diffMinutes = Math.floor((now - timestampMs) / (60 * 1000));
+  const safeMinutes = Math.max(1, diffMinutes);
+
+  if (safeMinutes < 60) {
+    return t("wham.formattedRelativeDateTime.compactMinutesAgo", {
+      value: safeMinutes,
+    });
+  }
+
+  const hours = Math.floor(safeMinutes / 60);
+  if (hours < 24) {
+    return t("wham.formattedRelativeDateTime.compactHoursAgo", { value: hours });
+  }
+
+  const days = Math.max(
+    1,
+    Math.round((startOfDay(now).getTime() - startOfDay(timestampMs).getTime()) / 86400000),
+  );
+  if (days < 7) {
+    return t("wham.formattedRelativeDateTime.compactDaysAgo", { value: days });
+  }
+
+  if (days < 30) {
+    return t("wham.formattedRelativeDateTime.compactWeeksAgo", {
+      value: Math.floor(days / 7),
+    });
+  }
+
+  if (days < 365) {
+    return t("wham.formattedRelativeDateTime.compactMonthsAgo", {
+      value: Math.floor(days / 30),
+    });
+  }
+
+  return t("wham.formattedRelativeDateTime.compactYearsAgo", {
+    value: Math.floor(days / 365),
+  });
+}
+
+function startOfDay(value: number) {
+  const date = new Date(value);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
 function getErrorMessage(error: unknown) {

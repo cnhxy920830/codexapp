@@ -61,6 +61,7 @@ export type ReplicaStatsigDefaultFeatures = ReplicaStatsigSharedDefaultFeatures 
 
 type ReplicaStatsigState = {
   defaultFeatures: ReplicaStatsigDefaultFeatures;
+  dynamicConfigs: Record<string, unknown>;
   error: string | null;
   gates: Record<string, boolean>;
   isLoading: boolean;
@@ -87,6 +88,7 @@ const INITIAL_STATE: ReplicaStatsigState = {
     tool_suggest: false,
     workspace_dependencies: false,
   },
+  dynamicConfigs: {},
   error: null,
   gates: {},
   isLoading: false,
@@ -174,6 +176,11 @@ export function useReplicaStatsigDefaultFeatures() {
   return useReplicaStatsigState().defaultFeatures;
 }
 
+export function useReplicaStatsigDynamicConfigValue(name: string) {
+  const state = useReplicaStatsigState();
+  return state.dynamicConfigs[name];
+}
+
 export function useReplicaStatsigOwner(authSnapshot: AuthSnapshot) {
   const authSignature = useMemo(
     () => createStatsigAuthSignature(authSnapshot),
@@ -215,6 +222,7 @@ export function useReplicaStatsigOwner(authSnapshot: AuthSnapshot) {
           return;
         }
         const gates = extractGateValues(response);
+        const dynamicConfigs = extractDynamicConfigValues(response);
         const sharedDefaultFeatures = extractSharedDefaultFeatures(
           response,
           currentState.defaultFeatures,
@@ -230,6 +238,7 @@ export function useReplicaStatsigOwner(authSnapshot: AuthSnapshot) {
             ...sharedDefaultFeatures,
             guardian_approval: gates[GATE_GUARDIAN_APPROVAL] === true,
           },
+          dynamicConfigs,
           error: null,
           gates,
           isLoading: false,
@@ -503,6 +512,13 @@ function extractGateValues(response: unknown) {
     Object.entries(gates).flatMap(([name, entry]) =>
       typeof entry.value === "boolean" ? [[name, entry.value]] : [],
     ),
+  );
+}
+
+function extractDynamicConfigValues(response: unknown) {
+  const configs = readNamedValueCollection(response, "dynamic_configs");
+  return Object.fromEntries(
+    Object.entries(configs).map(([name, entry]) => [name, entry.value]),
   );
 }
 

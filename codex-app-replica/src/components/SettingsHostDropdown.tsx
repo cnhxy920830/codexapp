@@ -160,7 +160,7 @@ function SettingsLocalHostIcon({ className }: { className?: string }) {
   );
 }
 
-function SettingsRemoteHostIcon({
+export function SettingsRemoteHostIcon({
   className,
   hostId,
   hostIdsForColorAssignment,

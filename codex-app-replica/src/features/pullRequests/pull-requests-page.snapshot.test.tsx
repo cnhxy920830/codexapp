@@ -17,7 +17,7 @@ import type {
 } from "../../services/pullRequests";
 import { groupPullRequestBoardItems } from "./pullRequestsPageModel";
 import { PullRequestDetailPane } from "./PullRequestDetailPane";
-import { PullRequestsPageView } from "./PullRequestsPageView";
+import { PullRequestsCenteredEmptyState, PullRequestsPageView } from "./PullRequestsPageView";
 import type { PullRequestDiffFile } from "./pullRequestDiffModel";
 
 const SNAPSHOT_PATH = path.join(
@@ -66,24 +66,9 @@ function buildSnapshots(): SnapshotMap {
     noRepos: renderSnapshot(
       <StaticI18nProvider>
         <div className="h-[720px]">
-          <PullRequestsPageView
-            boardItems={[]}
-            boardLoading={false}
-            boardSections={[]}
-            isWorkspaceMetadataLoading={false}
-            noRepos
-            onCopyPullRequestUrl={noopBoard}
-            onMergePullRequest={noopBoard}
-            onOpenPullRequestInBrowser={noopBoard}
-            onSelectBoardItem={noopBoard}
-            onSelectFilterView={noopFilter}
-            onSelectRepo={noopRepo}
-            pageError={null}
-            pageErrorDetail={null}
-            repoOptions={[]}
-            selectedBoardItem={null}
-            selectedRepoKey={null}
-            selectedView="authored"
+          <PullRequestsCenteredEmptyState
+            description={translate("pullRequestsPage.empty.noRepos.description")}
+            title={translate("pullRequestsPage.empty.noRepos.title")}
           />
         </div>
       </StaticI18nProvider>,
@@ -171,17 +156,13 @@ function PullRequestsShellSnapshot({
         boardItems={[boardItem]}
         boardLoading={false}
         boardSections={groupPullRequestBoardItems([boardItem])}
-        isWorkspaceMetadataLoading={false}
-        noRepos={false}
         onCopyPullRequestUrl={noopBoard}
         onMergePullRequest={noopBoard}
         onOpenPullRequestInBrowser={noopBoard}
         onSelectBoardItem={noopBoard}
         onSelectFilterView={noopFilter}
-        onSelectRepo={noopRepo}
         pageError={null}
         pageErrorDetail={null}
-        repoOptions={[{ cwd: boardItem.cwd, hostId: null, label: "openai/codex", originUrl: null, repo: "openai/codex", key: "openai/codex" }]}
         selectedBoardItem={boardItem}
         selectedRepoKey={selectedRepoKey}
         selectedView={selectedView}
@@ -206,9 +187,11 @@ function PullRequestsShellSnapshot({
         onMerge={noop}
         onOpenCommentUrl={noopUrl}
         onOpenInBrowser={noop}
+        onOpenConversationForHost={noopOpenConversationForHost}
         onPostComment={noopText}
         onPostReply={noopReply}
         onRefreshCodeReview={noop}
+        relatedThreads={buildRelatedThreads(boardItem)}
         onSelectTab={noopTab}
         onToggleAutoMerge={noop}
         selectedTab={selectedTab}
@@ -321,6 +304,16 @@ function buildDetail(boardItem: PullRequestBoardItem): PullRequestStatusSuccess 
   };
 }
 
+function buildRelatedThreads(boardItem: PullRequestBoardItem) {
+  return [
+    {
+      hostId: boardItem.hostId ?? "local",
+      id: "thread-related-1",
+      title: "Fix PR review comments",
+    },
+  ];
+}
+
 const DIFF_FILES: PullRequestDiffFile[] = [
   {
     additions: 12,
@@ -383,6 +376,7 @@ const noopTab = (_tab: "pullRequest" | "codeReview") => {};
 const noopText = (_body: string) => {};
 const noopReply = (_reviewThreadId: string, _body: string) => {};
 const noopUrl = (_url: string) => {};
+const noopOpenConversationForHost = (_threadId: string, _hostId: string) => {};
 
 function translate(key: MessageKey, values?: MessageValues) {
   return formatMessage(MESSAGES["en-US"][key], values);

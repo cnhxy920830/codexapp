@@ -40,6 +40,7 @@ type SnapshotMap = {
   emptyStateMenuOpen: string;
   listState: string;
   listStateWithMissingRow: string;
+  remoteListStateWithMissingRow: string;
   remoteEmptyState: string;
 };
 
@@ -144,6 +145,39 @@ function buildSnapshots(): SnapshotMap {
             isLoadingExistingPaths={false}
             isLoadingRoots={false}
             isRemoteHost={false}
+            isSelectAllChecked={false}
+            isSkipPending={false}
+            hasSelectedRoots
+            selectedRoots={["D:\\workspace\\codex"]}
+            showPlaygroundCopy={false}
+            skipErrorMessage={null}
+            workspaceRootOptions={[
+              ...workspaceOptions,
+              {
+                root: "D:\\workspace\\missing",
+                label: "missing",
+              },
+            ]}
+            onContinue={noop}
+            onOpenFolder={noop}
+            onSkip={noop}
+            onStartFromScratch={noop}
+            onToggleSelectAll={noopBool}
+            onToggleWorkspace={noopToggleWorkspace}
+          />
+        </div>
+      </StaticI18nProvider>,
+    ),
+    remoteListStateWithMissingRow: renderSnapshot(
+      <StaticI18nProvider>
+        <div className="h-[720px]">
+          <SelectWorkspacePageView
+            existingPaths={["D:\\workspace\\codex"]}
+            hasAvailableRoots
+            isEmptyState={false}
+            isLoadingExistingPaths={false}
+            isLoadingRoots={false}
+            isRemoteHost
             isSelectAllChecked={false}
             isSkipPending={false}
             hasSelectedRoots

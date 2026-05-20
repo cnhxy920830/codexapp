@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { RefreshIcon } from "../../components/AppShellIcons";
 import type { AppToast } from "../../components/AppToastRegion";
 import { Button } from "../../components/Button";
@@ -9,8 +9,7 @@ import { SettingsSurface } from "../../components/SettingsSurface";
 import { Spinner } from "../../components/Spinner";
 import { useReplicaStatsigGateValue } from "../statsig/replicaStatsig";
 import { useI18n } from "../../i18n/i18n";
-import { readGitOrigins } from "../../services/gitOrigins";
-import { archiveConversation, type ThreadHistoryEntry } from "../../services/history";
+import { archiveConversation, type ThreadConversation, type ThreadConversationItem, type ThreadHistoryEntry } from "../../services/history";
 import {
   LOCAL_SETTINGS_HOST_ID,
   REMOTE_PROJECTS_SHARED_OBJECT_KEY,
@@ -21,7 +20,7 @@ import { onWorkspaceRootOptionsUpdated, readWorkspaceRootOptions } from "../../s
 import { deleteWorktree, readCodexWorktrees, type CodexWorktreeEntry } from "../../services/worktrees";
 
 type WorktreesSettingsPageProps = {
-  onDismissToast?: () => void;
+  cachedConversations: ThreadConversation[];
   onShowToast?: (toast: AppToast) => void;
   onViewConversation?: (threadId: string, hostId: string) => void | Promise<void>;
   isRecentThreadsLoading?: boolean;
@@ -36,7 +35,7 @@ type WorktreeRepositoryGroup = {
 };
 
 export function WorktreesSettingsPage({
-  onDismissToast,
+  cachedConversations,
   onShowToast,
   onViewConversation,
   isRecentThreadsLoading = false,
@@ -47,7 +46,6 @@ export function WorktreesSettingsPage({
   const [reloadNonce, setReloadNonce] = useState(0);
   const [worktrees, setWorktrees] = useState<CodexWorktreeEntry[]>([]);
   const [projectRoots, setProjectRoots] = useState<string[]>([]);
-  const [restoredRepoRoots, setRestoredRepoRoots] = useState<Record<string, string>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -143,65 +141,15 @@ export function WorktreesSettingsPage({
     };
   }, [reloadNonce, selectedHostId]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const visibleWorktrees = filterOutProjectRootWorktrees(worktrees, projectRoots);
-    const groups = groupWorktreesByRepository(visibleWorktrees);
-    const dirsToResolve = groups
-      .filter((group) => group.repoRoot === null)
-      .map((group) => group.worktrees[0]?.dir ?? null)
-      .filter((dir): dir is string => dir !== null);
-
-    if (dirsToResolve.length === 0) {
-      setRestoredRepoRoots({});
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    const load = async () => {
-      try {
-        const response = await readGitOrigins({
-          dirs: dirsToResolve,
-          hostId: selectedHostId,
-        });
-        if (cancelled) {
-          return;
-        }
-
-        const rootsByDir = new Map(response.origins.map((origin) => [normalizePath(origin.dir), origin.root]));
-        const nextRestoredRepoRoots: Record<string, string> = {};
-        for (const group of groups) {
-          if (group.repoRoot !== null) {
-            continue;
-          }
-          const firstWorktreeDir = group.worktrees[0]?.dir;
-          if (!firstWorktreeDir) {
-            continue;
-          }
-          const restoredRoot = rootsByDir.get(normalizePath(firstWorktreeDir));
-          if (typeof restoredRoot === "string" && restoredRoot.trim().length > 0) {
-            nextRestoredRepoRoots[group.key] = restoredRoot;
-          }
-        }
-        setRestoredRepoRoots(nextRestoredRepoRoots);
-      } catch {
-        if (!cancelled) {
-          setRestoredRepoRoots({});
-        }
-      }
-    };
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [projectRoots, reloadNonce, selectedHostId, worktrees]);
-
   const visibleWorktrees = filterOutProjectRootWorktrees(worktrees, projectRoots);
   const groupedWorktrees = groupWorktreesByRepository(visibleWorktrees);
+  const cachedConversationsById = useMemo(() => {
+    return new Map(
+      cachedConversations
+        .filter((conversation) => (conversation.hostId ?? LOCAL_SETTINGS_HOST_ID) === selectedHostId)
+        .map((conversation) => [conversation.id, conversation]),
+    );
+  }, [cachedConversations, selectedHostId]);
   const recentThreadsForHost = recentThreads.filter((thread) => (thread.hostId ?? LOCAL_SETTINGS_HOST_ID) === selectedHostId);
   const visibleRecentThreads = recentThreadsForHost.filter(
     (thread) => !isThreadSpawnSubagentConversation(thread, backgroundSubagentsEnabled),
@@ -279,13 +227,13 @@ export function WorktreesSettingsPage({
           key={group.key}
           action={index === 0 ? refreshAction : null}
           allRecentThreads={recentThreadsForHost}
-          displayRepoRoot={restoredRepoRoots[group.key] ?? group.repoRoot ?? group.worktrees[0]?.dir ?? null}
+          cachedConversationsById={cachedConversationsById}
           hostId={selectedHostId}
           isThreadsLoading={isRecentThreadsLoading}
-          onDismissToast={onDismissToast}
           onShowToast={onShowToast}
           onViewConversation={onViewConversation}
           onWorktreeDeleted={() => setReloadNonce((current) => current + 1)}
+          repoRoot={group.repoRoot}
           visibleRecentThreads={visibleRecentThreads}
           worktrees={group.worktrees}
         />
@@ -297,42 +245,51 @@ export function WorktreesSettingsPage({
 function WorktreeRepositorySection({
   action,
   allRecentThreads,
-  displayRepoRoot,
+  cachedConversationsById,
   hostId,
   isThreadsLoading,
-  onDismissToast,
   onShowToast,
   onViewConversation,
   onWorktreeDeleted,
+  repoRoot,
   visibleRecentThreads,
   worktrees,
 }: {
   action: ReactNode;
   allRecentThreads: ThreadHistoryEntry[];
-  displayRepoRoot: string | null;
+  cachedConversationsById: ReadonlyMap<string, ThreadConversation>;
   hostId: string;
   isThreadsLoading: boolean;
-  onDismissToast?: () => void;
   onShowToast?: (toast: AppToast) => void;
   onViewConversation?: (threadId: string, hostId: string) => void | Promise<void>;
   onWorktreeDeleted: () => void;
+  repoRoot: string | null;
   visibleRecentThreads: ThreadHistoryEntry[];
   worktrees: CodexWorktreeEntry[];
 }) {
   const { t } = useI18n();
   const sortedWorktrees = sortWorktreesByConversationCount(worktrees, visibleRecentThreads);
+  const displayRepoRoot = repoRoot ?? worktrees[0]?.dir ?? null;
+  const isRepositoryMetadataLoading = false;
 
   return (
     <SettingsGroup>
       <SettingsGroup.Header
         actions={action}
         title={
-          <div className="min-w-0 text-token-text-primary">
-            {displayRepoRoot ? (
-              <span className="block truncate font-mono text-sm">{displayRepoRoot}</span>
-            ) : (
-              <span className="text-sm">{t("settings.worktrees.repository.unknown")}</span>
-            )}
+          <div className="flex min-w-0 flex-col">
+            <div className="min-w-0 truncate text-sm text-token-text-primary">
+              {displayRepoRoot ? (
+                <span className="truncate font-mono text-sm">{displayRepoRoot}</span>
+              ) : (
+                <span>{t("settings.worktrees.repository.unknown")}</span>
+              )}
+            </div>
+            {isRepositoryMetadataLoading && displayRepoRoot == null ? (
+              <div className="text-xs text-token-text-secondary">
+                {t("settings.worktrees.repository.loading")}
+              </div>
+            ) : null}
           </div>
         }
       />
@@ -342,9 +299,9 @@ function WorktreeRepositorySection({
             <WorktreeRow
               key={worktree.dir}
               allConversations={getWorktreeConversations(worktree.dir, allRecentThreads)}
+              cachedConversationsById={cachedConversationsById}
               hostId={hostId}
               isConversationsLoading={isThreadsLoading}
-              onDismissToast={onDismissToast}
               onShowToast={onShowToast}
               onViewConversation={onViewConversation}
               onWorktreeDeleted={onWorktreeDeleted}
@@ -360,9 +317,9 @@ function WorktreeRepositorySection({
 
 function WorktreeRow({
   allConversations,
+  cachedConversationsById,
   hostId,
   isConversationsLoading,
-  onDismissToast,
   onShowToast,
   onViewConversation,
   onWorktreeDeleted,
@@ -370,9 +327,9 @@ function WorktreeRow({
   worktree,
 }: {
   allConversations: ThreadHistoryEntry[];
+  cachedConversationsById: ReadonlyMap<string, ThreadConversation>;
   hostId: string;
   isConversationsLoading: boolean;
-  onDismissToast?: () => void;
   onShowToast?: (toast: AppToast) => void;
   onViewConversation?: (threadId: string, hostId: string) => void | Promise<void>;
   onWorktreeDeleted: () => void;
@@ -438,14 +395,16 @@ function WorktreeRow({
         ) : (
           <div className="flex flex-col gap-1">
             {visibleConversations.map((conversation) => {
-              const title = (conversation.name ?? conversation.preview).trim() || t("settings.worktrees.conversation.untitled");
+              const title =
+                getConversationDisplayTitle(conversation.id, cachedConversationsById) ??
+                getThreadHistoryConversationTitle(conversation) ??
+                t("settings.worktrees.conversation.untitled");
 
               return (
                 <button
                   key={conversation.id}
                   className="focus-visible:outline-token-focus flex w-full items-center justify-between gap-2 rounded-lg px-row-x py-row-y text-left text-sm text-token-text-primary hover:bg-token-list-hover-background hover:text-token-text-primary/80 focus-visible:outline-1 focus-visible:outline-offset-[-2px]"
                   onClick={() => {
-                    onDismissToast?.();
                     void onViewConversation?.(conversation.id, hostId);
                   }}
                   type="button"
@@ -552,6 +511,92 @@ function isSameOrNestedPath(root: string, path: string) {
 
 function isThreadSpawnSubagentConversation(thread: ThreadHistoryEntry, backgroundSubagentsEnabled: boolean) {
   return !backgroundSubagentsEnabled && thread.source?.parentThreadId != null;
+}
+
+function getConversationDisplayTitle(
+  conversationId: string,
+  cachedConversationsById: ReadonlyMap<string, ThreadConversation>,
+) {
+  const conversation = cachedConversationsById.get(conversationId);
+  if (!conversation) {
+    return null;
+  }
+
+  const title = normalizeConversationTitleText(conversation.title);
+  if (title !== null) {
+    return title;
+  }
+
+  const firstUserTextInput = conversation.turns[0]?.input
+    ?.filter((input): input is Extract<(typeof conversation.turns)[number]["input"][number], { type: "text" }> => input.type === "text")
+    .map((input) => input.text)
+    .join("")
+    .trim();
+  const normalizedFirstUserTextInput = normalizeConversationTitleText(firstUserTextInput);
+  if (normalizedFirstUserTextInput !== null) {
+    return normalizedFirstUserTextInput;
+  }
+
+  return getParentCollabConversationPromptTitle(conversation.id, cachedConversationsById);
+}
+
+function getThreadHistoryConversationTitle(conversation: ThreadHistoryEntry) {
+  const normalizedName = normalizeConversationTitleText(conversation.name);
+  if (normalizedName !== null) {
+    return normalizedName;
+  }
+
+  return normalizeConversationTitleText(conversation.preview);
+}
+
+function getParentCollabConversationPromptTitle(
+  conversationId: string,
+  cachedConversationsById: ReadonlyMap<string, ThreadConversation>,
+) {
+  const parentConversationId = cachedConversationsById.get(conversationId)?.source?.parentThreadId ?? null;
+  if (parentConversationId === null) {
+    return null;
+  }
+
+  const parentConversation = cachedConversationsById.get(parentConversationId);
+  if (!parentConversation) {
+    return null;
+  }
+
+  for (let turnIndex = parentConversation.turns.length - 1; turnIndex >= 0; turnIndex -= 1) {
+    const turn = parentConversation.turns[turnIndex];
+    const items = getConversationItemsForTurn(parentConversation.items, turn.id);
+    for (const item of items) {
+      if (item.type !== "collabAgentToolCall" || !item.receiverThreadIds.includes(conversationId)) {
+        continue;
+      }
+      const promptTitle = normalizeConversationTitleText(item.prompt);
+      if (promptTitle !== null) {
+        return promptTitle;
+      }
+    }
+  }
+
+  return null;
+}
+
+function getConversationItemsForTurn(items: ThreadConversationItem[], turnId: string) {
+  return items.filter((item) => item.turnId === turnId);
+}
+
+function normalizeConversationTitleText(value: string | null | undefined) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const firstLine = trimmed.split(/\r?\n/u, 1)[0] ?? trimmed;
+  const normalized = firstLine.replace(/\s+/gu, " ").trim();
+  return normalized.length > 0 ? normalized : null;
 }
 
 function normalizePath(path: string) {

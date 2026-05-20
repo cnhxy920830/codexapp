@@ -32,6 +32,7 @@ mod global_dictation_transcription;
 mod global_dictation_window;
 mod global_settings;
 mod host_files;
+mod hosted_command;
 mod hotkey_window;
 mod keyboard_shortcuts;
 mod local_environments;
@@ -79,6 +80,7 @@ use app_state_snapshot::spawn_app_state_snapshot_heartbeat;
 use app_state_snapshot::AppStateSnapshotState;
 use auth_bridge::add_marketplace;
 use auth_bridge::add_marketplace_command;
+use auth_bridge::agent_settings_notices;
 use auth_bridge::archive_conversation_command;
 use auth_bridge::archive_thread;
 use auth_bridge::batch_write_config_value_command;
@@ -355,9 +357,13 @@ use recommended_skills::remove_skill;
 use remote_app_server_registry::RemoteAppServerRegistry;
 use remote_app_server_runtime::RemoteAppServerRuntimeState;
 use remote_connections::app_server_connection_state;
+use remote_connections::delete_remote_control_environment_command;
 use remote_connections::discover_remote_ssh_connections;
 use remote_connections::get_shared_object_snapshot;
 use remote_connections::refresh_remote_connections;
+use remote_connections::refresh_remote_control_connections;
+use remote_connections::remote_workspace_directory_entries;
+use remote_connections::rename_remote_control_environment_command;
 use remote_connections::save_codex_managed_remote_ssh_connections;
 use remote_connections::save_remote_project;
 use remote_connections::set_remote_connection_auto_connect;
@@ -523,6 +529,7 @@ pub fn run() {
             get_launch_context,
             app_connect_oauth_callback_url,
             get_auth_state,
+            agent_settings_notices,
             read_account_info,
             read_account_rate_limits,
             read_usage_auto_top_up_settings,
@@ -823,6 +830,10 @@ pub fn run() {
             get_shared_object_snapshot,
             discover_remote_ssh_connections,
             refresh_remote_connections,
+            refresh_remote_control_connections,
+            rename_remote_control_environment_command,
+            delete_remote_control_environment_command,
+            remote_workspace_directory_entries,
             save_remote_project,
             save_codex_managed_remote_ssh_connections,
             set_remote_connection_auto_connect,

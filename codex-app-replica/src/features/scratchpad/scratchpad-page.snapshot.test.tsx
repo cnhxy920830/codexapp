@@ -8,6 +8,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ScratchpadPagePreview } from "./ScratchpadPage";
 import type { AppInfo } from "../../services/apps";
 import type { ThreadConversation } from "../../services/history";
+import type { PluginSummary } from "../../services/plugins";
 import type { SkillSummary } from "../../services/skills";
 import type { RowSummaryState, ScratchpadRow, ThreadRuntimeState } from "./scratchpadTypes";
 
@@ -64,6 +65,15 @@ test("scratchpad page snapshots", async (t) => {
       createdAtMs: Date.UTC(2026, 4, 18, 9, 3, 0),
     }),
     createSubmittedRow({
+      id: "prompt-link-row",
+      state: "started",
+      text:
+        "Use [$Browser Use](app://browser-use), [@Browser Use](plugin://browser-use), [@Planner](agent://conv_123), [$Code Review](D:/skills/code-review), [notes.md](./notes.md:14), and [example](https://example.com).",
+      conversationId: thread.id,
+      turnId: "turn-completed",
+      createdAtMs: Date.UTC(2026, 4, 18, 9, 4, 0),
+    }),
+    createSubmittedRow({
       id: "error-row",
       state: "error",
       text: "Failed task",
@@ -93,6 +103,7 @@ test("scratchpad page snapshots", async (t) => {
             defaultDraftPlaceholder="Add a task, or tab for a follow up"
             followUpDraftPlaceholder="Add a follow up"
             focusedDraftRowId="draft-row"
+            plugins={createPluginsFixture()}
             rows={rows}
             skills={createSkillsFixture()}
             summaryByRowId={summaryByRowId}
@@ -297,6 +308,44 @@ function createSkillsFixture(): SkillSummary[] {
       path: "D:/skills/code-review",
       scope: "workspace",
       enabled: true,
+    },
+  ];
+}
+
+function createPluginsFixture(): PluginSummary[] {
+  return [
+    {
+      id: "browser-use",
+      name: "browser-use",
+      shareContext: null,
+      source: {
+        type: "remote",
+      },
+      installed: true,
+      enabled: true,
+      installPolicy: "AVAILABLE",
+      authPolicy: "ON_USE",
+      availability: "AVAILABLE",
+      interface: {
+        displayName: "Browser Use",
+        shortDescription: "Inspect and control browser sessions",
+        longDescription: null,
+        developerName: null,
+        category: null,
+        capabilities: [],
+        websiteUrl: null,
+        privacyPolicyUrl: null,
+        termsOfServiceUrl: null,
+        defaultPrompt: null,
+        brandColor: "#00AAFF",
+        composerIcon: null,
+        composerIconUrl: "https://cdn.example.com/browser-use.png",
+        logo: null,
+        logoUrl: null,
+        screenshots: [],
+        screenshotUrls: [],
+      },
+      keywords: [],
     },
   ];
 }

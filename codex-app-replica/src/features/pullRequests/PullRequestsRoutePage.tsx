@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { AppToast } from "../../components/AppToastRegion";
 import { useI18n } from "../../i18n/i18n";
+import type { ThreadHistoryEntry } from "../../services/history";
+import { LOCAL_SETTINGS_HOST_ID } from "../../services/settingsHosts";
 import type {
   PullRequestBoardItem,
   PullRequestFilterView,
@@ -17,15 +19,27 @@ import {
   updatePullRequest,
   pullRequestSearchQueryForView,
 } from "../../services/pullRequests";
-import { readWorkspaceRootOptions } from "../../services/workspaceRoots";
+import { onWorkspaceRootOptionsUpdated, readWorkspaceRootOptions } from "../../services/workspaceRoots";
 import { readGitOrigins, type GitOrigin } from "../../services/gitOrigins";
 import { getCodexHomePath } from "../../services/codexHome";
 import { readGitSettingsSnapshot, type GitMergeMethod } from "../../services/gitSettings";
 import { onGlobalStateUpdated } from "../../services/settings";
+import {
+  REMOTE_CONNECTIONS_SHARED_OBJECT_KEY,
+  REMOTE_PROJECTS_SHARED_OBJECT_KEY,
+  onRemoteAppServerConnectionStateChanged,
+  onSharedObjectUpdated,
+  readConnectedSettingsRemoteConnections,
+  readSettingsRemoteConnectionsSnapshot,
+  readSettingsRemoteProjectsSnapshot,
+  type RemoteProject,
+} from "../../services/settingsHosts";
 import { buildPullRequestGitApplyCommand, parsePullRequestUnifiedDiff } from "./pullRequestDiffModel";
 import {
   PULL_REQUEST_BOARD_LAST_SELECTED_REPO_KEY,
+  buildPullRequestProjectGroups,
   buildPullRequestRepoOptions,
+  getPullRequestGitOriginRequests,
   getFirstSelectablePullRequest,
   getPullRequestBoardQueryTarget,
   groupPullRequestBoardItems,
@@ -38,27 +52,41 @@ import {
   type PullRequestsRouteState,
 } from "./pullRequestsPageModel";
 import { PullRequestDetailPane } from "./PullRequestDetailPane";
-import { PullRequestsPageView } from "./PullRequestsPageView";
+import {
+  PullRequestsBoardLoadingState,
+  PullRequestsCenteredEmptyState,
+  PullRequestsHeaderRepoMenu,
+  PullRequestsPageView,
+  PullRequestsRouteLoadingState,
+} from "./PullRequestsPageView";
 
 type PullRequestsRoutePageProps = {
+  onRegisterHeaderContent?: (content: ReactNode | null) => void;
+  onOpenConversationForHost: (threadId: string, hostId: string) => void | Promise<void>;
   onSetRightPanelCloseAction: (action: (() => void) | null) => void;
   onSetRightPanelVisible: (visible: boolean) => void;
-  rightPanelHost: RefObject<HTMLDivElement | null>;
   onShowToast: (toast: AppToast) => void;
+  recentThreads: ThreadHistoryEntry[];
+  rightPanelHost: RefObject<HTMLDivElement | null>;
 };
 
 export function PullRequestsRoutePage({
+  onRegisterHeaderContent,
+  onOpenConversationForHost,
   onSetRightPanelCloseAction,
   onSetRightPanelVisible,
-  rightPanelHost,
   onShowToast,
+  recentThreads,
+  rightPanelHost,
 }: PullRequestsRoutePageProps) {
   const { t } = useI18n();
   const [routeState, setRouteState] = useState<PullRequestsRouteState>(() =>
     parsePullRequestsRouteState(getWindowSearch(), readStoredRepoKey()),
   );
   const [workspaceRoots, setWorkspaceRoots] = useState<string[]>([]);
-  const [gitOrigins, setGitOrigins] = useState<GitOrigin[]>([]);
+  const [remoteProjects, setRemoteProjects] = useState<RemoteProject[]>([]);
+  const [connectedRemoteHostIds, setConnectedRemoteHostIds] = useState<string[]>([]);
+  const [gitOrigins, setGitOrigins] = useState<Array<{ hostId: string | null; origin: GitOrigin }>>([]);
   const [codexHome, setCodexHome] = useState<string | null>(null);
   const [mergeMethod, setMergeMethod] = useState<GitMergeMethod>("merge");
   const [isWorkspaceMetadataLoading, setIsWorkspaceMetadataLoading] = useState(true);
@@ -77,6 +105,7 @@ export function PullRequestsRoutePage({
   const [boardRefreshNonce, setBoardRefreshNonce] = useState(0);
   const [detailRefreshNonce, setDetailRefreshNonce] = useState(0);
   const [diffRefreshNonce, setDiffRefreshNonce] = useState(0);
+  const [metadataRefreshNonce, setMetadataRefreshNonce] = useState(0);
   const metadataRequestIdRef = useRef(0);
   const boardRequestIdRef = useRef(0);
   const detailRequestIdRef = useRef(0);
@@ -92,24 +121,59 @@ export function PullRequestsRoutePage({
     setPageError(null);
     setPageErrorDetail(null);
 
-    void Promise.all([
-      readWorkspaceRootOptions(),
-      readGitOrigins(),
-      getCodexHomePath().catch(() => null),
-      readGitSettingsSnapshot().catch(() => null),
-    ]).then(([rootOptions, origins, nextCodexHome, gitSettings]) => {
+    const load = async () => {
+      try {
+        const [rootOptions, nextRemoteProjects, remoteConnections, nextCodexHome, gitSettings] = await Promise.all([
+          readWorkspaceRootOptions(),
+          readSettingsRemoteProjectsSnapshot().catch(() => []),
+          readSettingsRemoteConnectionsSnapshot().catch(() => []),
+          getCodexHomePath().catch(() => null),
+          readGitSettingsSnapshot().catch(() => null),
+        ]);
+        if (cancelled || requestId !== metadataRequestIdRef.current) {
+          return;
+        }
+
+        const nextConnectedRemoteConnections =
+          await readConnectedSettingsRemoteConnections(remoteConnections).catch(() => []);
+        if (cancelled || requestId !== metadataRequestIdRef.current) {
+          return;
+        }
+
+        const projectGroups = buildPullRequestProjectGroups({
+          codexHome: nextCodexHome,
+          connectedRemoteHostIds: nextConnectedRemoteConnections.map((connection) => connection.hostId),
+          remoteProjects: nextRemoteProjects,
+          workspaceRoots: rootOptions.roots,
+        });
+        const gitOriginRequests = getPullRequestGitOriginRequests(projectGroups);
+        const originResponses = await Promise.all(
+          gitOriginRequests.map(async (request) => {
+            const response = await readGitOrigins({
+              dirs: request.dirs,
+              hostId: request.hostId,
+            });
+            return response.origins.map((origin) => ({
+              hostId: request.hostId,
+              origin,
+            }));
+          }),
+        ).catch((error: unknown) => {
+          throw error;
+        });
         if (cancelled || requestId !== metadataRequestIdRef.current) {
           return;
         }
 
         setWorkspaceRoots(rootOptions.roots);
-        setGitOrigins(origins.origins);
+        setRemoteProjects(nextRemoteProjects);
+        setConnectedRemoteHostIds(nextConnectedRemoteConnections.map((connection) => connection.hostId));
+        setGitOrigins(originResponses.flat());
         setCodexHome(nextCodexHome);
         if (gitSettings != null) {
           setMergeMethod(gitSettings.pullRequestMergeMethod);
         }
-      })
-      .catch((error) => {
+      } catch (error) {
         if (cancelled || requestId !== metadataRequestIdRef.current) {
           return;
         }
@@ -117,15 +181,70 @@ export function PullRequestsRoutePage({
         const message = formatError(error);
         setPageError(message);
         setPageErrorDetail(message);
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled && requestId === metadataRequestIdRef.current) {
           setIsWorkspaceMetadataLoading(false);
         }
-      });
+      }
+    };
+
+    void load();
 
     return () => {
       cancelled = true;
+    };
+  }, [metadataRefreshNonce]);
+
+  useEffect(() => {
+    let disposed = false;
+    let cleanupWorkspaceRoots: (() => void) | undefined;
+    let cleanupSharedObjects: (() => void) | undefined;
+    let cleanupConnectionStates: (() => void) | undefined;
+
+    const refreshWorkspaceMetadata = () => {
+      if (!disposed) {
+        setMetadataRefreshNonce((current) => current + 1);
+      }
+    };
+
+    void onWorkspaceRootOptionsUpdated(refreshWorkspaceMetadata).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+      cleanupWorkspaceRoots = dispose;
+    });
+
+    void onSharedObjectUpdated((notification) => {
+      if (
+        notification.key === REMOTE_CONNECTIONS_SHARED_OBJECT_KEY ||
+        notification.key === REMOTE_PROJECTS_SHARED_OBJECT_KEY
+      ) {
+        refreshWorkspaceMetadata();
+      }
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+      cleanupSharedObjects = dispose;
+    });
+
+    void onRemoteAppServerConnectionStateChanged(() => {
+      refreshWorkspaceMetadata();
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+      cleanupConnectionStates = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      void cleanupWorkspaceRoots?.();
+      void cleanupSharedObjects?.();
+      void cleanupConnectionStates?.();
     };
   }, []);
 
@@ -171,14 +290,25 @@ export function PullRequestsRoutePage({
     };
   }, []);
 
+  const projectGroups = useMemo(
+    () =>
+      buildPullRequestProjectGroups({
+        codexHome,
+        connectedRemoteHostIds,
+        remoteProjects,
+        workspaceRoots,
+      }),
+    [codexHome, connectedRemoteHostIds, remoteProjects, workspaceRoots],
+  );
+
   const repoOptions = useMemo(
     () =>
       buildPullRequestRepoOptions({
         codexHome,
         gitOrigins,
-        workspaceRoots,
+        projectGroups,
       }),
-    [codexHome, gitOrigins, workspaceRoots],
+    [codexHome, gitOrigins, projectGroups],
   );
 
   const selectedRepoKey = useMemo(
@@ -210,6 +340,33 @@ export function PullRequestsRoutePage({
     () => buildBoardItemKey(selectedBoardItem),
     [selectedBoardItem],
   );
+  const relatedThreads = useMemo(() => {
+    if (selectedBoardItem == null) {
+      return [];
+    }
+
+    const targetBranch = selectedBoardItem.headBranch.trim();
+    if (targetBranch.length === 0) {
+      return [];
+    }
+
+    const selectedHostId = selectedBoardItem.hostId ?? LOCAL_SETTINGS_HOST_ID;
+
+    return recentThreads
+      .filter((thread) => {
+        const threadHostId = thread.hostId ?? LOCAL_SETTINGS_HOST_ID;
+        const threadBranch = thread.gitInfo?.branch?.trim() ?? "";
+        return threadHostId === selectedHostId && threadBranch === targetBranch;
+      })
+      .sort((left, right) => right.updatedAt - left.updatedAt)
+      .map((thread) => ({
+        hostId: thread.hostId ?? LOCAL_SETTINGS_HOST_ID,
+        id: thread.id,
+        title:
+          (thread.name ?? thread.preview).trim()
+          || t("pullRequestsPage.detail.relatedThreads.untitled"),
+      }));
+  }, [recentThreads, selectedBoardItem, t]);
   const selectedBoardItemContext = useMemo(
     () => {
       if (!selectedBoardItem) {
@@ -652,6 +809,7 @@ export function PullRequestsRoutePage({
       hostId={selectedBoardItemContext?.hostId ?? null}
       isCodeReviewLoading={isCodeReviewLoading}
       onClose={handleCloseDetail}
+      onOpenConversationForHost={onOpenConversationForHost}
       onCopyGitApplyCommand={unifiedDiff == null ? null : handleCopyGitApplyCommand}
       onCopyUrl={() => void handleCopyPullRequestUrl(selectedBoardItem)}
       onMarkAsDraft={handleMarkAsDraft}
@@ -662,6 +820,7 @@ export function PullRequestsRoutePage({
       onPostComment={handlePostComment}
       onPostReply={handlePostReply}
       onRefreshCodeReview={refreshDiff}
+      relatedThreads={relatedThreads}
       onSelectTab={setSelectedTab}
       onToggleAutoMerge={handleToggleAutoMerge}
       selectedTab={selectedTab}
@@ -675,6 +834,34 @@ export function PullRequestsRoutePage({
     };
   }, [detailPane, onSetRightPanelVisible]);
 
+  const headerContent = useMemo(
+    () => (
+      <div className="draggable flex w-full min-w-0 items-center justify-between gap-3 py-2">
+        <div className="min-w-0 text-base font-medium text-token-foreground">
+          {t("pullRequestsPage.title")}
+        </div>
+        <div className="flex items-center gap-2">
+          <PullRequestsHeaderRepoMenu
+            disabled={repoOptions.length === 0}
+            onChange={handleSelectRepo}
+            options={repoOptions}
+            selectedRepoKey={selectedRepoKey}
+          />
+        </div>
+      </div>
+    ),
+    [handleSelectRepo, repoOptions, selectedRepoKey, t],
+  );
+
+  const shouldShowPageHeader = !isWorkspaceMetadataLoading && repoOptions.length > 0;
+
+  useEffect(() => {
+    onRegisterHeaderContent?.(shouldShowPageHeader ? headerContent : null);
+    return () => {
+      onRegisterHeaderContent?.(null);
+    };
+  }, [headerContent, onRegisterHeaderContent, shouldShowPageHeader]);
+
   useEffect(() => {
     onSetRightPanelCloseAction(selectedBoardItem == null ? null : handleCloseDetail);
     return () => {
@@ -682,26 +869,35 @@ export function PullRequestsRoutePage({
     };
   }, [onSetRightPanelCloseAction, selectedBoardItem, selectedRepoKey, routeState.view]);
 
+  if (isWorkspaceMetadataLoading) {
+    return <PullRequestsRouteLoadingState />;
+  }
+
+  if (noRepos) {
+    return (
+      <PullRequestsCenteredEmptyState
+        description={t("pullRequestsPage.empty.noRepos.description")}
+        title={t("pullRequestsPage.empty.noRepos.title")}
+      />
+    );
+  }
+
   return (
     <>
       <PullRequestsPageView
         boardItems={boardItems}
         boardLoading={boardLoading}
         boardSections={groupPullRequestBoardItems(boardItems)}
-        noRepos={noRepos}
         onCopyPullRequestUrl={handleCopyPullRequestUrl}
         onMergePullRequest={handleMergePullRequest}
         onOpenPullRequestInBrowser={handleOpenPullRequestInBrowser}
         onSelectBoardItem={selectPullRequest}
         onSelectFilterView={handleSelectView}
-        onSelectRepo={handleSelectRepo}
         pageError={pageError}
         pageErrorDetail={pageErrorDetail}
-        repoOptions={repoOptions}
         selectedBoardItem={selectedBoardItem}
         selectedRepoKey={selectedRepoKey}
         selectedView={routeState.view}
-        isWorkspaceMetadataLoading={isWorkspaceMetadataLoading}
       />
       {detailPane && rightPanelHost.current ? createPortal(detailPane, rightPanelHost.current) : null}
     </>

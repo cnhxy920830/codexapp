@@ -103,6 +103,10 @@ export type ConfigRequirementsReadResponse = {
   requirements: ConfigRequirements | null;
 };
 
+export type ConfigurationValueResponse = {
+  value: unknown;
+};
+
 export type ConfigRequirements = {
   allowedApprovalPolicies: unknown[] | null;
   allowedApprovalsReviewers: string[] | null;
@@ -110,6 +114,38 @@ export type ConfigRequirements = {
   allowedWebSearchModes: string[] | null;
   featureRequirements: Record<string, boolean> | null;
   enforceResidency: string | null;
+};
+
+export type AgentSettingsNoticeLevel = "warning";
+export type AgentSettingsNoticeKind = "configWarning" | "deprecationNotice";
+
+export type AgentSettingsNoticeRange = {
+  start: {
+    line: number;
+    column: number;
+  };
+  end: {
+    line: number;
+    column: number;
+  } | null;
+};
+
+export type AgentSettingsNotice = {
+  details: string | null;
+  kind: AgentSettingsNoticeKind;
+  level: AgentSettingsNoticeLevel;
+  path: string | null;
+  range: AgentSettingsNoticeRange | null;
+  summary: string;
+};
+
+export type AgentSettingsNoticesResponse = {
+  notices: AgentSettingsNotice[];
+};
+
+export type AgentSettingsNoticesChangedNotification = {
+  hostId: string;
+  notices: AgentSettingsNotice[];
 };
 
 export type ModelListForHostParams = {
@@ -350,6 +386,7 @@ export type ConfigScopeOption = {
   workspaceRoot: string | null;
   disabledReason: string | null;
   config: ConfigSnapshot | null;
+  layer: ConfigLayer | null;
 };
 
 export type ConfigWriteTarget = {
@@ -428,6 +465,31 @@ export async function getConfigRequirementsForHost(params: {
       params: {
         hostId: normalizeHostId(params.hostId),
       },
+    },
+  );
+}
+
+export async function getConfigurationValue(key: string) {
+  return invoke<ConfigurationValueResponse>("get-configuration", {
+    params: { key },
+  });
+}
+
+export async function readAgentSettingsNotices(hostId?: string | null) {
+  return invoke<AgentSettingsNoticesResponse>("agent-settings-notices", {
+    params: {
+      hostId: normalizeHostId(hostId),
+    },
+  });
+}
+
+export function onAgentSettingsNoticesChanged(
+  handler: (notification: AgentSettingsNoticesChangedNotification) => void,
+) {
+  return listen<AgentSettingsNoticesChangedNotification>(
+    "agent-settings-notices-changed",
+    (event) => {
+      handler(event.payload);
     },
   );
 }
@@ -538,6 +600,7 @@ export function buildConfigScopeOptions(response: ConfigReadResponse) {
         workspaceRoot,
         disabledReason: layer.disabledReason,
         config: parseLayerConfig(layer.config),
+        layer,
       });
     }
   }
@@ -553,6 +616,7 @@ export function buildConfigScopeOptions(response: ConfigReadResponse) {
       workspaceRoot: null,
       disabledReason: userLayer.disabledReason,
       config: parseLayerConfig(userLayer.config),
+      layer: userLayer,
     });
   } else {
     options.push({
@@ -564,6 +628,7 @@ export function buildConfigScopeOptions(response: ConfigReadResponse) {
       workspaceRoot: null,
       disabledReason: null,
       config: null,
+      layer: null,
     });
   }
 
@@ -580,6 +645,7 @@ export function buildConfigScopeOptions(response: ConfigReadResponse) {
       workspaceRoot: null,
       disabledReason: managedLayer.disabledReason,
       config: parseLayerConfig(managedLayer.config),
+      layer: managedLayer,
     });
   }
 
@@ -651,6 +717,14 @@ export function resolveConfigChildOrigins(
       return [childKey, findConfigOrigin(response.origins, keyPath, probeFields)];
     }),
   ) as Record<string, ConfigLayerMetadata | null>;
+}
+
+export function resolveConfigOrigin(
+  origins: Record<string, ConfigLayerMetadata>,
+  keyPath: string,
+  probeFields: string[] = [],
+) {
+  return findConfigOrigin(origins, keyPath, probeFields);
 }
 
 export function chooseDefaultConfigScopeKey(options: ConfigScopeOption[]) {

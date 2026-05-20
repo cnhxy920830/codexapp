@@ -9,10 +9,13 @@ import {
 } from "../onboarding/selectWorkspaceModel";
 import {
   REPLICA_STATSIG_GATES,
+  logReplicaStatsigProductEvent,
+  readReplicaStatsigTelemetryIdentity,
   useReplicaStatsigGateValue,
 } from "../statsig/replicaStatsig";
 import {
   cancelLogin,
+  invalidateAccountInfoQuery,
   loginApiKey,
   loginChatGptWithCompletion,
   type AuthSnapshot,
@@ -37,12 +40,14 @@ const CHATGPT_STREAMLINED_AUTH_URL = "https://chatgpt.com/codex/desktop-auth";
 
 type LoginRoutePageProps = {
   authSnapshot: AuthSnapshot;
+  hasPreviouslyCompletedOnboarding: boolean | null;
   onNavigateToWelcome: (authMethod: "apikey" | "chatgpt") => void;
   onShowToast: (toast: AppToast) => void;
 };
 
 export function LoginRoutePage({
   authSnapshot,
+  hasPreviouslyCompletedOnboarding,
   onNavigateToWelcome,
   onShowToast,
 }: LoginRoutePageProps) {
@@ -169,6 +174,7 @@ export function LoginRoutePage({
         setIsSnakeVisible(true);
       }}
       onShowApiKeyEntry={() => {
+        logLoginMethodSelected("apikey");
         setIsApiKeyEntryVisible(true);
         setIsApiKeySignInPending(false);
         setIsSnakeVisible(false);
@@ -194,6 +200,10 @@ export function LoginRoutePage({
       return;
     }
 
+    const loginMethod =
+      mode === "google" || mode === "microsoft" ? mode : "chatgpt";
+    logLoginMethodSelected(loginMethod);
+
     const controller = new AbortController();
     setBrowserLoginAbortController(controller);
     setIsApiKeyEntryVisible(false);
@@ -206,16 +216,21 @@ export function LoginRoutePage({
       await open(buildChatGptAuthUrl(result.authUrl, mode, useStreamlinedLogin));
       const completion = await result.completion;
       if (!completion.success) {
+        logLoginFailure(loginMethod, completion.error ?? "Unknown error");
         showLoginError(completion.error ?? "Unknown error");
         return;
       }
 
+      logLoginSuccess(loginMethod);
+      await invalidateAccountInfoQuery();
       await completeLoginSuccess();
       onNavigateToWelcome("chatgpt");
     } catch (error) {
       if ((error as { name?: string } | null)?.name === "AbortError") {
+        logLoginFailure(loginMethod, "abort");
         return;
       }
+      logLoginFailure(loginMethod, error);
       showLoginError(error);
     } finally {
       setBrowserLoginAbortController((current) =>
@@ -233,9 +248,11 @@ export function LoginRoutePage({
     setIsApiKeySignInPending(true);
     try {
       await loginApiKey({ apiKey: normalizedApiKey });
+      logLoginSuccess("apikey");
       await completeLoginSuccess();
       onNavigateToWelcome("apikey");
     } catch (error) {
+      logLoginFailure("apikey", error);
       showLoginError(error);
     } finally {
       setIsApiKeySignInPending(false);
@@ -299,6 +316,65 @@ export function LoginRoutePage({
         rawMessage: normalizeErrorMessage(error),
       }),
       tone: "error",
+    });
+  }
+
+  function logLoginMethodSelected(
+    method: "apikey" | "chatgpt" | "google" | "microsoft",
+  ) {
+    if (hasPreviouslyCompletedOnboarding == null) {
+      return;
+    }
+
+    const identity = readReplicaStatsigTelemetryIdentity();
+    logReplicaStatsigProductEvent({
+      eventName: "codex_login_method_selected",
+      metadata: {
+        has_previously_completed_onboarding: hasPreviouslyCompletedOnboarding,
+        method,
+        user_id: identity.userId,
+        workspace_id: identity.workspaceId,
+      },
+    });
+  }
+
+  function logLoginSuccess(
+    method: "apikey" | "chatgpt" | "google" | "microsoft",
+  ) {
+    if (hasPreviouslyCompletedOnboarding == null) {
+      return;
+    }
+
+    const identity = readReplicaStatsigTelemetryIdentity();
+    logReplicaStatsigProductEvent({
+      eventName: "codex_login_success",
+      metadata: {
+        has_previously_completed_onboarding: hasPreviouslyCompletedOnboarding,
+        method,
+        user_id: identity.userId,
+        workspace_id: identity.workspaceId,
+      },
+    });
+  }
+
+  function logLoginFailure(
+    method: "apikey" | "chatgpt" | "google" | "microsoft",
+    error: unknown,
+  ) {
+    if (hasPreviouslyCompletedOnboarding == null) {
+      return;
+    }
+
+    const identity = readReplicaStatsigTelemetryIdentity();
+    logReplicaStatsigProductEvent({
+      eventName: "codex_login_failure",
+      metadata: {
+        error_kind: normalizeLoginErrorKind(error),
+        has_previously_completed_onboarding: hasPreviouslyCompletedOnboarding,
+        method,
+        user_id: identity.userId,
+        workspace_id: identity.workspaceId,
+      },
     });
   }
 }
@@ -366,4 +442,39 @@ function normalizeErrorMessage(error: unknown) {
   }
 
   return "Unknown error";
+}
+
+function normalizeLoginErrorKind(error: unknown) {
+  const message =
+    typeof error === "string"
+      ? error
+      : error instanceof Error
+        ? error.message
+        : "";
+
+  if (message.length === 0) {
+    return "unknown";
+  }
+
+  const normalized = message.toLowerCase();
+  if (
+    normalized.includes("network") ||
+    normalized.includes("fetch") ||
+    normalized.includes("timeout")
+  ) {
+    return "network";
+  }
+
+  if (
+    normalized.includes("auth") ||
+    normalized.includes("unauthorized") ||
+    normalized.includes("forbidden") ||
+    normalized.includes("invalid api key") ||
+    normalized.includes("401") ||
+    normalized.includes("403")
+  ) {
+    return "auth";
+  }
+
+  return "unknown";
 }

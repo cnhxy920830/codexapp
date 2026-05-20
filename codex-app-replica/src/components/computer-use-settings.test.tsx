@@ -24,6 +24,10 @@ test("computer use settings keeps extracted overview page title slug and section
   assert.ok(controlIndex >= 0);
   assert.ok(allowedAppsIndex > controlIndex);
   assert.ok(soundSelectorIndex > allowedAppsIndex);
+  assert.doesNotMatch(
+    source,
+    /<SettingsGroup>\s*<SettingsGroup\.Content>\s*<SoundModeSelector/s,
+  );
 });
 
 test("computer use settings keeps extracted control rows and chrome manage ownership", () => {
@@ -47,6 +51,9 @@ test("computer use settings keeps extracted allowed-app rows and compact remove 
   assert.match(source, /<BrowserUseMessageStateRow message=\{t\("settings\.computerUse\.allowedApps\.loadError"\)\} \/>/);
   assert.match(source, /className="justify-center"/);
   assert.match(source, /<TrashIcon className="icon-2xs" \/>/);
+  assert.match(source, /approvedApps\.map\(\(approvedApp\) => \(\s*<SettingsRow/s);
+  assert.match(source, /className="items-start max-sm:flex-col max-sm:items-stretch"/);
+  assert.doesNotMatch(source, /function ComputerUseSettingsRow\(/);
   assert.match(source, /<BrowserUseDialog\s+confirmLabel=\{t\("settings\.computerUse\.allowedApps\.removeDialogConfirm"\)\}/s);
   assert.match(source, /title=\{t\("settings\.computerUse\.allowedApps\.removeDialogTitle"/);
   assert.match(source, /subtitle=\{t\("settings\.computerUse\.allowedApps\.removeDialogSubtitle"/);
@@ -86,9 +93,11 @@ test("computer use settings service and labels use extracted command and title k
   assert.match(serviceSource, /invoke<ComputerUseApprovalsState \| null>\("computer-use-app-approval-remove", \{ params \}\)/);
 
   assert.match(titleSource, /\| "computer-use"/);
-  assert.match(titleSource, /"computer-use": "settings\.section\.computer-use"/);
-  assert.match(appSource, /"computer-use": "settings\.section\.computer-use"/);
+  assert.match(titleSource, /"computer-use": "computerUse\.label"/);
+  assert.match(appSource, /"computer-use": "computerUse\.label"/);
 
+  assert.match(messagesSource, /"computerUse\.label": "Computer use"/);
+  assert.match(messagesSource, /"computerUse\.label": "计算机使用"/);
   assert.match(messagesSource, /"settings\.section\.computer-use": "Computer use"/);
   assert.match(messagesSource, /"settings\.section\.computer-use": "计算机使用"/);
   assert.match(messagesSource, /"settings\.computerUse\.install\.title": "Control"/);

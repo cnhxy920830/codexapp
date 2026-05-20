@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { useI18n } from "../../i18n/i18n";
 import {
   canDecodeAppearanceThemeShare,
@@ -210,7 +210,7 @@ export function ThemeEditorCard({
         isSubmitEnabled={isImportValueValid}
         value={importValue}
         variantLabel={variantLabel}
-        onClose={() => setIsImportDialogOpen(false)}
+        onOpenChange={setIsImportDialogOpen}
         onSubmit={async () => {
           await onImportTheme(importValue.trim());
           setIsImportDialogOpen(false);
@@ -315,7 +315,7 @@ function ThemeImportDialog({
   isSubmitEnabled,
   value,
   variantLabel,
-  onClose,
+  onOpenChange,
   onSubmit,
   onValueChange,
 }: {
@@ -325,20 +325,45 @@ function ThemeImportDialog({
   isSubmitEnabled: boolean;
   value: string;
   variantLabel: string;
-  onClose: () => void;
+  onOpenChange: (open: boolean) => void;
   onSubmit: () => Promise<void>;
   onValueChange: (value: string) => void;
 }) {
   const { t } = useI18n();
+  const titleId = useId();
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onOpenChange(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onOpenChange]);
 
   if (!isOpen) {
     return null;
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
-      <div className="w-full max-w-[480px] rounded-[18px] border border-token-border bg-token-main-surface-primary px-5 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
-        <div className="text-base font-medium text-token-text-primary">
+    <DialogOverlay onDismiss={() => onOpenChange(false)}>
+      <div
+        aria-modal="true"
+        role="dialog"
+        aria-labelledby={titleId}
+        className="w-full max-w-[480px] rounded-[18px] border border-token-border bg-token-main-surface-primary px-5 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div id={titleId} className="text-base font-medium text-token-text-primary">
           {t("settings.general.appearance.chromeTheme.import.dialog.title")}
         </div>
         <input
@@ -355,7 +380,7 @@ function ThemeImportDialog({
           onChange={(event) => onValueChange(event.target.value)}
         />
         <div className="mt-5 flex items-center justify-end gap-2">
-          <Button color="ghost" onClick={onClose}>
+          <Button color="ghost" onClick={() => onOpenChange(false)}>
             {t("settings.general.appearance.chromeTheme.import.dialog.cancel")}
           </Button>
           <Button
@@ -366,6 +391,23 @@ function ThemeImportDialog({
           </Button>
         </div>
       </div>
+    </DialogOverlay>
+  );
+}
+
+function DialogOverlay({
+  children,
+  onDismiss,
+}: {
+  children: ReactNode;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-30 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4"
+      onClick={onDismiss}
+    >
+      {children}
     </div>
   );
 }

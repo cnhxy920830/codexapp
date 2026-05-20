@@ -3,6 +3,9 @@ import { listen } from "@tauri-apps/api/event";
 
 export const LOCAL_SETTINGS_HOST_ID = "local";
 export const REMOTE_CONNECTIONS_SHARED_OBJECT_KEY = "remote_connections";
+export const REMOTE_CONTROL_CONNECTIONS_SHARED_OBJECT_KEY = "remote_control_connections";
+export const REMOTE_CONTROL_CONNECTIONS_STATE_SHARED_OBJECT_KEY =
+  "remote_control_connections_state";
 export const REMOTE_PROJECTS_SHARED_OBJECT_KEY = "remote-projects";
 export const CODEX_RUNTIMES_CONFIG_SHARED_OBJECT_KEY = "codex_runtimes_config";
 export const STATSIG_DEFAULT_ENABLE_FEATURES_SHARED_OBJECT_KEY = "statsig_default_enable_features";
@@ -24,6 +27,28 @@ export type RemoteConnection = {
   sshHost: string | null;
   sshPort: number | null;
   identity: string | null;
+};
+
+export type RemoteControlConnection = {
+  hostId: string;
+  displayName: string;
+  hostName: string | null;
+  autoConnect: boolean;
+  source: string;
+  envId: string;
+  environmentKind: string | null;
+  online: boolean;
+  busy: boolean;
+  os: string | null;
+  arch: string | null;
+  appServerVersion: string | null;
+  lastSeenAt: string | null;
+};
+
+export type RemoteControlConnectionsState = {
+  available: boolean;
+  authRequired: boolean;
+  clientAuthorized: boolean;
 };
 
 export type RemoteProject = {
@@ -59,6 +84,10 @@ export type SharedObjectUpdatedNotification = {
 
 type SaveRemoteProjectResponse = {
   project: RemoteProject;
+};
+
+export type RemoteWorkspaceDirectoryEntriesResponse = {
+  directoryPath: string;
 };
 
 export type SavedRemoteConnectionInput = {
@@ -101,6 +130,8 @@ export type SetRemoteConnectionAutoConnectResponse = {
   error: unknown | null;
 };
 
+type RemoteControlConnectionsStateResponse = RemoteControlConnectionsState;
+
 export async function readSettingsRemoteConnectionsSnapshot() {
   return readSharedObjectSnapshot(
     REMOTE_CONNECTIONS_SHARED_OBJECT_KEY,
@@ -112,6 +143,20 @@ export async function readSettingsRemoteProjectsSnapshot() {
   return readSharedObjectSnapshot(
     REMOTE_PROJECTS_SHARED_OBJECT_KEY,
     normalizeRemoteProjectsSnapshot,
+  );
+}
+
+export async function readSettingsRemoteControlConnectionsSnapshot() {
+  return readSharedObjectSnapshot(
+    REMOTE_CONTROL_CONNECTIONS_SHARED_OBJECT_KEY,
+    normalizeRemoteControlConnectionsSnapshot,
+  );
+}
+
+export async function readSettingsRemoteControlConnectionsStateSnapshot() {
+  return readSharedObjectSnapshot(
+    REMOTE_CONTROL_CONNECTIONS_STATE_SHARED_OBJECT_KEY,
+    normalizeRemoteControlConnectionsStateSnapshot,
   );
 }
 
@@ -149,12 +194,30 @@ export async function saveRemoteProject(params: { hostId: string; remotePath: st
   });
 }
 
+export async function readRemoteWorkspaceDirectoryEntries(params: {
+  hostId: string;
+  directoryPath: string;
+  directoriesOnly?: boolean;
+}) {
+  return invoke<RemoteWorkspaceDirectoryEntriesResponse>("remote-workspace-directory-entries", {
+    params: {
+      hostId: normalizeRequiredString(params.hostId),
+      directoryPath: normalizeRequiredString(params.directoryPath),
+      directoriesOnly: params.directoriesOnly !== false,
+    },
+  });
+}
+
 export async function discoverRemoteSshConnections() {
   return invoke<DiscoverRemoteSshConnectionsResponse>("discover-remote-ssh-connections");
 }
 
 export async function refreshRemoteConnections() {
   return invoke<RefreshRemoteConnectionsResponse>("refresh-remote-connections");
+}
+
+export async function refreshRemoteControlConnections() {
+  return invoke<void>("refresh-remote-control-connections");
 }
 
 export async function saveCodexManagedRemoteSshConnections(
@@ -220,6 +283,23 @@ export function filterConnectedSettingsRemoteConnections(
   });
 }
 
+export async function renameRemoteControlConnection(envId: string, name: string) {
+  return invoke<void>("rename-remote-control-environment", {
+    params: {
+      envId: normalizeRequiredString(envId),
+      name: normalizeRequiredString(name),
+    },
+  });
+}
+
+export async function deleteRemoteControlConnection(envId: string) {
+  return invoke<void>("delete-remote-control-environment", {
+    params: {
+      envId: normalizeRequiredString(envId),
+    },
+  });
+}
+
 export function onRemoteAppServerConnectionStateChanged(
   handler: (notification: RemoteAppServerConnectionStateChangedNotification) => void,
 ) {
@@ -270,9 +350,71 @@ export function normalizeRemoteProjectsSnapshot(value: unknown): RemoteProject[]
   });
 }
 
+export function normalizeRemoteControlConnectionsSnapshot(value: unknown): RemoteControlConnection[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map(normalizeRemoteControlConnection)
+    .filter((connection): connection is RemoteControlConnection => connection !== null);
+}
+
+export function normalizeRemoteControlConnectionsStateSnapshot(
+  value: unknown,
+): RemoteControlConnectionsStateResponse {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {
+      available: false,
+      authRequired: false,
+      clientAuthorized: false,
+    };
+  }
+
+  const state = value as Record<string, unknown>;
+  return {
+    available: state.available === true,
+    authRequired: state.authRequired === true,
+    clientAuthorized: state.clientAuthorized === true,
+  };
+}
+
 export function getSettingsRemoteHostColor(hostId: string, hostIdsForColorAssignment: string[]) {
   const hostColorsById = assignRemoteHostColors(hostIdsForColorAssignment);
   return hostColorsById[hostId];
+}
+
+export function normalizeRemoteProjectPath(path: string) {
+  const trimmed = path.trim();
+  if (trimmed.length === 0 || !trimmed.startsWith("/")) {
+    return null;
+  }
+
+  const normalizedSegments: string[] = [];
+  trimmed.split("/").forEach((segment) => {
+    if (segment.length === 0 || segment === ".") {
+      return;
+    }
+    if (segment === "..") {
+      if (normalizedSegments.length === 0) {
+        normalizedSegments.length = 0;
+        return;
+      }
+      normalizedSegments.pop();
+      return;
+    }
+    normalizedSegments.push(segment);
+  });
+
+  return normalizedSegments.length === 0 ? "/" : `/${normalizedSegments.join("/")}`;
+}
+
+export function getRemoteProjectLabel(remotePath: string) {
+  const normalized = normalizeRemoteProjectPath(remotePath);
+  if (normalized === null || normalized === "/") {
+    return "/";
+  }
+  return normalized.split("/").filter(Boolean).at(-1) ?? "/";
 }
 
 function normalizeRemoteConnection(value: unknown): RemoteConnection | null {
@@ -319,6 +461,37 @@ function normalizeRemoteProject(value: unknown): RemoteProject | null {
     hostId,
     remotePath,
     label,
+  };
+}
+
+function normalizeRemoteControlConnection(value: unknown): RemoteControlConnection | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const remoteConnection = value as Record<string, unknown>;
+  const hostId = normalizeNonEmptyString(remoteConnection.hostId);
+  const displayName = normalizeNonEmptyString(remoteConnection.displayName);
+  const source = normalizeNonEmptyString(remoteConnection.source);
+  const envId = normalizeNonEmptyString(remoteConnection.envId);
+  if (hostId === null || displayName === null || source === null || envId === null) {
+    return null;
+  }
+
+  return {
+    hostId,
+    displayName,
+    hostName: normalizeOptionalString(remoteConnection.hostName),
+    autoConnect: remoteConnection.autoConnect === true,
+    source,
+    envId,
+    environmentKind: normalizeOptionalString(remoteConnection.environmentKind),
+    online: remoteConnection.online === true,
+    busy: remoteConnection.busy === true,
+    os: normalizeOptionalString(remoteConnection.os),
+    arch: normalizeOptionalString(remoteConnection.arch),
+    appServerVersion: normalizeOptionalString(remoteConnection.appServerVersion),
+    lastSeenAt: normalizeOptionalString(remoteConnection.lastSeenAt),
   };
 }
 

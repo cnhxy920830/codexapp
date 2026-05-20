@@ -130,6 +130,7 @@ fn ensure_supported_key(key: &str) -> Result<(), String> {
         | "electron:onboarding-welcome-v2-state"
         | "electron:onboarding-welcome-v2-role-state"
         | "electron:onboarding-welcome-v2-role-selection-debug-override"
+        | "electron-remote-control-client-enrollments"
         | "has-seen-ambient-suggestions-connected-apps-consent"
         | "realtime-voice-mode-debug-disabled"
         | "global-dictation-force-lock-debug-enabled"
@@ -321,6 +322,7 @@ mod tests {
             "electron:onboarding-welcome-v2-state",
             "electron:onboarding-welcome-v2-role-state",
             "electron:onboarding-welcome-v2-role-selection-debug-override",
+            "electron-remote-control-client-enrollments",
             "has-seen-ambient-suggestions-connected-apps-consent",
             "realtime-voice-mode-debug-disabled",
             "global-dictation-force-lock-debug-enabled",

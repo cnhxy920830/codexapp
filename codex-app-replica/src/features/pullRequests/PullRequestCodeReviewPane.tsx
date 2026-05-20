@@ -37,6 +37,7 @@ type PullRequestCodeReviewPaneProps = {
   onCopyGitApplyCommand: (() => void | Promise<void>) | null;
   onRefreshCodeReview: () => void;
   onOpenCommentUrl: (url: string) => void | Promise<void>;
+  showFileTree: boolean;
 };
 
 type FileTreeNode = FileTreeDirectoryNode | FileTreeFileNode;
@@ -85,6 +86,7 @@ export function PullRequestCodeReviewPane({
   onCopyGitApplyCommand,
   onRefreshCodeReview,
   onOpenCommentUrl,
+  showFileTree,
 }: PullRequestCodeReviewPaneProps) {
   const { t } = useI18n();
   const [activeFilePath, setActiveFilePath] = useState<string | null>(diffFiles[0]?.path ?? null);
@@ -395,41 +397,44 @@ export function PullRequestCodeReviewPane({
         onToggleWordDiffsEnabled={() => setIsWordDiffsEnabled((value) => !value)}
         onToggleSplitDiffEnabled={() => setIsSplitDiffEnabled((value) => !value)}
         onToggleWrapEnabled={() => setIsWrapEnabled((value) => !value)}
-        showLoadFullFiles={showLoadFullFiles}
+        showHideWhitespace={false}
+        showLoadFullFiles={false}
       />
 
       <div className="flex min-h-0 flex-1 gap-4 overflow-hidden">
-        <aside className="flex min-h-0 w-[240px] shrink-0 flex-col rounded-[14px] border border-[var(--app-shell-border)] bg-[var(--app-shell-card-bg-weak)]">
-          <CodeReviewSearchInput query={searchQuery} onChange={setSearchQuery} />
-          <div className="min-h-0 flex-1 overflow-y-auto pb-2">
-            {visibleTreeFiles.length === 0 ? (
-              <div className="px-2 py-2 text-left text-[13px] text-[var(--app-shell-muted)]">
-                {t("codex.review.fileSearch.empty")}
-              </div>
-            ) : (
-              <div className="px-2">
-                <FileTreeNodes
-                  activeFilePath={fileTreeSelectionPath}
-                  depth={0}
-                  expandedDirectories={effectiveExpandedDirectories}
-                  nodes={treeNodes}
-                  onSelectFile={scrollToFile}
-                  onToggleDirectory={(directoryPath) => {
-                    setExpandedDirectories((current) => {
-                      const next = new Set(current);
-                      if (next.has(directoryPath)) {
-                        next.delete(directoryPath);
-                      } else {
-                        next.add(directoryPath);
-                      }
-                      return next;
-                    });
-                  }}
-                />
-              </div>
-            )}
-          </div>
-        </aside>
+        {showFileTree ? (
+          <aside className="flex min-h-0 w-[240px] shrink-0 flex-col rounded-[14px] border border-[var(--app-shell-border)] bg-[var(--app-shell-card-bg-weak)]">
+            <CodeReviewSearchInput query={searchQuery} onChange={setSearchQuery} />
+            <div className="min-h-0 flex-1 overflow-y-auto pb-2">
+              {visibleTreeFiles.length === 0 ? (
+                <div className="px-2 py-2 text-left text-[13px] text-[var(--app-shell-muted)]">
+                  {t("codex.review.fileSearch.empty")}
+                </div>
+              ) : (
+                <div className="px-2">
+                  <FileTreeNodes
+                    activeFilePath={fileTreeSelectionPath}
+                    depth={0}
+                    expandedDirectories={effectiveExpandedDirectories}
+                    nodes={treeNodes}
+                    onSelectFile={scrollToFile}
+                    onToggleDirectory={(directoryPath) => {
+                      setExpandedDirectories((current) => {
+                        const next = new Set(current);
+                        if (next.has(directoryPath)) {
+                          next.delete(directoryPath);
+                        } else {
+                          next.add(directoryPath);
+                        }
+                        return next;
+                      });
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          </aside>
+        ) : null}
 
         <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-y-auto pr-1">
           <div className="space-y-4">

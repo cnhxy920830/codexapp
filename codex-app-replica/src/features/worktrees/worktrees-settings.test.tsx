@@ -33,6 +33,10 @@ test("worktrees settings keeps extracted host-filtered recent threads and backgr
   assert.match(source, /const backgroundSubagentsEnabled = useReplicaStatsigGateValue\("1221508807"\);/);
   assert.match(
     source,
+    /const cachedConversationsById = useMemo\(\(\) => \{\s*return new Map\(\s*cachedConversations\s*\.filter\(\(conversation\) => \(conversation\.hostId \?\? LOCAL_SETTINGS_HOST_ID\) === selectedHostId\)\s*\.map\(\(conversation\) => \[conversation\.id, conversation\]\),\s*\);\s*\}, \[cachedConversations, selectedHostId\]\);/s,
+  );
+  assert.match(
+    source,
     /const recentThreadsForHost = recentThreads\.filter\(\(thread\) => \(thread\.hostId \?\? LOCAL_SETTINGS_HOST_ID\) === selectedHostId\);/,
   );
   assert.match(
@@ -44,9 +48,11 @@ test("worktrees settings keeps extracted host-filtered recent threads and backgr
     /function isThreadSpawnSubagentConversation\(thread: ThreadHistoryEntry, backgroundSubagentsEnabled: boolean\) \{\s*return !backgroundSubagentsEnabled && thread\.source\?\.parentThreadId != null;\s*\}/s,
   );
   assert.match(source, /recentThreads: ThreadHistoryEntry\[];/);
+  assert.match(source, /cachedConversations: ThreadConversation\[];/);
   assert.match(source, /isRecentThreadsLoading\?: boolean;/);
   assert.match(appSource, /isRecentThreadsLoading=\{!hasLoadedInitialThreadSnapshot\}/);
   assert.match(appSource, /recentThreads=\{recentThreadEntries\}/);
+  assert.match(appSource, /cachedConversations=\{Array\.from\(loadedConversationsByIdRef\.current\.values\(\)\)\}/);
 });
 
 test("worktrees settings keeps extracted worktree row interactions and app routing contract", () => {
@@ -60,10 +66,25 @@ test("worktrees settings keeps extracted worktree row interactions and app routi
     /await deleteWorktree\(\{\s*hostId,\s*worktree: worktree\.dir,\s*reason: "settings-delete-targeted",\s*\}\);/s,
   );
   assert.match(source, /void onViewConversation\?\.\(conversation\.id, hostId\);/);
+  assert.doesNotMatch(source, /onDismissToast\?\.\(\);/);
   assert.match(source, /<Button className="shrink-0" color="danger" loading=\{isDeleting\} onClick=\{\(\) => void handleDelete\(\)\} size="toolbar">/);
-  assert.match(source, /<span className="block truncate font-mono text-sm">\{displayRepoRoot\}<\/span>/);
+  assert.match(source, /repoRoot=\{group\.repoRoot\}/);
+  assert.match(source, /const displayRepoRoot = repoRoot \?\? worktrees\[0\]\?\.dir \?\? null;/);
+  assert.match(source, /const isRepositoryMetadataLoading = false;/);
+  assert.match(source, /t\("settings\.worktrees\.repository\.loading"\)/);
+  assert.match(source, /<span className="truncate font-mono text-sm">\{displayRepoRoot\}<\/span>/);
+  assert.doesNotMatch(source, /readGitOrigins/);
   assert.match(source, /<Spinner className="icon-xxs" \/>/);
   assert.match(source, /t\("settings\.worktrees\.row\.conversations\.loading"\)/);
+  assert.match(
+    source,
+    /const title =\s*getConversationDisplayTitle\(conversation\.id, cachedConversationsById\) \?\?\s*getThreadHistoryConversationTitle\(conversation\) \?\?\s*t\("settings\.worktrees\.conversation\.untitled"\);/s,
+  );
+  assert.match(source, /return getParentCollabConversationPromptTitle\(conversation\.id, cachedConversationsById\);/);
+  assert.match(source, /const title = normalizeConversationTitleText\(conversation\.title\);/);
+  assert.match(source, /const firstUserTextInput = conversation\.turns\[0\]\?\.input/);
+  assert.match(source, /item\.type !== "collabAgentToolCall" \|\| !item\.receiverThreadIds\.includes\(conversationId\)/);
+  assert.match(source, /const promptTitle = normalizeConversationTitleText\(item\.prompt\);/);
 
   assert.match(appSource, /onViewConversation=\{\(threadId, hostId\) => void viewConversationForHost\(threadId, hostId\)\}/);
   assert.match(serviceSource, /hostId\?: string \| null;/);

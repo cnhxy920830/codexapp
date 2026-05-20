@@ -11,10 +11,15 @@ export type ThreadHistoryEntry = {
   status: ThreadHistoryStatus;
   cwd: string;
   hostId?: string | null;
+  gitInfo?: ThreadHistoryGitInfo | null;
   path: string | null;
   name: string | null;
   source: ThreadHistoryEntrySource | null;
   hasUnreadTurn?: boolean;
+};
+
+export type ThreadHistoryGitInfo = {
+  branch: string | null;
 };
 
 export type ThreadHistoryStatus =
@@ -1442,6 +1447,7 @@ function normalizeThreadHistoryEntry(entry: ThreadHistoryEntry): ThreadHistoryEn
   return {
     ...entry,
     status: normalizeThreadHistoryStatus(entry.status),
+    gitInfo: normalizeThreadHistoryGitInfo(entry.gitInfo),
     source: normalizeThreadHistorySource(entry.source),
     hasUnreadTurn: normalizeThreadUnreadFlag(entry.hasUnreadTurn),
   };
@@ -1460,6 +1466,27 @@ function normalizeThreadHistoryStatus(status: ThreadHistoryStatus): ThreadHistor
 
 function normalizeThreadUnreadFlag(value: boolean | null | undefined) {
   return value === true;
+}
+
+function normalizeThreadHistoryGitInfo(
+  gitInfo: ThreadHistoryGitInfo | null | undefined,
+): ThreadHistoryGitInfo | null {
+  if (!gitInfo || typeof gitInfo !== "object") {
+    return null;
+  }
+
+  const branch =
+    typeof gitInfo.branch === "string" && gitInfo.branch.trim().length > 0
+      ? gitInfo.branch.trim()
+      : null;
+
+  if (branch === null) {
+    return null;
+  }
+
+  return {
+    branch,
+  };
 }
 
 function getHistoryThreadIndicatorStatus(

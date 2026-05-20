@@ -11,11 +11,16 @@ const APP_SOURCE_PATH = path.join(process.cwd(), "src/App.tsx");
 test("hooks settings keeps extracted shared shell ownership", () => {
   const source = readSource(COMPONENT_SOURCE_PATH);
 
+  assert.match(source, /import \{ SettingsSectionTitle \} from "\.\/SettingsSectionTitle";/);
   assert.match(source, /import \{ SettingsRow \} from "\.\/SettingsRow";/);
   assert.match(source, /import \{ SettingsSurface \} from "\.\/SettingsSurface";/);
-  assert.match(source, /renderInlineLinkMessage\(t\("settings\.hooks\.subtitle"\), HOOKS_DOCS_URL\)/);
+  assert.match(source, /title=\{<SettingsSectionTitle slug="hooks-settings" \/>\}/);
+  assert.match(
+    source,
+    /renderInlineLinkMessage\(\s*t\("settings\.hooks\.subtitle"\),\s*HOOKS_DOCS_URL,\s*"inline-flex text-token-text-link-foreground",\s*\)/s,
+  );
+  assert.match(source, /<Tooltip tooltipContent=\{t\("settings\.hooks\.refresh"\)\}>/);
   assert.match(source, /<Button[\s\S]*color="ghost"[\s\S]*size="icon"[\s\S]*uniform[\s\S]*<RefreshIcon className="icon-xs" \/>/);
-  assert.doesNotMatch(source, /function renderHooksSubtitle/);
   assert.doesNotMatch(source, /function SettingsSurface\(/);
   assert.doesNotMatch(source, /function SettingsRow\(/);
 });
@@ -37,6 +42,10 @@ test("hooks settings keeps extracted hook-row visibility affordance and app cont
 
   assert.match(componentSource, /has-\[\[data-state=open\]\]:visible has-\[\[data-state=open\]\]:opacity-100/);
   assert.match(componentSource, /data-state=\{isOpen \? "open" : "closed"\}/);
+  assert.match(componentSource, /<Tooltip delayDuration=\{0\} tooltipContent=\{t\("settings\.hooks\.event\.managedTooltip"\)\}>/);
+  assert.match(componentSource, /className="w-\[240px\] justify-between"/);
+  assert.match(componentSource, /<ChevronDownIcon className="icon-2xs shrink-0 text-token-input-placeholder-foreground" \/>/);
+  assert.match(componentSource, /<MoreActionsIcon className="icon-xs" \/>/);
   assert.match(appSource, /<HooksSettings[\s\S]*settingsCwd=\{settingsCwd\}[\s\S]*selectedHostId=\{selectedSettingsHostId\}/);
 });
 

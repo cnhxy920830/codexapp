@@ -51,6 +51,7 @@ const THREAD_READ_STATE_CHANGED_EVENT: &str = "thread-read-state-changed";
 const MCP_OAUTH_EVENT: &str = "mcp-oauth-login-completed";
 const APPS_LIST_UPDATED_EVENT: &str = "apps-list-updated";
 const CODEX_APP_SERVER_INITIALIZED_EVENT: &str = "codex-app-server-initialized";
+const AGENT_SETTINGS_NOTICES_CHANGED_EVENT: &str = "agent-settings-notices-changed";
 const CLIENT_NAME: &str = "codex-app-replica";
 const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const LOCAL_HOST_ID: &str = "local";
@@ -105,6 +106,44 @@ pub struct SendAddCreditsNudgeEmailResponse {
 #[serde(rename_all = "camelCase")]
 pub struct HostScopedParams {
     pub host_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSettingsNotice {
+    pub summary: String,
+    pub details: Option<String>,
+    pub path: Option<String>,
+    pub range: Option<AgentSettingsTextRange>,
+    pub kind: String,
+    pub level: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSettingsTextRange {
+    pub start: AgentSettingsTextPosition,
+    pub end: Option<AgentSettingsTextPosition>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSettingsTextPosition {
+    pub line: usize,
+    pub column: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSettingsNoticesResponse {
+    pub notices: Vec<AgentSettingsNotice>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct AgentSettingsNoticesChangedNotification {
+    host_id: String,
+    notices: Vec<AgentSettingsNotice>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -164,10 +203,17 @@ pub struct ThreadHistoryEntry {
     pub updated_at: i64,
     pub status: ThreadHistoryStatus,
     pub cwd: String,
+    pub git_info: Option<ThreadGitInfo>,
     pub path: Option<String>,
     pub name: Option<String>,
     pub source: Option<ThreadHistorySource>,
     pub has_unread_turn: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadGitInfo {
+    pub branch: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -425,6 +471,8 @@ struct ThreadListItem {
     updated_at: i64,
     status: ThreadHistoryStatus,
     cwd: String,
+    #[serde(default)]
+    git_info: Option<ThreadGitInfo>,
     path: Option<String>,
     name: Option<String>,
     #[serde(default)]
@@ -1274,6 +1322,8 @@ struct ThreadReadThread {
     updated_at: i64,
     status: ThreadHistoryStatus,
     cwd: String,
+    #[serde(default)]
+    git_info: Option<ThreadGitInfo>,
     name: Option<String>,
     source: Option<serde_json::Value>,
     #[serde(default)]
@@ -1384,6 +1434,8 @@ pub struct AuthBridgeState {
     latest_thread_token_usage: Mutex<HashMap<String, ThreadConversationTokenUsageInfo>>,
     thread_unread_state: Mutex<HashMap<String, bool>>,
     thread_goals: Mutex<HashMap<String, ThreadConversationGoal>>,
+    agent_settings_notices: Mutex<HashMap<String, Vec<AgentSettingsNotice>>>,
+    codex_home_by_host: Mutex<HashMap<String, String>>,
     external_agent_import_completed_generation: Mutex<u64>,
     external_agent_import_completed_notify: Notify,
 }
@@ -1410,6 +1462,28 @@ impl AuthBridgeState {
                 normalize_personality_host_id(host_id).to_string(),
                 personality,
             );
+    }
+
+    pub fn codex_home_for_host(&self, host_id: Option<&str>) -> Option<String> {
+        self.codex_home_by_host
+            .lock()
+            .expect("codex home mutex poisoned")
+            .get(normalize_host_id_for_state(host_id))
+            .cloned()
+    }
+
+    pub fn set_codex_home_for_host(&self, host_id: Option<&str>, codex_home: String) {
+        self.codex_home_by_host
+            .lock()
+            .expect("codex home mutex poisoned")
+            .insert(normalize_host_id_for_state(host_id).to_string(), codex_home);
+    }
+
+    pub fn clear_codex_home_for_host(&self, host_id: Option<&str>) {
+        self.codex_home_by_host
+            .lock()
+            .expect("codex home mutex poisoned")
+            .remove(normalize_host_id_for_state(host_id));
     }
 }
 
@@ -1716,6 +1790,8 @@ impl Default for AuthBridgeState {
             latest_thread_token_usage: Mutex::new(HashMap::new()),
             thread_unread_state: Mutex::new(HashMap::new()),
             thread_goals: Mutex::new(HashMap::new()),
+            agent_settings_notices: Mutex::new(HashMap::new()),
+            codex_home_by_host: Mutex::new(HashMap::new()),
             external_agent_import_completed_generation: Mutex::new(0),
             external_agent_import_completed_notify: Notify::new(),
         }
@@ -1761,6 +1837,22 @@ fn normalize_personality_host_id(host_id: Option<&str>) -> &str {
         None | Some(LOCAL_HOST_ID) => LOCAL_HOST_ID,
         Some(host_id) => host_id,
     }
+}
+
+fn normalize_host_id_for_state(host_id: Option<&str>) -> &str {
+    match host_id.map(str::trim).filter(|value| !value.is_empty()) {
+        None | Some(LOCAL_HOST_ID) => LOCAL_HOST_ID,
+        Some(host_id) => host_id,
+    }
+}
+
+pub(crate) fn parse_codex_home_from_initialize_result(
+    result: &serde_json::Value,
+) -> Option<String> {
+    result
+        .get("codexHome")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
 }
 
 #[derive(Debug, Deserialize)]
@@ -1898,6 +1990,8 @@ pub(crate) enum AppServerRequestKind {
     ConfigRead,
     ExternalAgentConfigDetect,
     ExternalAgentConfigImport,
+    FsReadFile,
+    FsWriteFile,
     ConfigRequirementsRead,
     ConfigValueWrite,
     ConfigBatchWrite,
@@ -2433,6 +2527,22 @@ pub async fn get_config_requirements_for_host(
     .await?;
     serde_json::from_value::<ConfigRequirementsReadResponse>(value)
         .map_err(|err| format!("failed to decode config requirements response: {err}"))
+}
+
+#[tauri::command(rename = "agent-settings-notices")]
+pub async fn agent_settings_notices(
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: HostScopedParams,
+) -> Result<AgentSettingsNoticesResponse, String> {
+    let host_id = normalize_host_id_for_state(params.host_id.as_deref()).to_string();
+    let notices = state
+        .agent_settings_notices
+        .lock()
+        .map_err(|_| "failed to lock agent settings notices cache".to_string())?
+        .get(&host_id)
+        .cloned()
+        .unwrap_or_default();
+    Ok(AgentSettingsNoticesResponse { notices })
 }
 
 async fn read_config_inner(
@@ -3780,6 +3890,7 @@ fn list_threads_from_value(
                 updated_at: thread.updated_at,
                 status: thread.status,
                 cwd: thread.cwd,
+                git_info: thread.git_info.and_then(normalize_thread_git_info),
                 path: thread.path,
                 name: thread.name,
                 source: thread_history_source_from_value(thread.source.as_ref()),
@@ -3808,6 +3919,19 @@ fn effective_thread_unread_state(
         .get(thread_id)
         .copied()
         .unwrap_or(upstream_has_unread_turn))
+}
+
+fn normalize_thread_git_info(git_info: ThreadGitInfo) -> Option<ThreadGitInfo> {
+    let branch = git_info
+        .branch
+        .map(|branch| branch.trim().to_string())
+        .filter(|branch| !branch.is_empty());
+
+    if branch.is_none() {
+        return None;
+    }
+
+    Some(ThreadGitInfo { branch })
 }
 
 fn thread_history_source_from_value(
@@ -5495,16 +5619,21 @@ async fn run_client(
                             if let Some(handle) = debug_request_handle.as_ref() {
                                 match (&result, &error) {
                                     (Some(value), None) => {
-                                                debug_app_server::request_completed(&app, handle, value);
-                                                debug_app_server::set_versions(
-                                                    &app,
-                                                    LOCAL_HOST_ID,
-                                                    debug_app_server::parse_app_server_version_from_initialize_result(
-                                                        value,
-                                                    ),
-                                                    None,
-                                                );
-                                            }
+                                        debug_app_server::request_completed(&app, handle, value);
+                                        if let Some(codex_home) =
+                                            parse_codex_home_from_initialize_result(value)
+                                        {
+                                            state.set_codex_home_for_host(None, codex_home);
+                                        }
+                                        debug_app_server::set_versions(
+                                            &app,
+                                            LOCAL_HOST_ID,
+                                            debug_app_server::parse_app_server_version_from_initialize_result(
+                                                value,
+                                            ),
+                                            None,
+                                        );
+                                    }
                                     (_, Some(err)) => {
                                         debug_app_server::request_failed(&app, handle, &err.message);
                                     }
@@ -5755,6 +5884,12 @@ async fn run_client(
                             "guardianWarning" => {
                                 handle_guardian_warning_notification(&app, &state, params);
                             }
+                            "configWarning" => {
+                                handle_config_warning_notification(&app, &state, params);
+                            }
+                            "deprecationNotice" => {
+                                handle_deprecation_notice_notification(&app, &state, params);
+                            }
                             "error" => {
                                 remember_latest_turn_from_notification(&state, &params);
                                 handle_error_notification(&app, &state, params);
@@ -5888,6 +6023,8 @@ fn request_method(kind: &AppServerRequestKind) -> &'static str {
         AppServerRequestKind::ConfigRead => "config/read",
         AppServerRequestKind::ExternalAgentConfigDetect => "externalAgentConfig/detect",
         AppServerRequestKind::ExternalAgentConfigImport => "externalAgentConfig/import",
+        AppServerRequestKind::FsReadFile => "fs/readFile",
+        AppServerRequestKind::FsWriteFile => "fs/writeFile",
         AppServerRequestKind::ConfigRequirementsRead => "configRequirements/read",
         AppServerRequestKind::ConfigValueWrite => "config/value/write",
         AppServerRequestKind::ConfigBatchWrite => "config/batchWrite",
@@ -6609,6 +6746,89 @@ fn handle_guardian_warning_notification(
             item,
         },
     );
+}
+
+fn handle_config_warning_notification(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    params: serde_json::Value,
+) {
+    let Some(summary) = params
+        .get("summary")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+    else {
+        return;
+    };
+
+    append_agent_settings_notice(
+        app,
+        state,
+        LOCAL_HOST_ID,
+        AgentSettingsNotice {
+            summary,
+            details: params
+                .get("details")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
+            path: params
+                .get("path")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
+            range: map_agent_settings_text_range(params.get("range")),
+            kind: "configWarning".to_string(),
+            level: "warning".to_string(),
+        },
+    );
+}
+
+fn handle_deprecation_notice_notification(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    params: serde_json::Value,
+) {
+    let Some(summary) = params
+        .get("summary")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+    else {
+        return;
+    };
+
+    append_agent_settings_notice(
+        app,
+        state,
+        LOCAL_HOST_ID,
+        AgentSettingsNotice {
+            summary,
+            details: params
+                .get("details")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
+            path: None,
+            range: None,
+            kind: "deprecationNotice".to_string(),
+            level: "warning".to_string(),
+        },
+    );
+}
+
+fn map_agent_settings_text_range(
+    value: Option<&serde_json::Value>,
+) -> Option<AgentSettingsTextRange> {
+    let value = value?;
+    let start = map_agent_settings_text_position(value.get("start")?)?;
+    let end = value.get("end").and_then(map_agent_settings_text_position);
+    Some(AgentSettingsTextRange { start, end })
+}
+
+fn map_agent_settings_text_position(
+    value: &serde_json::Value,
+) -> Option<AgentSettingsTextPosition> {
+    Some(AgentSettingsTextPosition {
+        line: value.get("line")?.as_u64()? as usize,
+        column: value.get("column")?.as_u64()? as usize,
+    })
 }
 
 fn handle_error_notification(
@@ -7402,6 +7622,55 @@ fn update_snapshot(app: &AppHandle, state: &Arc<AuthBridgeState>, snapshot: Auth
     let _ = app.emit(AUTH_EVENT, snapshot);
 }
 
+pub(crate) fn update_agent_settings_notices(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    host_id: &str,
+    notices: Vec<AgentSettingsNotice>,
+) {
+    if let Ok(mut cache) = state.agent_settings_notices.lock() {
+        cache.insert(host_id.to_string(), notices.clone());
+    }
+    let _ = app.emit(
+        AGENT_SETTINGS_NOTICES_CHANGED_EVENT,
+        AgentSettingsNoticesChangedNotification {
+            host_id: host_id.to_string(),
+            notices,
+        },
+    );
+}
+
+fn append_agent_settings_notice(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    host_id: &str,
+    notice: AgentSettingsNotice,
+) {
+    let next_notices = if let Ok(mut cache) = state.agent_settings_notices.lock() {
+        let notices = cache.entry(host_id.to_string()).or_default();
+        notices.push(notice);
+        notices.clone()
+    } else {
+        vec![notice]
+    };
+    let _ = app.emit(
+        AGENT_SETTINGS_NOTICES_CHANGED_EVENT,
+        AgentSettingsNoticesChangedNotification {
+            host_id: host_id.to_string(),
+            notices: next_notices,
+        },
+    );
+}
+
+pub(crate) fn push_agent_settings_notice(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    host_id: &str,
+    notice: AgentSettingsNotice,
+) {
+    append_agent_settings_notice(app, state, host_id, notice);
+}
+
 fn update_login_pending_state(
     app: &AppHandle,
     state: &Arc<AuthBridgeState>,
@@ -7994,6 +8263,9 @@ mod tests {
                             "activeFlags": ["waitingOnUserInput"]
                         },
                         "cwd": "D:/workspace",
+                        "gitInfo": {
+                            "branch": " feature/pr-page "
+                        },
                         "path": "D:/workspace/.codex/session.jsonl",
                         "name": "Demo",
                         "source": {
@@ -8023,6 +8295,9 @@ mod tests {
                     active_flags: vec![ThreadHistoryActiveFlag::WaitingOnUserInput],
                 },
                 cwd: "D:/workspace".to_string(),
+                git_info: Some(ThreadGitInfo {
+                    branch: Some("feature/pr-page".to_string()),
+                }),
                 path: Some("D:/workspace/.codex/session.jsonl".to_string()),
                 name: Some("Demo".to_string()),
                 has_unread_turn: false,
@@ -8068,6 +8343,36 @@ mod tests {
         .expect("thread list should deserialize");
 
         assert_eq!(threads[0].has_unread_turn, true);
+    }
+
+    #[test]
+    fn list_threads_from_value_drops_empty_git_branch() {
+        let threads = list_threads_from_value(
+            &shared_state(),
+            json!({
+                "data": [
+                    {
+                        "id": "thread-1",
+                        "preview": "hello",
+                        "createdAt": 100,
+                        "updatedAt": 200,
+                        "status": {
+                            "type": "idle"
+                        },
+                        "cwd": "D:/workspace",
+                        "gitInfo": {
+                            "branch": "   "
+                        },
+                        "path": null,
+                        "name": "Demo",
+                        "hasUnreadTurn": false
+                    }
+                ]
+            }),
+        )
+        .expect("thread list should deserialize");
+
+        assert_eq!(threads[0].git_info, None);
     }
 
     #[test]
@@ -8182,14 +8487,14 @@ mod tests {
     }
 
     #[test]
-    fn reset_memories_for_host_only_accepts_local_host() {
-        assert!(ensure_supported_host_id(None, "reset-memories-for-host").is_ok());
-        assert!(ensure_supported_host_id(Some(""), "reset-memories-for-host").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "reset-memories-for-host").is_ok());
+    fn reset_memories_for_host_can_route_remote_host() {
+        assert!(ensure_supported_host_id(None, "reset-memories").is_ok());
+        assert!(ensure_supported_host_id(Some(""), "reset-memories").is_ok());
+        assert!(ensure_supported_host_id(Some("local"), "reset-memories").is_ok());
+        assert_eq!(remote_host_id(Some("remote")), Some("remote"));
         assert_eq!(
-            ensure_supported_host_id(Some("remote"), "reset-memories-for-host")
-                .expect_err("non-local host id should be rejected"),
-            "reset-memories-for-host does not support host id: remote"
+            remote_host_id(Some("remote-ssh-discovered:demo")),
+            Some("remote-ssh-discovered:demo")
         );
     }
 

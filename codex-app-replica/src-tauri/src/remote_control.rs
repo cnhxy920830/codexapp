@@ -28,6 +28,7 @@
 //! payload so the page-owners do not need to change.
 
 use crate::codex_home::resolve_codex_home;
+use crate::global_settings::read_global_settings;
 use codex_client::build_reqwest_client_with_custom_ca;
 use codex_client::with_chatgpt_cloudflare_cookie_store;
 use codex_login::default_client::get_codex_user_agent;
@@ -38,14 +39,20 @@ use reqwest::header::HeaderMap;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 use reqwest::header::AUTHORIZATION;
+use reqwest::header::CONTENT_TYPE;
 use reqwest::header::USER_AGENT;
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
 use std::sync::Arc;
+use tauri::AppHandle;
 
 const CHATGPT_BACKEND_BASE_URL: &str = "https://chatgpt.com/backend-api";
+const REMOTE_CONTROL_CLIENT_ENROLLMENTS_KEY: &str = "electron-remote-control-client-enrollments";
+const REMOTE_CONTROL_ENVIRONMENTS_PATH: &str = "/codex/remote/control/environments";
+const REMOTE_CONTROL_ENVIRONMENT_HOST_ID_PREFIX: &str = "remote-control:";
+const REMOTE_CONTROL_ENVIRONMENTS_PAGE_SIZE: u32 = 100;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -120,10 +127,96 @@ pub struct RemoteControlClientsListResponse {
     pub cursor: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteControlEnvironment {
+    pub host_id: String,
+    pub display_name: String,
+    pub host_name: Option<String>,
+    pub auto_connect: bool,
+    pub source: String,
+    pub env_id: String,
+    pub environment_kind: Option<String>,
+    pub online: bool,
+    pub busy: bool,
+    pub os: Option<String>,
+    pub arch: Option<String>,
+    pub app_server_version: Option<String>,
+    pub last_seen_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteControlConnectionsState {
+    pub available: bool,
+    pub auth_required: bool,
+    pub client_authorized: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameRemoteControlEnvironmentParams {
+    pub env_id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteRemoteControlEnvironmentParams {
+    pub env_id: String,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteControlMfaRequiredButDisabledResponse {
     pub mfa_required_but_disabled: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+struct RemoteControlEnvironmentPage {
+    items: Vec<RemoteControlEnvironmentBackend>,
+    cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+struct RemoteControlEnvironmentBackend {
+    env_id: String,
+    display_name: Option<String>,
+    host_name: Option<String>,
+    #[serde(default)]
+    kind: Option<String>,
+    online: bool,
+    busy: bool,
+    #[serde(default)]
+    os: Option<String>,
+    #[serde(default)]
+    arch: Option<String>,
+    #[serde(default)]
+    app_server_version: Option<String>,
+    #[serde(default)]
+    last_seen_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+struct RenameRemoteControlEnvironmentRequest<'a> {
+    name: &'a str,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct StoredRemoteControlClientEnrollment {
+    account_user_id: String,
+    client_id: String,
+    key_id: String,
+    public_key_spki_der_base64: String,
+    algorithm: String,
+    protection_class: String,
+}
+
+struct ResponsePayload {
+    body: String,
+    content_type: String,
+    url: String,
 }
 
 #[tauri::command(rename = "remote-control-mfa-requirement-read")]
@@ -187,6 +280,64 @@ pub async fn remote_control_mfa_required_but_disabled_read(
     Ok(RemoteControlMfaRequiredButDisabledResponse {
         mfa_required_but_disabled: !mfa_info.mfa_enabled_v2,
     })
+}
+
+pub(crate) async fn load_remote_control_connections_snapshot(
+    app: &AppHandle,
+) -> Result<(Vec<RemoteControlEnvironment>, RemoteControlConnectionsState), String> {
+    let client = RemoteControlClient_::load().await?;
+    let current_auth = match client.current_auth().await {
+        Ok(auth) => Some(auth),
+        Err(_) => None,
+    };
+    let client_authorized = read_remote_control_client_authorized(app, current_auth.as_ref())?;
+
+    match client.list_remote_control_environments().await {
+        Ok(connections) => Ok((
+            connections,
+            RemoteControlConnectionsState {
+                available: true,
+                auth_required: false,
+                client_authorized,
+            },
+        )),
+        Err(error) if error.status == Some(StatusCode::NOT_FOUND) => Ok((
+            Vec::new(),
+            RemoteControlConnectionsState {
+                available: false,
+                auth_required: false,
+                client_authorized: false,
+            },
+        )),
+        Err(error) if error.is_auth_required() => Ok((
+            Vec::new(),
+            RemoteControlConnectionsState {
+                available: true,
+                auth_required: true,
+                client_authorized: false,
+            },
+        )),
+        Err(error) => Err(error.message),
+    }
+}
+
+pub(crate) async fn rename_remote_control_environment(
+    env_id: &str,
+    name: &str,
+) -> Result<(), String> {
+    let client = RemoteControlClient_::load().await?;
+    client
+        .rename_remote_control_environment(env_id, name)
+        .await
+        .map_err(|error| error.message)
+}
+
+pub(crate) async fn delete_remote_control_environment(env_id: &str) -> Result<(), String> {
+    let client = RemoteControlClient_::load().await?;
+    client
+        .delete_remote_control_environment(env_id)
+        .await
+        .map_err(|error| error.message)
 }
 
 #[allow(non_camel_case_types)] // suffix `_` to avoid collision with `RemoteControlClient` model
@@ -263,48 +414,165 @@ impl RemoteControlClient_ {
     }
 
     async fn get_json<T: DeserializeOwned>(&self, path: &str) -> Result<T, String> {
-        match self.send_get(path).await {
-            Ok(value) => Ok(value),
+        self.get_json_request_failure(path)
+            .await
+            .map_err(|error| error.message)
+    }
+
+    async fn get_json_request_failure<T: DeserializeOwned>(
+        &self,
+        path: &str,
+    ) -> Result<T, RequestFailure> {
+        let payload = self
+            .send_request_with_retry("GET", path, |client, url, headers| {
+                client.get(url).headers(headers)
+            })
+            .await?;
+        serde_json::from_str(&payload.body).map_err(|err| RequestFailure {
+            auth_required: false,
+            status: None,
+            message: format!(
+                "GET {} response did not match expected shape: {err}",
+                payload.url
+            ),
+        })
+    }
+
+    async fn patch_status_only<B: Serialize + ?Sized>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<(), RequestFailure> {
+        self.send_request_with_retry("PATCH", path, |client, url, headers| {
+            client
+                .patch(url)
+                .headers(headers)
+                .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+                .json(body)
+        })
+        .await
+        .map(|_| ())
+    }
+
+    async fn delete_status_only(&self, path: &str) -> Result<(), RequestFailure> {
+        self.send_request_with_retry("DELETE", path, |client, url, headers| {
+            client.delete(url).headers(headers)
+        })
+        .await
+        .map(|_| ())
+    }
+
+    async fn send_request_with_retry<F>(
+        &self,
+        method: &str,
+        path: &str,
+        build_request: F,
+    ) -> Result<ResponsePayload, RequestFailure>
+    where
+        F: Fn(&reqwest::Client, &str, HeaderMap) -> reqwest::RequestBuilder,
+    {
+        match self.send_request_once(method, path, &build_request).await {
+            Ok(payload) => Ok(payload),
             Err(error) if error.is_unauthorized() => {
-                self.refresh_auth().await?;
-                self.send_get(path).await.map_err(|err| err.message)
+                self.refresh_auth()
+                    .await
+                    .map_err(RequestFailure::auth_required)?;
+                self.send_request_once(method, path, &build_request).await
             }
-            Err(error) => Err(error.message),
+            Err(error) => Err(error),
         }
     }
 
-    async fn send_get<T: DeserializeOwned>(&self, path: &str) -> Result<T, RequestFailure> {
-        let auth = self.current_auth().await.map_err(RequestFailure::other)?;
+    async fn send_request_once<F>(
+        &self,
+        method: &str,
+        path: &str,
+        build_request: &F,
+    ) -> Result<ResponsePayload, RequestFailure>
+    where
+        F: Fn(&reqwest::Client, &str, HeaderMap) -> reqwest::RequestBuilder,
+    {
+        let auth = self
+            .current_auth()
+            .await
+            .map_err(RequestFailure::auth_required)?;
         let headers = self
             .headers_for_auth(&auth)
             .map_err(RequestFailure::other)?;
         let url = format!("{CHATGPT_BACKEND_BASE_URL}{path}");
-        let response = self
-            .http
-            .get(&url)
-            .headers(headers)
+        let response = build_request(&self.http, &url, headers)
             .send()
             .await
             .map_err(|err| RequestFailure {
+                auth_required: false,
                 status: None,
-                message: format!("failed to GET {url}: {err}"),
+                message: format!("failed to {method} {url}: {err}"),
             })?;
         let status = response.status();
+        let content_type = response
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("")
+            .to_string();
         let body = response.text().await.unwrap_or_default();
         if !status.is_success() {
             return Err(RequestFailure {
+                auth_required: status == StatusCode::UNAUTHORIZED,
                 status: Some(status),
-                message: format!("GET {url} returned status {status}; body: {body}"),
+                message: format!(
+                    "{method} {url} returned status {status}; content-type={content_type}; body={body}"
+                ),
             });
         }
-        serde_json::from_str(&body).map_err(|err| RequestFailure {
-            status: Some(status),
-            message: format!("GET {url} response did not match expected shape: {err}"),
+        Ok(ResponsePayload {
+            body,
+            content_type,
+            url,
         })
+    }
+
+    async fn list_remote_control_environments(
+        &self,
+    ) -> Result<Vec<RemoteControlEnvironment>, RequestFailure> {
+        let mut cursor = None;
+        let mut connections = Vec::new();
+
+        loop {
+            let response: RemoteControlEnvironmentPage = self
+                .get_json_request_failure(&remote_control_environments_path(cursor.as_deref()))
+                .await?;
+            connections.extend(
+                response
+                    .items
+                    .into_iter()
+                    .map(map_remote_control_environment),
+            );
+            if response.cursor.is_none() {
+                return Ok(connections);
+            }
+            cursor = response.cursor;
+        }
+    }
+
+    async fn rename_remote_control_environment(
+        &self,
+        env_id: &str,
+        name: &str,
+    ) -> Result<(), RequestFailure> {
+        let body = RenameRemoteControlEnvironmentRequest { name };
+        self.patch_status_only(&remote_control_environment_path(env_id), &body)
+            .await
+    }
+
+    async fn delete_remote_control_environment(&self, env_id: &str) -> Result<(), RequestFailure> {
+        self.delete_status_only(&remote_control_environment_path(env_id))
+            .await
     }
 }
 
 struct RequestFailure {
+    auth_required: bool,
     status: Option<StatusCode>,
     message: String,
 }
@@ -314,11 +582,95 @@ impl RequestFailure {
         self.status == Some(StatusCode::UNAUTHORIZED)
     }
 
-    fn other(message: String) -> Self {
+    fn is_auth_required(&self) -> bool {
+        self.auth_required || self.is_unauthorized()
+    }
+
+    fn auth_required(message: String) -> Self {
         Self {
+            auth_required: true,
             status: None,
             message,
         }
+    }
+
+    fn other(message: String) -> Self {
+        Self {
+            auth_required: false,
+            status: None,
+            message,
+        }
+    }
+}
+
+fn read_remote_control_client_authorized(
+    app: &AppHandle,
+    auth: Option<&CodexAuth>,
+) -> Result<bool, String> {
+    let Some(chatgpt_user_id) = auth.and_then(CodexAuth::get_chatgpt_user_id) else {
+        return Ok(false);
+    };
+    let settings = read_global_settings(app)?;
+    let Some(value) = settings.get(REMOTE_CONTROL_CLIENT_ENROLLMENTS_KEY) else {
+        return Ok(false);
+    };
+    let Some(enrollments) = value.as_object() else {
+        return Ok(false);
+    };
+
+    Ok(enrollments.values().any(|value| {
+        serde_json::from_value::<StoredRemoteControlClientEnrollment>(value.clone())
+            .ok()
+            .is_some_and(|enrollment| enrollment.account_user_id == chatgpt_user_id)
+    }))
+}
+
+fn remote_control_environments_path(cursor: Option<&str>) -> String {
+    let mut path =
+        format!("{REMOTE_CONTROL_ENVIRONMENTS_PATH}?limit={REMOTE_CONTROL_ENVIRONMENTS_PAGE_SIZE}");
+    if let Some(cursor) = cursor {
+        path.push_str("&cursor=");
+        path.push_str(&urlencoding_lite(cursor));
+    }
+    path
+}
+
+fn remote_control_environment_path(env_id: &str) -> String {
+    format!(
+        "{REMOTE_CONTROL_ENVIRONMENTS_PATH}/{}",
+        urlencoding_lite(env_id)
+    )
+}
+
+fn build_remote_control_host_id(env_id: &str) -> String {
+    format!(
+        "{REMOTE_CONTROL_ENVIRONMENT_HOST_ID_PREFIX}{}",
+        urlencoding_lite(env_id)
+    )
+}
+
+fn map_remote_control_environment(
+    environment: RemoteControlEnvironmentBackend,
+) -> RemoteControlEnvironment {
+    let env_id = environment.env_id;
+    let display_name = environment
+        .display_name
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| env_id.clone());
+    RemoteControlEnvironment {
+        host_id: build_remote_control_host_id(&env_id),
+        display_name,
+        host_name: environment.host_name,
+        auto_connect: false,
+        source: "remote-control".to_string(),
+        env_id,
+        environment_kind: environment.kind,
+        online: environment.online,
+        busy: environment.busy,
+        os: environment.os,
+        arch: environment.arch,
+        app_server_version: environment.app_server_version,
+        last_seen_at: environment.last_seen_at,
     }
 }
 
@@ -420,6 +772,107 @@ mod tests {
         };
         let value = serde_json::to_value(&response).expect("serialize");
         assert_eq!(value["mfaRequiredButDisabled"], true);
+    }
+
+    #[test]
+    fn remote_control_connections_state_serializes_camel_case() {
+        let state = RemoteControlConnectionsState {
+            available: true,
+            auth_required: false,
+            client_authorized: true,
+        };
+        let value = serde_json::to_value(&state).expect("serialize");
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "available": true,
+                "authRequired": false,
+                "clientAuthorized": true,
+            })
+        );
+    }
+
+    #[test]
+    fn remote_control_environment_page_decodes_snake_case_items() {
+        let payload = serde_json::json!({
+            "items": [
+                {
+                    "env_id": "env-1",
+                    "display_name": "Office Mac",
+                    "host_name": "MacBook Pro",
+                    "kind": "desktop",
+                    "online": true,
+                    "busy": false,
+                    "os": "darwin",
+                    "arch": "arm64",
+                    "app_server_version": "0.129.0",
+                    "last_seen_at": "2026-05-20T00:00:00Z"
+                }
+            ],
+            "cursor": "next"
+        });
+        let page: RemoteControlEnvironmentPage = serde_json::from_value(payload).expect("decode");
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].env_id, "env-1");
+        assert_eq!(page.items[0].display_name.as_deref(), Some("Office Mac"));
+        assert_eq!(page.cursor.as_deref(), Some("next"));
+    }
+
+    #[test]
+    fn map_remote_control_environment_matches_replica_snapshot_shape() {
+        let environment = map_remote_control_environment(RemoteControlEnvironmentBackend {
+            env_id: "env-1".to_string(),
+            display_name: Some("Office Mac".to_string()),
+            host_name: Some("MacBook Pro".to_string()),
+            kind: Some("desktop".to_string()),
+            online: true,
+            busy: true,
+            os: Some("darwin".to_string()),
+            arch: Some("arm64".to_string()),
+            app_server_version: Some("0.129.0".to_string()),
+            last_seen_at: Some("2026-05-20T00:00:00Z".to_string()),
+        });
+        assert_eq!(
+            environment,
+            RemoteControlEnvironment {
+                host_id: "remote-control:env-1".to_string(),
+                display_name: "Office Mac".to_string(),
+                host_name: Some("MacBook Pro".to_string()),
+                auto_connect: false,
+                source: "remote-control".to_string(),
+                env_id: "env-1".to_string(),
+                environment_kind: Some("desktop".to_string()),
+                online: true,
+                busy: true,
+                os: Some("darwin".to_string()),
+                arch: Some("arm64".to_string()),
+                app_server_version: Some("0.129.0".to_string()),
+                last_seen_at: Some("2026-05-20T00:00:00Z".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn remote_control_environment_paths_match_extracted_routes() {
+        assert_eq!(
+            remote_control_environments_path(None),
+            "/codex/remote/control/environments?limit=100"
+        );
+        assert_eq!(
+            remote_control_environments_path(Some("abc/123")),
+            "/codex/remote/control/environments?limit=100&cursor=abc%2F123"
+        );
+        assert_eq!(
+            remote_control_environment_path("env/123"),
+            "/codex/remote/control/environments/env%2F123"
+        );
+    }
+
+    #[test]
+    fn request_failure_auth_required_is_true_for_explicit_auth_required() {
+        let failure = RequestFailure::auth_required("sign in required".to_string());
+        assert!(failure.is_auth_required());
+        assert!(!failure.is_unauthorized());
     }
 
     #[test]

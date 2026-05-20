@@ -1,4 +1,8 @@
-export function renderInlineLinkMessage(template: string, href: string) {
+export function renderInlineLinkMessage(
+  template: string,
+  href: string,
+  linkClassName = "text-[var(--app-shell-accent)] underline underline-offset-2",
+) {
   const tagPairs = [
     ["<a>", "</a>"] as const,
     ["<link>", "</link>"] as const,
@@ -20,7 +24,7 @@ export function renderInlineLinkMessage(template: string, href: string) {
       <>
         {prefix}
         <a
-          className="text-[var(--app-shell-accent)] underline underline-offset-2"
+          className={linkClassName}
           href={href}
           target="_blank"
           rel="noreferrer"

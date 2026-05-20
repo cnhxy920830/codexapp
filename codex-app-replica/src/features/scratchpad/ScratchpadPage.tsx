@@ -1,4 +1,10 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  CheckCircleFilledIcon,
+  FollowUpIcon,
+  UnselectedCircleIcon,
+  XCircleIcon,
+} from "../../components/AppShellIcons";
 import { Button } from "../../components/Button";
 import { Spinner } from "../../components/Spinner";
 import { Tooltip } from "../../components/Tooltip";
@@ -17,9 +23,11 @@ import {
   startConversation,
   startTurnWithInput,
 } from "../../services/history";
-import { readAppsSnapshot, type AppInfo } from "../../services/apps";
+import { onAppsSnapshotUpdated, readAppsSnapshot, type AppInfo } from "../../services/apps";
 import { readProjectlessThreadCwd } from "../../services/projectlessThreads";
 import { generateScratchpadCompletionSummary } from "../../services/scratchpad";
+import { readPluginsSnapshot, type PluginSummary } from "../../services/plugins";
+import { LOCAL_SETTINGS_HOST_ID } from "../../services/settingsHosts";
 import { readSkillsSnapshot, type SkillSummary } from "../../services/skills";
 import { ThreadPageHeader } from "../chat/ThreadPageHeader";
 import { ScratchpadPromptContent } from "./ScratchpadPromptContent";
@@ -27,6 +35,7 @@ import { ScratchpadPromptInput } from "./ScratchpadPromptInput";
 import type { RowSummaryState, ScratchpadRow, ThreadRuntimeState } from "./scratchpadTypes";
 
 const INITIAL_ROW_ID = "scratchpad-0";
+const SCRATCHPAD_HOST_ID = LOCAL_SETTINGS_HOST_ID;
 
 export function ScratchpadPage({
   onOpenConversation,
@@ -55,6 +64,7 @@ export function ScratchpadPage({
   const [threadRuntimeById, setThreadRuntimeById] = useState<Record<string, ThreadRuntimeState>>({});
   const [summaryByRowId, setSummaryByRowId] = useState<Record<string, RowSummaryState>>({});
   const [apps, setApps] = useState<AppInfo[]>([]);
+  const [plugins, setPlugins] = useState<PluginSummary[]>([]);
   const [skills, setSkills] = useState<SkillSummary[]>([]);
 
   const rowsRef = useRef(rows);
@@ -114,20 +124,43 @@ export function ScratchpadPage({
 
   useEffect(() => {
     let cancelled = false;
+    let disposeAppsUpdated: (() => void) | undefined;
 
-    void Promise.all([
-      readAppsSnapshot({ hostId: null }).then((response) => response.data).catch(() => []),
-      readSkillsSnapshot(null, { hostId: null }).catch(() => []),
-    ]).then(([nextApps, nextSkills]) => {
+    const loadPageData = async () => {
+      const [nextApps, nextPlugins, nextSkills] = await Promise.all([
+        readAppsSnapshot({ hostId: SCRATCHPAD_HOST_ID }).then((response) => response.data).catch(() => []),
+        readPluginsSnapshot(null, SCRATCHPAD_HOST_ID)
+          .then((response) => response.marketplaces.flatMap((marketplace) => marketplace.plugins))
+          .catch(() => []),
+        readSkillsSnapshot(null, { hostId: SCRATCHPAD_HOST_ID }).catch(() => []),
+      ]);
+
       if (cancelled) {
         return;
       }
       setApps(nextApps);
+      setPlugins(nextPlugins);
       setSkills(nextSkills);
+    };
+
+    void loadPageData();
+
+    void onAppsSnapshotUpdated((snapshot) => {
+      if (cancelled) {
+        return;
+      }
+      setApps(snapshot.data);
+    }).then((dispose) => {
+      if (cancelled) {
+        dispose();
+        return;
+      }
+      disposeAppsUpdated = dispose;
     });
 
     return () => {
       cancelled = true;
+      disposeAppsUpdated?.();
     };
   }, []);
 
@@ -358,6 +391,7 @@ export function ScratchpadPage({
         prompt: text,
       });
       const conversationId = await startConversation({
+        hostId: SCRATCHPAD_HOST_ID,
         input: [createTextInput(text)],
         cwd: projectlessThread.cwd,
         workspaceRoots: [projectlessThread.workspaceRoot],
@@ -429,11 +463,13 @@ export function ScratchpadPage({
       defaultDraftPlaceholder={defaultDraftPlaceholder}
       followUpDraftPlaceholder={followUpDraftPlaceholder}
       focusedDraftRowId={focusedDraftRowId}
+      hostId={SCRATCHPAD_HOST_ID}
       onDraftChange={handleDraftChange}
       onDraftIndent={handleDraftIndent}
       onDraftOutdent={handleDraftOutdent}
       onDraftSubmit={handleDraftSubmit}
       onOpenConversation={onOpenConversation}
+      plugins={plugins}
       rows={rows}
       skills={skills}
       summaryByRowId={summaryByRowId}
@@ -551,6 +587,7 @@ export function ScratchpadPage({
       try {
         const resumedThread = await maybeResumeConversation({
           conversationId: row.conversationId,
+          hostId: SCRATCHPAD_HOST_ID,
           workspaceRoots:
             thread.cwd && thread.cwd.trim().length > 0
               ? [thread.cwd]
@@ -653,11 +690,13 @@ type ScratchpadPagePreviewProps = {
   defaultDraftPlaceholder?: string;
   followUpDraftPlaceholder?: string;
   focusedDraftRowId?: string | null;
+  hostId?: string | null;
   onDraftChange?: (rowId: string, text: string) => void;
   onDraftIndent?: (rowId: string) => void;
   onDraftOutdent?: (rowId: string) => void;
   onDraftSubmit?: (rowId: string) => void | Promise<void>;
   onOpenConversation?: (conversationId: string) => void;
+  plugins?: PluginSummary[];
   rows: ScratchpadRow[];
   skills?: SkillSummary[];
   summaryByRowId?: Record<string, RowSummaryState>;
@@ -671,11 +710,13 @@ export function ScratchpadPagePreview({
   defaultDraftPlaceholder,
   followUpDraftPlaceholder,
   focusedDraftRowId = null,
+  hostId = SCRATCHPAD_HOST_ID,
   onDraftChange,
   onDraftIndent,
   onDraftOutdent,
   onDraftSubmit,
   onOpenConversation,
+  plugins = [],
   rows,
   skills = [],
   summaryByRowId = {},
@@ -701,6 +742,7 @@ export function ScratchpadPagePreview({
             <ScratchpadRowItem
               key={row.id}
               apps={apps}
+              hostId={hostId}
               isFocused={focusedDraftRowId === row.id}
               onDraftChange={(rowId, text) => onDraftChange?.(rowId, text)}
               onDraftIndent={(rowId) => onDraftIndent?.(rowId)}
@@ -712,6 +754,7 @@ export function ScratchpadPagePreview({
                   ? resolvedFollowUpDraftPlaceholder
                   : resolvedDefaultDraftPlaceholder
               }
+              plugins={plugins}
               row={row}
               runtime={row.conversationId ? threadRuntimeById[row.conversationId] ?? null : null}
               skills={skills}
@@ -731,9 +774,11 @@ function ScratchpadRowItem({
   thread,
   runtime,
   summaryState,
+  hostId,
   isFocused,
   placeholder,
   apps,
+  plugins,
   skills,
   onDraftChange,
   onDraftIndent,
@@ -746,9 +791,11 @@ function ScratchpadRowItem({
   thread: ThreadConversation | null;
   runtime: ThreadRuntimeState | null;
   summaryState: RowSummaryState | null;
+  hostId: string | null;
   isFocused: boolean;
   placeholder: string;
   apps: AppInfo[];
+  plugins: PluginSummary[];
   skills: SkillSummary[];
   onDraftChange: (rowId: string, text: string) => void;
   onDraftIndent: (rowId: string) => void;
@@ -776,6 +823,7 @@ function ScratchpadRowItem({
           <ScratchpadPromptInput
             ariaLabel={placeholder}
             autoFocus={isFocused}
+            hostId={SCRATCHPAD_HOST_ID}
             isIndented={row.isIndented}
             value={row.text}
             placeholder={placeholder}
@@ -785,16 +833,19 @@ function ScratchpadRowItem({
             onSubmit={() => onDraftSubmit(row.id)}
             apps={apps}
             skills={skills}
+            t={t}
           />
         ) : (
           <div className="inline-flex max-w-full min-w-0 items-baseline gap-2 py-1.5">
             <ScratchpadPromptRowText
               apps={apps}
               conversationId={row.state === "started" && !row.isIndented ? row.conversationId : null}
-              hostId={thread?.hostId ?? null}
+              hostId={hostId}
               onOpenConversation={onOpenConversation}
+              plugins={plugins}
               skills={skills}
               text={row.text}
+              t={t}
             />
             {derived.trailingContent}
           </div>
@@ -841,7 +892,7 @@ function deriveRowPresentation(
 
   if (row.state === "error") {
     return {
-      icon: <ErrorIcon className="icon-sm shrink-0 text-token-error-foreground" />,
+      icon: <XCircleIcon className="icon-sm shrink-0 text-token-error-foreground" />,
       timestampMs: null,
       trailingContent: null,
     };
@@ -859,7 +910,7 @@ function deriveRowPresentation(
   if (turnStatus === "completed") {
     icon = <CheckCircleFilledIcon className="icon-sm shrink-0 text-token-success-foreground" />;
   } else if (turnStatus === "failed" || turnStatus === "interrupted") {
-    icon = <ErrorIcon className="icon-sm shrink-0 text-token-error-foreground" />;
+    icon = <XCircleIcon className="icon-sm shrink-0 text-token-error-foreground" />;
   }
 
   let trailingContent = null;
@@ -899,15 +950,19 @@ function ScratchpadPromptRowText({
   conversationId,
   hostId,
   onOpenConversation,
+  plugins,
   skills,
   text,
+  t,
 }: {
   apps: AppInfo[];
   conversationId: string | null;
   hostId: string | null;
   onOpenConversation?: (conversationId: string) => void;
+  plugins: PluginSummary[];
   skills: SkillSummary[];
   text: string;
+  t: ReturnType<typeof useI18n>["t"];
 }) {
   const textRef = useRef<HTMLElement | null>(null);
   const [isTruncated, setIsTruncated] = useState(false);
@@ -947,7 +1002,7 @@ function ScratchpadPromptRowText({
         className="min-w-0 cursor-interaction truncate text-left text-base text-token-foreground hover:underline"
         onClick={() => onOpenConversation?.(conversationId)}
       >
-        <ScratchpadPromptContent apps={apps} hostId={hostId} skills={skills} text={text} />
+        <ScratchpadPromptContent apps={apps} hostId={hostId} plugins={plugins} skills={skills} text={text} t={t} />
       </button>
     );
 
@@ -965,7 +1020,7 @@ function ScratchpadPromptRowText({
       }}
       className="min-w-0 truncate text-base text-token-foreground"
     >
-      <ScratchpadPromptContent apps={apps} hostId={hostId} skills={skills} text={text} />
+      <ScratchpadPromptContent apps={apps} hostId={hostId} plugins={plugins} skills={skills} text={text} t={t} />
     </div>
   );
 
@@ -1300,65 +1355,5 @@ function StatusChip({ label, tone }: { label: string; tone: "approval" }) {
     <span className="inline-flex max-w-[150px] items-center truncate rounded-full bg-token-charts-green/20 py-0.5 pr-2.5 pl-2 text-base text-token-charts-green">
       {label}
     </span>
-  );
-}
-
-function UnselectedCircleIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="9" />
-    </svg>
-  );
-}
-
-function FollowUpIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M7 7h7a4 4 0 0 1 0 8H9"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="m9 18-3-3 3-3"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function CheckCircleFilledIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.59L5.41 12l1.42-1.41L10 13.76l7.17-7.18 1.42 1.42L10 16.59z" />
-    </svg>
-  );
-}
-
-function ErrorIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
-      <path
-        d="m9 9 6 6M15 9l-6 6"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-    </svg>
   );
 }

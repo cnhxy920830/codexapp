@@ -40,9 +40,8 @@ test("git settings keeps extracted main surface row order and segmented merge me
   assert.ok(autoCleanupIndex > draftPrIndex);
   assert.ok(keepCountIndex > autoCleanupIndex);
 
+  assert.match(source, /import \{ SegmentedControl \} from "\.\/SegmentedControl";/);
   assert.match(source, /<SegmentedControl/);
-  assert.match(source, /role="group" aria-label=\{ariaLabel\}/);
-  assert.match(source, /aria-pressed=\{selected\}/);
   assert.doesNotMatch(source, /<select/);
 });
 
@@ -50,9 +49,13 @@ test("git settings keeps extracted gate conditions, worktree nesting, and save h
   const source = readSource(SOURCE_PATH);
 
   assert.match(source, /showPullRequestMergeMethod && !hideSidebarPrIconsSetting/);
-  assert.match(source, /className="electron:block hidden"/);
+  assert.match(source, /<DesktopOnly>/);
+  assert.doesNotMatch(source, /className="electron:block hidden"/);
+  assert.match(source, /import \{ useHotkey \} from "\.\.\/hooks\/useHotkey";/);
+  assert.match(source, /useHotkey\(\{\s*accelerator: "CmdOrCtrl\+S",\s*enabled: canSaveWithHotkey,\s*onKeyDown: saveWithHotkey,\s*\}\);/s);
   assert.match(source, /const canSaveWithHotkey =\s*\(isBranchPrefixDirty && !isBranchPrefixDisabled\) \|\|/s);
   assert.match(source, /saveBranchPrefixIfDirty\(\),\s*saveCommitInstructionsIfDirty\(\),\s*savePullRequestInstructionsIfDirty\(\)/s);
+  assert.doesNotMatch(source, /window\.addEventListener\("keydown"/);
 });
 
 test("git settings keeps extracted instruction header actions and auto-cleanup confirm dialog", () => {
@@ -70,8 +73,11 @@ test("git settings keeps extracted instruction header actions and auto-cleanup c
   assert.match(source, /settings\.worktrees\.autoCleanup\.confirm\.body/);
   assert.match(source, /settings\.worktrees\.autoCleanup\.confirm\.cancel/);
   assert.match(source, /settings\.worktrees\.autoCleanup\.confirm\.confirm/);
-  assert.match(source, /<Button color="ghost" onClick=\{\(\) => onOpenChange\(false\)\}>/);
-  assert.match(source, /<Button color="danger" onClick=\{onConfirm\}>/);
+  assert.match(source, /aria-labelledby=\{titleId\}/);
+  assert.match(source, /aria-describedby=\{descriptionId\}/);
+  assert.match(source, /rounded-3xl border border-token-border bg-token-dropdown-background\/90/);
+  assert.match(source, /<Button color="ghost" size="toolbar" onClick=\{\(\) => onOpenChange\(false\)\}>/);
+  assert.match(source, /<Button color="danger" size="toolbar" onClick=\{onConfirm\}>/);
 });
 
 function readSource(filePath: string) {

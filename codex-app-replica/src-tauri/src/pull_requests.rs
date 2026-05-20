@@ -1,20 +1,13 @@
+use crate::hosted_command::{run_hosted_command, HostedCommandOutput};
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
-use std::process::Command;
-use tauri::async_runtime::spawn_blocking;
-
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
+use tauri::AppHandle;
 
 const GH_NOT_INSTALLED_ERROR: &str = "GitHub CLI is not installed.";
-const LOCAL_HOST_ID: &str = "local";
 const SUCCESS_STATUS: &str = "success";
 const ERROR_STATUS: &str = "error";
-
-#[cfg(target_os = "windows")]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -389,13 +382,6 @@ struct ParsedRepo {
     repo_path: String,
 }
 
-#[derive(Debug, Clone)]
-struct GhCommandOutput {
-    status_code: Option<i32>,
-    stdout: String,
-    stderr: String,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct UserIdentity {
     login: String,
@@ -404,10 +390,18 @@ struct UserIdentity {
 }
 
 #[tauri::command(rename = "gh-cli-status")]
-pub async fn gh_cli_status(params: HostOnlyParams) -> Result<GhCliStatusResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "gh-cli-status")?;
-
-    let version = run_gh(vec!["--version".to_string()], None, &[]).await;
+pub async fn gh_cli_status(
+    app: AppHandle,
+    params: HostOnlyParams,
+) -> Result<GhCliStatusResponse, String> {
+    let version = run_gh(
+        &app,
+        params.host_id.as_deref(),
+        vec!["--version".to_string()],
+        None,
+        &[],
+    )
+    .await;
     match version {
         Ok(_) => {}
         Err(err) if err == GH_NOT_INSTALLED_ERROR => {
@@ -419,7 +413,14 @@ pub async fn gh_cli_status(params: HostOnlyParams) -> Result<GhCliStatusResponse
         Err(err) => return Err(err),
     }
 
-    let auth_status = run_gh(vec!["auth".to_string(), "status".to_string()], None, &[1]).await?;
+    let auth_status = run_gh(
+        &app,
+        params.host_id.as_deref(),
+        vec!["auth".to_string(), "status".to_string()],
+        None,
+        &[1],
+    )
+    .await?;
 
     Ok(GhCliStatusResponse {
         is_installed: true,
@@ -428,10 +429,11 @@ pub async fn gh_cli_status(params: HostOnlyParams) -> Result<GhCliStatusResponse
 }
 
 #[tauri::command(rename = "gh-current-user")]
-pub async fn gh_current_user(params: HostOnlyParams) -> Result<GhCurrentUserResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "gh-current-user")?;
-
-    match fetch_current_user().await {
+pub async fn gh_current_user(
+    app: AppHandle,
+    params: HostOnlyParams,
+) -> Result<GhCurrentUserResponse, String> {
+    match fetch_current_user(&app, params.host_id.as_deref()).await {
         Ok(user) => Ok(GhCurrentUserResponse::Success(GhCurrentUserSuccess {
             status: SUCCESS_STATUS,
             login: user.login,
@@ -443,17 +445,10 @@ pub async fn gh_current_user(params: HostOnlyParams) -> Result<GhCurrentUserResp
 
 #[tauri::command(rename = "gh-pr-board")]
 pub async fn gh_pr_board(
+    app: AppHandle,
     params: PullRequestBoardParams,
 ) -> Result<PullRequestBoardResponse, String> {
-    if let Some(repos) = &params.repos {
-        for repo in repos {
-            ensure_supported_host_id(repo.host_id.as_deref(), "gh-pr-board")?;
-        }
-    } else {
-        ensure_supported_host_id(params.host_id.as_deref(), "gh-pr-board")?;
-    }
-
-    let items = match build_pull_request_board(params).await {
+    let items = match build_pull_request_board(&app, params).await {
         Ok(items) => items,
         Err(err) => return Ok(PullRequestBoardResponse::Error(error_envelope(err))),
     };
@@ -466,11 +461,10 @@ pub async fn gh_pr_board(
 
 #[tauri::command(rename = "gh-pr-status")]
 pub async fn gh_pr_status(
+    app: AppHandle,
     params: PullRequestLookupParams,
 ) -> Result<PullRequestStatusResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "gh-pr-status")?;
-
-    let pr_value = match fetch_pull_request_value(&params).await {
+    let pr_value = match fetch_pull_request_value(&app, &params).await {
         Ok(pr_value) => pr_value,
         Err(err) => return Ok(PullRequestStatusResponse::Error(error_envelope(err))),
     };
@@ -484,11 +478,15 @@ pub async fn gh_pr_status(
     let repo = resolve_repo_name(params.repo.as_deref(), value_string(&pr_value, "url"));
     let number = value_u64(&pr_value, "number");
     let timeline = match (repo.as_deref(), number) {
-        (Some(repo_name), Some(pr_number)) => {
-            fetch_pull_request_timeline(repo_name, pr_number, &params.cwd)
-                .await
-                .unwrap_or_default()
-        }
+        (Some(repo_name), Some(pr_number)) => fetch_pull_request_timeline(
+            &app,
+            params.host_id.as_deref(),
+            repo_name,
+            pr_number,
+            &params.cwd,
+        )
+        .await
+        .unwrap_or_default(),
         _ => PullRequestTimeline::default(),
     };
 
@@ -528,18 +526,26 @@ pub async fn gh_pr_status(
 
 #[tauri::command(rename = "gh-pr-body")]
 pub async fn gh_pr_body(
+    app: AppHandle,
     params: PullRequestLookupParams,
 ) -> Result<PullRequestBodyResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "gh-pr-body")?;
-
-    let pr_value = fetch_pull_request_value(&params)
+    let pr_value = fetch_pull_request_value(&app, &params)
         .await?
         .ok_or_else(|| "No open pull request found".to_string())?;
     let repo = resolve_repo_name(params.repo.as_deref(), value_string(&pr_value, "url"));
     let number = value_u64(&pr_value, "number")
         .ok_or_else(|| "Pull request number is missing".to_string())?;
     let timeline = match repo.as_deref() {
-        Some(repo_name) => fetch_pull_request_timeline(repo_name, number, &params.cwd).await?,
+        Some(repo_name) => {
+            fetch_pull_request_timeline(
+                &app,
+                params.host_id.as_deref(),
+                repo_name,
+                number,
+                &params.cwd,
+            )
+            .await?
+        }
         None => PullRequestTimeline::default(),
     };
     let ci_status = compute_ci_status_from_rollup(pr_value.get("statusCheckRollup"));
@@ -557,10 +563,9 @@ pub async fn gh_pr_body(
 
 #[tauri::command(rename = "gh-pr-checks")]
 pub async fn gh_pr_checks(
+    app: AppHandle,
     params: PullRequestLookupParams,
 ) -> Result<PullRequestChecksResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "gh-pr-checks")?;
-
     let selector = pull_request_selector(&params)?;
     let cwd = normalize_required_string(&params.cwd, "cwd")?;
     let mut args = vec![
@@ -575,7 +580,7 @@ pub async fn gh_pr_checks(
         args.push(repo);
     }
 
-    let checks_value = run_gh_json(args, Some(cwd), &[8]).await?;
+    let checks_value = run_gh_json(&app, params.host_id.as_deref(), args, Some(cwd), &[8]).await?;
     let checks_array = checks_value
         .as_array()
         .ok_or_else(|| "GitHub CLI returned invalid pull request checks".to_string())?;
@@ -592,18 +597,26 @@ pub async fn gh_pr_checks(
 
 #[tauri::command(rename = "gh-pr-comments")]
 pub async fn gh_pr_comments(
+    app: AppHandle,
     params: PullRequestLookupParams,
 ) -> Result<PullRequestCommentsResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "gh-pr-comments")?;
-
-    let pr_value = fetch_pull_request_value(&params)
+    let pr_value = fetch_pull_request_value(&app, &params)
         .await?
         .ok_or_else(|| "No open pull request found".to_string())?;
     let repo = resolve_repo_name(params.repo.as_deref(), value_string(&pr_value, "url"));
     let number = value_u64(&pr_value, "number")
         .ok_or_else(|| "Pull request number is missing".to_string())?;
     let timeline = match repo.as_deref() {
-        Some(repo_name) => fetch_pull_request_timeline(repo_name, number, &params.cwd).await?,
+        Some(repo_name) => {
+            fetch_pull_request_timeline(
+                &app,
+                params.host_id.as_deref(),
+                repo_name,
+                number,
+                &params.cwd,
+            )
+            .await?
+        }
         None => PullRequestTimeline::default(),
     };
 
@@ -614,10 +627,11 @@ pub async fn gh_pr_comments(
 }
 
 #[tauri::command(rename = "gh-pr-diff")]
-pub async fn gh_pr_diff(params: PullRequestDiffParams) -> Result<PullRequestDiffResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "gh-pr-diff")?;
-
-    match fetch_pull_request_diff(&params).await {
+pub async fn gh_pr_diff(
+    app: AppHandle,
+    params: PullRequestDiffParams,
+) -> Result<PullRequestDiffResponse, String> {
+    match fetch_pull_request_diff(&app, &params).await {
         Ok(unified_diff) => Ok(PullRequestDiffResponse::Success(PullRequestDiffSuccess {
             status: SUCCESS_STATUS,
             unified_diff,
@@ -628,36 +642,40 @@ pub async fn gh_pr_diff(params: PullRequestDiffParams) -> Result<PullRequestDiff
 
 #[tauri::command(rename = "gh-pr-comment")]
 pub async fn gh_pr_comment(
+    app: AppHandle,
     params: PullRequestCommentParams,
 ) -> Result<CommandStatusEnvelope, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "gh-pr-comment")?;
-
-    let result = post_pull_request_comment(params).await;
+    let result = post_pull_request_comment(&app, params).await;
     Ok(command_status_envelope(result))
 }
 
 #[tauri::command(rename = "gh-pr-merge")]
-pub async fn gh_pr_merge(params: PullRequestMergeParams) -> Result<CommandStatusEnvelope, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "gh-pr-merge")?;
-
-    let result = merge_pull_request(params).await;
+pub async fn gh_pr_merge(
+    app: AppHandle,
+    params: PullRequestMergeParams,
+) -> Result<CommandStatusEnvelope, String> {
+    let result = merge_pull_request(&app, params).await;
     Ok(command_status_envelope(result))
 }
 
 #[tauri::command(rename = "gh-pr-update")]
 pub async fn gh_pr_update(
+    app: AppHandle,
     params: PullRequestUpdateParams,
 ) -> Result<CommandStatusEnvelope, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "gh-pr-update")?;
-
-    let result = update_pull_request(params).await;
+    let result = update_pull_request(&app, params).await;
     Ok(command_status_envelope(result))
 }
 
 async fn build_pull_request_board(
+    app: &AppHandle,
     params: PullRequestBoardParams,
 ) -> Result<Vec<PullRequestBoardItem>, String> {
-    let current_user_login = fetch_current_user().await.ok().map(|user| user.login);
+    let default_host_id = params.host_id.clone();
+    let current_user_login = fetch_current_user(app, default_host_id.as_deref())
+        .await
+        .ok()
+        .map(|user| user.login);
     let search_query = normalized_optional_string(params.search_query.as_deref());
 
     if let Some(repos) = params.repos {
@@ -665,6 +683,7 @@ async fn build_pull_request_board(
         for repo in repos {
             items.extend(
                 load_repo_pull_requests(
+                    app,
                     &repo.cwd,
                     repo.host_id.clone(),
                     &repo.repo,
@@ -680,6 +699,7 @@ async fn build_pull_request_board(
     let cwd = normalize_required_string(params.cwd.as_deref().unwrap_or_default(), "cwd")?;
     let repo = normalize_required_string(params.repo.as_deref().unwrap_or_default(), "repo")?;
     load_repo_pull_requests(
+        app,
         &cwd,
         params.host_id,
         &repo,
@@ -690,6 +710,7 @@ async fn build_pull_request_board(
 }
 
 async fn load_repo_pull_requests(
+    app: &AppHandle,
     cwd: &str,
     host_id: Option<String>,
     repo: &str,
@@ -713,7 +734,7 @@ async fn load_repo_pull_requests(
         args.push(search_query);
     }
 
-    let list_value = run_gh_json(args, Some(cwd.to_string()), &[]).await?;
+    let list_value = run_gh_json(app, host_id.as_deref(), args, Some(cwd.to_string()), &[]).await?;
     let list = list_value
         .as_array()
         .ok_or_else(|| "GitHub CLI returned invalid pull request list data".to_string())?;
@@ -734,6 +755,7 @@ async fn load_repo_pull_requests(
 }
 
 async fn fetch_pull_request_value(
+    app: &AppHandle,
     params: &PullRequestLookupParams,
 ) -> Result<Option<Value>, String> {
     let selector = pull_request_selector(params)?;
@@ -750,39 +772,64 @@ async fn fetch_pull_request_value(
         args.push(repo);
     }
 
-    match run_gh_json(args, Some(cwd), &[]).await {
+    match run_gh_json(app, params.host_id.as_deref(), args, Some(cwd), &[]).await {
         Ok(value) => Ok(Some(value)),
         Err(err) if is_no_pull_request_error(&err) => Ok(None),
         Err(err) => Err(err),
     }
 }
 
-async fn fetch_current_user() -> Result<UserIdentity, String> {
-    let value = run_gh_json(vec!["api".to_string(), "user".to_string()], None, &[]).await?;
+async fn fetch_current_user(
+    app: &AppHandle,
+    host_id: Option<&str>,
+) -> Result<UserIdentity, String> {
+    let value = run_gh_json(
+        app,
+        host_id,
+        vec!["api".to_string(), "user".to_string()],
+        None,
+        &[],
+    )
+    .await?;
     user_identity_from_value(&value)
         .ok_or_else(|| "GitHub CLI returned invalid current user data".to_string())
 }
 
 async fn fetch_pull_request_timeline(
+    app: &AppHandle,
+    host_id: Option<&str>,
     repo: &str,
     number: u64,
     cwd: &str,
 ) -> Result<PullRequestTimeline, String> {
     let issue_comments = fetch_repo_api_array(
+        app,
+        host_id,
         repo,
         &format!("repos/{{repo}}/issues/{number}/comments"),
         cwd,
     )
     .await?;
     let review_comments = fetch_repo_api_array(
+        app,
+        host_id,
         repo,
         &format!("repos/{{repo}}/pulls/{number}/comments"),
         cwd,
     )
     .await?;
-    let reviews =
-        fetch_repo_api_array(repo, &format!("repos/{{repo}}/pulls/{number}/reviews"), cwd).await?;
-    let current_user_login = fetch_current_user().await.ok().map(|user| user.login);
+    let reviews = fetch_repo_api_array(
+        app,
+        host_id,
+        repo,
+        &format!("repos/{{repo}}/pulls/{number}/reviews"),
+        cwd,
+    )
+    .await?;
+    let current_user_login = fetch_current_user(app, host_id)
+        .await
+        .ok()
+        .map(|user| user.login);
 
     Ok(PullRequestTimeline {
         activity_items: build_activity_items(&issue_comments, &review_comments, &reviews),
@@ -792,7 +839,10 @@ async fn fetch_pull_request_timeline(
     })
 }
 
-async fn fetch_pull_request_diff(params: &PullRequestDiffParams) -> Result<String, String> {
+async fn fetch_pull_request_diff(
+    app: &AppHandle,
+    params: &PullRequestDiffParams,
+) -> Result<String, String> {
     let cwd = normalize_required_string(&params.cwd, "cwd")?;
     let mut args = vec![
         "pr".to_string(),
@@ -804,11 +854,13 @@ async fn fetch_pull_request_diff(params: &PullRequestDiffParams) -> Result<Strin
         args.push(repo);
     }
 
-    let output = run_gh(args, Some(cwd), &[]).await?;
+    let output = run_gh(app, params.host_id.as_deref(), args, Some(cwd), &[]).await?;
     Ok(output.stdout)
 }
 
 async fn fetch_repo_api_array(
+    app: &AppHandle,
+    host_id: Option<&str>,
     repo: &str,
     path_template: &str,
     cwd: &str,
@@ -821,14 +873,18 @@ async fn fetch_repo_api_array(
     }
     args.push(path_template.replace("{repo}", &parsed_repo.repo_path));
 
-    let value = run_gh_json(args, Some(cwd.to_string()), &[]).await?;
+    let value = run_gh_json(app, host_id, args, Some(cwd.to_string()), &[]).await?;
     value
         .as_array()
         .cloned()
         .ok_or_else(|| "GitHub CLI returned invalid API response".to_string())
 }
 
-async fn post_pull_request_comment(params: PullRequestCommentParams) -> Result<(), String> {
+async fn post_pull_request_comment(
+    app: &AppHandle,
+    params: PullRequestCommentParams,
+) -> Result<(), String> {
+    let host_id = params.host_id.clone();
     let cwd = normalize_required_string(&params.cwd, "cwd")?;
     let body = normalize_required_string(&params.body, "body")?;
     let repo = normalize_required_string(&params.repo, "repo")?;
@@ -848,18 +904,21 @@ async fn post_pull_request_comment(params: PullRequestCommentParams) -> Result<(
         ));
         args.push("-f".to_string());
         args.push(format!("body={body}"));
-        run_gh_json(args, Some(cwd), &[]).await?;
+        run_gh_json(app, host_id.as_deref(), args, Some(cwd), &[]).await?;
         return Ok(());
     }
 
     if let Some(inline_comment) = params.inline_comment {
-        let pr_value = fetch_pull_request_value(&PullRequestLookupParams {
-            cwd: params.cwd,
-            head_branch: String::new(),
-            host_id: None,
-            number: Some(params.number),
-            repo: Some(repo.clone()),
-        })
+        let pr_value = fetch_pull_request_value(
+            app,
+            &PullRequestLookupParams {
+                cwd: params.cwd.clone(),
+                head_branch: String::new(),
+                host_id: host_id.clone(),
+                number: Some(params.number),
+                repo: Some(repo.clone()),
+            },
+        )
         .await?
         .ok_or_else(|| "No open pull request found".to_string())?;
         let head_ref_oid = normalize_required_string(
@@ -902,7 +961,7 @@ async fn post_pull_request_comment(params: PullRequestCommentParams) -> Result<(
             args.push("-f".to_string());
             args.push(format!("start_side={start_side}"));
         }
-        run_gh_json(args, Some(cwd), &[]).await?;
+        run_gh_json(app, host_id.as_deref(), args, Some(cwd), &[]).await?;
         return Ok(());
     }
 
@@ -915,11 +974,11 @@ async fn post_pull_request_comment(params: PullRequestCommentParams) -> Result<(
         "--body".to_string(),
         body,
     ];
-    run_gh(args, Some(cwd), &[]).await?;
+    run_gh(app, host_id.as_deref(), args, Some(cwd), &[]).await?;
     Ok(())
 }
 
-async fn merge_pull_request(params: PullRequestMergeParams) -> Result<(), String> {
+async fn merge_pull_request(app: &AppHandle, params: PullRequestMergeParams) -> Result<(), String> {
     let cwd = normalize_required_string(&params.cwd, "cwd")?;
     let repo = normalize_required_string(&params.repo, "repo")?;
     let merge_flag = merge_method_flag(&params.merge_method)?;
@@ -931,16 +990,21 @@ async fn merge_pull_request(params: PullRequestMergeParams) -> Result<(), String
         repo,
         merge_flag.to_string(),
     ];
-    run_gh(args, Some(cwd), &[]).await?;
+    run_gh(app, params.host_id.as_deref(), args, Some(cwd), &[]).await?;
     Ok(())
 }
 
-async fn update_pull_request(params: PullRequestUpdateParams) -> Result<(), String> {
+async fn update_pull_request(
+    app: &AppHandle,
+    params: PullRequestUpdateParams,
+) -> Result<(), String> {
     let cwd = normalize_required_string(&params.cwd, "cwd")?;
     let repo = normalize_required_string(&params.repo, "repo")?;
     match params.action.as_str() {
         "mark-ready" => {
             run_gh(
+                app,
+                params.host_id.as_deref(),
                 vec![
                     "pr".to_string(),
                     "ready".to_string(),
@@ -955,6 +1019,8 @@ async fn update_pull_request(params: PullRequestUpdateParams) -> Result<(), Stri
         }
         "mark-draft" => {
             run_gh(
+                app,
+                params.host_id.as_deref(),
                 vec![
                     "pr".to_string(),
                     "ready".to_string(),
@@ -973,6 +1039,8 @@ async fn update_pull_request(params: PullRequestUpdateParams) -> Result<(), Stri
                 let merge_method = params.merge_method.as_deref().unwrap_or("merge");
                 let merge_flag = merge_method_flag(merge_method)?;
                 run_gh(
+                    app,
+                    params.host_id.as_deref(),
                     vec![
                         "pr".to_string(),
                         "merge".to_string(),
@@ -988,6 +1056,8 @@ async fn update_pull_request(params: PullRequestUpdateParams) -> Result<(), Stri
                 .await?;
             } else {
                 run_gh(
+                    app,
+                    params.host_id.as_deref(),
                     vec![
                         "pr".to_string(),
                         "merge".to_string(),
@@ -1648,21 +1718,14 @@ fn normalized_optional_string(value: Option<&str>) -> Option<String> {
         .map(str::to_string)
 }
 
-fn ensure_supported_host_id(host_id: Option<&str>, command_name: &str) -> Result<(), String> {
-    match host_id.map(str::trim).filter(|value| !value.is_empty()) {
-        None | Some(LOCAL_HOST_ID) => Ok(()),
-        Some(host_id) => Err(format!(
-            "{command_name} does not support host id: {host_id}"
-        )),
-    }
-}
-
 async fn run_gh_json(
+    app: &AppHandle,
+    host_id: Option<&str>,
     arguments: Vec<String>,
     cwd: Option<String>,
     allowed_exit_codes: &[i32],
 ) -> Result<Value, String> {
-    let output = run_gh(arguments, cwd, allowed_exit_codes).await?;
+    let output = run_gh(app, host_id, arguments, cwd, allowed_exit_codes).await?;
     serde_json::from_str(&output.stdout).map_err(|err| {
         let detail = if output.stdout.trim().is_empty() {
             output.stderr
@@ -1674,54 +1737,22 @@ async fn run_gh_json(
 }
 
 async fn run_gh(
+    app: &AppHandle,
+    host_id: Option<&str>,
     arguments: Vec<String>,
     cwd: Option<String>,
     allowed_exit_codes: &[i32],
-) -> Result<GhCommandOutput, String> {
-    let allowed_exit_codes = allowed_exit_codes.to_vec();
-    let join_result = spawn_blocking(move || {
-        let mut command = Command::new("gh");
-        #[cfg(target_os = "windows")]
-        command.creation_flags(CREATE_NO_WINDOW);
-
-        command.args(&arguments);
-        if let Some(cwd) = cwd.as_deref() {
-            command.current_dir(cwd);
-        }
-
-        let output = command.output().map_err(|err| match err.kind() {
-            std::io::ErrorKind::NotFound => GH_NOT_INSTALLED_ERROR.to_string(),
-            _ => format!("failed to launch GitHub CLI: {err}"),
-        })?;
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        let status_code = output.status.code();
-
-        if output.status.success()
-            || status_code
-                .map(|code| allowed_exit_codes.contains(&code))
-                .unwrap_or(false)
-        {
-            return Ok(GhCommandOutput {
-                status_code,
-                stdout,
-                stderr,
-            });
-        }
-
-        let detail = if stderr.trim().is_empty() {
-            stdout.trim().to_string()
-        } else {
-            stderr.trim().to_string()
-        };
-        let status = status_code
-            .map(|code| code.to_string())
-            .unwrap_or_else(|| "unknown".to_string());
-        Err(format!("GitHub CLI exited with status {status}: {detail}"))
-    })
-    .await;
-
-    join_result.map_err(|err| format!("failed to join GitHub CLI task: {err}"))?
+) -> Result<HostedCommandOutput, String> {
+    run_hosted_command(
+        app,
+        host_id,
+        "gh",
+        arguments,
+        cwd,
+        allowed_exit_codes,
+        GH_NOT_INSTALLED_ERROR,
+    )
+    .await
 }
 
 #[derive(Debug, Default)]
@@ -1738,7 +1769,6 @@ mod tests {
     use super::command_status_envelope;
     use super::compute_board_state;
     use super::compute_ci_status_from_checks;
-    use super::ensure_supported_host_id;
     use super::error_envelope;
     use super::merge_method_flag;
     use super::parse_repo;
@@ -1816,18 +1846,6 @@ mod tests {
         .expect("diff params should deserialize");
 
         assert_eq!(params.repo, Some("openai/codex".to_string()));
-    }
-
-    #[test]
-    fn supported_host_ids_match_local_only_policy() {
-        assert!(ensure_supported_host_id(None, "gh-pr-board").is_ok());
-        assert!(ensure_supported_host_id(Some(""), "gh-pr-board").is_ok());
-        assert!(ensure_supported_host_id(Some("local"), "gh-pr-board").is_ok());
-        assert_eq!(
-            ensure_supported_host_id(Some("remote"), "gh-pr-board")
-                .expect_err("remote host ids should be rejected"),
-            "gh-pr-board does not support host id: remote"
-        );
     }
 
     #[test]

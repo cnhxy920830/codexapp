@@ -41,7 +41,9 @@ import {
   buildHeartbeatThreadOptions,
   copyAutomation,
   formatErrorMessage,
-  hasAutomationRequiredFields,
+  getAutomationSaveRequestDraft,
+  getAutomationSaveState,
+  getAutomationSaveTooltip,
   isPaused,
   sortAutomations,
 } from "./automationsPageUtils";
@@ -406,7 +408,21 @@ export function AutomationsRoutePage({
   const isSaveRetryVisible =
     detailDraft !== null &&
     failedAutoSaveDraft !== null &&
-    areAutomationsEqual(detailDraft, failedAutoSaveDraft);
+    areAutomationsEqual(
+      getAutomationSaveRequestDraft(detailDraft),
+      getAutomationSaveRequestDraft(failedAutoSaveDraft),
+    );
+  const createSaveState =
+    createDraft !== null ? getAutomationSaveState(createDraft) : null;
+  const createSaveTooltip =
+    createSaveState && !createSaveState.canSave && !isCreateSaving
+      ? getAutomationSaveTooltip({
+          action: "create",
+          locale,
+          missingRequirements: createSaveState.missingRequirements,
+          t,
+        })
+      : null;
 
   const nextRunLabel =
     activeDraft === null
@@ -710,7 +726,7 @@ export function AutomationsRoutePage({
     nextDraft: AutomationRecord,
     source: "auto" | "retry",
   ) {
-    const requestDraft = copyAutomation(nextDraft);
+    const requestDraft = getAutomationSaveRequestDraft(nextDraft);
     if (source === "retry") {
       setIsRetrySaving(true);
     } else {
@@ -763,10 +779,16 @@ export function AutomationsRoutePage({
       selectedAutomation === null ||
       isDetailSaving ||
       isRetrySaving ||
-      !hasAutomationRequiredFields(detailDraft) ||
-      areAutomationsEqual(detailDraft, selectedAutomation) ||
+      !getAutomationSaveState(detailDraft).canSave ||
+      areAutomationsEqual(
+        getAutomationSaveRequestDraft(detailDraft),
+        getAutomationSaveRequestDraft(selectedAutomation),
+      ) ||
       (failedAutoSaveDraft !== null &&
-        areAutomationsEqual(detailDraft, failedAutoSaveDraft))
+        areAutomationsEqual(
+          getAutomationSaveRequestDraft(detailDraft),
+          getAutomationSaveRequestDraft(failedAutoSaveDraft),
+        ))
     ) {
       return;
     }
@@ -800,13 +822,20 @@ export function AutomationsRoutePage({
   };
 
   const saveCreate = async () => {
-    if (createDraft === null || !hasAutomationRequiredFields(createDraft)) {
+    if (createDraft === null) {
+      return;
+    }
+
+    const saveState = getAutomationSaveState(createDraft);
+    if (!saveState.canSave) {
       return;
     }
 
     setIsCreateSaving(true);
     try {
-      const created = await createAutomation(createDraft);
+      const created = await createAutomation(
+        getAutomationSaveRequestDraft(createDraft),
+      );
       setCreateDraft(null);
       await loadAutomations();
       updateRouteState(
@@ -1011,12 +1040,11 @@ export function AutomationsRoutePage({
 
       {isCreateMode && createDraft ? (
         <AutomationsCreateDialog
-          canSave={
-            createDraft !== null && hasAutomationRequiredFields(createDraft)
-          }
+          canSave={createSaveState?.canSave ?? false}
           draft={createDraft}
           isSaving={isCreateSaving}
           heartbeatThreadOptions={heartbeatThreadOptions}
+          hostId={selectedHostId}
           locale={locale}
           modelOptions={modelOptions}
           quickStartBaseDraft={quickStartBaseDraft}
@@ -1029,6 +1057,7 @@ export function AutomationsRoutePage({
             setCreateDraft(copyAutomation(draft));
           }}
           onOpenLocalEnvironmentsSettings={onOpenLocalEnvironmentsSettings}
+          saveTooltip={createSaveTooltip}
           workspaceRootLabels={workspaceRootLabels}
           workspaceRootOptions={workspaceRootOptions}
           t={t}

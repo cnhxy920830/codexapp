@@ -25,7 +25,7 @@ const TITLE_KEY_BY_SLUG = {
   agent: "settings.section.agent",
   appearance: "settings.section.appearance",
   "browser-use": "settings.section.browser-use",
-  "computer-use": "settings.section.computer-use",
+  "computer-use": "computerUse.label",
   connections: "settings.section.connections",
   "data-controls": "settings.section.data-controls",
   "general-settings": "settings.section.general-settings",

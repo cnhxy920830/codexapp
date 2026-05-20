@@ -113,6 +113,7 @@ export function SelectWorkspacePageView({
                     />
                     {workspaceRootOptions.map((option, index) => {
                       if (
+                        !isRemoteHost &&
                         !isLoadingExistingPaths &&
                         !normalizedExistingPaths.has(normalizeComparablePath(option.root))
                       ) {

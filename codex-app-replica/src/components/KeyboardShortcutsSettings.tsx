@@ -8,12 +8,12 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
 import { Button } from "./Button";
 import { SettingsContentLayout } from "./SettingsContentLayout";
 import { SettingsGroup } from "./SettingsGroup";
 import { SettingsSectionTitle } from "./SettingsSectionTitle";
 import { SettingsSurface } from "./SettingsSurface";
+import { Tooltip, TooltipKeycap } from "./Tooltip";
 import { useI18n } from "../i18n/i18n";
 import {
   acceleratorsMatch,
@@ -618,9 +618,7 @@ function ShortcutLabel({ shortcutLabel }: { shortcutLabel: string | null }) {
       {shortcutLabel == null ? (
         t("settings.keyboardShortcuts.unassigned")
       ) : (
-        <kbd className="inline-flex !rounded-md !border-0 !bg-current/10 !px-1.5 !py-0.5 !font-sans !text-xs !leading-none !text-current !shadow-none">
-          {shortcutLabel}
-        </kbd>
+        <TooltipKeycap keysLabel={shortcutLabel} />
       )}
     </span>
   );
@@ -766,89 +764,14 @@ function ShortcutToolbarButton({
   }
 
   return (
-    <ShortcutTooltip content={ariaLabel}>
+    <Tooltip tooltipContent={ariaLabel}>
       {button}
-    </ShortcutTooltip>
+    </Tooltip>
   );
 }
 
 function preventDefaultMouseDown(event: MouseEvent<HTMLElement>) {
   event.preventDefault();
-}
-
-function ShortcutTooltip({
-  children,
-  content,
-}: {
-  children: ReactNode;
-  content: string;
-}) {
-  const triggerRef = useRef<HTMLSpanElement | null>(null);
-  const [isOpen, setIsOpen] = useState(false);
-  const [position, setPosition] = useState<{
-    left: number;
-    top: number;
-  } | null>(null);
-
-  useEffect(() => {
-    if (!isOpen || typeof window === "undefined") {
-      return;
-    }
-
-    const updatePosition = () => {
-      const rect = triggerRef.current?.getBoundingClientRect();
-      if (!rect) {
-        return;
-      }
-      setPosition({
-        left: rect.left + rect.width / 2,
-        top: rect.top - 2,
-      });
-    };
-
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [isOpen]);
-
-  if (typeof document === "undefined") {
-    return <span className="inline-flex">{children}</span>;
-  }
-
-  return (
-    <>
-      <span
-        ref={triggerRef}
-        className="inline-flex"
-        onMouseEnter={() => setIsOpen(true)}
-        onMouseLeave={() => setIsOpen(false)}
-        onFocus={() => setIsOpen(true)}
-        onBlur={() => setIsOpen(false)}
-      >
-        {children}
-      </span>
-      {isOpen && position
-        ? createPortal(
-            <div
-              role="tooltip"
-              className="border-token-border bg-token-dropdown-background text-token-foreground pointer-events-none fixed z-50 w-fit max-w-[20rem] select-none rounded-lg border px-2 py-1 text-sm whitespace-normal break-words"
-              style={{
-                left: `${position.left}px`,
-                top: `${position.top}px`,
-                transform: "translate(-50%, -100%)",
-              }}
-            >
-              {content}
-            </div>,
-            document.body,
-          )
-        : null}
-    </>
-  );
 }
 
 function PencilIcon({ className }: { className?: string }) {

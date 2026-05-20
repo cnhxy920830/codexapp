@@ -1,3 +1,8 @@
+use crate::auth_bridge::{
+    parse_codex_home_from_initialize_result, push_agent_settings_notice,
+    update_agent_settings_notices, AgentSettingsNotice, AgentSettingsTextPosition,
+    AgentSettingsTextRange, AuthBridgeState,
+};
 use crate::debug_app_server;
 use crate::remote_app_server_registry::{RemoteAppServerConnectionState, RemoteAppServerRegistry};
 use crate::remote_connections::RemoteConnection;
@@ -6,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::process::Stdio;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
@@ -258,7 +263,16 @@ async fn ensure_stopped(
         stop_process(process).await;
     }
     let registry = app.state::<RemoteAppServerRegistry>();
-    registry.set_versions(host_id, None, None);
+    registry.set_versions(host_id, None, None, None);
+    app.state::<Arc<AuthBridgeState>>()
+        .inner()
+        .clear_codex_home_for_host(Some(host_id));
+    update_agent_settings_notices(
+        app,
+        app.state::<Arc<AuthBridgeState>>().inner(),
+        host_id,
+        Vec::new(),
+    );
     set_connection_state(
         app,
         host_id,
@@ -519,6 +533,10 @@ async fn run_remote_app_server_client(
                                                         debug_app_server::parse_app_server_version_from_initialize_result(
                                                             value,
                                                         );
+                                                    let codex_home =
+                                                        parse_codex_home_from_initialize_result(
+                                                            value,
+                                                        );
                                                     debug_app_server::request_completed(&app, handle, value);
                                                     debug_app_server::set_versions(
                                                         &app,
@@ -526,12 +544,21 @@ async fn run_remote_app_server_client(
                                                         app_server_version.clone(),
                                                         None,
                                                     );
+                                                    if let Some(codex_home) = codex_home.clone() {
+                                                        app.state::<Arc<AuthBridgeState>>()
+                                                            .inner()
+                                                            .set_codex_home_for_host(
+                                                                Some(&host_id),
+                                                                codex_home,
+                                                            );
+                                                    }
                                                     let registry =
                                                         app.state::<RemoteAppServerRegistry>();
                                                     registry.set_versions(
                                                         &host_id,
                                                         app_server_version,
                                                         None,
+                                                        codex_home,
                                                     );
                                                 }
                                                 (_, Some(err)) => {
@@ -556,6 +583,12 @@ async fn run_remote_app_server_client(
                                         )
                                         .await
                                         {
+                                            update_agent_settings_notices(
+                                                &app,
+                                                app.state::<Arc<AuthBridgeState>>().inner(),
+                                                &host_id,
+                                                Vec::new(),
+                                            );
                                             let _ = app.emit(
                                                 CODEX_APP_SERVER_INITIALIZED_EVENT,
                                                 CodexAppServerInitializedNotification {
@@ -616,6 +649,12 @@ async fn run_remote_app_server_client(
                                         }
                                         "mcpServer/oauthLogin/completed" => {
                                             handle_mcp_oauth_login_completed(&app, &host_id, params);
+                                        }
+                                        "configWarning" => {
+                                            handle_remote_config_warning_notification(&app, &host_id, params);
+                                        }
+                                        "deprecationNotice" => {
+                                            handle_remote_deprecation_notice_notification(&app, &host_id, params);
                                         }
                                         _ => {
                                             let _ = params;
@@ -801,6 +840,79 @@ fn handle_remote_chatgpt_login_completed(app: &AppHandle, host_id: &str, params:
         return;
     };
     let _ = app.emit(REMOTE_CHATGPT_LOGIN_COMPLETED_EVENT, notification);
+}
+
+fn handle_remote_config_warning_notification(app: &AppHandle, host_id: &str, params: Value) {
+    let Some(summary) = params
+        .get("summary")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+    else {
+        return;
+    };
+
+    let auth_state = app.state::<Arc<AuthBridgeState>>();
+    push_agent_settings_notice(
+        app,
+        auth_state.inner(),
+        host_id,
+        AgentSettingsNotice {
+            summary,
+            details: params
+                .get("details")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
+            path: params
+                .get("path")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
+            range: map_agent_settings_text_range(params.get("range")),
+            kind: "configWarning".to_string(),
+            level: "warning".to_string(),
+        },
+    );
+}
+
+fn handle_remote_deprecation_notice_notification(app: &AppHandle, host_id: &str, params: Value) {
+    let Some(summary) = params
+        .get("summary")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+    else {
+        return;
+    };
+
+    let auth_state = app.state::<Arc<AuthBridgeState>>();
+    push_agent_settings_notice(
+        app,
+        auth_state.inner(),
+        host_id,
+        AgentSettingsNotice {
+            summary,
+            details: params
+                .get("details")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string),
+            path: None,
+            range: None,
+            kind: "deprecationNotice".to_string(),
+            level: "warning".to_string(),
+        },
+    );
+}
+
+fn map_agent_settings_text_range(value: Option<&Value>) -> Option<AgentSettingsTextRange> {
+    let value = value?;
+    let start = map_agent_settings_text_position(value.get("start")?)?;
+    let end = value.get("end").and_then(map_agent_settings_text_position);
+    Some(AgentSettingsTextRange { start, end })
+}
+
+fn map_agent_settings_text_position(value: &Value) -> Option<AgentSettingsTextPosition> {
+    Some(AgentSettingsTextPosition {
+        line: value.get("line")?.as_u64()? as usize,
+        column: value.get("column")?.as_u64()? as usize,
+    })
 }
 
 #[cfg(test)]

@@ -35,6 +35,7 @@ type PullRequestReviewToolbarProps = {
   onToggleWordDiffsEnabled: () => void;
   onToggleSplitDiffEnabled: () => void;
   onToggleWrapEnabled: () => void;
+  showHideWhitespace?: boolean;
   showLoadFullFiles: boolean;
 };
 
@@ -55,6 +56,7 @@ export function PullRequestReviewToolbar({
   onToggleWordDiffsEnabled,
   onToggleSplitDiffEnabled,
   onToggleWrapEnabled,
+  showHideWhitespace = true,
   showLoadFullFiles,
 }: PullRequestReviewToolbarProps) {
   const { t } = useI18n();
@@ -166,15 +168,17 @@ export function PullRequestReviewToolbar({
               >
                 {wordDiffsToggleLabel}
               </ReviewOptionsMenuItem>
-              <ReviewOptionsMenuItem
-                icon={<WhitespaceIcon className="h-4 w-4" />}
-                onSelect={() => {
-                  onToggleWhitespaceHidden();
-                  setIsMenuOpen(false);
-                }}
-              >
-                {whitespaceToggleLabel}
-              </ReviewOptionsMenuItem>
+              {showHideWhitespace ? (
+                <ReviewOptionsMenuItem
+                  icon={<WhitespaceIcon className="h-4 w-4" />}
+                  onSelect={() => {
+                    onToggleWhitespaceHidden();
+                    setIsMenuOpen(false);
+                  }}
+                >
+                  {whitespaceToggleLabel}
+                </ReviewOptionsMenuItem>
+              ) : null}
               <ReviewOptionsMenuItem
                 disabled={onCopyGitApplyCommand == null}
                 icon={<CopyPathIcon className="h-4 w-4" />}

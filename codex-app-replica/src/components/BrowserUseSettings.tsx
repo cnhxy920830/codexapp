@@ -9,6 +9,7 @@ import { SettingsChoiceMenu } from "./SettingsChoiceMenu";
 import { SettingsGroup } from "./SettingsGroup";
 import { SettingsSurface } from "./SettingsSurface";
 import { Spinner } from "./Spinner";
+import { useReplicaStatsigDynamicConfigValue } from "../features/statsig/replicaStatsig";
 import { useI18n } from "../i18n/i18n";
 import type { MessageKey } from "../i18n/messages";
 import {
@@ -60,6 +61,7 @@ type RemoveOriginState = OriginSectionConfig & {
 const ALL_BROWSING_DATA_TYPES: BrowserBrowsingDataType[] = ["cookies", "siteData", "cache"];
 const COMPUTER_USE_SETTINGS_PATH = "/settings/computer-use";
 const NAVIGATE_TO_ROUTE_EVENT = "navigate-to-route";
+const BROWSER_USE_APPROVAL_LINK_DYNAMIC_CONFIG = "4168530037";
 const BROWSER_USE_LEARN_MORE_URL = "https://developers.openai.com/codex/app/computer-use";
 
 const BROWSER_USE_ORIGIN_SECTION_COPY: Record<
@@ -223,6 +225,9 @@ function BrowserUsePermissionsPanel({
   const [addDialogState, setAddDialogState] = useState<OriginSectionConfig | null>(null);
   const [originDraft, setOriginDraft] = useState("");
   const [removeOriginState, setRemoveOriginState] = useState<RemoveOriginState | null>(null);
+  const browserUseLearnMoreDynamicConfig = useReplicaStatsigDynamicConfigValue(
+    BROWSER_USE_APPROVAL_LINK_DYNAMIC_CONFIG,
+  );
 
   const loadSettings = useEffectEvent(async () => {
     setIsLoading(true);
@@ -332,6 +337,9 @@ function BrowserUsePermissionsPanel({
   const historyApprovalMode = settingsState?.historyApprovalMode ?? "alwaysAsk";
   const downloadApprovalMode = settingsState?.downloadApprovalMode ?? "alwaysAsk";
   const uploadApprovalMode = settingsState?.uploadApprovalMode ?? "alwaysAsk";
+  const browserUseLearnMoreUrl = resolveBrowserUseLearnMoreUrl(
+    browserUseLearnMoreDynamicConfig,
+  );
   const controlsDisabled = isLoading || pendingAction !== null;
   const dataControlsDisabled =
     isLoading ||
@@ -461,7 +469,7 @@ function BrowserUsePermissionsPanel({
                 t("settings.browserUse.approval.description"),
                 "learnMoreLink",
                 () => {
-                  void openInBrowser(BROWSER_USE_LEARN_MORE_URL);
+                  void openInBrowser(browserUseLearnMoreUrl);
                 },
                 "text-token-text-link-foreground hover:underline",
               )}
@@ -851,6 +859,29 @@ function BrowsingDataOptionRow({
       </Button>
     </div>
   );
+}
+
+function resolveBrowserUseLearnMoreUrl(dynamicConfig: unknown) {
+  const configuredUrl =
+    dynamicConfig !== null &&
+    typeof dynamicConfig === "object" &&
+    !Array.isArray(dynamicConfig) &&
+    typeof (dynamicConfig as { url?: unknown }).url === "string"
+      ? (dynamicConfig as { url: string }).url.trim()
+      : null;
+
+  if (configuredUrl !== null) {
+    try {
+      const parsedUrl = new URL(configuredUrl);
+      if (parsedUrl.protocol === "https:") {
+        return configuredUrl;
+      }
+    } catch {
+      // Fall back to the extracted default URL when the config value is not a valid https URL.
+    }
+  }
+
+  return BROWSER_USE_LEARN_MORE_URL;
 }
 
 function OriginSection({

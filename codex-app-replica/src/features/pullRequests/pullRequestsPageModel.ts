@@ -1,5 +1,6 @@
 import type { GitOrigin } from "../../services/gitOrigins";
 import { isWithinCodexWorktrees } from "../../services/codexHome";
+import type { RemoteProject } from "../../services/settingsHosts";
 import type {
   PullRequestBoardColumnKey,
   PullRequestBoardItem,
@@ -39,6 +40,17 @@ export type PullRequestBoardSection = {
   items: PullRequestBoardItem[];
 };
 
+export type PullRequestProjectGroup = {
+  path: string;
+  hostId: string | null;
+  isCodexWorktree: boolean;
+};
+
+export type PullRequestGitOriginEntry = {
+  hostId: string | null;
+  origin: GitOrigin;
+};
+
 export function parsePullRequestsRouteState(
   search: string,
   storedRepoKey: string | null,
@@ -70,24 +82,27 @@ export function serializePullRequestsRouteState(state: PullRequestsRouteState) {
 export function buildPullRequestRepoOptions({
   codexHome,
   gitOrigins,
-  workspaceRoots,
+  projectGroups,
 }: {
   codexHome: string | null;
-  gitOrigins: GitOrigin[];
-  workspaceRoots: string[];
+  gitOrigins: PullRequestGitOriginEntry[];
+  projectGroups: PullRequestProjectGroup[];
 }) {
-  const originsByRoot = new Map<string, GitOrigin>();
-  for (const origin of gitOrigins) {
-    if (origin.originUrl == null) {
+  const originsByGroup = new Map<string, GitOrigin>();
+  for (const gitOrigin of gitOrigins) {
+    if (gitOrigin.origin.originUrl == null) {
       continue;
     }
-    originsByRoot.set(normalizePath(origin.dir), origin);
+    originsByGroup.set(
+      buildProjectGroupKey(gitOrigin.hostId, gitOrigin.origin.dir),
+      gitOrigin.origin,
+    );
   }
 
   const optionsByKey = new Map<string, PullRequestRepoOption & { isCodexWorktree: boolean }>();
 
-  for (const workspaceRoot of workspaceRoots) {
-    const origin = originsByRoot.get(normalizePath(workspaceRoot));
+  for (const projectGroup of projectGroups) {
+    const origin = originsByGroup.get(buildProjectGroupKey(projectGroup.hostId, projectGroup.path));
     if (origin == null || origin.originUrl == null) {
       continue;
     }
@@ -98,13 +113,14 @@ export function buildPullRequestRepoOptions({
     }
 
     const option: PullRequestRepoOption & { isCodexWorktree: boolean } = {
-      cwd: workspaceRoot,
-      hostId: null,
+      cwd: projectGroup.path,
+      hostId: projectGroup.hostId,
       key: parsed.repoKey,
       label: parsed.label,
       originUrl: origin.originUrl,
       repo: parsed.repoKey,
-      isCodexWorktree: isWithinCodexWorktrees(workspaceRoot, codexHome),
+      isCodexWorktree:
+        projectGroup.isCodexWorktree || isWithinCodexWorktrees(projectGroup.path, codexHome),
     };
 
     const current = optionsByKey.get(option.key);
@@ -116,6 +132,77 @@ export function buildPullRequestRepoOptions({
   return Array.from(optionsByKey.values())
     .sort((left, right) => left.label.localeCompare(right.label))
     .map(({ isCodexWorktree: _isCodexWorktree, ...option }) => option);
+}
+
+export function buildPullRequestProjectGroups({
+  codexHome,
+  connectedRemoteHostIds,
+  remoteProjects,
+  workspaceRoots,
+}: {
+  codexHome: string | null;
+  connectedRemoteHostIds: string[];
+  remoteProjects: RemoteProject[];
+  workspaceRoots: string[];
+}) {
+  const connectedRemoteHostIdSet = new Set(
+    connectedRemoteHostIds
+      .map((hostId) => normalizeHostId(hostId))
+      .filter((hostId): hostId is string => hostId !== null),
+  );
+  const groupsByKey = new Map<string, PullRequestProjectGroup>();
+
+  for (const workspaceRoot of workspaceRoots) {
+    const group: PullRequestProjectGroup = {
+      path: workspaceRoot,
+      hostId: null,
+      isCodexWorktree: isWithinCodexWorktrees(workspaceRoot, codexHome),
+    };
+    groupsByKey.set(buildProjectGroupKey(group.hostId, group.path), group);
+  }
+
+  for (const remoteProject of remoteProjects) {
+    const hostId = normalizeHostId(remoteProject.hostId);
+    if (hostId == null || !connectedRemoteHostIdSet.has(hostId)) {
+      continue;
+    }
+
+    const group: PullRequestProjectGroup = {
+      path: remoteProject.remotePath,
+      hostId,
+      isCodexWorktree: false,
+    };
+    const key = buildProjectGroupKey(group.hostId, group.path);
+    if (!groupsByKey.has(key)) {
+      groupsByKey.set(key, group);
+    }
+  }
+
+  return Array.from(groupsByKey.values());
+}
+
+export function getPullRequestGitOriginRequests(projectGroups: PullRequestProjectGroup[]) {
+  const requestsByHostId = new Map<string, { hostId: string | null; dirs: string[]; normalizedDirs: Set<string> }>();
+
+  for (const projectGroup of projectGroups) {
+    const hostId = normalizeHostId(projectGroup.hostId);
+    const hostKey = hostId ?? "__local__";
+    const request =
+      requestsByHostId.get(hostKey) ??
+      {
+        hostId,
+        dirs: [],
+        normalizedDirs: new Set<string>(),
+      };
+    const normalizedPath = normalizePath(projectGroup.path);
+    if (!request.normalizedDirs.has(normalizedPath)) {
+      request.normalizedDirs.add(normalizedPath);
+      request.dirs.push(projectGroup.path);
+    }
+    requestsByHostId.set(hostKey, request);
+  }
+
+  return Array.from(requestsByHostId.values()).map(({ normalizedDirs: _normalizedDirs, ...request }) => request);
 }
 
 export function resolvePullRequestRepoOption(
@@ -322,6 +409,15 @@ function parsePositiveInteger(value: string | null) {
 
   const parsed = Number(normalized);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function buildProjectGroupKey(hostId: string | null, path: string) {
+  return `${normalizeHostId(hostId) ?? "__local__"}:${normalizePath(path)}`;
+}
+
+function normalizeHostId(hostId: string | null | undefined) {
+  const trimmed = hostId?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : null;
 }
 
 function normalizePath(value: string) {

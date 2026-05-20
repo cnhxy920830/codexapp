@@ -164,7 +164,7 @@ export function DataControlsSettings({
               {archivedThreads.map((thread) => {
                 const isPending = pendingThreadIds.includes(thread.id);
                 const title =
-                  (thread.name ?? thread.preview).trim() || t("settings.dataControls.archivedChats.untitled");
+                  thread.name?.trim() || thread.preview.trim() || t("settings.dataControls.archivedChats.untitled");
                 const summary = formatArchivedThreadSummary(thread, locale, t);
 
                 return (

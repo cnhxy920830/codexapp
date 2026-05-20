@@ -17,7 +17,9 @@ import {
   readAvatarOverlayOpenState,
   toggleAvatarOverlay,
 } from "../../services/avatarOverlay";
+import { installRecommendedSkill, readRecommendedSkills } from "../../services/recommendedSkills";
 import { readSkillsSnapshot } from "../../services/skills";
+import { LOCAL_SETTINGS_HOST_ID } from "../../services/settingsHosts";
 import { AvatarSprite } from "./AvatarSprite";
 import {
   DEFAULT_AVATAR_ID,
@@ -371,37 +373,82 @@ function isCustomAvatar(avatar: AvatarOption) {
 }
 
 async function buildCreatePetPrompt() {
-  const skillPath = await resolveHatchPetSkillPath();
-  const normalizedSkillPath = encodeURI(skillPath.replace(/\\/g, "/"));
-  const skillMention = `[$${HATCH_PET_SKILL_NAME}](${normalizedSkillPath})`;
+  const skillMention = await resolveHatchPetSkillMention();
   return `${skillMention} create a pet based on what you know about me`;
 }
 
-async function resolveHatchPetSkillPath() {
+async function resolveHatchPetSkillMention() {
   try {
-    const skills = await readSkillsSnapshot(null, false);
-    const installedSkill = skills.find((skill) => skill.name === HATCH_PET_SKILL_NAME);
+    const installedSkill = await findInstalledSkillByName(HATCH_PET_SKILL_NAME);
     if (installedSkill) {
-      return installedSkill.path;
+      return buildSkillMention(installedSkill.name, installedSkill.path);
     }
   } catch {
-    // Ignore and fall through to the upstream bundled skill path.
+    // Ignore and continue to the curated skill install path.
+  }
+
+  try {
+    const response = await readRecommendedSkills({
+      hostId: LOCAL_SETTINGS_HOST_ID,
+      refresh: false,
+    });
+    const curatedSkill = response.skills.find((skill) => skill.name === HATCH_PET_SKILL_NAME);
+    if (curatedSkill) {
+      const installResult = await installRecommendedSkill({
+        hostId: LOCAL_SETTINGS_HOST_ID,
+        installRoot: null,
+        repoPath: curatedSkill.repoPath,
+        skillId: curatedSkill.id,
+      });
+      const reloadedSkill = await findInstalledSkillByName(HATCH_PET_SKILL_NAME, true);
+      if (reloadedSkill) {
+        return buildSkillMention(reloadedSkill.name, reloadedSkill.path);
+      }
+      return buildSkillMention(HATCH_PET_SKILL_NAME, joinPath(installResult.installedPath, "SKILL.md"));
+    }
+  } catch {
+    // Ignore and fall through to the bundled path.
   }
 
   try {
     const codexHome = await getCodexHomePath();
-    return joinPath(
-      codexHome,
-      "vendor_imports",
-      "skills",
-      "skills",
-      ".curated",
+    return buildSkillMention(
       HATCH_PET_SKILL_NAME,
-      "SKILL.md",
+      joinPath(
+        codexHome,
+        "vendor_imports",
+        "skills",
+        "skills",
+        ".curated",
+        HATCH_PET_SKILL_NAME,
+        "SKILL.md",
+      ),
     );
   } catch {
-    return HATCH_PET_FALLBACK_SKILL_PATH;
+    return buildSkillMention(HATCH_PET_SKILL_NAME, HATCH_PET_FALLBACK_SKILL_PATH);
   }
+}
+
+async function findInstalledSkillByName(name: string, forceReload = false) {
+  const skills = await readSkillsSnapshot(null, {
+    forceReload,
+    hostId: LOCAL_SETTINGS_HOST_ID,
+  });
+  const normalizedName = name.toLowerCase();
+  const exactMatch = skills.find((skill) => skill.name.toLowerCase() === normalizedName) ?? null;
+  if (exactMatch) {
+    return exactMatch;
+  }
+
+  const suffixMatches = skills.filter((skill) =>
+    skill.name.toLowerCase().endsWith(`:${normalizedName}`),
+  );
+  return suffixMatches.length === 1 ? suffixMatches[0] : null;
+}
+
+function buildSkillMention(name: string, path: string) {
+  const normalizedSkillPath = encodeURI(path.replace(/\\/g, "/"));
+  return `[$${name}](${normalizedSkillPath})`;
 }
 
 function joinPath(base: string, ...segments: string[]) {

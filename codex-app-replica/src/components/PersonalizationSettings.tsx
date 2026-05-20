@@ -9,6 +9,7 @@ import { SettingsRow } from "./SettingsRow";
 import { SettingsSectionTitle } from "./SettingsSectionTitle";
 import { SettingsSurface } from "./SettingsSurface";
 import { Spinner } from "./Spinner";
+import { useHotkey } from "../hooks/useHotkey";
 import {
   REPLICA_STATSIG_GATES,
   useReplicaStatsigGateValue,
@@ -349,25 +350,14 @@ export function PersonalizationSettings({
     }
   };
 
-  useEffect(() => {
-    if (!canSaveDocument) {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "s") {
-        return;
-      }
-
+  useHotkey({
+    accelerator: "CmdOrCtrl+S",
+    enabled: canSaveDocument,
+    onKeyDown: (event) => {
       event.preventDefault();
       void saveCodexAgentsDocument();
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [canSaveDocument, editorValue, selectedHostId]);
+    },
+  });
 
   return (
     <SettingsContentLayout title={<SettingsSectionTitle slug="personalization" />}>
@@ -380,12 +370,13 @@ export function PersonalizationSettings({
                 description={t("settings.personalization.personality.description")}
                 control={
                   <SettingsChoiceMenu
-                    className="w-[260px]"
+                    className="w-[240px]"
                     disabled={
                       personalityState.isLoading ||
                       personalityState.isSaving ||
                       !personalityState.canWrite
                     }
+                    menuClassName="w-[260px] max-w-xs"
                     options={personalityOptions}
                     value={selectedPersonalityOption.value}
                     onChange={(value) => {
