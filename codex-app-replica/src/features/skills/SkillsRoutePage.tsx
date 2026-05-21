@@ -11,6 +11,7 @@ import {
 import type { AppToast } from "../../components/AppToastRegion";
 import { PlusIcon, RefreshIcon, SearchIcon } from "../../components/AppShellIcons";
 import { Button } from "../../components/Button";
+import { LargeEmptyState } from "../../components/LargeEmptyState";
 import { SettingsHostDropdown } from "../../components/SettingsHostDropdown";
 import { SettingsChoiceMenu } from "../../components/SettingsChoiceMenu";
 import { useI18n } from "../../i18n/i18n";
@@ -95,6 +96,7 @@ const SKILLS_QUERY_KEY = ["skills"] as const;
 const SKILLS_DOCS_URL = "https://developers.openai.com/codex/skills/";
 
 type BrowseTab = "plugins" | "skills" | "apps";
+type BrowseMode = "browse" | "manage";
 
 type PluginBrowseState = {
   apps: AppInfo[];
@@ -108,9 +110,10 @@ type SkillsRoutePageProps = {
   codexHome: string | null;
   connectAppId?: string;
   connectedRemoteConnections: RemoteConnection[];
+  initialMode?: BrowseMode;
   initialTab?: BrowseTab;
-  isPluginsRouteEnabled: boolean;
-  onConsumeInitialState: () => void;
+  isPluginsRouteEnabled?: boolean;
+  onConsumeInitialState?: () => void;
   onOpenChatWithPrompt: (request: SkillsChatRequest) => void;
   onSelectHost: (hostId: string) => void;
   onShowToast: (toast: AppToast) => void;
@@ -125,9 +128,10 @@ export function SkillsRoutePage({
   codexHome,
   connectAppId,
   connectedRemoteConnections,
+  initialMode = "browse",
   initialTab,
-  isPluginsRouteEnabled,
-  onConsumeInitialState,
+  isPluginsRouteEnabled = false,
+  onConsumeInitialState = noop,
   onOpenChatWithPrompt,
   onSelectHost,
   onShowToast,
@@ -175,9 +179,7 @@ export function SkillsRoutePage({
   const canShowUnifiedPluginsPage = isPluginsRouteEnabled && authMethod !== "apikey";
   const shouldShowManagePluginsPage =
     canShowUnifiedPluginsPage &&
-    (initialTab === "apps" ||
-      (initialTab != null && initialTab !== "skills") ||
-      (connectAppId != null && connectAppId.trim().length > 0));
+    (initialMode === "manage" || (connectAppId != null && connectAppId.trim().length > 0));
   const initialManageTab: ManageTab | undefined =
     initialTab === "apps" || initialTab === "plugins" ? initialTab : undefined;
   const canInstallRecommendedSkills = resolvedSelectedHostId === LOCAL_SETTINGS_HOST_ID;
@@ -442,6 +444,8 @@ export function SkillsRoutePage({
       requestIdRef: recommendedSkillsRequestIdRef,
     });
 
+  const markSkillsUpdated = async () => refreshSkills(true);
+
   const refreshBrowseData = async (options?: { forceRefetchApps?: boolean }) =>
     refreshBrowseState({
       onAppsLoaded: setApps,
@@ -643,8 +647,7 @@ export function SkillsRoutePage({
   }, []);
 
   return (
-    <div className="relative h-full min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
-      <div className="flex min-h-full w-full flex-col pb-6">
+    <div className="flex min-h-0 h-full flex-1 flex-col pb-6">
         {shouldShowManagePluginsPage ? (
           <PluginsPage
             codexHome={codexHome}
@@ -746,7 +749,7 @@ export function SkillsRoutePage({
             </div>
           </>
         ) : (
-          <div className="mr-4 flex h-full flex-col text-base">
+          <div className="mr-4 flex min-h-0 h-full flex-1 flex-col text-base">
             <ThreadPageHeader
               environmentType={null}
               start={isHeadingVisible ? null : t("skills.page.heading")}
@@ -762,16 +765,14 @@ export function SkillsRoutePage({
                     />
                   ) : null}
                   <RefreshSkillsButton
-                    isDisabled={isSkillsLoading || isRecommendedSkillsLoading}
+                    isDisabled={isSkillsLoading}
                     isPendingRefresh={hasPendingSkillRefresh}
                     onClick={() => {
-                      void Promise.all([refreshSkills(true), refreshRecommendedSkills(true)]).then(
-                        ([skillsRefreshed, recommendedSkillsRefreshed]) => {
-                          if (skillsRefreshed && recommendedSkillsRefreshed) {
-                            setHasPendingSkillRefresh(false);
-                          }
-                        },
-                      );
+                      void (async () => {
+                        await markSkillsUpdated();
+                        await refreshRecommendedSkills(true);
+                        setHasPendingSkillRefresh(false);
+                      })();
                     }}
                     t={t}
                   />
@@ -797,7 +798,7 @@ export function SkillsRoutePage({
             />
 
             <div className="flex-1 overflow-y-auto p-panel" ref={setScrollContainer}>
-              <div className="mx-auto flex min-h-full w-full max-w-[var(--thread-content-max-width)] flex-1 flex-col gap-8">
+              <div className="mx-auto flex min-h-full w-full max-w-[var(--thread-content-max-width)] flex-1 flex-col gap-8 [container-type:inline-size]">
                 <div className="flex items-end justify-between gap-4">
                   <div className="flex flex-col gap-1" ref={setHeadingContainer}>
                     <div className="heading-xl font-normal text-token-foreground">
@@ -820,7 +821,7 @@ export function SkillsRoutePage({
                         onOpenChatWithPrompt={onOpenChatWithPrompt}
                         onShowToast={onShowToast}
                         onSkillsUpdated={async () => {
-                          await refreshSkills(true);
+                          await markSkillsUpdated();
                         }}
                         skills={filteredSkills}
                         totalSkills={installedSkills.length}
@@ -845,8 +846,15 @@ export function SkillsRoutePage({
                               repoPath: skill.repoPath,
                               skillId: skill.id,
                             });
+                            await markSkillsUpdated();
                             await refreshRecommendedSkills(true);
                             setHasPendingSkillRefresh(true);
+                            onShowToast({
+                              tone: "success",
+                              message: t("skills.recommended.installSuccess", {
+                                skillName: skill.name,
+                              }),
+                            });
                           } catch (error) {
                             setRecommendedSkillsLoadError(
                               error instanceof Error ? error.message : String(error),
@@ -869,7 +877,6 @@ export function SkillsRoutePage({
             </div>
           </div>
         )}
-      </div>
 
       {activePlugin != null ? (
         <PluginDetailDialog
@@ -979,7 +986,7 @@ function InstalledSkillsSection({
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
 }) {
   if (isLoading) {
-    return <CenteredState title={t("skills.page.loading")} />;
+    return <SkillsLargeEmptyState title={t("skills.page.loading")} />;
   }
 
   if (loadError) {
@@ -987,12 +994,12 @@ function InstalledSkillsSection({
   }
 
   if (totalSkills === 0) {
-    return <CenteredState title={t("skills.page.empty")} />;
+    return <SkillsLargeEmptyState title={t("skills.page.empty")} />;
   }
 
   if (skills.length === 0) {
     return (
-      <CenteredState
+      <SkillsLargeEmptyState
         description={t("skills.page.filteredEmptyDescription")}
         title={t("skills.page.filteredEmpty")}
       />
@@ -1000,7 +1007,7 @@ function InstalledSkillsSection({
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="skills-page-card-grid grid gap-4">
       {skills.map((skill) => (
         <InstalledSkillCard
           key={`${skill.cwd}:${skill.path}`}
@@ -1038,20 +1045,20 @@ function RecommendedSkillsSection({
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
 }) {
   if (isLoading) {
-    return <CenteredState title={t("skills.page.loading")} />;
+    return <SkillsLargeEmptyState title={t("skills.page.loading")} />;
   }
 
   if (loadError) {
-    return <CenteredState description={loadError} title={t("skills.recommended.error")} />;
+    return <SkillsLargeEmptyState description={loadError} title={t("skills.recommended.error")} />;
   }
 
   if (totalSkills === 0) {
-    return <CenteredState title={t("skills.page.empty")} />;
+    return <SkillsLargeEmptyState title={t("skills.page.empty")} />;
   }
 
   if (skills.length === 0) {
     return (
-      <CenteredState
+      <SkillsLargeEmptyState
         description={t("skills.page.filteredEmptyDescription")}
         title={t("skills.page.filteredEmpty")}
       />
@@ -1059,7 +1066,7 @@ function RecommendedSkillsSection({
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="skills-page-card-grid grid gap-4">
       {skills.map((skill) => {
         const skillName = skill.name;
         const isInstalling = installingSkillId === skill.id;
@@ -1102,7 +1109,7 @@ function RecommendedSkillsSection({
   );
 }
 
-function CenteredState({
+function SkillsLargeEmptyState({
   description,
   title,
 }: {
@@ -1110,11 +1117,13 @@ function CenteredState({
   title: string;
 }) {
   return (
-    <div className="flex min-h-[180px] items-center justify-center">
-      <div className="max-w-md text-center">
-        <div className="text-[14px] leading-6">{title}</div>
-        {description ? <div className="app-text-muted mt-1 text-[12px] leading-5">{description}</div> : null}
-      </div>
+    <div className="flex min-h-0 flex-1 items-center justify-center py-8">
+      <LargeEmptyState
+        title={<span className="text-[14px] leading-6">{title}</span>}
+        description={
+          description ? <span className="app-text-muted mt-1 text-[12px] leading-5">{description}</span> : null
+        }
+      />
     </div>
   );
 }

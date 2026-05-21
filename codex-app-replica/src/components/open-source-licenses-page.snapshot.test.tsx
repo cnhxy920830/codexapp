@@ -92,11 +92,19 @@ test("open source licenses routing follows extracted settings route behavior", (
 
   assert.match(
     appSource,
-    /const openSourceLicenses = \(\) => \{\s*void handleNavigateToRoute\("\/settings\/open-source-licenses"\);\s*\};/s,
+    /const handleNavigateToRoute = useEffectEvent\(async \(path: string, state\?: NavigateToRouteState \| null\) => \{\s*if \(typeof window !== "undefined" && window\.location\.pathname !== path\) \{\s*window\.history\.replaceState\(state \?\? window\.history\.state, "", path\);\s*\}/s,
+  );
+  assert.match(
+    appSource,
+    /onNavigateToOpenSourceLicenses=\{\(\) => \{\s*void handleNavigateToRoute\("\/settings\/open-source-licenses"\);\s*\}\}/s,
   );
   assert.match(
     appSource,
     /onNavigateBack=\{\(backPath\) => \{\s*void handleNavigateToRoute\(backPath\);\s*\}\}/s,
+  );
+  assert.match(
+    appSource,
+    /licensesBackPath=\{settingsSectionState\?\.licensesBackPath \?\? null\}/,
   );
   assert.match(
     appSource,

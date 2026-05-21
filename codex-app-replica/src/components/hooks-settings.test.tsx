@@ -28,12 +28,31 @@ test("hooks settings keeps extracted shared shell ownership", () => {
 test("hooks settings uses extracted remote project-root source and context default", () => {
   const source = readSource(COMPONENT_SOURCE_PATH);
 
+  assert.match(source, /getGlobalState\("active-remote-project-id"\)/);
+  assert.match(source, /onGlobalStateUpdated/);
+  assert.match(source, /setActiveRemoteProjectId\(normalizeOptionalGlobalStateString\(response\.value\)\);/);
   assert.match(source, /readSettingsRemoteProjectsSnapshot/);
   assert.match(source, /REMOTE_PROJECTS_SHARED_OBJECT_KEY/);
   assert.match(source, /onSharedObjectUpdated/);
-  assert.match(source, /const defaultProjectRoot = isRemoteHost\s*\?\s*settingsCwd\s*:\s*activeProjectRoots\[0\] \?\? settingsCwd;/);
+  assert.match(source, /const selectedRemoteProject = useMemo\(\(\) => \{/);
+  assert.match(source, /remoteProjects\.find\(\(project\) => project\.id === activeRemoteProjectId\) \?\? null/);
+  assert.match(
+    source,
+    /const defaultProjectRoot = isRemoteHost\s*\?\s*selectedRemoteProject\?\.hostId === selectedHostId\s*\?\s*selectedRemoteProject\.remotePath\s*:\s*null\s*:\s*activeProjectRoots\[0\] \?\? null;/s,
+  );
   assert.match(source, /remoteProjects\.filter\(\(project\) => project\.hostId === selectedHostId\)/);
   assert.match(source, /Object\.fromEntries\(\s*remoteProjectsForSelectedHost\.map\(\(project\) => \[project\.remotePath, project\.label\]\)/s);
+});
+
+test("hooks settings keeps extracted project-name fallback helper for path labels", () => {
+  const source = readSource(COMPONENT_SOURCE_PATH);
+
+  assert.match(source, /return projectRootLabels\[projectRoot\] \?\? deriveProjectName\(projectRoot\) \?\? projectRoot;/);
+  assert.match(source, /const trimmedProjectRoot = projectRoot\.trim\(\);/);
+  assert.match(source, /const segments = trimmedProjectRoot\.split\(\/\[\/\\\\\]\+\/\)\.filter\(Boolean\);/);
+  assert.match(source, /return trimProjectName\(segments\.at\(-1\) \?\? trimmedProjectRoot\);/);
+  assert.match(source, /const words = trimmedValue\.split\(\/\\s\+\/\)\.filter\(Boolean\);/);
+  assert.match(source, /return words\.length <= 3 \? trimmedValue : words\.slice\(0, 3\)\.join\(" "\);/);
 });
 
 test("hooks settings keeps extracted hook-row visibility affordance and app context wiring", () => {

@@ -30,6 +30,7 @@ export type AvatarOverlayNotification = {
   body: string | null;
   canDismiss: boolean;
   expiresAtMs: number;
+  hostId: string | null;
   isLoading: boolean;
   level: AvatarOverlayNotificationLevel;
   localConversationId: string | null;
@@ -167,6 +168,7 @@ function deriveNotification(
       body: derivedSession.subtitle,
       canDismiss: true,
       expiresAtMs: expiresAtMs ?? Number.MAX_SAFE_INTEGER,
+      hostId: derivedSession.hostId,
       isLoading: derivedSession.status === "running",
       level: getNotificationLevel(derivedSession.status),
       localConversationId: derivedSession.localConversationId,
@@ -243,6 +245,21 @@ function deriveLocalNotificationStatus(
 
   if (conversation == null) {
     return entry.hasUnreadTurn === true ? "review" : "idle";
+  }
+
+  if (conversation.threadRuntimeStatus?.type === "systemError") {
+    return "failed";
+  }
+
+  if (conversation.threadRuntimeStatus?.type === "active") {
+    if (
+      conversation.threadRuntimeStatus.activeFlags.some(
+        (flag) => flag === "waitingOnApproval" || flag === "waitingOnUserInput",
+      )
+    ) {
+      return "waiting";
+    }
+    return "running";
   }
 
   const latestTurnStatus = conversation.turns.at(-1)?.status;

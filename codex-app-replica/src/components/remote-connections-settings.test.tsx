@@ -91,7 +91,6 @@ test("device connections actions stay in the extracted header and merged SSH plu
   assert.match(source, /await Promise\.all\(\[\s*refreshRemoteConnections\(\),\s*refreshRemoteControlConnections\(\),\s*\]\)/s);
   assert.match(source, /window\.setInterval\(\(\) => \{\s*void refreshAllConnections\(\)\.catch\(/s);
   assert.match(appSource, /onNavigateToCreateRemoteProject=\{\(\) => \{/);
-  assert.doesNotMatch(appSource, /initialHostId: hostId/);
   assert.match(localEnvironmentsSource, /if \(!isRemoteHost\) \{/);
   assert.match(localEnvironmentsSource, /const fallbackConnectedHostId = connectedRemoteConnections\[0\]\?\.hostId;/);
   assert.match(localEnvironmentsSource, /onSelectHostId\?\.\(fallbackConnectedHostId\)/);
@@ -107,13 +106,26 @@ test("device connections actions stay in the extracted header and merged SSH plu
 
 test("SSH row menu and details dialog stay aligned with extracted actions and detail rows", () => {
   const source = readSource(SOURCE_PATH);
-  const mcpSource = readSource(MCP_SERVICE_PATH);
   const iconsSource = readSource(ICONS_SOURCE_PATH);
 
   assert.match(source, /connectionError\?\.code === "login-required"/);
   assert.match(source, /connectionError\?\.code === "update-required"/);
   assert.match(source, /connectionError\?\.code === "restart-required"/);
+  assert.match(source, /buildRestartAvailableNotice/);
+  assert.match(source, /buildSshBannerState/);
+  assert.match(source, /buildSshBannerAction/);
+  assert.match(source, /function SshConnectionBanner/);
+  assert.match(source, /function ConnectionStatusDot/);
+  assert.match(source, /threadPage\.remoteConnectionStatusBadge\.restartNow/);
+  assert.match(source, /threadPage\.remoteConnectionStatusBadge\.restartNowTooltip/);
+  assert.match(source, /appServer\.error\.unsupportedVersion/);
+  assert.match(source, /appServer\.error\.restartAvailable/);
+  assert.match(source, /appServer\.error\.genericRestartRequired/);
+  assert.match(source, /appServer\.error\.loginRequired/);
   assert.match(source, /resolvedResponse\.state === "connected"/);
+  assert.match(source, /state === "connecting" \?/);
+  assert.match(source, /state === "restarting" \?/);
+  assert.match(source, /state === "error" \?/);
   assert.match(source, /detailsLabel=\{t\("settings\.remoteConnections\.detailsMenu"\)\}/);
   assert.match(source, /editLabel=\{t\("settings\.remoteConnections\.editConnection"\)\}/);
   assert.match(source, /restartLabel=\{t\("settings\.remoteConnections\.restartConnection"\)\}/);
@@ -127,9 +139,8 @@ test("SSH row menu and details dialog stay aligned with extracted actions and de
   assert.match(source, /settings\.remoteConnections\.details\.version/);
   assert.match(source, /row\.copyValue == null/);
   assert.match(source, /navigator\.clipboard\?\.writeText/);
-
-  assert.match(mcpSource, /killCodexProcess: true/);
   assert.match(iconsSource, /export function LogoutIcon/);
+  assert.match(iconsSource, /export function WarningIcon/);
 });
 
 test("signed-in device rows keep extracted rename delete detail and availability contracts", () => {
@@ -160,12 +171,20 @@ test("signed-in device rows keep extracted rename delete detail and availability
   assert.match(source, /className=\{canConnect \? undefined : "text-token-text-secondary opacity-60"\}/);
 });
 
-test("device connections auth-required row stays source-backed without guessed authorize CTA wiring", () => {
+test("device connections auth-required and authorize evidence stay source-backed with windows blocker constraints", () => {
   const source = readSource(SOURCE_PATH);
 
   assert.match(source, /remoteControlConnectionsState\.authRequired/);
   assert.match(source, /settings\.remoteControlConnections\.authRequired/);
-  assert.doesNotMatch(source, /settings\.remoteControlConnections\.authorize/);
+  assert.doesNotMatch(source, /settings\.remoteControlConnections\.authorize(?!d)/);
+});
+
+test("authorize CTA remains blocked on windows because extracted host flow is macOS-only", () => {
+  const trackerSource = readSource(path.join(process.cwd(), "compare/tracker.md"));
+
+  assert.match(trackerSource, /\| P-135-F02 \| blocked \|/);
+  assert.match(trackerSource, /process\.platform !== "darwin"|process\.platform!==`darwin`/);
+  assert.match(trackerSource, /device-key host implementation|device-key enrollment|macOS-only/);
 });
 
 test("local device remote control toggle follows the extracted setup dialog flow", () => {

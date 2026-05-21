@@ -1122,11 +1122,19 @@ function WorkspaceSelectionCard({
   onSelectEnvironment: (workspaceRoot: string, configPath: string) => void;
 }) {
   const { t } = useI18n();
+  const addProjectAction = (
+    <Button color="secondary" size="toolbar" onClick={onAddProject}>
+      {t("settings.localEnvironments.workspace.add")}
+    </Button>
+  );
 
   if (isLoading) {
     return (
       <SettingsGroup className="gap-2">
-        <SettingsGroup.Header title={t("settings.localEnvironments.workspaceSelect.title")} />
+        <SettingsGroup.Header
+          title={t("settings.localEnvironments.workspaceSelect.title")}
+          actions={addProjectAction}
+        />
         <SettingsGroup.Content>
           <SettingsSurface className="rounded-xl">
             <div className="flex items-center gap-2 p-3 text-sm text-token-text-secondary">
@@ -1142,7 +1150,10 @@ function WorkspaceSelectionCard({
   if (groups.length === 0) {
     return (
       <SettingsGroup className="gap-2">
-        <SettingsGroup.Header title={t("settings.localEnvironments.workspaceSelect.title")} />
+        <SettingsGroup.Header
+          title={t("settings.localEnvironments.workspaceSelect.title")}
+          actions={addProjectAction}
+        />
         <SettingsGroup.Content>
           <SettingsSurface className="rounded-xl">
             <div className="flex flex-col gap-3 p-3 text-sm text-token-text-secondary">
@@ -1163,11 +1174,7 @@ function WorkspaceSelectionCard({
     <SettingsGroup className="gap-2">
       <SettingsGroup.Header
         title={t("settings.localEnvironments.workspaceSelect.title")}
-        actions={
-          <Button color="secondary" size="toolbar" onClick={onAddProject}>
-            {t("settings.localEnvironments.workspace.add")}
-          </Button>
-        }
+        actions={addProjectAction}
       />
       <SettingsGroup.Content>
         <div className="flex flex-col gap-3" aria-label={t("settings.localEnvironments.workspaceSelect.listLabel")} role="list">

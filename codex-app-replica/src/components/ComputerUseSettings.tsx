@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import { BackNavigationIcon, TrashIcon } from "./AppShellIcons";
 import type { AppToast } from "./AppToastRegion";
 import { Button } from "./Button";
@@ -16,10 +16,12 @@ import {
   BrowserUseOriginSection,
   renderInlineTagButton,
 } from "./browserUseShared";
+import { useReplicaStatsigDynamicConfigValue } from "../features/statsig/replicaStatsig";
 import { useI18n } from "../i18n/i18n";
 import type { MessageKey } from "../i18n/messages";
 import { selectPluginCandidatesByName, type PluginCandidate } from "../lib/pluginSelectors";
 import {
+  BROWSER_USE_SETTINGS_QUERY_KEY,
   addBrowserUseFileTransferOrigin,
   addBrowserUseOrigin,
   readBrowserUseSettings,
@@ -34,6 +36,8 @@ import {
   type BrowserUseSettingsState,
 } from "../services/browserUseSettings";
 import {
+  COMPUTER_USE_APPROVALS_QUERY_KEY,
+  COMPUTER_USE_SOUND_MODE_QUERY_KEY,
   openChromeExtensionSettings,
   readChromeExtensionInstalled,
   readComputerUseApprovals,
@@ -60,10 +64,10 @@ import {
 const COMPUTER_USE_SETTINGS_PATH = "/settings/computer-use";
 const GOOGLE_CHROME_SETTINGS_PATH = "/settings/computer-use/google-chrome";
 const PLUGIN_QUERY_KEY = ["plugins"] as const;
-const DEFAULT_SOUND_MODE: ComputerUseSoundModeValue = "foregroundClicks";
 const CHROME_EXTENSION_ID_RELATIVE_PATH = "scripts/extension-id.json";
 const CHROME_EXTENSION_INSTALL_URL_PREFIX = "https://chromewebstore.google.com/detail/codex/";
 const BROWSER_USE_LEARN_MORE_URL = "https://developers.openai.com/codex/app/computer-use";
+const BROWSER_USE_APPROVAL_LINK_DYNAMIC_CONFIG = "4168530037";
 
 type ComputerUseSubpage = "google-chrome" | "overview";
 type BrowserUseOriginResource = "downloads" | "origins" | "uploads";
@@ -188,7 +192,7 @@ export function ComputerUseSettings({
   const [currentSubpage, setCurrentSubpage] = useState<ComputerUseSubpage>(readCurrentSubpageFromLocation);
   const [pluginsSnapshot, setPluginsSnapshot] = useState<PluginListSnapshot | null>(null);
   const [pluginsLoading, setPluginsLoading] = useState(true);
-  const [soundMode, setSoundMode] = useState<ComputerUseSoundModeValue>(DEFAULT_SOUND_MODE);
+  const [soundMode, setSoundMode] = useState<ComputerUseSoundModeValue | null>(null);
   const [soundModeLoading, setSoundModeLoading] = useState(false);
   const [soundModePending, setSoundModePending] = useState(false);
   const [approvalsState, setApprovalsState] = useState<ComputerUseApprovalsState | null>(null);
@@ -219,7 +223,7 @@ export function ComputerUseSettings({
 
   useEffect(() => {
     void loadPlugins();
-  }, [loadPlugins, isLocalHost, selectedHostId, workspaceRoot]);
+  }, [isLocalHost, selectedHostId, workspaceRoot]);
 
   const handlePluginQueryCacheInvalidate = useEffectEvent(
     (notification: QueryCacheInvalidateNotification) => {
@@ -250,7 +254,7 @@ export function ComputerUseSettings({
       disposed = true;
       unlisten?.();
     };
-  }, [handlePluginQueryCacheInvalidate]);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -276,127 +280,195 @@ export function ComputerUseSettings({
   const isComputerUseAvailable = isLocalHost && (anyAppPlugin != null || chromePlugin != null);
   const isChromePluginReady = chromePlugin?.plugin.installed === true && chromePlugin.plugin.enabled === true;
 
+  const loadComputerUseSoundMode = useEffectEvent(async (canCommit: () => boolean = () => true) => {
+    if (!isComputerUseAvailable || currentSubpage !== "overview") {
+      if (canCommit()) {
+        setSoundMode(null);
+        setSoundModeLoading(false);
+      }
+      return;
+    }
+
+    setSoundModeLoading(true);
+    try {
+      const response = await readComputerUseSoundMode();
+      if (canCommit()) {
+        setSoundMode(isComputerUseSoundModeValue(response.value) ? response.value : null);
+      }
+    } catch {
+      if (canCommit()) {
+        setSoundMode(null);
+      }
+    } finally {
+      if (canCommit()) {
+        setSoundModeLoading(false);
+      }
+    }
+  });
+
   useEffect(() => {
     let cancelled = false;
 
-    if (!isComputerUseAvailable || currentSubpage !== "overview") {
-      setSoundMode(DEFAULT_SOUND_MODE);
-      setSoundModeLoading(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    const loadSoundMode = async () => {
-      setSoundModeLoading(true);
-      try {
-        const response = await readComputerUseSoundMode();
-        if (!cancelled) {
-          setSoundMode(isComputerUseSoundModeValue(response.value) ? response.value : DEFAULT_SOUND_MODE);
-        }
-      } catch {
-        if (!cancelled) {
-          setSoundMode(DEFAULT_SOUND_MODE);
-        }
-      } finally {
-        if (!cancelled) {
-          setSoundModeLoading(false);
-        }
-      }
-    };
-
-    void loadSoundMode();
+    void loadComputerUseSoundMode(() => !cancelled);
 
     return () => {
       cancelled = true;
     };
   }, [currentSubpage, isComputerUseAvailable]);
 
+  const loadComputerUseApprovals = useEffectEvent(async (canCommit: () => boolean = () => true) => {
+    if (!isComputerUseAvailable || currentSubpage !== "overview") {
+      if (canCommit()) {
+        setApprovalsState(null);
+        setApprovalsLoading(false);
+        setApprovalsLoadError(false);
+      }
+      return;
+    }
+
+    setApprovalsLoading(true);
+    setApprovalsLoadError(false);
+    try {
+      const nextState = await readComputerUseApprovals();
+      if (canCommit()) {
+        setApprovalsState(nextState);
+      }
+    } catch {
+      if (canCommit()) {
+        setApprovalsState(null);
+        setApprovalsLoadError(true);
+      }
+    } finally {
+      if (canCommit()) {
+        setApprovalsLoading(false);
+      }
+    }
+  });
+
+  const handleComputerUseOverviewQueryCacheInvalidate = useEffectEvent(
+    (notification: QueryCacheInvalidateNotification) => {
+      if (queryKeyMatchesPrefix(notification.queryKey, COMPUTER_USE_APPROVALS_QUERY_KEY)) {
+        if (!isComputerUseAvailable || currentSubpage !== "overview") {
+          return;
+        }
+
+        void loadComputerUseApprovals();
+        return;
+      }
+
+      if (!queryKeyMatchesPrefix(notification.queryKey, COMPUTER_USE_SOUND_MODE_QUERY_KEY)) {
+        return;
+      }
+
+      if (!isComputerUseAvailable || currentSubpage !== "overview") {
+        return;
+      }
+
+      void loadComputerUseSoundMode();
+    },
+  );
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void onQueryCacheInvalidated((notification) => {
+      if (!disposed) {
+        handleComputerUseOverviewQueryCacheInvalidate(notification);
+      }
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+      unlisten = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
-    if (!isComputerUseAvailable || currentSubpage !== "overview") {
-      setApprovalsState(null);
-      setApprovalsLoading(false);
-      setApprovalsLoadError(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    const loadApprovals = async () => {
-      setApprovalsLoading(true);
-      setApprovalsLoadError(false);
-      try {
-        const nextState = await readComputerUseApprovals();
-        if (!cancelled) {
-          setApprovalsState(nextState);
-        }
-      } catch {
-        if (!cancelled) {
-          setApprovalsState(null);
-          setApprovalsLoadError(true);
-        }
-      } finally {
-        if (!cancelled) {
-          setApprovalsLoading(false);
-        }
-      }
-    };
-
-    void loadApprovals();
+    void loadComputerUseApprovals(() => !cancelled);
 
     return () => {
       cancelled = true;
     };
   }, [currentSubpage, isComputerUseAvailable]);
 
-  useEffect(() => {
-    let cancelled = false;
-
+  const loadChromeExtensionState = useEffectEvent(async (canCommit: () => boolean = () => true) => {
     if (!isLocalHost || chromePlugin?.plugin.installed !== true) {
-      setChromeExtensionSetup(null);
-      setChromeExtensionInstalled({ installed: false });
-      setChromeExtensionLoading(false);
-      return () => {
-        cancelled = true;
-      };
+      if (canCommit()) {
+        setChromeExtensionSetup(null);
+        setChromeExtensionInstalled({ installed: false });
+        setChromeExtensionLoading(false);
+      }
+      return;
     }
 
-    const loadChromeExtensionState = async () => {
-      setChromeExtensionLoading(true);
-      try {
-        const setup = await readChromeExtensionSetup(chromePlugin, selectedHostId);
-        if (cancelled) {
-          return;
-        }
+    setChromeExtensionLoading(true);
+    try {
+      const setup = await readChromeExtensionSetup(chromePlugin, selectedHostId);
+      if (canCommit()) {
         setChromeExtensionSetup(setup);
-        if (setup == null) {
-          setChromeExtensionInstalled({ installed: false });
-          return;
-        }
-        const installedState = await readChromeExtensionInstalled({ extensionId: setup.extensionId });
-        if (!cancelled) {
-          setChromeExtensionInstalled(installedState);
-        }
-      } catch {
-        if (!cancelled) {
-          setChromeExtensionSetup(null);
-          setChromeExtensionInstalled({ installed: false });
-        }
-      } finally {
-        if (!cancelled) {
-          setChromeExtensionLoading(false);
-        }
       }
-    };
+      if (setup == null) {
+        if (canCommit()) {
+          setChromeExtensionInstalled({ installed: false });
+        }
+        return;
+      }
+      const installedState = await readChromeExtensionInstalled({ extensionId: setup.extensionId });
+      if (canCommit()) {
+        setChromeExtensionInstalled(installedState);
+      }
+    } catch {
+      if (canCommit()) {
+        setChromeExtensionSetup(null);
+        setChromeExtensionInstalled({ installed: false });
+      }
+    } finally {
+      if (canCommit()) {
+        setChromeExtensionLoading(false);
+      }
+    }
+  });
 
-    void loadChromeExtensionState();
+  useEffect(() => {
+    let cancelled = false;
+
+    void loadChromeExtensionState(() => !cancelled);
 
     return () => {
       cancelled = true;
     };
   }, [chromePlugin, isLocalHost, selectedHostId]);
+
+  const handleWindowFocus = useEffectEvent(() => {
+    void loadPlugins();
+    void loadComputerUseApprovals();
+    void loadComputerUseSoundMode();
+    void loadChromeExtensionState();
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleFocus = () => {
+      handleWindowFocus();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, []);
 
   useEffect(() => {
     if (currentSubpage !== "google-chrome") {
@@ -433,7 +505,7 @@ export function ComputerUseSettings({
 
   const handleSoundModeChange = async (value: string) => {
     const nextValue = value as ComputerUseSoundModeValue;
-    if (soundModePending || nextValue === soundMode) {
+    if (soundModePending || nextValue === soundMode || soundMode == null) {
       return;
     }
 
@@ -466,7 +538,6 @@ export function ComputerUseSettings({
         chromeExtensionInstalled={chromeExtensionInstalled.installed}
         chromeExtensionLoading={chromeExtensionLoading}
         chromeExtensionSetup={chromeExtensionSetup}
-        chromePlugin={chromePlugin}
         isLoading={pluginsLoading && chromePlugin == null}
         onBack={() => {
           updateComputerUsePath(COMPUTER_USE_SETTINGS_PATH, "push");
@@ -553,13 +624,15 @@ export function ComputerUseSettings({
             </SettingsGroup.Content>
           </SettingsGroup>
 
-          <SoundModeSelector
-            isLoading={soundModeLoading}
-            isPending={soundModePending}
-            onChange={(value) => void handleSoundModeChange(value)}
-            options={soundOptions}
-            value={soundMode}
-          />
+          {soundMode != null ? (
+            <SoundModeSelector
+              isLoading={soundModeLoading}
+              isPending={soundModePending}
+              onChange={(value) => void handleSoundModeChange(value)}
+              options={soundOptions}
+              value={soundMode}
+            />
+          ) : null}
         </>
       ) : null}
     </SettingsContentLayout>
@@ -570,7 +643,6 @@ function GoogleChromeComputerUseSettingsPage({
   chromeExtensionInstalled,
   chromeExtensionLoading,
   chromeExtensionSetup,
-  chromePlugin,
   isLoading,
   onBack,
   onShowToast,
@@ -578,36 +650,96 @@ function GoogleChromeComputerUseSettingsPage({
   chromeExtensionInstalled: boolean;
   chromeExtensionLoading: boolean;
   chromeExtensionSetup: ChromeExtensionSetup | null;
-  chromePlugin: PluginCandidate | null;
   isLoading: boolean;
   onBack: () => void;
   onShowToast?: (toast: AppToast) => void;
 }) {
   const { t } = useI18n();
+  const browserUseLearnMoreDynamicConfig = useReplicaStatsigDynamicConfigValue(
+    BROWSER_USE_APPROVAL_LINK_DYNAMIC_CONFIG,
+  );
   const [settingsState, setSettingsState] = useState<BrowserUseSettingsState | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [addOriginConfig, setAddOriginConfig] = useState<BrowserUseOriginSectionConfig | null>(null);
   const [originDraft, setOriginDraft] = useState("");
   const [removeOriginState, setRemoveOriginState] = useState<BrowserUseRemoveDialogState | null>(null);
+  const browserUseLearnMoreUrl = resolveBrowserUseLearnMoreUrl(browserUseLearnMoreDynamicConfig);
 
-  const loadSettings = useEffectEvent(async () => {
+  const loadSettings = useEffectEvent(async (canCommit: () => boolean = () => true) => {
     setSettingsLoading(true);
-    setLoadError(null);
     try {
-      setSettingsState(await readBrowserUseSettings());
-    } catch (error) {
-      setSettingsState(null);
-      setLoadError(error instanceof Error ? error.message : String(error));
+      const nextState = await readBrowserUseSettings();
+      if (canCommit()) {
+        setSettingsState(nextState);
+      }
+    } catch {
+      if (canCommit()) {
+        setSettingsState(null);
+      }
     } finally {
-      setSettingsLoading(false);
+      if (canCommit()) {
+        setSettingsLoading(false);
+      }
     }
   });
 
   useEffect(() => {
-    void loadSettings();
-  }, [loadSettings]);
+    let cancelled = false;
+
+    void loadSettings(() => !cancelled);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleBrowserUseSettingsQueryCacheInvalidate = useEffectEvent(
+    (notification: QueryCacheInvalidateNotification) => {
+      if (!queryKeyMatchesPrefix(notification.queryKey, BROWSER_USE_SETTINGS_QUERY_KEY)) {
+        return;
+      }
+
+      void loadSettings();
+    },
+  );
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void onQueryCacheInvalidated((notification) => {
+      if (!disposed) {
+        handleBrowserUseSettingsQueryCacheInvalidate(notification);
+      }
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+      unlisten = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleFocus = () => {
+      void loadSettings();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, []);
 
   const approvalOptions = useMemo(
     () => [
@@ -834,147 +966,141 @@ function GoogleChromeComputerUseSettingsPage({
       subtitleClassName="flex"
       title={t("settings.computerUse.chrome.title")}
     >
-      {loadError ? (
-        <SettingsSurface>
-          <BrowserUseMessageStateRow message={loadError} />
-        </SettingsSurface>
-      ) : (
-        <>
-          <SettingsGroup>
-            <SettingsGroup.Header title={t("settings.computerUse.chrome.permissions.title")} />
-            <SettingsGroup.Content>
-              <SettingsSurface>
-                <SettingsRow
-                  control={
-                    <SettingsChoiceMenu
-                      className="w-[152px]"
-                      disabled={controlsDisabled}
-                      onChange={(value) => {
-                        if (value === approvalMode) {
-                          return;
-                        }
-                        void updateSettingsState(
-                          "approval",
-                          () =>
-                            writeBrowserUseApprovalMode({
-                              approvalMode: value as BrowserUseApprovalMode,
-                            }),
-                          "settings.browserUse.approval.saveError",
-                        );
-                      }}
-                      options={approvalOptions}
-                      value={approvalMode}
-                    />
-                  }
-                  description={renderInlineTagButton(
-                    t("settings.browserUse.approval.description"),
-                    "learnMoreLink",
-                    () => {
-                      void openInBrowser(BROWSER_USE_LEARN_MORE_URL);
-                    },
-                    "text-token-text-link-foreground hover:underline",
-                  )}
-                  label={t("settings.browserUse.approval.label")}
-                />
-                <SettingsRow
-                  control={
-                    <SettingsChoiceMenu
-                      className="w-[152px]"
-                      disabled={controlsDisabled}
-                      onChange={(value) => {
-                        if (value === historyApprovalMode) {
-                          return;
-                        }
-                        void updateSettingsState(
-                          "historyApproval",
-                          () =>
-                            writeBrowserUseHistoryApprovalMode({
-                              approvalMode: value as BrowserUseApprovalMode,
-                            }),
-                          "settings.browserUse.historyApproval.saveError",
-                        );
-                      }}
-                      options={historyApprovalOptions}
-                      value={historyApprovalMode}
-                    />
-                  }
-                  description={t("settings.browserUse.historyApproval.description")}
-                  label={t("settings.browserUse.historyApproval.label")}
-                />
-                <SettingsRow
-                  control={
-                    <SettingsChoiceMenu
-                      className="w-[152px]"
-                      disabled={controlsDisabled}
-                      onChange={(value) => {
-                        if (value === downloadApprovalMode) {
-                          return;
-                        }
-                        void updateSettingsState(
-                          "downloadApproval",
-                          () =>
-                            writeBrowserUseFileTransferApprovalMode({
-                              kind: "download",
-                              approvalMode: value as BrowserUseApprovalMode,
-                            }),
-                          "settings.browserUse.downloadApproval.saveError",
-                        );
-                      }}
-                      options={downloadApprovalOptions}
-                      value={downloadApprovalMode}
-                    />
-                  }
-                  description={t("settings.browserUse.downloadApproval.description")}
-                  label={t("settings.browserUse.downloadApproval.label")}
-                />
-                <SettingsRow
-                  control={
-                    <SettingsChoiceMenu
-                      className="w-[152px]"
-                      disabled={controlsDisabled}
-                      onChange={(value) => {
-                        if (value === uploadApprovalMode) {
-                          return;
-                        }
-                        void updateSettingsState(
-                          "uploadApproval",
-                          () =>
-                            writeBrowserUseFileTransferApprovalMode({
-                              kind: "upload",
-                              approvalMode: value as BrowserUseApprovalMode,
-                            }),
-                          "settings.browserUse.uploadApproval.saveError",
-                        );
-                      }}
-                      options={uploadApprovalOptions}
-                      value={uploadApprovalMode}
-                    />
-                  }
-                  description={t("settings.browserUse.uploadApproval.description")}
-                  label={t("settings.browserUse.uploadApproval.label")}
-                />
-              </SettingsSurface>
-            </SettingsGroup.Content>
-          </SettingsGroup>
+      <>
+        <SettingsGroup>
+          <SettingsGroup.Header title={t("settings.computerUse.chrome.permissions.title")} />
+          <SettingsGroup.Content>
+            <SettingsSurface>
+              <SettingsRow
+                control={
+                  <SettingsChoiceMenu
+                    className="w-[152px]"
+                    disabled={controlsDisabled}
+                    onChange={(value) => {
+                      if (value === approvalMode) {
+                        return;
+                      }
+                      void updateSettingsState(
+                        "approval",
+                        () =>
+                          writeBrowserUseApprovalMode({
+                            approvalMode: value as BrowserUseApprovalMode,
+                          }),
+                        "settings.browserUse.approval.saveError",
+                      );
+                    }}
+                    options={approvalOptions}
+                    value={approvalMode}
+                  />
+                }
+                description={renderInlineTagButton(
+                  t("settings.browserUse.approval.description"),
+                  "learnMoreLink",
+                  () => {
+                    void openInBrowser(browserUseLearnMoreUrl);
+                  },
+                  "text-token-text-link-foreground hover:underline",
+                )}
+                label={t("settings.browserUse.approval.label")}
+              />
+              <SettingsRow
+                control={
+                  <SettingsChoiceMenu
+                    className="w-[152px]"
+                    disabled={controlsDisabled}
+                    onChange={(value) => {
+                      if (value === historyApprovalMode) {
+                        return;
+                      }
+                      void updateSettingsState(
+                        "historyApproval",
+                        () =>
+                          writeBrowserUseHistoryApprovalMode({
+                            approvalMode: value as BrowserUseApprovalMode,
+                          }),
+                        "settings.browserUse.historyApproval.saveError",
+                      );
+                    }}
+                    options={historyApprovalOptions}
+                    value={historyApprovalMode}
+                  />
+                }
+                description={t("settings.browserUse.historyApproval.description")}
+                label={t("settings.browserUse.historyApproval.label")}
+              />
+              <SettingsRow
+                control={
+                  <SettingsChoiceMenu
+                    className="w-[152px]"
+                    disabled={controlsDisabled}
+                    onChange={(value) => {
+                      if (value === downloadApprovalMode) {
+                        return;
+                      }
+                      void updateSettingsState(
+                        "downloadApproval",
+                        () =>
+                          writeBrowserUseFileTransferApprovalMode({
+                            kind: "download",
+                            approvalMode: value as BrowserUseApprovalMode,
+                          }),
+                        "settings.browserUse.downloadApproval.saveError",
+                      );
+                    }}
+                    options={downloadApprovalOptions}
+                    value={downloadApprovalMode}
+                  />
+                }
+                description={t("settings.browserUse.downloadApproval.description")}
+                label={t("settings.browserUse.downloadApproval.label")}
+              />
+              <SettingsRow
+                control={
+                  <SettingsChoiceMenu
+                    className="w-[152px]"
+                    disabled={controlsDisabled}
+                    onChange={(value) => {
+                      if (value === uploadApprovalMode) {
+                        return;
+                      }
+                      void updateSettingsState(
+                        "uploadApproval",
+                        () =>
+                          writeBrowserUseFileTransferApprovalMode({
+                            kind: "upload",
+                            approvalMode: value as BrowserUseApprovalMode,
+                          }),
+                        "settings.browserUse.uploadApproval.saveError",
+                      );
+                    }}
+                    options={uploadApprovalOptions}
+                    value={uploadApprovalMode}
+                  />
+                }
+                description={t("settings.browserUse.uploadApproval.description")}
+                label={t("settings.browserUse.uploadApproval.label")}
+              />
+            </SettingsSurface>
+          </SettingsGroup.Content>
+        </SettingsGroup>
 
-          {CHROME_ORIGIN_SECTION_CONFIGS.map((config) => (
-            <BrowserUseOriginSection
-              key={`${config.resource}:${config.kind}`}
-              emptyTitleKey={config.emptyTitleKey}
-              isDisabled={controlsDisabled}
-              isLoading={settingsLoading}
-              onRequestAdd={() => {
-                setOriginDraft("");
-                setAddOriginConfig(config);
-              }}
-              onRequestRemove={(origin) => setRemoveOriginState({ config, origin })}
-              origins={getOriginsForConfig(settingsState, config)}
-              subtitleKey={config.subtitleKey}
-              titleKey={config.titleKey}
-            />
-          ))}
-        </>
-      )}
+        {CHROME_ORIGIN_SECTION_CONFIGS.map((config) => (
+          <BrowserUseOriginSection
+            key={`${config.resource}:${config.kind}`}
+            emptyTitleKey={config.emptyTitleKey}
+            isDisabled={controlsDisabled}
+            isLoading={settingsLoading}
+            onRequestAdd={() => {
+              setOriginDraft("");
+              setAddOriginConfig(config);
+            }}
+            onRequestRemove={(origin) => setRemoveOriginState({ config, origin })}
+            origins={getOriginsForConfig(settingsState, config)}
+            subtitleKey={config.subtitleKey}
+            titleKey={config.titleKey}
+          />
+        ))}
+      </>
 
       {addOriginConfig ? (
         <BrowserUseDialog
@@ -1294,12 +1420,6 @@ function SoundModeSelector({
   options: Array<{ label: string; value: string }>;
   value: string;
 }) {
-  const selectedOption = options.find((option) => option.value === value) ?? options[0];
-
-  if (selectedOption == null) {
-    return null;
-  }
-
   return (
     <SettingsChoiceMenu
       className="w-max max-w-full"
@@ -1377,6 +1497,29 @@ function getOriginsForConfig(
   }
 
   return config.kind === "allowed" ? settingsState.allowedUploadOrigins : settingsState.deniedUploadOrigins;
+}
+
+function resolveBrowserUseLearnMoreUrl(dynamicConfig: unknown) {
+  const configuredUrl =
+    dynamicConfig !== null &&
+    typeof dynamicConfig === "object" &&
+    !Array.isArray(dynamicConfig) &&
+    typeof (dynamicConfig as { url?: unknown }).url === "string"
+      ? (dynamicConfig as { url: string }).url.trim()
+      : null;
+
+  if (configuredUrl !== null) {
+    try {
+      const parsedUrl = new URL(configuredUrl);
+      if (parsedUrl.protocol === "https:") {
+        return configuredUrl;
+      }
+    } catch {
+      // Fall back to the extracted default URL when the config value is not a valid https URL.
+    }
+  }
+
+  return BROWSER_USE_LEARN_MORE_URL;
 }
 
 async function readChromeExtensionSetup(

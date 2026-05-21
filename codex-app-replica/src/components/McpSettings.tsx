@@ -1,7 +1,9 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-shell";
-import { PlusIcon, RefreshIcon, SettingsCogIcon, TrashIcon } from "./AppShellIcons";
+import { ArrowLeftIcon, LinkExternalIcon, PlusIcon, RefreshIcon, SettingsCogIcon, TrashIcon } from "./AppShellIcons";
 import { Button } from "./Button";
+import { ControlGroup } from "./ControlGroup";
+import { LoadingPage } from "./LoadingPage";
 import { SettingsContentLayout } from "./SettingsContentLayout";
 import { SettingsGroup } from "./SettingsGroup";
 import { SettingsRow } from "./SettingsRow";
@@ -68,6 +70,7 @@ export function McpSettings({
   const [editorKey, setEditorKey] = useState<EditorKey>(undefined);
   const [draft, setDraft] = useState<McpServerDraft | null>(null);
   const [dirtyHostIds, setDirtyHostIds] = useState<string[]>([]);
+  const [authorizationUrlsByName, setAuthorizationUrlsByName] = useState<Record<string, string | null>>({});
   const loadRequestIdRef = useRef(0);
   const effectiveWorkspaceRoot = selectedHostId === LOCAL_HOST_ID ? workspaceRoot : null;
 
@@ -114,6 +117,10 @@ export function McpSettings({
       if (notification.hostId !== selectedHostId) {
         return;
       }
+      setAuthorizationUrlsByName((current) => {
+        const { [notification.name]: _removed, ...rest } = current;
+        return rest;
+      });
       if (notification.success) {
         markSelectedHostDirty();
         void load();
@@ -276,11 +283,27 @@ export function McpSettings({
   };
 
   const authenticateServer = async (name: string) => {
-    const response = await loginMcpServer({
-      hostId: selectedHostId,
-      name,
-    });
-    await open(response.authorizationUrl);
+    const cachedAuthorizationUrl = authorizationUrlsByName[name];
+    if (cachedAuthorizationUrl) {
+      await open(cachedAuthorizationUrl);
+      return;
+    }
+
+    setAuthorizationUrlsByName((current) => ({ ...current, [name]: null }));
+    try {
+      const response = await loginMcpServer({
+        hostId: selectedHostId,
+        name,
+      });
+      setAuthorizationUrlsByName((current) => ({ ...current, [name]: response.authorizationUrl }));
+      await open(response.authorizationUrl);
+    } catch (error) {
+      setAuthorizationUrlsByName((current) => {
+        const { [name]: _removed, ...rest } = current;
+        return rest;
+      });
+      throw error;
+    }
   };
 
   const saveServer = async () => {
@@ -320,6 +343,7 @@ export function McpSettings({
       });
       markSelectedHostDirty();
       await load();
+      await emitQueryCacheInvalidated(CONFIG_QUERY_KEY);
       closeEditor();
     } finally {
       setIsSaving(false);
@@ -348,6 +372,7 @@ export function McpSettings({
       });
       markSelectedHostDirty();
       await load();
+      await emitQueryCacheInvalidated(CONFIG_QUERY_KEY);
       closeEditor();
     } finally {
       setIsSaving(false);
@@ -395,9 +420,7 @@ export function McpSettings({
         />
         <SettingsGroup.Content>
           <SettingsSurface>
-            {isLoading ? (
-              <SettingsRow label={t("settings.mcp.loading")} />
-            ) : serverListItems.length === 0 ? (
+            {serverListItems.length === 0 ? (
               <SettingsRow
                 label={t("settings.mcp.empty")}
                 control={<AddServerButton onClick={openEditorForNewServer} />}
@@ -453,7 +476,7 @@ function McpServerRow({
         </span>
       }
       control={
-        <div className="flex min-w-0 items-center gap-2">
+        <ControlGroup>
           {showAuthenticate ? (
             <Button color="outline" disabled={isSaving} size="toolbar" onClick={() => void onAuthenticate(server.name)}>
               {t("settings.mcp.server.login")}
@@ -475,7 +498,7 @@ function McpServerRow({
             ariaLabel={t("settings.mcp.server.enable")}
             onChange={(checked) => void onToggleEnabled(server.name, checked)}
           />
-        </div>
+        </ControlGroup>
       }
     />
   );
@@ -537,149 +560,146 @@ function McpServerEditor({
               rel="noreferrer"
             >
               {t("settings.mcp.detail.docs.link")}
+              <LinkExternalIcon className="icon-xxs" />
             </a>
             )
       }
       title={title}
     >
-      <div className="flex flex-col gap-4">
-        {isTransportLocked ? (
-          <p className="text-sm text-token-text-secondary">
-            {t("settings.mcp.detail.switchTransportNotice")}
-          </p>
-        ) : (
-          <SettingsSurface>
-            <EditorTextField
-              label={t("settings.mcp.detail.name")}
-              placeholder="MCP server name"
-              value={nameValue}
-              onChange={(label) => onDraftChange({ ...draft, label })}
-            />
-            <EditorTransportField
-              options={[
-                { id: "stdio", label: t("settings.mcp.detail.transport.stdio") },
-                { id: "streamable_http", label: t("settings.mcp.detail.transport.http") },
-              ]}
-              value={draft.transportType}
-              onChange={(transportType) => onDraftChange({ ...draft, transportType })}
-            />
-          </SettingsSurface>
-        )}
+      <div className="relative">
+        {isSaving ? <LoadingPage overlay /> : null}
+        <SettingsGroup>
+          <SettingsGroup.Content>
+            {isTransportLocked ? (
+              <p className="text-sm text-token-text-secondary">
+                {t("settings.mcp.detail.switchTransportNotice")}
+              </p>
+            ) : (
+              <SettingsSurface>
+                <EditorTextField
+                  label={t("settings.mcp.detail.name")}
+                  placeholder="MCP server name"
+                  value={nameValue}
+                  onChange={(label) => onDraftChange({ ...draft, label })}
+                />
+                <EditorTransportField
+                  options={[
+                    { id: "stdio", label: t("settings.mcp.detail.transport.stdio") },
+                    { id: "streamable_http", label: t("settings.mcp.detail.transport.http") },
+                  ]}
+                  value={draft.transportType}
+                  onChange={(transportType) => onDraftChange({ ...draft, transportType })}
+                />
+              </SettingsSurface>
+            )}
 
-        <SettingsSurface>
-          {showStdioFields ? (
-            <>
-              <EditorTextField
-                label={t("settings.mcp.detail.command")}
-                placeholder="openai-dev-mcp serve-sqlite"
-                value={draft.stdio.command}
-                onChange={(command) =>
-                  onDraftChange({
-                    ...draft,
-                    stdio: { ...draft.stdio, command },
-                  })
-                }
-              />
-              <EditorListField
-                addLabel={t("settings.mcp.detail.addArgument")}
-                label={t("settings.mcp.detail.args")}
-                values={draft.stdio.args}
-                onChange={(args) =>
-                  onDraftChange({
-                    ...draft,
-                    stdio: { ...draft.stdio, args },
-                  })
-                }
-              />
-              <EditorRecordField
-                addLabel={t("settings.mcp.detail.addEnvVar")}
-                label={t("settings.mcp.detail.envVars")}
-                values={draft.stdio.env}
-                onChange={(env) =>
-                  onDraftChange({
-                    ...draft,
-                    stdio: { ...draft.stdio, env },
-                  })
-                }
-              />
-              <EditorListField
-                addLabel={t("settings.mcp.detail.addEnvVarPassthrough")}
-                label={t("settings.mcp.detail.envVarPassthrough")}
-                values={draft.stdio.envVars}
-                onChange={(envVars) =>
-                  onDraftChange({
-                    ...draft,
-                    stdio: { ...draft.stdio, envVars },
-                  })
-                }
-              />
-              <EditorTextField
-                label={t("settings.mcp.detail.cwd")}
-                placeholder="~/code"
-                value={draft.stdio.cwd}
-                onChange={(cwd) =>
-                  onDraftChange({
-                    ...draft,
-                    stdio: { ...draft.stdio, cwd },
-                  })
-                }
-              />
-            </>
-          ) : (
-            <>
-              <EditorTextField
-                label={t("settings.mcp.detail.http.url")}
-                placeholder="https://mcp.example.com/mcp"
-                value={draft.http.url}
-                onChange={(url) =>
-                  onDraftChange({
-                    ...draft,
-                    http: { ...draft.http, url },
-                  })
-                }
-              />
-              <EditorTextField
-                label={t("settings.mcp.detail.http.bearerToken")}
-                placeholder="MCP_BEARER_TOKEN"
-                value={draft.http.bearerTokenEnvVar}
-                onChange={(bearerTokenEnvVar) =>
-                  onDraftChange({
-                    ...draft,
-                    http: { ...draft.http, bearerTokenEnvVar },
-                  })
-                }
-              />
-              <EditorRecordField
-                addLabel={t("settings.mcp.detail.http.addHeader")}
-                label={t("settings.mcp.detail.http.headers")}
-                values={draft.http.httpHeaders}
-                onChange={(httpHeaders) =>
-                  onDraftChange({
-                    ...draft,
-                    http: { ...draft.http, httpHeaders },
-                  })
-                }
-              />
-              <EditorRecordField
-                addLabel={t("settings.mcp.detail.http.addEnvHeader")}
-                label={t("settings.mcp.detail.http.envHeaders")}
-                values={draft.http.envHttpHeaders}
-                onChange={(envHttpHeaders) =>
-                  onDraftChange({
-                    ...draft,
-                    http: { ...draft.http, envHttpHeaders },
-                  })
-                }
-              />
-            </>
-          )}
-        </SettingsSurface>
+            <SettingsSurface>
+              {showStdioFields ? (
+                <>
+                  <EditorTextField
+                    label={t("settings.mcp.detail.command")}
+                    placeholder="openai-dev-mcp serve-sqlite"
+                    value={draft.stdio.command}
+                    onChange={(command) =>
+                      onDraftChange({
+                        ...draft,
+                        stdio: { ...draft.stdio, command },
+                      })}
+                  />
+                  <EditorListField
+                    addLabel={t("settings.mcp.detail.addArgument")}
+                    label={t("settings.mcp.detail.args")}
+                    values={draft.stdio.args}
+                    onChange={(args) =>
+                      onDraftChange({
+                        ...draft,
+                        stdio: { ...draft.stdio, args },
+                      })}
+                  />
+                  <EditorRecordField
+                    addLabel={t("settings.mcp.detail.addEnvVar")}
+                    label={t("settings.mcp.detail.envVars")}
+                    values={draft.stdio.env}
+                    onChange={(env) =>
+                      onDraftChange({
+                        ...draft,
+                        stdio: { ...draft.stdio, env },
+                      })}
+                  />
+                  <EditorListField
+                    addLabel={t("settings.mcp.detail.addEnvVarPassthrough")}
+                    label={t("settings.mcp.detail.envVarPassthrough")}
+                    values={draft.stdio.envVars}
+                    onChange={(envVars) =>
+                      onDraftChange({
+                        ...draft,
+                        stdio: { ...draft.stdio, envVars },
+                      })}
+                  />
+                  <EditorTextField
+                    label={t("settings.mcp.detail.cwd")}
+                    placeholder="~/code"
+                    value={draft.stdio.cwd}
+                    onChange={(cwd) =>
+                      onDraftChange({
+                        ...draft,
+                        stdio: { ...draft.stdio, cwd },
+                      })}
+                  />
+                </>
+              ) : (
+                <>
+                  <EditorTextField
+                    label={t("settings.mcp.detail.http.url")}
+                    placeholder="https://mcp.example.com/mcp"
+                    value={draft.http.url}
+                    onChange={(url) =>
+                      onDraftChange({
+                        ...draft,
+                        http: { ...draft.http, url },
+                      })}
+                  />
+                  <EditorTextField
+                    label={t("settings.mcp.detail.http.bearerToken")}
+                    placeholder="MCP_BEARER_TOKEN"
+                    value={draft.http.bearerTokenEnvVar}
+                    onChange={(bearerTokenEnvVar) =>
+                      onDraftChange({
+                        ...draft,
+                        http: { ...draft.http, bearerTokenEnvVar },
+                      })}
+                  />
+                  <EditorRecordField
+                    addLabel={t("settings.mcp.detail.http.addHeader")}
+                    label={t("settings.mcp.detail.http.headers")}
+                    values={draft.http.httpHeaders}
+                    onChange={(httpHeaders) =>
+                      onDraftChange({
+                        ...draft,
+                        http: { ...draft.http, httpHeaders },
+                      })}
+                  />
+                  <EditorRecordField
+                    addLabel={t("settings.mcp.detail.http.addEnvHeader")}
+                    label={t("settings.mcp.detail.http.envHeaders")}
+                    values={draft.http.envHttpHeaders}
+                    onChange={(envHttpHeaders) =>
+                      onDraftChange({
+                        ...draft,
+                        http: { ...draft.http, envHttpHeaders },
+                      })}
+                  />
+                </>
+              )}
+            </SettingsSurface>
 
-        <div className="flex justify-end">
-          <Button color="primary" disabled={isSaving || !canSave} size="toolbar" onClick={onSave}>
-            {t("settings.mcp.detail.save")}
-          </Button>
-        </div>
+            <div className="flex justify-end">
+              <Button color="primary" disabled={isSaving || !canSave} size="toolbar" onClick={onSave}>
+                {t("settings.mcp.detail.save")}
+              </Button>
+            </div>
+          </SettingsGroup.Content>
+        </SettingsGroup>
       </div>
     </SettingsContentLayout>
   );
@@ -718,23 +738,18 @@ function EditorTransportField({
   value: McpServerDraft["transportType"];
   onChange: (value: McpServerDraft["transportType"]) => void;
 }) {
-  const { t } = useI18n();
-
   return (
-    <div className="flex flex-col gap-2 rounded-lg bg-token-input-background px-3 py-2">
-      <div className="text-base font-medium text-token-text-primary">
-        <span>{options.length > 0 ? t("settings.mcp.detail.transport.label") : ""}</span>
-      </div>
-      <div className="bg-token-surface-secondary border-token-border flex items-center rounded-lg border p-0.5">
-        {options.map((option, index) => (
+    <div className="bg-token-surface-secondary border-token-border flex items-center rounded-lg border">
+      {options.map((option, index) => (
+        <div key={option.id} className="flex min-w-0 flex-1 items-center">
           <button
-            key={option.id}
             type="button"
             aria-pressed={value === option.id}
             onClick={() => onChange(option.id)}
             className={[
-              "flex-1 rounded-md px-4 py-1.5 text-sm font-medium transition",
-              index > 0 ? "ml-0.5" : "",
+              "relative flex-1 px-4 py-1.5 text-sm font-medium",
+              index === 0 ? "rounded-l-md" : "",
+              index === options.length - 1 ? "rounded-r-md" : "",
               value === option.id
                 ? "bg-token-radio-active-foreground/25 text-token-text-primary"
                 : "text-token-text-secondary hover:bg-token-radio-active-foreground/5",
@@ -742,8 +757,11 @@ function EditorTransportField({
           >
             {option.label}
           </button>
-        ))}
-      </div>
+          {index < options.length - 1 ? (
+            <div className="h-full w-px self-stretch bg-token-border" />
+          ) : null}
+        </div>
+      ))}
     </div>
   );
 }
@@ -900,29 +918,12 @@ function McpSectionSubtitle() {
   );
 }
 
-function ArrowLeftIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      aria-hidden="true"
-      className={className}
-      width="20"
-      height="20"
-      viewBox="0 0 20 20"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        d="M8.8011 3.611C9.05912 3.44087 9.40989 3.46898 9.63703 3.69596C9.89673 3.95566 9.89673 4.37767 9.63703 4.63737L4.93977 9.33463H16.6663L16.8011 9.34831C17.1038 9.41043 17.3312 9.67859 17.3314 9.99967C17.3314 10.3209 17.1039 10.5888 16.8011 10.651L16.6663 10.6647H4.93879L9.63703 15.363L9.722 15.4674C9.89241 15.7255 9.86413 16.0761 9.63703 16.3034C9.40981 16.5306 9.05921 16.5587 8.8011 16.3883L8.69661 16.3034L2.86262 10.4704C2.60319 10.2108 2.6033 9.78962 2.86262 9.52995L8.69661 3.69596L8.8011 3.611Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
-
 function formatMcpServerLabel(name: string, server: McpServerDraft | null) {
   const customLabel = server?.label.trim();
   if (customLabel) {
-    return customLabel;
+    return customLabel === customLabel.toLowerCase()
+      ? `${customLabel[0]?.toUpperCase() ?? ""}${customLabel.slice(1)}`
+      : customLabel;
   }
 
   const trimmedName = name.trim();

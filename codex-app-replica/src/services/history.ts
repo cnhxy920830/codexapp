@@ -332,6 +332,7 @@ export type ThreadConversation = {
   hostId?: string | null;
   source?: ThreadHistoryEntrySource | null;
   hasUnreadTurn?: boolean;
+  threadRuntimeStatus?: ThreadHistoryStatus | null;
   latestCollaborationMode?: string | null;
   latestTokenUsageInfo?: ThreadConversationTokenUsageInfo | null;
   threadGoal?: ThreadConversationGoal | null;
@@ -1060,6 +1061,20 @@ export async function startThread(cwd: string | null) {
   return invoke<string>("start_thread", { cwd });
 }
 
+export async function startThreadForHost(params: {
+  cwd: string | null;
+  hostId?: string | null;
+  collaborationMode?: CollaborationModePayload | null;
+}) {
+  return invoke<string>("start-thread-for-host", {
+    params: {
+      cwd: params.cwd ?? null,
+      hostId: normalizeHostId(params.hostId),
+      collaborationMode: params.collaborationMode ?? null,
+    },
+  });
+}
+
 export async function startConversation(params: StartConversationParams) {
   return invoke<string>("start-conversation", {
     params: {
@@ -1241,22 +1256,30 @@ export async function clearThreadGoal(params: {
 
 export async function startTurn(
   params: {
+    hostId?: string | null;
     threadId: string;
     text: string;
     cwd: string | null;
     collaborationMode?: CollaborationModePayload | null;
   } & TurnStartPermissionOverrides,
 ) {
-  return invoke<string>("start_turn", params);
+  return invoke<string>("start_turn", {
+    ...params,
+    hostId: normalizeHostId(params.hostId),
+  });
 }
 
 export async function startTurnWithInput(params: {
+  hostId?: string | null;
   threadId: string;
   input: ThreadConversationUserInput[];
   cwd: string | null;
   collaborationMode?: CollaborationModePayload | null;
 } & TurnStartPermissionOverrides) {
-  return invoke<string>("start_turn_with_input", params);
+  return invoke<string>("start_turn_with_input", {
+    ...params,
+    hostId: normalizeHostId(params.hostId),
+  });
 }
 
 export async function sendFollowUpMessage(params: {
@@ -1318,6 +1341,19 @@ export async function respondToMcpServerElicitationRequest(params: {
 
 export async function readThread(threadId: string) {
   return invoke<ThreadConversation>("read_thread", { threadId }).then(normalizeThreadConversation);
+}
+
+export async function readThreadForHost(params: { threadId: string; hostId?: string | null }) {
+  const normalizedHostId = normalizeHostId(params.hostId);
+  if (normalizedHostId === null) {
+    return readThread(params.threadId);
+  }
+
+  return maybeResumeConversation({
+    conversationId: params.threadId,
+    hostId: normalizedHostId,
+    workspaceRoots: [],
+  });
 }
 
 export async function rollbackThread(params: { threadId: string; numTurns: number }) {
@@ -1419,8 +1455,16 @@ export function normalizeThreadConversation(thread: ThreadConversation): ThreadC
 
   return {
     ...thread,
+    hostId:
+      typeof thread.hostId === "string" && thread.hostId.trim().length > 0
+        ? thread.hostId.trim()
+        : null,
     source: normalizeThreadHistorySource(thread.source),
     hasUnreadTurn: normalizeThreadUnreadFlag(thread.hasUnreadTurn),
+    threadRuntimeStatus:
+      thread.threadRuntimeStatus == null
+        ? null
+        : normalizeThreadHistoryStatus(thread.threadRuntimeStatus),
     latestCollaborationMode: normalizeThreadCollaborationMode(thread.latestCollaborationMode),
     latestTokenUsageInfo: normalizeThreadConversationTokenUsageInfo(thread.latestTokenUsageInfo),
     threadGoal: normalizeThreadConversationGoal(thread.threadGoal),

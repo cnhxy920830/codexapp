@@ -43,7 +43,9 @@ use crate::thread_history::ThreadConversationTokenUsageBreakdown;
 use crate::thread_history::ThreadConversationTokenUsageInfo;
 use crate::thread_history::ThreadConversationTurn;
 use crate::thread_history::ThreadConversationTurnTiming;
+use crate::thread_history::ThreadHistoryActiveFlag as ConversationThreadHistoryActiveFlag;
 pub use crate::thread_history::ThreadHistorySource;
+use crate::thread_history::ThreadHistoryStatus as ConversationThreadHistoryStatus;
 
 const AUTH_EVENT: &str = "auth-state-changed";
 const THREAD_EVENT: &str = "thread-event";
@@ -106,6 +108,14 @@ pub struct SendAddCreditsNudgeEmailResponse {
 #[serde(rename_all = "camelCase")]
 pub struct HostScopedParams {
     pub host_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StartThreadForHostParams {
+    pub host_id: Option<String>,
+    pub cwd: Option<String>,
+    pub collaboration_mode: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -203,6 +213,7 @@ pub struct ThreadHistoryEntry {
     pub updated_at: i64,
     pub status: ThreadHistoryStatus,
     pub cwd: String,
+    pub host_id: Option<String>,
     pub git_info: Option<ThreadGitInfo>,
     pub path: Option<String>,
     pub name: Option<String>,
@@ -3835,6 +3846,7 @@ async fn list_threads(
 ) -> Result<Vec<ThreadHistoryEntry>, String> {
     list_threads_from_value(
         state,
+        None,
         send_request(
             state,
             AppServerRequestKind::ThreadList,
@@ -3856,6 +3868,7 @@ async fn list_threads_for_host(
 ) -> Result<Vec<ThreadHistoryEntry>, String> {
     list_threads_from_value(
         state,
+        host_id,
         send_request_for_host(
             app,
             state,
@@ -3873,6 +3886,7 @@ async fn list_threads_for_host(
 
 fn list_threads_from_value(
     state: &Arc<AuthBridgeState>,
+    host_id: Option<&str>,
     value: serde_json::Value,
 ) -> Result<Vec<ThreadHistoryEntry>, String> {
     let response = serde_json::from_value::<ThreadListResponse>(value)
@@ -3890,6 +3904,7 @@ fn list_threads_from_value(
                 updated_at: thread.updated_at,
                 status: thread.status,
                 cwd: thread.cwd,
+                host_id: host_id.map(ToOwned::to_owned),
                 git_info: thread.git_info.and_then(normalize_thread_git_info),
                 path: thread.path,
                 name: thread.name,
@@ -3976,6 +3991,28 @@ pub async fn start_thread(
 ) -> Result<String, String> {
     start_thread_with_personality(state.inner(), cwd, state.current_personality_for_host(None))
         .await
+}
+
+#[tauri::command(rename = "start-thread-for-host")]
+pub async fn start_thread_for_host(
+    app: AppHandle,
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: StartThreadForHostParams,
+) -> Result<String, String> {
+    let mut overrides = serde_json::Map::new();
+    if let Some(collaboration_mode) = params.collaboration_mode {
+        overrides.insert("collaborationMode".to_string(), collaboration_mode);
+    }
+
+    start_thread_with_host_and_personality(
+        &app,
+        state.inner(),
+        params.host_id.as_deref(),
+        params.cwd,
+        state.current_personality_for_host(params.host_id.as_deref()),
+        overrides,
+    )
+    .await
 }
 
 #[tauri::command(rename = "start-conversation")]
@@ -4456,7 +4493,9 @@ pub async fn clear_thread_goal(
 
 #[tauri::command]
 pub async fn start_turn(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
+    host_id: Option<String>,
     thread_id: String,
     text: String,
     cwd: Option<String>,
@@ -4465,12 +4504,14 @@ pub async fn start_turn(
     approvals_reviewer: Option<String>,
     sandbox_policy: Option<serde_json::Value>,
 ) -> Result<String, String> {
-    start_turn_with_personality(
+    start_turn_with_host_and_personality(
+        &app,
         state.inner(),
+        host_id.as_deref(),
         thread_id,
         text,
         cwd,
-        state.current_personality_for_host(None),
+        state.current_personality_for_host(host_id.as_deref()),
         collaboration_mode,
         Some(TurnStartPermissionOverrides {
             approval_policy,
@@ -4483,7 +4524,9 @@ pub async fn start_turn(
 
 #[tauri::command]
 pub async fn start_turn_with_input(
+    app: AppHandle,
     state: State<'_, Arc<AuthBridgeState>>,
+    host_id: Option<String>,
     thread_id: String,
     input: Vec<serde_json::Value>,
     cwd: Option<String>,
@@ -4492,12 +4535,14 @@ pub async fn start_turn_with_input(
     approvals_reviewer: Option<String>,
     sandbox_policy: Option<serde_json::Value>,
 ) -> Result<String, String> {
-    start_turn_with_input_and_personality(
+    start_turn_with_input_and_host_and_personality(
+        &app,
         state.inner(),
+        host_id.as_deref(),
         thread_id,
         serde_json::Value::Array(input),
         cwd,
-        state.current_personality_for_host(None),
+        state.current_personality_for_host(host_id.as_deref()),
         collaboration_mode,
         Some(TurnStartPermissionOverrides {
             approval_policy,
@@ -4744,7 +4789,7 @@ pub async fn read_thread(
     } else if let Ok(mut thread_goals) = state.thread_goals.lock() {
         thread_goals.remove(&response.thread.id);
     }
-    map_thread_conversation(state.inner(), response.thread)
+    map_thread_conversation(state.inner(), response.thread, None)
 }
 
 #[tauri::command(rename = "maybe-resume-conversation")]
@@ -4807,7 +4852,7 @@ pub async fn maybe_resume_conversation(
     } else if let Ok(mut thread_goals) = state.thread_goals.lock() {
         thread_goals.remove(&response.thread.id);
     }
-    map_thread_conversation(state.inner(), response.thread)
+    map_thread_conversation(state.inner(), response.thread, host_id.as_deref())
 }
 
 #[tauri::command]
@@ -4830,12 +4875,13 @@ pub async fn rollback_thread(
     if let Some(latest_turn_id) = response.thread.turns.last().map(|turn| turn.id.clone()) {
         remember_latest_turn_id(state.inner(), &response.thread.id, &latest_turn_id);
     }
-    map_thread_conversation(state.inner(), response.thread)
+    map_thread_conversation(state.inner(), response.thread, None)
 }
 
 fn map_thread_conversation(
     state: &Arc<AuthBridgeState>,
     thread: ThreadReadThread,
+    host_id: Option<&str>,
 ) -> Result<ThreadConversation, String> {
     let mut items = Vec::<ThreadConversationItem>::new();
     let mut turns = Vec::<ThreadConversationTurn>::new();
@@ -5050,8 +5096,10 @@ fn map_thread_conversation(
         id,
         title,
         cwd,
+        host_id: host_id.map(ToOwned::to_owned),
         source,
         has_unread_turn,
+        thread_runtime_status: Some(map_thread_runtime_status(&thread.status)),
         latest_collaboration_mode,
         latest_token_usage_info,
         thread_goal,
@@ -5059,6 +5107,33 @@ fn map_thread_conversation(
         turn_timings,
         items,
     })
+}
+
+fn map_thread_runtime_status(status: &ThreadHistoryStatus) -> ConversationThreadHistoryStatus {
+    match status {
+        ThreadHistoryStatus::NotLoaded => ConversationThreadHistoryStatus::NotLoaded,
+        ThreadHistoryStatus::Idle => ConversationThreadHistoryStatus::Idle,
+        ThreadHistoryStatus::SystemError => ConversationThreadHistoryStatus::SystemError,
+        ThreadHistoryStatus::Active { active_flags } => ConversationThreadHistoryStatus::Active {
+            active_flags: active_flags
+                .iter()
+                .map(map_thread_runtime_active_flag)
+                .collect(),
+        },
+    }
+}
+
+fn map_thread_runtime_active_flag(
+    flag: &ThreadHistoryActiveFlag,
+) -> ConversationThreadHistoryActiveFlag {
+    match flag {
+        ThreadHistoryActiveFlag::WaitingOnApproval => {
+            ConversationThreadHistoryActiveFlag::WaitingOnApproval
+        }
+        ThreadHistoryActiveFlag::WaitingOnUserInput => {
+            ConversationThreadHistoryActiveFlag::WaitingOnUserInput
+        }
+    }
 }
 
 pub fn shared_state() -> Arc<AuthBridgeState> {
@@ -5259,6 +5334,27 @@ pub async fn start_thread_with_personality(
     Ok(response.thread.id)
 }
 
+pub(crate) async fn start_thread_with_host_and_personality(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    host_id: Option<&str>,
+    cwd: Option<String>,
+    personality: Option<String>,
+    overrides: serde_json::Map<String, serde_json::Value>,
+) -> Result<String, String> {
+    let value = send_request_for_host(
+        app,
+        state,
+        host_id,
+        AppServerRequestKind::ThreadStart,
+        build_thread_start_payload_with_overrides(cwd, personality, overrides),
+    )
+    .await?;
+    let response = serde_json::from_value::<ThreadStartResponse>(value)
+        .map_err(|err| format!("failed to decode thread start response: {err}"))?;
+    Ok(response.thread.id)
+}
+
 pub(crate) async fn start_ephemeral_thread(state: &Arc<AuthBridgeState>) -> Result<String, String> {
     let value = send_request(
         state,
@@ -5305,6 +5401,31 @@ pub async fn start_turn_with_personality(
     .await
 }
 
+pub async fn start_turn_with_host_and_personality(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    host_id: Option<&str>,
+    thread_id: String,
+    text: String,
+    cwd: Option<String>,
+    personality: Option<String>,
+    collaboration_mode: Option<serde_json::Value>,
+    permission_overrides: Option<TurnStartPermissionOverrides>,
+) -> Result<String, String> {
+    start_turn_with_input_and_host_and_personality(
+        app,
+        state,
+        host_id,
+        thread_id,
+        serde_json::json!([{ "type": "text", "text": text }]),
+        cwd,
+        personality,
+        collaboration_mode,
+        permission_overrides,
+    )
+    .await
+}
+
 pub async fn start_turn_with_input_and_personality(
     state: &Arc<AuthBridgeState>,
     thread_id: String,
@@ -5316,6 +5437,37 @@ pub async fn start_turn_with_input_and_personality(
 ) -> Result<String, String> {
     let value = send_request(
         state,
+        AppServerRequestKind::TurnStart,
+        build_turn_start_payload(
+            thread_id,
+            input,
+            cwd,
+            personality,
+            collaboration_mode,
+            permission_overrides,
+        ),
+    )
+    .await?;
+    let response = serde_json::from_value::<TurnStartResponse>(value)
+        .map_err(|err| format!("failed to decode turn start response: {err}"))?;
+    Ok(response.turn.id)
+}
+
+pub async fn start_turn_with_input_and_host_and_personality(
+    app: &AppHandle,
+    state: &Arc<AuthBridgeState>,
+    host_id: Option<&str>,
+    thread_id: String,
+    input: serde_json::Value,
+    cwd: Option<String>,
+    personality: Option<String>,
+    collaboration_mode: Option<serde_json::Value>,
+    permission_overrides: Option<TurnStartPermissionOverrides>,
+) -> Result<String, String> {
+    let value = send_request_for_host(
+        app,
+        state,
+        host_id,
         AppServerRequestKind::TurnStart,
         build_turn_start_payload(
             thread_id,
@@ -7833,6 +7985,7 @@ mod tests {
     use super::map_account;
     use super::map_account_info_response;
     use super::map_app_tools;
+    use super::map_thread_runtime_status;
     use super::normalize_turn_input_value;
     use super::normalized_thread_title;
     use super::plugin_list_cwds;
@@ -7916,6 +8069,7 @@ mod tests {
     use super::ThreadUnsubscribeStatus;
     use super::UnarchiveConversationParams;
     use super::UnsubscribeThreadForHostParams;
+    use crate::thread_history::ThreadHistoryStatus as ConversationThreadHistoryStatus;
     use serde_json::json;
 
     #[test]
@@ -8251,6 +8405,7 @@ mod tests {
     fn list_threads_from_value_preserves_thread_spawn_parent_thread_id() {
         let threads = list_threads_from_value(
             &shared_state(),
+            None,
             json!({
                 "data": [
                     {
@@ -8295,6 +8450,7 @@ mod tests {
                     active_flags: vec![ThreadHistoryActiveFlag::WaitingOnUserInput],
                 },
                 cwd: "D:/workspace".to_string(),
+                host_id: None,
                 git_info: Some(ThreadGitInfo {
                     branch: Some("feature/pr-page".to_string()),
                 }),
@@ -8322,6 +8478,7 @@ mod tests {
 
         let threads = list_threads_from_value(
             &state,
+            None,
             json!({
                 "data": [
                     {
@@ -8349,6 +8506,7 @@ mod tests {
     fn list_threads_from_value_drops_empty_git_branch() {
         let threads = list_threads_from_value(
             &shared_state(),
+            None,
             json!({
                 "data": [
                     {
@@ -8373,6 +8531,24 @@ mod tests {
         .expect("thread list should deserialize");
 
         assert_eq!(threads[0].git_info, None);
+    }
+
+    #[test]
+    fn map_thread_runtime_status_preserves_active_flags() {
+        assert_eq!(
+            map_thread_runtime_status(&ThreadHistoryStatus::Active {
+                active_flags: vec![
+                    ThreadHistoryActiveFlag::WaitingOnApproval,
+                    ThreadHistoryActiveFlag::WaitingOnUserInput,
+                ],
+            }),
+            ConversationThreadHistoryStatus::Active {
+                active_flags: vec![
+                    crate::thread_history::ThreadHistoryActiveFlag::WaitingOnApproval,
+                    crate::thread_history::ThreadHistoryActiveFlag::WaitingOnUserInput,
+                ],
+            }
+        );
     }
 
     #[test]

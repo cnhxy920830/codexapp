@@ -139,6 +139,38 @@ test("general settings keeps extracted ambient eligibility and App authSnapshot 
   );
 });
 
+test("general settings refreshes query-backed state on window focus", () => {
+  const source = readSource(COMPONENT_SOURCE_PATH);
+
+  assert.match(
+    source,
+    /const loadGeneralSettings = useEffectEvent\(\s*async \(canCommit: \(\) => boolean = \(\) => true\) => \{/,
+  );
+  assert.match(
+    source,
+    /const loadGlobalDictationSettings = useEffectEvent\(\s*async \(canCommit: \(\) => boolean = \(\) => true\) => \{/,
+  );
+  assert.match(
+    source,
+    /const loadAccountInfo = useEffectEvent\(\s*async \(canCommit: \(\) => boolean = \(\) => true\) => \{/,
+  );
+  assert.match(
+    source,
+    /const loadSpeedSettings = useEffectEvent\(\s*async \(canCommit: \(\) => boolean = \(\) => true\) => \{/,
+  );
+  assert.match(
+    source,
+    /const loadExternalImports = useEffectEvent\(\s*async \(canCommit: \(\) => boolean = \(\) => true\) => \{/,
+  );
+  assert.match(source, /const handleWindowFocus = useEffectEvent\(\(\) => \{/);
+  assert.match(source, /void loadGeneralSettings\(\);/);
+  assert.match(source, /void loadGlobalDictationSettings\(\);/);
+  assert.match(source, /void loadAccountInfo\(\);/);
+  assert.match(source, /void loadSpeedSettings\(\);/);
+  assert.match(source, /void loadExternalImports\(\);/);
+  assert.match(source, /window\.addEventListener\("focus", handleFocus\);/);
+});
+
 function readSource(filePath: string) {
   return readFileSync(filePath, "utf8");
 }

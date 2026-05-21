@@ -16,30 +16,36 @@ type SettingsHostDropdownProps = {
   connectedRemoteConnections: RemoteConnection[];
   contentWidth?: "icon" | "menuWide" | "workspace";
   disabled?: boolean;
+  localLabelKey?: MessageKey;
   onSelectHost: (hostId: string) => void;
   remoteConnectionHostIds: string[];
   selectedHostId: string;
   t: (key: MessageKey, values?: MessageValues) => string;
+  titleKey?: MessageKey;
   triggerClassName?: string;
   triggerColor?: "ghost" | "ghostActive" | "ghostMuted" | "outline" | "outlineActive" | "primary" | "secondary";
+  triggerSize?: "composerSm" | "toolbar";
 };
 
 export function SettingsHostDropdown({
   align = "end",
   connectedRemoteConnections,
   contentWidth = "menuWide",
+  localLabelKey = "settings.hostDropdown.local",
   onSelectHost,
   remoteConnectionHostIds,
   selectedHostId,
   t,
+  titleKey = "settings.hostDropdown.title",
   triggerClassName,
   triggerColor = "outline",
+  triggerSize = "composerSm",
 }: SettingsHostDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const selectedRemoteConnection =
     connectedRemoteConnections.find((remoteConnection) => remoteConnection.hostId === selectedHostId) ?? null;
-  const localHostLabel = t("settings.hostDropdown.local");
+  const localHostLabel = t(localLabelKey);
   const selectedHostLabel = selectedRemoteConnection?.displayName ?? localHostLabel;
   const hostOptions = [
     { hostId: LOCAL_SETTINGS_HOST_ID, displayName: localHostLabel },
@@ -70,14 +76,14 @@ export function SettingsHostDropdown({
   return (
     <div className="relative shrink-0" ref={containerRef}>
       <Button
-        aria-label={t("settings.hostDropdown.title")}
+        aria-label={t(titleKey)}
         className={
           triggerClassName ??
           "h-7 w-auto max-w-[160px] px-2 text-[13px]"
         }
         color={triggerColor}
         onClick={() => setIsOpen((open) => !open)}
-        size="composerSm"
+        size={triggerSize}
       >
         {selectedRemoteConnection === null ? (
           <SettingsLocalHostIcon className="h-4 w-4 shrink-0 text-[var(--app-shell-text)]" />
@@ -108,7 +114,7 @@ export function SettingsHostDropdown({
           ].join(" ")}
         >
           <div className="px-3 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--app-shell-subtle)]">
-            {t("settings.hostDropdown.title")}
+            {t(titleKey)}
           </div>
           <div className="max-h-60 overflow-y-auto">
             {hostOptions.map((hostOption) => {
@@ -149,7 +155,7 @@ export function SettingsHostDropdown({
   );
 }
 
-function SettingsLocalHostIcon({ className }: { className?: string }) {
+export function SettingsLocalHostIcon({ className }: { className?: string }) {
   return (
     <svg className={className} width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <path

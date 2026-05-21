@@ -28,6 +28,7 @@ test("computer use settings keeps extracted overview page title slug and section
     source,
     /<SettingsGroup>\s*<SettingsGroup\.Content>\s*<SoundModeSelector/s,
   );
+  assert.match(source, /\{soundMode != null \? \(\s*<SoundModeSelector/s);
 });
 
 test("computer use settings keeps extracted control rows and chrome manage ownership", () => {
@@ -74,23 +75,50 @@ test("computer use settings keeps extracted chrome subpage shell, permissions, a
   assert.match(source, /label=\{t\("settings\.browserUse\.downloadApproval\.label"\)\}/);
   assert.match(source, /label=\{t\("settings\.browserUse\.uploadApproval\.label"\)\}/);
 
-  const originSectionMatches = source.match(/<BrowserUseOriginSection/g) ?? [];
-  assert.equal(originSectionMatches.length, 2);
   assert.match(source, /const CHROME_ORIGIN_SECTION_CONFIGS: BrowserUseOriginSectionConfig\[] = \[/);
+  assert.match(source, /titleKey: "settings\.browserUse\.blockedDomains\.title"/);
+  assert.match(source, /titleKey: "settings\.browserUse\.allowedDomains\.title"/);
+  assert.match(source, /titleKey: "settings\.browserUse\.blockedDownloadDomains\.title"/);
+  assert.match(source, /titleKey: "settings\.browserUse\.allowedDownloadDomains\.title"/);
+  assert.match(source, /titleKey: "settings\.browserUse\.blockedUploadDomains\.title"/);
+  assert.match(source, /titleKey: "settings\.browserUse\.allowedUploadDomains\.title"/);
+
+  const deniedMatches = source.match(/kind: "denied"/g) ?? [];
+  const allowedMatches = source.match(/kind: "allowed"/g) ?? [];
+  const originResourceMatches = source.match(/resource: "origins"/g) ?? [];
+  const downloadResourceMatches = source.match(/resource: "downloads"/g) ?? [];
+  const uploadResourceMatches = source.match(/resource: "uploads"/g) ?? [];
+
+  assert.ok(deniedMatches.length >= 3);
+  assert.ok(allowedMatches.length >= 3);
+  assert.ok(originResourceMatches.length >= 2);
+  assert.ok(downloadResourceMatches.length >= 2);
+  assert.ok(uploadResourceMatches.length >= 2);
+
+  assert.match(source, /CHROME_ORIGIN_SECTION_CONFIGS\.map\(\(config\) => \(\s*<BrowserUseOriginSection/s);
+  assert.match(source, /useReplicaStatsigDynamicConfigValue\(\s*BROWSER_USE_APPROVAL_LINK_DYNAMIC_CONFIG/s);
+  assert.match(source, /const browserUseLearnMoreUrl = resolveBrowserUseLearnMoreUrl\(browserUseLearnMoreDynamicConfig\)/);
+  assert.match(source, /void openInBrowser\(browserUseLearnMoreUrl\)/);
+  assert.doesNotMatch(source, /<BrowserUseMessageStateRow message=\{loadError\} \/>/);
 
   const triggerMatches = source.match(/className="w-\[152px\]"/g) ?? [];
   assert.ok(triggerMatches.length >= 4);
 });
 
-test("computer use settings service and labels use extracted command and title keys", () => {
+test("computer use settings service and labels use extracted command, query invalidation, and title keys", () => {
   const serviceSource = readSource(SERVICE_SOURCE_PATH);
   const appSource = readSource(APP_SOURCE_PATH);
   const titleSource = readSource(TITLE_SOURCE_PATH);
   const messagesSource = readSource(MESSAGES_SOURCE_PATH);
 
+  assert.match(serviceSource, /export const COMPUTER_USE_APPROVALS_QUERY_KEY = \[\s*"computer-use-app-approvals-read",\s*\] as const;/s);
+  assert.match(serviceSource, /export const COMPUTER_USE_SOUND_MODE_QUERY_KEY = \[\s*"computer-use-sound-mode-read",\s*\] as const;/s);
   assert.match(serviceSource, /invoke<ComputerUseVisibilityState>\("computer-use-app-approvals-visibility"\)/);
   assert.match(serviceSource, /invoke<ComputerUseApprovalsState \| null>\("computer-use-app-approvals-read"\)/);
   assert.match(serviceSource, /invoke<ComputerUseApprovalsState \| null>\("computer-use-app-approval-remove", \{ params \}\)/);
+  assert.match(serviceSource, /emitQueryCacheInvalidated\(COMPUTER_USE_APPROVALS_QUERY_KEY\)/);
+  assert.match(serviceSource, /invoke<ComputerUseSoundModeWriteResponse>\("computer-use-sound-mode-write", \{ params \}\)/);
+  assert.match(serviceSource, /emitQueryCacheInvalidated\(COMPUTER_USE_SOUND_MODE_QUERY_KEY\)/);
 
   assert.match(titleSource, /\| "computer-use"/);
   assert.match(titleSource, /"computer-use": "computerUse\.label"/);
@@ -104,6 +132,19 @@ test("computer use settings service and labels use extracted command and title k
   assert.match(messagesSource, /"settings\.computerUse\.install\.empty": "Computer Use plugins unavailable"/);
   assert.match(messagesSource, /"settings\.computerUse\.install\.title": "控制"/);
   assert.match(messagesSource, /"settings\.computerUse\.install\.empty": "Computer Use 插件不可用"/);
+});
+
+test("computer use settings keeps extracted refetch-on-window-focus semantics for overview and chrome subpage owners", () => {
+  const source = readSource(COMPONENT_SOURCE_PATH);
+
+  assert.match(source, /window\.addEventListener\("focus", handleFocus\)/);
+  assert.match(source, /window\.removeEventListener\("focus", handleFocus\)/);
+  assert.match(source, /const handleWindowFocus = useEffectEvent\(\(\) => \{/);
+  assert.match(source, /void loadPlugins\(\);/);
+  assert.match(source, /void loadComputerUseApprovals\(\);/);
+  assert.match(source, /void loadComputerUseSoundMode\(\);/);
+  assert.match(source, /void loadChromeExtensionState\(\);/);
+  assert.match(source, /const handleFocus = \(\) => \{\s*void loadSettings\(\);\s*\};/s);
 });
 
 function readSource(filePath: string) {

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import {
   REPLICA_STATSIG_GATES,
   useReplicaStatsigGateValue,
@@ -10,6 +10,9 @@ import {
   setExperimentalFeatureForHost,
   type ExperimentalFeature,
 } from "../services/personalization";
+import { SettingsGroup } from "./SettingsGroup";
+import { SettingsRow } from "./SettingsRow";
+import { SettingsSurface } from "./SettingsSurface";
 import { ToggleSwitch } from "./ToggleSwitch";
 
 type ExperimentalFeatureRow = {
@@ -50,7 +53,7 @@ export function AgentExperimentalFeaturesSettings({
   const [isSaving, setIsSaving] = useState(false);
   const [showRestartNote, setShowRestartNote] = useState(false);
 
-  useEffect(() => {
+  const refreshFeatures = useEffectEvent(async () => {
     if (!experimentalFeaturesGate) {
       setFeatures([]);
       setIsLoading(false);
@@ -58,34 +61,36 @@ export function AgentExperimentalFeaturesSettings({
       return;
     }
 
-    let cancelled = false;
     setIsLoading(true);
+    try {
+      const nextFeatures = await listExperimentalFeaturesForHost(hostId).catch(
+        () => [] as ExperimentalFeature[],
+      );
+      setFeatures(nextFeatures);
+    } finally {
+      setIsLoading(false);
+    }
+  });
+
+  useEffect(() => {
     setShowRestartNote(false);
+    void refreshFeatures();
+  }, [experimentalFeaturesGate, hostId, refreshFeatures]);
 
-    void listExperimentalFeaturesForHost(hostId)
-      .then((nextFeatures) => {
-        if (cancelled) {
-          return;
-        }
-        setFeatures(nextFeatures);
-      })
-      .catch(() => {
-        if (cancelled) {
-          return;
-        }
-        setFeatures([]);
-      })
-      .finally(() => {
-        if (cancelled) {
-          return;
-        }
-        setIsLoading(false);
-      });
+  useEffect(() => {
+    if (!experimentalFeaturesGate) {
+      return;
+    }
 
-    return () => {
-      cancelled = true;
+    const handleFocus = () => {
+      void refreshFeatures();
     };
-  }, [experimentalFeaturesGate, hostId]);
+
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [experimentalFeaturesGate, refreshFeatures]);
 
   if (!experimentalFeaturesGate) {
     return null;
@@ -121,71 +126,47 @@ export function AgentExperimentalFeaturesSettings({
   const hasRows = rows.length > 0;
 
   return (
-    <div className="app-card rounded-[18px] px-5 py-4">
-      <div className="text-[12px] uppercase tracking-[0.16em] text-[var(--app-shell-subtle)]">
-        {t("settings.general.experimentalFeatures")}
-      </div>
-      {showRestartNote ? (
-        <div className="mt-2 text-[12px] font-medium leading-5 text-[var(--app-shell-error-text)]">
-          {t("settings.general.experimentalFeatures.restartNote")}
-        </div>
-      ) : null}
-      <div className="mt-4 space-y-5">
-        {isLoading ? (
-          <ExperimentalFeatureRowView
-            label={t("settings.general.experimentalFeatures.loading")}
-            description={null}
-            control={<span className="h-5 w-8 shrink-0" aria-hidden="true" />}
-          />
-        ) : null}
-        {!isLoading && !hasRows ? (
-          <ExperimentalFeatureRowView
-            label={t("settings.general.experimentalFeatures.empty")}
-            description={null}
-            control={<span className="h-5 w-8 shrink-0" aria-hidden="true" />}
-          />
-        ) : null}
-        {rows.map((row) => (
-          <ExperimentalFeatureRowView
-            key={row.key}
-            label={row.label}
-            description={row.description}
-            control={
-              <ToggleSwitch
-                checked={row.enabled}
-                disabled={isSaving}
-                onChange={(enabled) => void updateFeatureEnablement(row, enabled)}
-                ariaLabel={t("settings.general.experimentalFeatures.toggle", {
-                  featureName: row.label,
-                })}
-              />
-            }
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ExperimentalFeatureRowView({
-  label,
-  description,
-  control,
-}: {
-  label: string;
-  description: string | null;
-  control: ReactNode;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <div className="min-w-0 flex-1">
-        <div className="text-[14px] leading-6">{label}</div>
-        {description ? (
-          <div className="app-text-muted mt-1 text-[12px] leading-5">{description}</div>
-        ) : null}
-      </div>
-      <div className="shrink-0">{control}</div>
-    </div>
+    <SettingsGroup>
+      <SettingsGroup.Header
+        title={t("settings.general.experimentalFeatures")}
+        subtitle={
+          showRestartNote ? t("settings.general.experimentalFeatures.restartNote") : undefined
+        }
+      />
+      <SettingsGroup.Content>
+        <SettingsSurface>
+          {isLoading ? (
+            <SettingsRow
+              label={t("settings.general.experimentalFeatures.loading")}
+              control={<span className="h-5 w-8 shrink-0" aria-hidden="true" />}
+            />
+          ) : null}
+          {!isLoading && !hasRows ? (
+            <SettingsRow
+              label={t("settings.general.experimentalFeatures.empty")}
+              control={<span className="h-5 w-8 shrink-0" aria-hidden="true" />}
+            />
+          ) : null}
+          {rows.map((row) => (
+            <SettingsRow
+              key={row.key}
+              label={row.label}
+              description={row.description}
+              control={
+                <ToggleSwitch
+                  checked={row.enabled}
+                  disabled={isSaving}
+                  onChange={(enabled) => void updateFeatureEnablement(row, enabled)}
+                  ariaLabel={t("settings.general.experimentalFeatures.toggle", {
+                    featureName: row.label,
+                  })}
+                />
+              }
+            />
+          ))}
+        </SettingsSurface>
+      </SettingsGroup.Content>
+    </SettingsGroup>
   );
 }
 

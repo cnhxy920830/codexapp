@@ -151,7 +151,13 @@ function renderSnapshotWithWindowWidth(element: ReactElement, width: number) {
 }
 
 function normalizeMarkup(markup: string) {
-  return markup.replace(/\sd="[^"]*"/g, ' d="[path]"').replace(/>\s+</g, "><").replace(/\s{2,}/g, " ").trim();
+  return markup
+    .replace(/\sd="[^"]*"/g, ' d="[path]"')
+    .replace(/animation-delay:-?\d+ms/g, "animation-delay:[delay]")
+    .replace(/animation-duration:[^;"]+/g, "animation-duration:[duration]")
+    .replace(/>\s+</g, "><")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 function formatMessage(template: string, values?: MessageValues) {

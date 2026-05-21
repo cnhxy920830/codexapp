@@ -20,9 +20,11 @@ const HOTKEY_REMOTE_ROUTE_PREFIX: &str = "/hotkey-window/remote/";
 const HOTKEY_WORKTREE_INIT_ROUTE_PREFIX: &str = "/hotkey-window/worktree-init-v2/";
 const HOTKEY_WINDOW_COMMAND_ID: &str = "hotkeyWindow";
 const HOTKEY_WINDOW_HOTKEY_GLOBAL_STATE_KEY: &str = "hotkeyWindowHotkey";
+const HOTKEY_WINDOW_HOTKEY_STATE_SHARED_OBJECT_KEY: &str = "hotkey-window-hotkey-state";
 const HOTKEY_WINDOW_DEV_OVERRIDE_GLOBAL_STATE_KEY: &str =
     "hotkey-window-dev-hotkey-override-enabled";
 const NAVIGATE_TO_ROUTE_EVENT: &str = "navigate-to-route";
+const SHARED_OBJECT_UPDATED_EVENT: &str = "shared-object-updated";
 
 // Extracted from the upstream hotkey-window lifecycle owner in main-Bnxe1qAn.js.
 const HOTKEY_HOME_WIDTH: f64 = 470.0;
@@ -104,6 +106,13 @@ struct NavigateToRouteNotification {
     path: String,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct SharedObjectUpdatedNotification {
+    key: String,
+    value: Value,
+}
+
 #[tauri::command(rename = "hotkey-window-hotkey-state")]
 pub fn hotkey_window_hotkey_state(
     app: AppHandle,
@@ -165,7 +174,8 @@ pub fn hotkey_window_set_hotkey(
         }
     };
 
-    let state = hotkey_window_hotkey_state(app, gate_state)?;
+    let state = hotkey_window_hotkey_state(app.clone(), gate_state)?;
+    emit_hotkey_window_hotkey_state_updated(&app, &state)?;
     Ok(HotkeyWindowSetHotkeyResponse {
         success: error.is_none(),
         error,
@@ -180,7 +190,8 @@ pub fn hotkey_window_set_dev_hotkey_override(
     params: HotkeyWindowSetDevHotkeyOverrideParams,
 ) -> Result<HotkeyWindowSetHotkeyResponse, String> {
     let error = write_hotkey_window_dev_override_enabled(&app, params.enabled).err();
-    let state = hotkey_window_hotkey_state(app, gate_state)?;
+    let state = hotkey_window_hotkey_state(app.clone(), gate_state)?;
+    emit_hotkey_window_hotkey_state_updated(&app, &state)?;
     Ok(HotkeyWindowSetHotkeyResponse {
         success: error.is_none(),
         error,
@@ -237,13 +248,17 @@ pub fn hotkey_window_home_pointer_interaction_changed(
 
 #[tauri::command(rename = "hotkey-window-enabled-changed")]
 pub fn hotkey_window_enabled_changed(
+    app: AppHandle,
     gate_state: State<'_, HotkeyWindowGateState>,
     params: HotkeyWindowEnabledChangedParams,
-) {
+) -> Result<(), String> {
     *gate_state
         .enabled
         .lock()
         .expect("hotkey window gate state mutex poisoned") = params.enabled;
+
+    let state = hotkey_window_hotkey_state(app.clone(), gate_state)?;
+    emit_hotkey_window_hotkey_state_updated(&app, &state)
 }
 
 fn hotkey_window_gate_enabled(gate_state: &HotkeyWindowGateState) -> bool {
@@ -283,6 +298,35 @@ fn resolve_hotkey_window_hotkey(
     } else {
         legacy_hotkey
     }
+}
+
+pub(crate) fn hotkey_window_hotkey_state_shared_object_key() -> &'static str {
+    HOTKEY_WINDOW_HOTKEY_STATE_SHARED_OBJECT_KEY
+}
+
+pub(crate) fn hotkey_window_hotkey_state_snapshot(app: &AppHandle) -> Result<Value, String> {
+    serde_json::to_value(hotkey_window_hotkey_state(
+        app.clone(),
+        app.state::<HotkeyWindowGateState>(),
+    )?)
+    .map_err(|err| format!("failed to encode hotkey-window-hotkey-state shared object: {err}"))
+}
+
+fn emit_hotkey_window_hotkey_state_updated(
+    app: &AppHandle,
+    state: &HotkeyWindowHotkeyStateResponse,
+) -> Result<(), String> {
+    let value = serde_json::to_value(state).map_err(|err| {
+        format!("failed to encode hotkey-window-hotkey-state shared object update: {err}")
+    })?;
+    app.emit(
+        SHARED_OBJECT_UPDATED_EVENT,
+        SharedObjectUpdatedNotification {
+            key: HOTKEY_WINDOW_HOTKEY_STATE_SHARED_OBJECT_KEY.to_string(),
+            value,
+        },
+    )
+    .map_err(|err| format!("failed to emit shared-object-updated: {err}"))
 }
 
 fn read_legacy_hotkey_window_hotkey(app: &AppHandle) -> Result<Option<String>, String> {

@@ -36,10 +36,14 @@ type NormalizedEditorDiffRouteState = {
 };
 
 type EditorDiffPageProps = {
+  currentWindowHostId?: string | null;
   routeState: unknown;
 };
 
-export function EditorDiffPage({ routeState }: EditorDiffPageProps) {
+export function EditorDiffPage({
+  currentWindowHostId = null,
+  routeState,
+}: EditorDiffPageProps) {
   const { t } = useI18n();
   const [viewMode, setViewMode] = useState<DiffViewMode>("unified");
   const [richPreviewEnabled, setRichPreviewEnabled] = useState(false);
@@ -280,6 +284,7 @@ export function EditorDiffPage({ routeState }: EditorDiffPageProps) {
             key={file.path}
             cwd={effectiveCwd}
             file={file}
+            hostId={currentWindowHostId}
             isOpen={expandedPaths.has(file.path)}
             onToggleOpen={() => {
               setExpandedPaths((current) => {
@@ -292,6 +297,7 @@ export function EditorDiffPage({ routeState }: EditorDiffPageProps) {
                 return next;
               });
             }}
+            richPreviewEnabled={richPreviewEnabled}
             viewMode={viewMode}
           />
         ))}

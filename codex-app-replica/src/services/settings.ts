@@ -180,6 +180,9 @@ export type HotkeyWindowHotkeyStateResponse = {
   isActive: boolean;
 };
 
+export const HOTKEY_WINDOW_HOTKEY_STATE_SHARED_OBJECT_KEY =
+  "hotkey-window-hotkey-state";
+
 export type SetHotkeyWindowHotkeyResponse = {
   success: boolean;
   error: string | null;

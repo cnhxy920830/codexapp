@@ -8,6 +8,7 @@ import {
   type TurnStartPermissionOverrides,
   type ThreadConversationUserInput,
 } from "../../services/history";
+import { getGlobalState, setGlobalState } from "../../services/settings";
 import {
   setWorktreeOwnerThread,
 } from "../../services/worktrees";
@@ -79,6 +80,13 @@ async function applyStartedConversationMetadata(
       hostId: entry.hostId,
       worktree: entry.worktreeGitRoot,
       conversationId,
+    }).catch(() => undefined);
+  }
+
+  if (entry.isPinned) {
+    await setPinnedThreadState({
+      threadId: conversationId,
+      beforeThreadId: entry.pinnedBeforeThreadId ?? null,
     }).catch(() => undefined);
   }
 
@@ -227,4 +235,68 @@ function normalizePendingConversationSandboxPolicy(value: unknown) {
     default:
       return null;
   }
+}
+
+async function setPinnedThreadState(params: {
+  threadId: string;
+  beforeThreadId: string | null;
+}) {
+  const response = await getGlobalState("pinned-thread-ids");
+  const pinnedThreadIds = normalizePinnedThreadIds(response.value);
+  const nextPinnedThreadIds = insertPinnedThreadId({
+    threadIds: pinnedThreadIds,
+    threadId: params.threadId,
+    beforeThreadId: params.beforeThreadId,
+  });
+  await setGlobalState("pinned-thread-ids", nextPinnedThreadIds);
+}
+
+function normalizePinnedThreadIds(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const normalizedThreadIds: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") {
+      continue;
+    }
+
+    const normalizedEntry = entry.trim();
+    if (normalizedEntry.length === 0 || normalizedThreadIds.includes(normalizedEntry)) {
+      continue;
+    }
+
+    normalizedThreadIds.push(normalizedEntry);
+  }
+
+  return normalizedThreadIds;
+}
+
+function insertPinnedThreadId(params: {
+  threadIds: string[];
+  threadId: string;
+  beforeThreadId: string | null;
+}) {
+  const normalizedThreadId = params.threadId.trim();
+  if (normalizedThreadId.length === 0) {
+    return [...params.threadIds];
+  }
+
+  const nextThreadIds = params.threadIds.filter((candidate) => candidate !== normalizedThreadId);
+  const normalizedBeforeThreadId = params.beforeThreadId?.trim() || null;
+  if (normalizedBeforeThreadId === null) {
+    return [...nextThreadIds, normalizedThreadId];
+  }
+
+  const beforeThreadIndex = nextThreadIds.indexOf(normalizedBeforeThreadId);
+  if (beforeThreadIndex === -1) {
+    return [...nextThreadIds, normalizedThreadId];
+  }
+
+  return [
+    ...nextThreadIds.slice(0, beforeThreadIndex),
+    normalizedThreadId,
+    ...nextThreadIds.slice(beforeThreadIndex),
+  ];
 }

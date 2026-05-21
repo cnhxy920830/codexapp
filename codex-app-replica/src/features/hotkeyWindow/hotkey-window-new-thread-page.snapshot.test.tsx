@@ -8,6 +8,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { I18N_CONTEXT } from "../../i18n/i18n";
 import { MESSAGES, type LocaleCode, type MessageKey, type MessageValues } from "../../i18n/messages";
+import type { HotkeyWindowProjectSelection } from "./HotkeyWindowProjectMenuControl";
 
 const SNAPSHOT_PATH = path.join(
   process.cwd(),
@@ -50,7 +51,8 @@ async function buildSnapshots(): Promise<SnapshotMap> {
             codexHome={null}
             composerEnterBehavior="enter"
             guardianApprovalEnabledByStatsig={false}
-            initialWorkspaceRoot={null}
+            initialProjectSelection={null}
+            onOpenCreateRemoteProject={noop}
             onOpenLocalEnvironmentsSettings={noopOpenLocalEnvironmentsSettings}
             onStartCloudConversation={noopStartCloudConversation}
             onStartLocalConversation={noopStartLocalConversation}
@@ -66,7 +68,8 @@ async function buildSnapshots(): Promise<SnapshotMap> {
             codexHome={null}
             composerEnterBehavior="cmdIfMultiline"
             guardianApprovalEnabledByStatsig={false}
-            initialWorkspaceRoot="D:\\workspace\\codex"
+            initialProjectSelection={localProjectSelection}
+            onOpenCreateRemoteProject={noop}
             onOpenLocalEnvironmentsSettings={noopOpenLocalEnvironmentsSettings}
             onStartCloudConversation={noopStartCloudConversation}
             onStartLocalConversation={noopStartLocalConversation}
@@ -120,21 +123,28 @@ function translate(key: MessageKey, values?: MessageValues) {
 }
 
 const noopLocale = async (_locale: LocaleCode) => {};
+const noop = () => {};
 const noopOpenLocalEnvironmentsSettings = (_params: {
   configPath: string | null;
+  hostId: string | null;
   workspaceRoot: string;
 }) => {};
 const noopStartCloudConversation = async (_params: {
   draft: string;
+  hostId: string | null;
+  cwd: string;
   permissionOverrides: unknown;
-  workspaceRoot: string;
+  workspaceRoots: string[];
 }) => {};
 const noopStartLocalConversation = async (_params: {
   draft: string;
+  hostId: string | null;
   permissionOverrides: unknown;
   workspaceRoot: string | null;
+  workspaceRoots: string[];
 }) => {};
 const noopStartWorktreeConversation = async (_params: {
+  hostId: string;
   id: string;
   localEnvironmentConfigPath: string | null;
   permissionOverrides: unknown;
@@ -142,3 +152,7 @@ const noopStartWorktreeConversation = async (_params: {
   startingState: unknown;
   workspaceRoot: string;
 }) => {};
+const localProjectSelection: HotkeyWindowProjectSelection = {
+  kind: "local",
+  workspaceRoot: "D:\\workspace\\codex",
+};

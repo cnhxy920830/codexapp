@@ -6,13 +6,17 @@ import type { PendingWorktreeStartingState } from "../../services/pendingWorktre
 import type { TurnStartPermissionOverrides } from "../../services/history";
 import { HotkeyWindowDetailLayout } from "./HotkeyWindowDetailLayout";
 import { HotkeyWindowNewThreadComposerOwner } from "./HotkeyWindowNewThreadComposerOwner";
-import { HotkeyWindowProjectHeroPicker } from "./HotkeyWindowProjectHeroPicker";
+import {
+  HotkeyWindowProjectMenuControl,
+  type HotkeyWindowProjectSelection,
+} from "./HotkeyWindowProjectMenuControl";
 
 export function HotkeyWindowNewThreadPage({
   codexHome,
   composerEnterBehavior,
   guardianApprovalEnabledByStatsig,
-  initialWorkspaceRoot,
+  initialProjectSelection,
+  onOpenCreateRemoteProject,
   onOpenLocalEnvironmentsSettings,
   onStartCloudConversation,
   onStartLocalConversation,
@@ -21,22 +25,29 @@ export function HotkeyWindowNewThreadPage({
   codexHome: string | null;
   composerEnterBehavior: ComposerEnterBehavior;
   guardianApprovalEnabledByStatsig: boolean;
-  initialWorkspaceRoot: string | null;
+  initialProjectSelection: HotkeyWindowProjectSelection | null;
+  onOpenCreateRemoteProject: () => void;
   onOpenLocalEnvironmentsSettings: (params: {
     configPath: string | null;
+    hostId: string | null;
     workspaceRoot: string;
   }) => void;
   onStartCloudConversation: (params: {
     draft: string;
+    hostId: string | null;
+    cwd: string;
     permissionOverrides: TurnStartPermissionOverrides;
-    workspaceRoot: string;
+    workspaceRoots: string[];
   }) => Promise<void>;
   onStartLocalConversation: (params: {
     draft: string;
+    hostId: string | null;
     permissionOverrides: TurnStartPermissionOverrides;
     workspaceRoot: string | null;
+    workspaceRoots: string[];
   }) => Promise<void>;
   onStartWorktreeConversation: (params: {
+    hostId: string;
     id: string;
     localEnvironmentConfigPath: string | null;
     permissionOverrides: TurnStartPermissionOverrides;
@@ -46,8 +57,8 @@ export function HotkeyWindowNewThreadPage({
   }) => Promise<void>;
 }) {
   const { t } = useI18n();
-  const [selectedWorkspaceRoot, setSelectedWorkspaceRoot] = useState<string | null>(
-    normalizeOptionalPath(initialWorkspaceRoot),
+  const [selectedProject, setSelectedProject] = useState<HotkeyWindowProjectSelection>(
+    initialProjectSelection ?? { kind: "projectless" },
   );
 
   return (
@@ -65,9 +76,12 @@ export function HotkeyWindowNewThreadPage({
                     <div className="heading-xl mt-2 font-normal text-token-foreground select-none">
                       {t("home.hero.letsBuild")}
                     </div>
-                    <HotkeyWindowProjectHeroPicker
-                      initialWorkspaceRoot={initialWorkspaceRoot}
-                      onSelectedWorkspaceRootChange={setSelectedWorkspaceRoot}
+                    <HotkeyWindowProjectMenuControl
+                      codexHome={codexHome}
+                      initialSelection={initialProjectSelection}
+                      onAddRemoteProject={onOpenCreateRemoteProject}
+                      onSelectedProjectChange={setSelectedProject}
+                      variant="hero"
                     />
                   </div>
                 </div>
@@ -82,7 +96,7 @@ export function HotkeyWindowNewThreadPage({
                     codexHome={codexHome}
                     composerEnterBehavior={composerEnterBehavior}
                     guardianApprovalEnabledByStatsig={guardianApprovalEnabledByStatsig}
-                    selectedWorkspaceRoot={selectedWorkspaceRoot}
+                    selectedProject={selectedProject}
                     onOpenLocalEnvironmentsSettings={onOpenLocalEnvironmentsSettings}
                     onStartCloudConversation={onStartCloudConversation}
                     onStartLocalConversation={onStartLocalConversation}
@@ -96,13 +110,4 @@ export function HotkeyWindowNewThreadPage({
       </HotkeyWindowDetailLayout>
     </main>
   );
-}
-
-function normalizeOptionalPath(value: string | null | undefined) {
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
 }

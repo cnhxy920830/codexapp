@@ -17,14 +17,35 @@ pub struct ThreadConversation {
     pub id: String,
     pub title: String,
     pub cwd: String,
+    pub host_id: Option<String>,
     pub source: Option<ThreadHistorySource>,
     pub has_unread_turn: bool,
+    pub thread_runtime_status: Option<ThreadHistoryStatus>,
     pub latest_collaboration_mode: Option<String>,
     pub latest_token_usage_info: Option<ThreadConversationTokenUsageInfo>,
     pub thread_goal: Option<ThreadConversationGoal>,
     pub turns: Vec<ThreadConversationTurn>,
     pub turn_timings: Vec<ThreadConversationTurnTiming>,
     pub items: Vec<ThreadConversationItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ThreadHistoryStatus {
+    NotLoaded,
+    Idle,
+    SystemError,
+    #[serde(rename_all = "camelCase")]
+    Active {
+        active_flags: Vec<ThreadHistoryActiveFlag>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ThreadHistoryActiveFlag {
+    WaitingOnApproval,
+    WaitingOnUserInput,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

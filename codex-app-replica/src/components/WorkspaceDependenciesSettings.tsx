@@ -1,9 +1,4 @@
-import {
-  useEffect,
-  useEffectEvent,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { useI18n } from "../i18n/i18n";
 import type { AppToast } from "./AppToastRegion";
 import { Button } from "./Button";
@@ -12,6 +7,9 @@ import {
   DownloadIcon,
   SearchIcon,
 } from "./AppShellIcons";
+import { SettingsGroup } from "./SettingsGroup";
+import { SettingsRow } from "./SettingsRow";
+import { SettingsSurface } from "./SettingsSurface";
 import { ToggleSwitch } from "./ToggleSwitch";
 import {
   cancelPrimaryRuntimeInstall,
@@ -95,6 +93,21 @@ export function WorkspaceDependenciesSettings({
 
   useEffect(() => {
     void refreshState();
+  }, [hostId, refreshState]);
+
+  useEffect(() => {
+    if (hostId !== LOCAL_HOST_ID) {
+      return;
+    }
+
+    const handleFocus = () => {
+      void refreshState();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
   }, [hostId, refreshState]);
 
   useEffect(() => {
@@ -287,8 +300,8 @@ export function WorkspaceDependenciesSettings({
 
   return (
     <SettingsGroup className="gap-2">
-      <SettingsGroupHeader title={t("settings.agent.dependencies.sectionTitle")} />
-      <SettingsGroupContent>
+      <SettingsGroup.Header title={t("settings.agent.dependencies.sectionTitle")} />
+      <SettingsGroup.Content>
         <SettingsSurface>
           <SettingsRow
             label={t("settings.agent.dependencies.bundleVersion.label")}
@@ -357,65 +370,8 @@ export function WorkspaceDependenciesSettings({
             }
           />
         </SettingsSurface>
-      </SettingsGroupContent>
+      </SettingsGroup.Content>
     </SettingsGroup>
-  );
-}
-
-function SettingsRow({
-  label,
-  description,
-  control,
-}: {
-  label: string;
-  description: string | null;
-  control: ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 p-3">
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <div className="min-w-0 text-sm text-token-text-primary">{label}</div>
-        {description ? <div className="min-w-0 text-sm text-token-text-secondary">{description}</div> : null}
-      </div>
-      <div className="flex shrink-0 items-center gap-2">{control}</div>
-    </div>
-  );
-}
-
-function SettingsGroup({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return <section className={joinClasses("flex flex-col", className)}>{children}</section>;
-}
-
-function SettingsGroupHeader({ title }: { title: ReactNode }) {
-  return (
-    <div className="flex h-toolbar items-center justify-between gap-2 px-0 py-0">
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <div className="text-base font-medium text-token-text-primary">{title}</div>
-      </div>
-    </div>
-  );
-}
-
-function SettingsGroupContent({ children }: { children: ReactNode }) {
-  return <div className="flex flex-col gap-1.5">{children}</div>;
-}
-
-function SettingsSurface({ children }: { children: ReactNode }) {
-  return (
-    <div
-      className="border-token-border flex flex-col divide-y-[0.5px] divide-token-border rounded-lg border"
-      style={{
-        backgroundColor: "var(--color-background-panel, var(--color-token-bg-fog))",
-      }}
-    >
-      {children}
-    </div>
   );
 }
 
@@ -456,8 +412,4 @@ function isAbortLikeError(error: unknown) {
     ? error.name === "AbortError" ||
         error.message.toLowerCase().includes("aborted")
     : false;
-}
-
-function joinClasses(...values: Array<string | false | null | undefined>) {
-  return values.filter((value): value is string => Boolean(value)).join(" ");
 }

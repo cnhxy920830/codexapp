@@ -114,7 +114,7 @@ export function KeyboardShortcutsSettings() {
 
   useEffect(() => {
     void loadCommandKeymapState();
-  }, [loadCommandKeymapState]);
+  }, []);
 
   const handleCommandKeymapStateInvalidated = useEffectEvent(() => {
     void loadCommandKeymapState();
@@ -140,7 +140,7 @@ export function KeyboardShortcutsSettings() {
       disposed = true;
       unlisten?.();
     };
-  }, [handleCommandKeymapStateInvalidated]);
+  }, []);
 
   const updateCommandShortcut = useEffectEvent(
     async (commandId: string, update: CommandKeybindingUpdate) => {
@@ -618,7 +618,10 @@ function ShortcutLabel({ shortcutLabel }: { shortcutLabel: string | null }) {
       {shortcutLabel == null ? (
         t("settings.keyboardShortcuts.unassigned")
       ) : (
-        <TooltipKeycap keysLabel={shortcutLabel} />
+        <TooltipKeycap
+          className="!px-2 !py-1 !text-sm"
+          keysLabel={shortcutLabel}
+        />
       )}
     </span>
   );

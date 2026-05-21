@@ -1,5 +1,6 @@
 import { useEffect, useState, type MouseEvent, type ReactNode, type SVGProps } from "react";
 import { MESSAGES, getMessageLocale, type LocaleCode, type MessageKey, type MessageValues } from "../../i18n/messages";
+import { Spinner } from "../../components/Spinner";
 import { setGlobalState } from "../../services/settings";
 import { FirstRunButton } from "./FirstRunButton";
 import { FirstRunAsciiBackground } from "./FirstRunAsciiBackground";
@@ -203,7 +204,7 @@ function SlidePreview({
         <div className="relative flex h-full flex-col items-center justify-center gap-4 rounded-2xl border border-token-border bg-token-dropdown-background px-4 py-4 shadow-2xl">
           <SendToCloudIcon className="size-8" />
           <CloudTaskRow
-            icon={<SpinnerBadge />}
+            icon={<Spinner className="size-4" />}
             meta={t("codex.legal.cloud.taskOne.meta")}
             title={t("codex.legal.cloud.taskOne.title")}
           />
@@ -425,12 +426,6 @@ function CodeSnippetPreview({
         </div>
       </div>
     </div>
-  );
-}
-
-function SpinnerBadge() {
-  return (
-    <div className="size-4 animate-spin rounded-full border border-[var(--color-text-foreground-secondary)] border-r-transparent" />
   );
 }
 

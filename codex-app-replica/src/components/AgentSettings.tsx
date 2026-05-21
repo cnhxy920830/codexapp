@@ -24,6 +24,7 @@ import {
   getConfigurationValue,
   getConfigRequirementsForHost,
   onAgentSettingsNoticesChanged,
+  readWslBashAvailability,
   readAgentSettingsNotices,
   readConfigForHost,
   resolveConfigOrigin,
@@ -112,30 +113,53 @@ export function AgentSettings({
   const [agentConfigControlErrors, setAgentConfigControlErrors] = useState<AgentConfigControlErrors>({});
   const [configError, setConfigError] = useState<string | null>(null);
   const [configRequirements, setConfigRequirements] = useState<ConfigRequirements | null>(null);
-  const [preferredOpenTarget, setPreferredOpenTarget] = useState<string | null>(null);
-  const [preferredConfigTomlOpenTarget, setPreferredConfigTomlOpenTarget] = useState<string | null>(null);
   const [isConfigLoading, setIsConfigLoading] = useState(false);
   const [pendingControlKey, setPendingControlKey] = useState<AgentConfigControlErrorKey | null>(null);
   const [codexHome, setCodexHome] = useState<string | null>(null);
+  const [hasWsl, setHasWsl] = useState(false);
   const [runCodexInWsl, setRunCodexInWsl] = useState(false);
   const lastLoadRequestIdRef = useRef(0);
+  const lastLocalConfigTomlRequestIdRef = useRef(0);
+  const isWindows = typeof navigator === "undefined" ? true : (navigator.platform ?? "").startsWith("Win");
+
+  void settingsCwd;
+
+  const loadLocalConfigTomlState = useEffectEvent(async () => {
+    const requestId = ++lastLocalConfigTomlRequestIdRef.current;
+    if (!isLocalHost) {
+      setCodexHome(null);
+      setHasWsl(false);
+      setRunCodexInWsl(false);
+      return;
+    }
+
+    const [nextCodexHome, configuration, wslAvailability] = await Promise.all([
+      getCodexHomePath().catch(() => null),
+      getConfigurationValue(RUN_CODEX_IN_WSL_KEY).catch(() => ({ value: null })),
+      readWslBashAvailability().catch(() => ({ available: false, distro: null })),
+    ]);
+
+    if (requestId !== lastLocalConfigTomlRequestIdRef.current) {
+      return;
+    }
+
+    setCodexHome(nextCodexHome);
+    setHasWsl(wslAvailability.available || wslAvailability.distro != null);
+    setRunCodexInWsl(configuration.value === true);
+  });
 
   const loadConfigState = useEffectEvent(async () => {
     const requestId = ++lastLoadRequestIdRef.current;
     setIsConfigLoading(true);
     try {
-      const [configResponse, requirementsResponse, noticesResponse, openTargetsResponse] = await Promise.all([
+      const [configResponse, requirementsResponse, noticesResponse] = await Promise.all([
         readConfigForHost({
           hostId,
-          cwd: settingsWorkspaceRoot,
+          cwd: isLocalHost ? settingsWorkspaceRoot : null,
           includeLayers: true,
         }),
         getConfigRequirementsForHost({ hostId }),
         readAgentSettingsNotices(hostId),
-        readOpenInTargets({
-          cwd: settingsWorkspaceRoot ?? settingsCwd,
-          hostId,
-        }).catch(() => null),
       ]);
 
       if (requestId !== lastLoadRequestIdRef.current) {
@@ -154,7 +178,6 @@ export function AgentSettings({
       });
       setConfigRequirements(requirementsResponse.requirements);
       setNotices(noticesResponse.notices);
-      setPreferredOpenTarget(openTargetsResponse?.preferredTarget ?? null);
       setConfigError(null);
       setAgentConfigControlErrors({});
     } catch (error) {
@@ -168,8 +191,6 @@ export function AgentSettings({
       setSelectedConfigScopeKey("user");
       setConfigRequirements(null);
       setNotices([]);
-      setPreferredOpenTarget(null);
-      setPreferredConfigTomlOpenTarget(null);
       setAgentConfigControlErrors({});
       setConfigError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -181,7 +202,19 @@ export function AgentSettings({
 
   useEffect(() => {
     void loadConfigState();
-  }, [hostId, loadConfigState, settingsCwd, settingsWorkspaceRoot]);
+  }, [hostId, isLocalHost, loadConfigState, settingsWorkspaceRoot]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      void loadConfigState();
+      void loadLocalConfigTomlState();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [loadConfigState, loadLocalConfigTomlState]);
 
   useEffect(() => {
     let disposed = false;
@@ -209,34 +242,8 @@ export function AgentSettings({
   }, [hostId]);
 
   useEffect(() => {
-    if (!isLocalHost) {
-      setCodexHome(null);
-      setRunCodexInWsl(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    void Promise.all([
-      getCodexHomePath().catch(() => null),
-      getConfigurationValue(RUN_CODEX_IN_WSL_KEY).catch(() => ({ value: null })),
-      readOpenInTargets({
-        cwd: null,
-        hostId,
-      }).catch(() => null),
-    ]).then(([nextCodexHome, configuration, openTargetsResponse]) => {
-      if (cancelled) {
-        return;
-      }
-      setCodexHome(nextCodexHome);
-      setRunCodexInWsl(configuration.value === true);
-      setPreferredConfigTomlOpenTarget(openTargetsResponse?.preferredTarget ?? null);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [hostId, isLocalHost]);
+    void loadLocalConfigTomlState();
+  }, [hostId, isLocalHost, loadLocalConfigTomlState]);
 
   const selectedScope = useMemo(
     () => configScopeOptions.find((scope) => scope.key === selectedConfigScopeKey) ?? null,
@@ -327,9 +334,10 @@ export function AgentSettings({
     isLocalHost &&
     defaultFeatures.workspace_dependencies === true;
   const configTomlPath = codexHome == null ? null : `${codexHome.replace(/[\\/]+$/, "")}\\config.toml`;
-  const configTomlButtonLabel = runCodexInWsl
-    ? t("settings.agent.openConfigTomlWsl")
-    : t("settings.agent.openConfigToml");
+  const configTomlButtonLabel =
+    runCodexInWsl && isWindows && hasWsl
+      ? t("settings.agent.openConfigTomlWsl")
+      : t("settings.agent.openConfigToml");
 
   const handleOpenSelectedConfig = async () => {
     if (selectedScope?.filePath == null) {
@@ -337,11 +345,16 @@ export function AgentSettings({
     }
 
     try {
+      const preferredTargetCwd = selectedScope.workspaceRoot ?? (isLocalHost ? settingsWorkspaceRoot : null);
+      const openTargetsResponse = await readOpenInTargets({
+        cwd: preferredTargetCwd,
+        hostId,
+      }).catch(() => null);
       await openFile({
         hostId,
         path: selectedScope.filePath,
-        cwd: selectedScope.workspaceRoot ?? settingsWorkspaceRoot ?? settingsCwd,
-        target: preferredOpenTarget,
+        cwd: selectedScope.workspaceRoot ?? null,
+        target: openTargetsResponse?.preferredTarget ?? null,
       });
     } catch (error) {
       setConfigError(error instanceof Error ? error.message : String(error));
@@ -354,10 +367,14 @@ export function AgentSettings({
     }
 
     try {
+      const openTargetsResponse = await readOpenInTargets({
+        cwd: null,
+        hostId,
+      }).catch(() => null);
       await openFile({
         hostId,
         path: configTomlPath,
-        target: preferredConfigTomlOpenTarget,
+        target: openTargetsResponse?.preferredTarget ?? null,
       });
     } catch (error) {
       setConfigError(error instanceof Error ? error.message : String(error));
@@ -416,7 +433,7 @@ export function AgentSettings({
       )}
       subtitleClassName="whitespace-normal"
     >
-        <SettingsGroup className="gap-2">
+      <SettingsGroup className="gap-2">
         <SettingsGroup.Header title={t("settings.agent.customConfig.sectionTitle")} />
         <SettingsGroup.Content>
           {notices.map((notice, index) => (
@@ -668,6 +685,28 @@ function AgentSettingsNoticeCard({
   total: number;
 }) {
   const { t } = useI18n();
+  const handleOpenNoticeFile = async () => {
+    if (notice.path == null) {
+      return;
+    }
+
+    const openTargetsResponse = await readOpenInTargets({
+      cwd: null,
+      hostId,
+    }).catch(() => null);
+    await openFile({
+      hostId,
+      path: notice.path,
+      cwd: null,
+      target: openTargetsResponse?.preferredTarget ?? null,
+      ...(notice.range == null
+        ? {}
+        : {
+            column: notice.range.start.column,
+            line: notice.range.start.line,
+          }),
+    });
+  };
 
   return (
     <div className={index === total - 1 ? "mb-3" : "mb-2"}>
@@ -703,18 +742,7 @@ function AgentSettingsNoticeCard({
                 className="inline-flex w-fit shrink-0"
                 color="secondary"
                 size="toolbar"
-                    onClick={() =>
-                      void openFile({
-                        hostId,
-                        path: notice.path!,
-                        ...(notice.range == null
-                          ? {}
-                          : {
-                              column: notice.range.start.column,
-                              line: notice.range.start.line,
-                            }),
-                      })
-                    }
+                onClick={() => void handleOpenNoticeFile()}
               >
                 {t("settings.agent.configuration.notice.openFile")}
               </Button>

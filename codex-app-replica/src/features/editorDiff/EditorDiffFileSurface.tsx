@@ -1,23 +1,60 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ChevronDownIcon,
   OpenInEditorIcon,
 } from "../../components/AppShellIcons";
+import { MarkdownPreview } from "../../components/MarkdownPreview";
+import {
+  createMarkdownMediaDataUrl,
+  inferMarkdownMediaMimeType,
+} from "../../components/markdownPreviewMedia";
+import { Spinner } from "../../components/Spinner";
 import { useI18n } from "../../i18n/i18n";
 import {
   pairDiffBlock,
   type PullRequestDiffFragment,
 } from "../../lib/diffPreviewModel";
 import type { PullRequestDiffFile } from "../../lib/unifiedDiff";
-import { openFile } from "../../services/hostFiles";
+import { PdfPreviewPanel } from "../chat/PdfPreviewPanel";
+import {
+  getWorkspaceFileRichPreviewControlMode,
+  getWorkspaceFileRichPreviewKind,
+  normalizePreviewText,
+  type WorkspaceFilePreviewDescriptor,
+} from "../chat/workspaceFilePreviewUtils";
+import { openFile, readFileBinary, readFileText } from "../../services/hostFiles";
+import type { WorkspaceFileDocument } from "../../services/workspaceFiles";
 
 type DiffViewMode = "split" | "unified";
+
+export type EditorDiffPreviewOverride =
+  | {
+      kind: "markdown";
+      text: string;
+    }
+  | {
+      kind: "image";
+      dataUrl: string;
+    }
+  | {
+      kind: "pdf";
+      fileDataUrl: string;
+    }
+  | {
+      kind: "loading";
+    }
+  | {
+      kind: "error";
+    };
 
 type EditorDiffFileSurfaceProps = {
   cwd: string | null;
   file: PullRequestDiffFile;
+  hostId?: string | null;
   isOpen: boolean;
   onToggleOpen: () => void;
+  previewOverride?: EditorDiffPreviewOverride | null;
+  richPreviewEnabled: boolean;
   viewMode: DiffViewMode;
 };
 
@@ -87,6 +124,39 @@ type NumberedPatchLine = {
   text: string;
 };
 
+type EditorDiffRichPreviewKind = "image" | "markdown" | "pdf";
+type EditorDiffRichPreviewControlMode = "always" | "none" | "toggle";
+
+type EditorDiffRichPreviewPlan = {
+  controlMode: EditorDiffRichPreviewControlMode;
+  descriptor: WorkspaceFilePreviewDescriptor;
+  kind: EditorDiffRichPreviewKind;
+  path: string;
+};
+
+type EditorDiffPreviewState =
+  | {
+      status: "idle";
+    }
+  | {
+      status: "loading";
+    }
+  | {
+      dataUrl: string;
+      status: "image-ready";
+    }
+  | {
+      status: "markdown-ready";
+      text: string;
+    }
+  | {
+      fileDataUrl: string;
+      status: "pdf-ready";
+    }
+  | {
+      status: "error";
+    };
+
 const PREVIEW_OPTIONS = {
   hideWhitespace: false,
   wordDiffsEnabled: false,
@@ -95,8 +165,11 @@ const PREVIEW_OPTIONS = {
 export function EditorDiffFileSurface({
   cwd,
   file,
+  hostId = null,
   isOpen,
   onToggleOpen,
+  previewOverride = null,
+  richPreviewEnabled,
   viewMode,
 }: EditorDiffFileSurfaceProps) {
   const { t } = useI18n();
@@ -117,6 +190,123 @@ export function EditorDiffFileSurface({
   const toggleFileAriaLabel = t(
     isOpen ? "codex.diff.fileToggle.collapse" : "codex.diff.fileToggle.expand",
   );
+  const previewPlan = useMemo(
+    () =>
+      resolveRichPreviewPlan({
+        file,
+        previewPath: openFilePath,
+        richPreviewEnabled,
+      }),
+    [file, openFilePath, richPreviewEnabled],
+  );
+  const [previewState, setPreviewState] = useState<EditorDiffPreviewState>(() =>
+    buildPreviewStateFromOverride(previewOverride),
+  );
+
+  useEffect(() => {
+    const overrideState = buildPreviewStateFromOverride(previewOverride);
+    if (overrideState.status !== "idle") {
+      setPreviewState(overrideState);
+      return;
+    }
+
+    if (previewPlan == null) {
+      setPreviewState({ status: "idle" });
+      return;
+    }
+
+    let cancelled = false;
+    setPreviewState({ status: "loading" });
+
+    if (previewPlan.kind === "markdown") {
+      void readFileText({
+        cwd,
+        hostId,
+        path: previewPlan.path,
+      })
+        .then((response) => {
+          if (cancelled) {
+            return;
+          }
+
+          const normalizedText = normalizePreviewText(response.contents);
+          if (normalizedText.length === 0) {
+            setPreviewState({ status: "error" });
+            return;
+          }
+
+          setPreviewState({
+            status: "markdown-ready",
+            text: normalizedText,
+          });
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setPreviewState({ status: "error" });
+          }
+        });
+    } else {
+      void readFileBinary({
+        cwd,
+        hostId,
+        path: previewPlan.path,
+      })
+        .then((response) => {
+          if (cancelled) {
+            return;
+          }
+
+          if (previewPlan.kind === "pdf") {
+            setPreviewState({
+              fileDataUrl: buildPdfDataUrl(response.contentsBase64, response.mimeType),
+              status: "pdf-ready",
+            });
+            return;
+          }
+
+          setPreviewState({
+            dataUrl: createMarkdownMediaDataUrl({
+              contentsBase64: response.contentsBase64,
+              mimeType:
+                response.mimeType ??
+                previewPlan.descriptor.mimeType ??
+                inferMarkdownMediaMimeType(previewPlan.path),
+              source: previewPlan.path,
+            }),
+            status: "image-ready",
+          });
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setPreviewState({ status: "error" });
+          }
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cwd, hostId, previewOverride, previewPlan]);
+
+  const fallbackBody = renderFallbackBody({
+    file,
+    hasDiffBodyContent,
+    isRenameWithoutChanges,
+    splitRows,
+    t,
+    unifiedRows,
+    viewMode,
+  });
+  const previewBody = renderPreviewBody({
+    cwd,
+    fallbackBody,
+    file,
+    hostId,
+    previewOverride,
+    previewPlan,
+    previewState,
+    t,
+  });
 
   return (
     <section className="group/file-diff overflow-hidden rounded-[14px] border border-[var(--app-shell-border)] bg-[var(--app-shell-surface)]">
@@ -139,6 +329,7 @@ export function EditorDiffFileSurface({
                   }
                   void openFile({
                     cwd,
+                    hostId,
                     path: openFilePath,
                   });
                 }}
@@ -183,6 +374,7 @@ export function EditorDiffFileSurface({
                     }
                     void openFile({
                       cwd,
+                      hostId,
                       path: openFilePath,
                     });
                   }}
@@ -212,29 +404,287 @@ export function EditorDiffFileSurface({
         </div>
       </div>
 
-      {isOpen ? (
-        <div className="border-t-0">
-          {file.isBinary ? (
-            <div className="flex h-full justify-center bg-[var(--app-shell-card-bg-weak)] py-4 text-sm text-[var(--app-shell-subtle)]">
-              {t("wham.diff.binaryFile")}
-            </div>
-          ) : isRenameWithoutChanges ? (
-            <div className="flex h-full justify-center bg-[var(--app-shell-card-bg-weak)] py-4 text-sm text-[var(--app-shell-subtle)]">
-              {t("codex.diff.fileRenamedWithoutChanges")}
-            </div>
-          ) : !hasDiffBodyContent ? (
-            <div className="flex h-full justify-center bg-[var(--app-shell-card-bg-weak)] py-4 text-sm text-[var(--app-shell-subtle)]">
-              {t("wham.diff.noContent")}
-            </div>
-          ) : viewMode === "split" ? (
-            <SplitDiffRowsView rows={splitRows} />
-          ) : (
-            <UnifiedDiffRowsView rows={unifiedRows} />
-          )}
-        </div>
-      ) : null}
+      {isOpen ? <div className="border-t-0">{previewBody ?? fallbackBody}</div> : null}
     </section>
   );
+}
+
+function renderPreviewBody({
+  cwd,
+  fallbackBody,
+  file,
+  hostId,
+  previewOverride,
+  previewPlan,
+  previewState,
+  t,
+}: {
+  cwd: string | null;
+  fallbackBody: ReactNode;
+  file: PullRequestDiffFile;
+  hostId: string | null;
+  previewOverride: EditorDiffPreviewOverride | null;
+  previewPlan: EditorDiffRichPreviewPlan | null;
+  previewState: EditorDiffPreviewState;
+  t: ReturnType<typeof useI18n>["t"];
+}) {
+  if (previewPlan == null) {
+    return null;
+  }
+
+  if (previewPlan.kind === "markdown") {
+    if (previewState.status === "loading") {
+      return <DiffPreviewLoading t={t} />;
+    }
+
+    if (previewState.status !== "markdown-ready") {
+      return fallbackBody;
+    }
+
+    return (
+      <div className="overflow-auto bg-[var(--app-shell-card-bg-weak)] px-4 py-3">
+        <MarkdownPreview
+          className="[&>p]:my-0"
+          cwd={cwd}
+          hostId={hostId}
+          text={previewState.text}
+        />
+      </div>
+    );
+  }
+
+  if (previewPlan.kind === "image") {
+    if (previewState.status === "loading") {
+      return <DiffPreviewLoading t={t} />;
+    }
+
+    if (previewState.status !== "image-ready") {
+      return fallbackBody;
+    }
+
+    return (
+      <div className="flex min-h-48 items-center justify-center overflow-auto bg-[var(--app-shell-card-bg-weak)] p-4">
+        <img
+          alt={previewPlan.descriptor.name}
+          className="block max-h-[32rem] max-w-full rounded-md object-contain shadow-sm"
+          src={previewState.dataUrl}
+        />
+      </div>
+    );
+  }
+
+  if (previewState.status === "loading") {
+    return <DiffPreviewLoading t={t} />;
+  }
+
+  if (previewState.status !== "pdf-ready") {
+    return fallbackBody;
+  }
+
+  const pdfFile = buildPdfPreviewFileDocument({
+    file,
+    hostId,
+    path: previewPlan.path,
+  });
+
+  return (
+    <div className="h-[720px] min-h-[420px] max-h-[80vh] overflow-hidden bg-[var(--app-shell-card-bg-weak)]">
+      <PdfPreviewPanel
+        file={pdfFile}
+        fileDataUrl={previewState.fileDataUrl}
+        hostId={hostId}
+        path={previewPlan.path}
+        t={t}
+        testMode={
+          previewOverride?.kind === "pdf"
+            ? {
+                kind: "ready",
+                numPages: 1,
+              }
+            : undefined
+        }
+        title={previewPlan.descriptor.name}
+      />
+    </div>
+  );
+}
+
+function renderFallbackBody({
+  file,
+  hasDiffBodyContent,
+  isRenameWithoutChanges,
+  splitRows,
+  t,
+  unifiedRows,
+  viewMode,
+}: {
+  file: PullRequestDiffFile;
+  hasDiffBodyContent: boolean;
+  isRenameWithoutChanges: boolean;
+  splitRows: SplitDiffRow[];
+  t: ReturnType<typeof useI18n>["t"];
+  unifiedRows: UnifiedDiffRow[];
+  viewMode: DiffViewMode;
+}) {
+  if (file.isBinary) {
+    return (
+      <div className="flex h-full justify-center bg-[var(--app-shell-card-bg-weak)] py-4 text-sm text-[var(--app-shell-subtle)]">
+        {t("wham.diff.binaryFile")}
+      </div>
+    );
+  }
+
+  if (isRenameWithoutChanges) {
+    return (
+      <div className="flex h-full justify-center bg-[var(--app-shell-card-bg-weak)] py-4 text-sm text-[var(--app-shell-subtle)]">
+        {t("codex.diff.fileRenamedWithoutChanges")}
+      </div>
+    );
+  }
+
+  if (!hasDiffBodyContent) {
+    return (
+      <div className="flex h-full justify-center bg-[var(--app-shell-card-bg-weak)] py-4 text-sm text-[var(--app-shell-subtle)]">
+        {t("wham.diff.noContent")}
+      </div>
+    );
+  }
+
+  return viewMode === "split" ? (
+    <SplitDiffRowsView rows={splitRows} />
+  ) : (
+    <UnifiedDiffRowsView rows={unifiedRows} />
+  );
+}
+
+function DiffPreviewLoading({
+  t,
+}: {
+  t: ReturnType<typeof useI18n>["t"];
+}) {
+  return (
+    <div className="flex min-h-48 items-center justify-center bg-[var(--app-shell-card-bg-weak)] px-6 py-10 text-sm text-[var(--app-shell-subtle)]">
+      <div className="flex items-center gap-2 font-medium">
+        <Spinner className="h-4 w-4" />
+        <span>{t("artifactTab.previewLoading")}</span>
+      </div>
+    </div>
+  );
+}
+
+function buildPreviewStateFromOverride(
+  previewOverride: EditorDiffPreviewOverride | null,
+): EditorDiffPreviewState {
+  if (previewOverride == null) {
+    return { status: "idle" };
+  }
+
+  switch (previewOverride.kind) {
+    case "markdown":
+      return {
+        status: "markdown-ready",
+        text: previewOverride.text,
+      };
+    case "image":
+      return {
+        dataUrl: previewOverride.dataUrl,
+        status: "image-ready",
+      };
+    case "pdf":
+      return {
+        fileDataUrl: previewOverride.fileDataUrl,
+        status: "pdf-ready",
+      };
+    case "loading":
+      return { status: "loading" };
+    case "error":
+      return { status: "error" };
+  }
+}
+
+function resolveRichPreviewPlan({
+  file,
+  previewPath,
+  richPreviewEnabled,
+}: {
+  file: PullRequestDiffFile;
+  previewPath: string | null;
+  richPreviewEnabled: boolean;
+}): EditorDiffRichPreviewPlan | null {
+  if (previewPath == null || file.status === "deleted") {
+    return null;
+  }
+
+  const descriptor = buildPreviewDescriptor(file, previewPath);
+  const kind = getWorkspaceFileRichPreviewKind(descriptor);
+  if (kind == null) {
+    return null;
+  }
+
+  const controlMode = getWorkspaceFileRichPreviewControlMode(descriptor);
+  if (controlMode === "none") {
+    return null;
+  }
+
+  if (controlMode === "toggle" && !richPreviewEnabled) {
+    return null;
+  }
+
+  return {
+    controlMode,
+    descriptor,
+    kind,
+    path: previewPath,
+  };
+}
+
+function buildPreviewDescriptor(
+  file: PullRequestDiffFile,
+  previewPath: string,
+): WorkspaceFilePreviewDescriptor {
+  return {
+    mimeType: inferPreviewMimeType(previewPath),
+    name: getDisplayFileName(previewPath),
+    path: previewPath,
+    relativePath: file.path,
+  };
+}
+
+function buildPdfPreviewFileDocument({
+  file,
+  hostId,
+  path,
+}: {
+  file: PullRequestDiffFile;
+  hostId: string | null;
+  path: string;
+}): WorkspaceFileDocument {
+  return {
+    contents: null,
+    hostId,
+    isBinary: true,
+    mimeType: inferPreviewMimeType(path),
+    name: getDisplayFileName(path),
+    path,
+    relativePath: file.path,
+  };
+}
+
+function inferPreviewMimeType(path: string) {
+  const inferred = inferMarkdownMediaMimeType(path);
+  if (inferred != null) {
+    return inferred;
+  }
+
+  if (path.toLowerCase().endsWith(".pdf")) {
+    return "application/pdf";
+  }
+
+  return null;
+}
+
+function buildPdfDataUrl(contentsBase64: string, mimeType: string | null) {
+  return `data:${mimeType ?? "application/pdf"};base64,${contentsBase64}`;
 }
 
 function UnifiedDiffRowsView({ rows }: { rows: UnifiedDiffRow[] }) {

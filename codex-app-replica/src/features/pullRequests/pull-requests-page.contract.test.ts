@@ -64,6 +64,10 @@ test("pull requests detail owner and code review toolbar follow extracted right-
   assert.match(detailPaneSource, /selectedTab === "codeReview" \?[\s\S]*?pullRequestsPage\.codeReview\.hideFileTree[\s\S]*?pullRequestsPage\.codeReview\.showFileTree/s);
   assert.match(detailPaneSource, /showFileTree=\{isFileTreeVisible\}/);
 
+  assert.match(codeReviewPaneSource, /if \(isCodeReviewLoading\) \{\s*return <LoadingPage \/>;\s*\}/s);
+  assert.match(codeReviewPaneSource, /CodeReviewCenteredMessage/);
+  assert.match(codeReviewPaneSource, /pullRequestsPage\.codeReview\.empty/);
+  assert.match(codeReviewPaneSource, /pullRequestsPage\.codeReview\.error/);
   assert.match(codeReviewPaneSource, /showHideWhitespace=\{false\}/);
   assert.match(codeReviewPaneSource, /showLoadFullFiles=\{false\}/);
   assert.doesNotMatch(codeReviewPaneSource, /showLoadFullFiles=\{showLoadFullFiles\}/);

@@ -6,99 +6,171 @@ import {
   WorktreeIcon,
 } from "../../components/AppShellIcons";
 import { Button } from "../../components/Button";
+import {
+  SettingsLocalHostIcon,
+  SettingsRemoteHostIcon,
+} from "../../components/SettingsHostDropdown";
 import { useI18n } from "../../i18n/i18n";
+import { isWithinCodexWorktrees } from "../../services/codexHome";
 import { readGitOrigins } from "../../services/gitOrigins";
 import { getLocalEnvironmentProjectName } from "../../services/localEnvironments";
 import {
-  addNewWorkspaceRootOption,
+  filterConnectedSettingsRemoteConnections,
+  getRemoteProjectLabel,
+  onSharedObjectUpdated,
+  readAppServerConnectionState,
+  readSettingsRemoteConnectionsSnapshot,
+  readSettingsRemoteProjectsSnapshot,
+  REMOTE_CONNECTIONS_SHARED_OBJECT_KEY,
+  REMOTE_PROJECTS_SHARED_OBJECT_KEY,
+  type RemoteConnection,
+} from "../../services/settingsHosts";
+import {
   clearActiveWorkspaceRoot,
   onActiveWorkspaceRootsUpdated,
+  onWorkspaceRootOptionPicked,
   onWorkspaceRootOptionsUpdated,
   readActiveWorkspaceRoots,
   readWorkspaceRootOptions,
   setActiveWorkspaceRoot,
 } from "../../services/workspaceRoots";
-import { isWithinCodexWorktrees } from "../../services/codexHome";
 
-type WorkspaceProjectOption = {
+export type HotkeyWindowProjectSelection =
+  | { kind: "projectless" }
+  | { kind: "local"; workspaceRoot: string }
+  | { kind: "remote"; hostId: string; projectId: string; remotePath: string };
+
+type LocalWorkspaceProjectOption = {
+  kind: "local";
   hasGitRoot: boolean;
   isCodexWorktree: boolean;
   label: string;
-  root: string;
+  workspaceRoot: string;
 };
 
+type RemoteWorkspaceProjectOption = {
+  kind: "remote";
+  hostDisplayName: string;
+  hostId: string;
+  label: string;
+  projectId: string;
+  remotePath: string;
+};
+
+type WorkspaceProjectOption = LocalWorkspaceProjectOption | RemoteWorkspaceProjectOption;
+
 type HotkeyWindowProjectMenuControlViewProps = {
+  allowRemoteProjects: boolean;
+  connectedRemoteConnections: RemoteConnection[];
   containerRef?: RefObject<HTMLDivElement | null>;
-  filteredWorkspaceOptions: WorkspaceProjectOption[];
+  filteredProjectOptions: WorkspaceProjectOption[];
   isLoading: boolean;
   isOpen: boolean;
   query: string;
   selectedOption: WorkspaceProjectOption | null;
-  selectedWorkspaceRoot: string | null;
-  onAddProject: () => void;
+  selection: HotkeyWindowProjectSelection;
+  variant: "hero" | "home";
+  onAddLocalProject: () => void;
+  onAddRemoteProject: () => void;
   onClearProject: () => void;
   onQueryChange: (query: string) => void;
-  onSelectWorkspaceRoot: (workspaceRoot: string) => void;
+  onSelectProject: (option: WorkspaceProjectOption) => void;
   onToggleOpen: () => void;
 };
 
 export function HotkeyWindowProjectMenuControl({
+  allowRemoteProjects = true,
   codexHome,
-  initialWorkspaceRoot,
-  onSelectedWorkspaceRootChange,
+  initialSelection,
+  onAddRemoteProject,
+  onSelectedProjectChange,
+  variant = "home",
 }: {
+  allowRemoteProjects?: boolean;
   codexHome: string | null;
-  initialWorkspaceRoot: string | null;
-  onSelectedWorkspaceRootChange: (workspaceRoot: string | null) => void;
+  initialSelection?: HotkeyWindowProjectSelection | null;
+  onAddRemoteProject: () => void;
+  onSelectedProjectChange: (selection: HotkeyWindowProjectSelection) => void;
+  variant?: "hero" | "home";
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [workspaceOptions, setWorkspaceOptions] = useState<WorkspaceProjectOption[]>([]);
-  const [selectedWorkspaceRoot, setSelectedWorkspaceRoot] = useState<string | null>(
-    normalizeOptionalPath(initialWorkspaceRoot),
+  const [projectOptions, setProjectOptions] = useState<WorkspaceProjectOption[]>([]);
+  const [selection, setSelection] = useState<HotkeyWindowProjectSelection>(() =>
+    normalizeSelection(initialSelection),
   );
   const [isLoading, setIsLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const preferredWorkspaceRoot = normalizeOptionalPath(initialWorkspaceRoot);
+  const preferredSelection = useMemo<HotkeyWindowProjectSelection>(
+    () => normalizeSelection(initialSelection),
+    [
+      initialSelection?.kind,
+      initialSelection?.kind === "local" ? initialSelection.workspaceRoot : null,
+      initialSelection?.kind === "remote" ? initialSelection.hostId : null,
+      initialSelection?.kind === "remote" ? initialSelection.projectId : null,
+      initialSelection?.kind === "remote" ? initialSelection.remotePath : null,
+    ],
+  );
 
   useEffect(() => {
-    onSelectedWorkspaceRootChange(selectedWorkspaceRoot);
-  }, [onSelectedWorkspaceRootChange, selectedWorkspaceRoot]);
+    onSelectedProjectChange(selection);
+  }, [onSelectedProjectChange, selection]);
 
   useEffect(() => {
     let cancelled = false;
 
-    const loadWorkspaceState = async () => {
+    const loadWorkspaceState = async (pickedWorkspaceRoot?: string | null) => {
       setIsLoading(true);
       try {
-        const [workspaceRootOptionsResponse, activeWorkspaceRootsResponse] = await Promise.all([
-          readWorkspaceRootOptions(),
-          readActiveWorkspaceRoots(),
-        ]);
+        const [workspaceRootOptionsResponse, activeWorkspaceRootsResponse, remoteConnections, remoteProjects] =
+          await Promise.all([
+            readWorkspaceRootOptions(),
+            readActiveWorkspaceRoots(),
+            readSettingsRemoteConnectionsSnapshot(),
+            readSettingsRemoteProjectsSnapshot(),
+          ]);
         if (cancelled) {
           return;
         }
 
+        const remoteConnectionStates = await Promise.all(
+          remoteConnections.map(async (remoteConnection) => {
+            const response = await readAppServerConnectionState(remoteConnection.hostId).catch(() => null);
+            return [remoteConnection.hostId, response?.state ?? "disconnected"] as const;
+          }),
+        );
+        if (cancelled) {
+          return;
+        }
+
+        const connectedRemoteConnections = filterConnectedSettingsRemoteConnections(
+          remoteConnections,
+          Object.fromEntries(remoteConnectionStates),
+        );
         const nextWorkspaceRoots = dedupeWorkspaceRoots(
           workspaceRootOptionsResponse.roots,
           activeWorkspaceRootsResponse.roots,
-          preferredWorkspaceRoot,
+          preferredSelection.kind === "local" ? preferredSelection.workspaceRoot : null,
         );
-        const nextLabels = {
+        const nextLabels: Record<string, string> = {
           ...workspaceRootOptionsResponse.labels,
         };
+        const preferredLocalRoot =
+          preferredSelection.kind === "local" ? preferredSelection.workspaceRoot : null;
         if (
-          preferredWorkspaceRoot !== null &&
-          !hasWorkspaceRootLabel(preferredWorkspaceRoot, nextLabels)
+          preferredLocalRoot !== null &&
+          !hasWorkspaceRootLabel(preferredLocalRoot, nextLabels)
         ) {
-          nextLabels[preferredWorkspaceRoot] =
-            getLocalEnvironmentProjectName(preferredWorkspaceRoot) ?? preferredWorkspaceRoot;
+          nextLabels[preferredLocalRoot] =
+            getLocalEnvironmentProjectName(preferredLocalRoot) ?? preferredLocalRoot;
         }
 
         const gitOriginsResponse =
           nextWorkspaceRoots.length === 0
-            ? { origins: [] as Array<{ dir: string; root: string }> }
-            : await readGitOrigins({ dirs: nextWorkspaceRoots }).catch(() => ({ origins: [] as Array<{ dir: string; root: string }> }));
+            ? { origins: [] as Array<{ dir: string; root: string | null }> }
+            : await readGitOrigins({ dirs: nextWorkspaceRoots }).catch(() => ({
+                origins: [] as Array<{ dir: string; root: string | null }>,
+              }));
         if (cancelled) {
           return;
         }
@@ -109,35 +181,87 @@ export function HotkeyWindowProjectMenuControl({
             .map((origin) => normalizeComparablePath(origin.dir)),
         );
 
-        setWorkspaceOptions(
-          nextWorkspaceRoots.map((root) => ({
-            hasGitRoot: gitRepoRoots.has(normalizeComparablePath(root)),
-            isCodexWorktree: isWithinCodexWorktrees(root, codexHome),
-            label: getWorkspaceRootLabel(root, nextLabels),
-            root,
-          })),
-        );
-        setSelectedWorkspaceRoot((current) => {
-          return (
-            findMatchingWorkspaceRoot(nextWorkspaceRoots, current) ??
-            findMatchingWorkspaceRoot(nextWorkspaceRoots, preferredWorkspaceRoot) ??
-            findMatchingWorkspaceRoot(nextWorkspaceRoots, activeWorkspaceRootsResponse.roots[0] ?? null) ??
-            null
-          );
+        const localOptions: LocalWorkspaceProjectOption[] = nextWorkspaceRoots.map((workspaceRoot) => ({
+          kind: "local" as const,
+          hasGitRoot: gitRepoRoots.has(normalizeComparablePath(workspaceRoot)),
+          isCodexWorktree: isWithinCodexWorktrees(workspaceRoot, codexHome),
+          label: getWorkspaceRootLabel(workspaceRoot, nextLabels),
+          workspaceRoot,
+        }));
+        const remoteProjectsByConnection: RemoteWorkspaceProjectOption[] = allowRemoteProjects
+          ? connectedRemoteConnections.flatMap((remoteConnection) => {
+              return remoteProjects
+                .filter((remoteProject) => remoteProject.hostId === remoteConnection.hostId)
+                .map((remoteProject) => ({
+                  kind: "remote" as const,
+                  hostDisplayName: remoteConnection.displayName,
+                  hostId: remoteProject.hostId,
+                  label:
+                    remoteProject.label.trim().length > 0
+                      ? remoteProject.label
+                      : getRemoteProjectLabel(remoteProject.remotePath),
+                  projectId: remoteProject.id,
+                  remotePath: remoteProject.remotePath,
+                }));
+            })
+          : [];
+        const nextOptions: WorkspaceProjectOption[] = [...localOptions, ...remoteProjectsByConnection];
+
+        setProjectOptions(nextOptions);
+        setSelection((current): HotkeyWindowProjectSelection => {
+          const pickedSelection =
+            pickedWorkspaceRoot == null
+              ? null
+              : nextOptions.find(
+                  (option) =>
+                    option.kind === "local" &&
+                    areSamePath(option.workspaceRoot, pickedWorkspaceRoot),
+                ) ?? null;
+          if (pickedSelection) {
+            return toSelection(pickedSelection);
+          }
+
+          const activeSelection =
+            findMatchingSelection(nextOptions, current) ??
+            findMatchingSelection(nextOptions, preferredSelection);
+          if (activeSelection) {
+            return toSelection(activeSelection);
+          }
+
+          const firstActiveWorkspaceRoot = normalizeOptionalPath(activeWorkspaceRootsResponse.roots[0]);
+          const firstActiveLocalRoot =
+            firstActiveWorkspaceRoot === null
+              ? null
+              : findMatchingSelection(nextOptions, {
+                  kind: "local",
+                  workspaceRoot: firstActiveWorkspaceRoot,
+                });
+          return firstActiveLocalRoot ? toSelection(firstActiveLocalRoot) : { kind: "projectless" };
         });
       } catch {
         if (!cancelled) {
-          const nextWorkspaceRoots =
-            preferredWorkspaceRoot === null ? [] : [preferredWorkspaceRoot];
-          setWorkspaceOptions(
-            nextWorkspaceRoots.map((root) => ({
-              hasGitRoot: false,
-              isCodexWorktree: isWithinCodexWorktrees(root, codexHome),
-              label: getLocalEnvironmentProjectName(root) ?? root,
-              root,
-            })),
+          const preferredLocalRoot =
+            preferredSelection.kind === "local" ? preferredSelection.workspaceRoot : null;
+          const nextOptions: LocalWorkspaceProjectOption[] =
+            preferredLocalRoot === null
+              ? []
+              : [
+                  {
+                    kind: "local" as const,
+                    hasGitRoot: false,
+                    isCodexWorktree: isWithinCodexWorktrees(preferredLocalRoot, codexHome),
+                    label: getLocalEnvironmentProjectName(preferredLocalRoot) ?? preferredLocalRoot,
+                    workspaceRoot: preferredLocalRoot,
+                  },
+                ];
+          setProjectOptions(nextOptions);
+          setSelection(
+            preferredSelection.kind === "projectless"
+              ? preferredSelection
+              : nextOptions.length > 0
+                ? toSelection(nextOptions[0])
+                : { kind: "projectless" },
           );
-          setSelectedWorkspaceRoot(preferredWorkspaceRoot);
         }
       } finally {
         if (!cancelled) {
@@ -150,6 +274,8 @@ export function HotkeyWindowProjectMenuControl({
 
     let disposeOptions: (() => void) | undefined;
     let disposeActive: (() => void) | undefined;
+    let disposePicked: (() => void) | undefined;
+    let disposeSharedObject: (() => void) | undefined;
 
     void onWorkspaceRootOptionsUpdated(() => {
       void loadWorkspaceState();
@@ -171,12 +297,47 @@ export function HotkeyWindowProjectMenuControl({
       disposeActive = cleanup;
     });
 
+    void onWorkspaceRootOptionPicked((notification) => {
+      setSelection({
+        kind: "local",
+        workspaceRoot: notification.root,
+      });
+      void setActiveWorkspaceRoot(notification.root).catch(() => undefined);
+      void loadWorkspaceState(notification.root);
+    }).then((cleanup) => {
+      if (cancelled) {
+        cleanup();
+        return;
+      }
+      disposePicked = cleanup;
+    });
+
+    void onSharedObjectUpdated((notification) => {
+      if (
+        notification.key !== REMOTE_CONNECTIONS_SHARED_OBJECT_KEY &&
+        notification.key !== REMOTE_PROJECTS_SHARED_OBJECT_KEY
+      ) {
+        return;
+      }
+      void loadWorkspaceState();
+    })
+      .then((cleanup) => {
+        if (cancelled) {
+          cleanup();
+          return;
+        }
+        disposeSharedObject = cleanup;
+      })
+      .catch(() => undefined);
+
     return () => {
       cancelled = true;
       disposeOptions?.();
       disposeActive?.();
+      disposePicked?.();
+      disposeSharedObject?.();
     };
-  }, [codexHome, preferredWorkspaceRoot]);
+  }, [allowRemoteProjects, codexHome, preferredSelection]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -216,43 +377,86 @@ export function HotkeyWindowProjectMenuControl({
   }, [isOpen]);
 
   const normalizedQuery = query.trim().toLowerCase();
-  const filteredWorkspaceOptions = useMemo(() => {
+  const filteredProjectOptions = useMemo(() => {
     if (normalizedQuery.length === 0) {
-      return workspaceOptions;
+      return projectOptions;
     }
-    return workspaceOptions.filter((option) => {
-      return [option.label, option.root].some((value) => value.toLowerCase().includes(normalizedQuery));
+
+    return projectOptions.filter((option) => {
+      const values =
+        option.kind === "local"
+          ? [option.label, option.workspaceRoot]
+          : [option.label, option.remotePath, option.hostDisplayName];
+      return values.some((value) => value.toLowerCase().includes(normalizedQuery));
     });
-  }, [normalizedQuery, workspaceOptions]);
+  }, [normalizedQuery, projectOptions]);
 
   const selectedOption =
-    selectedWorkspaceRoot === null
+    selection.kind === "projectless"
       ? null
-      : workspaceOptions.find((option) => areSamePath(option.root, selectedWorkspaceRoot)) ?? null;
+      : findMatchingSelection(projectOptions, selection);
+  const connectedRemoteConnections = useMemo(() => {
+    const hostIds = new Set(
+      projectOptions
+        .filter((option): option is RemoteWorkspaceProjectOption => option.kind === "remote")
+        .map((option) => option.hostId),
+    );
+    const remoteConnections: RemoteConnection[] = [];
+    for (const option of projectOptions) {
+      if (option.kind !== "remote" || !hostIds.has(option.hostId)) {
+        continue;
+      }
+      if (remoteConnections.some((remoteConnection) => remoteConnection.hostId === option.hostId)) {
+        continue;
+      }
+      remoteConnections.push({
+        autoConnect: false,
+        displayName: option.hostDisplayName,
+        hostId: option.hostId,
+        identity: null,
+        source: "",
+        sshAlias: null,
+        sshHost: null,
+        sshPort: null,
+      });
+    }
+    return remoteConnections;
+  }, [projectOptions]);
 
   return (
     <HotkeyWindowProjectMenuControlView
+      allowRemoteProjects={allowRemoteProjects}
+      connectedRemoteConnections={connectedRemoteConnections}
       containerRef={containerRef}
-      filteredWorkspaceOptions={filteredWorkspaceOptions}
+      filteredProjectOptions={filteredProjectOptions}
       isLoading={isLoading}
       isOpen={isOpen}
       query={query}
       selectedOption={selectedOption}
-      selectedWorkspaceRoot={selectedWorkspaceRoot}
-      onAddProject={() => {
+      selection={selection}
+      variant={variant}
+      onAddLocalProject={() => {
         setIsOpen(false);
-        void addNewWorkspaceRootOption().catch(() => undefined);
+        void import("../../services/workspaceRoots")
+          .then(({ pickWorkspaceRootOption }) => pickWorkspaceRootOption())
+          .catch(() => undefined);
+      }}
+      onAddRemoteProject={() => {
+        setIsOpen(false);
+        onAddRemoteProject();
       }}
       onClearProject={() => {
         setIsOpen(false);
-        setSelectedWorkspaceRoot(null);
+        setSelection({ kind: "projectless" });
         void clearActiveWorkspaceRoot().catch(() => undefined);
       }}
       onQueryChange={setQuery}
-      onSelectWorkspaceRoot={(workspaceRoot) => {
+      onSelectProject={(option) => {
         setIsOpen(false);
-        setSelectedWorkspaceRoot(workspaceRoot);
-        void setActiveWorkspaceRoot(workspaceRoot).catch(() => undefined);
+        setSelection(toSelection(option));
+        if (option.kind === "local") {
+          void setActiveWorkspaceRoot(option.workspaceRoot).catch(() => undefined);
+        }
       }}
       onToggleOpen={() => setIsOpen((open) => !open)}
     />
@@ -260,64 +464,102 @@ export function HotkeyWindowProjectMenuControl({
 }
 
 export function HotkeyWindowProjectMenuControlView({
+  allowRemoteProjects,
+  connectedRemoteConnections,
   containerRef,
-  filteredWorkspaceOptions,
+  filteredProjectOptions,
   isLoading,
   isOpen,
   query,
   selectedOption,
-  selectedWorkspaceRoot,
-  onAddProject,
+  selection,
+  variant,
+  onAddLocalProject,
+  onAddRemoteProject,
   onClearProject,
   onQueryChange,
-  onSelectWorkspaceRoot,
+  onSelectProject,
   onToggleOpen,
 }: HotkeyWindowProjectMenuControlViewProps) {
   const { t } = useI18n();
-  const menuId = "hotkey-window-project-menu";
+  const menuId = `hotkey-window-project-menu-${variant}`;
+  const remoteConnectionHostIds = connectedRemoteConnections.map((remoteConnection) => remoteConnection.hostId);
 
   const triggerLabel =
     selectedOption?.label ??
-    (selectedWorkspaceRoot === null
+    (selection.kind === "projectless"
       ? t("composer.localCwdDropdown.newChat")
       : t("composer.localCwdDropdown.noActiveRoot"));
 
   return (
-    <div className="relative w-[280px] max-w-full" ref={containerRef}>
-      <Button
-        aria-controls={isOpen ? menuId : undefined}
-        aria-expanded={isOpen}
-        aria-label={t("composer.localCwdDropdown.tooltip")}
-        aria-haspopup="menu"
-        className="max-w-full gap-2"
-        color="ghost"
-        data-state={isOpen ? "open" : "closed"}
-        size="composerSm"
-        title={t("composer.localCwdDropdown.tooltip")}
-        onClick={onToggleOpen}
-      >
-        <span className="flex min-w-0 flex-1 items-center gap-1.5">
-          <span className="flex h-4 w-4 shrink-0 items-center justify-center">
-            {selectedOption === null ? (
-              <WorkspaceProjectAddIcon className="icon-xs shrink-0" />
-            ) : selectedOption.isCodexWorktree ? (
-              <WorktreeIcon className="icon-xs shrink-0" />
-            ) : selectedOption.hasGitRoot ? (
-              <WorkspaceProjectGitIcon className="icon-xs shrink-0" />
-            ) : (
-              <WorkspaceProjectFolderIcon className="icon-xs shrink-0" />
-            )}
-          </span>
-          <span className="min-w-0 max-w-40 truncate text-sm leading-[18px]">
+    <div
+      className={variant === "hero" ? "relative max-w-full" : "relative w-[280px] max-w-full"}
+      ref={containerRef}
+    >
+      {variant === "hero" ? (
+        <button
+          type="button"
+          aria-controls={isOpen ? menuId : undefined}
+          aria-expanded={isOpen}
+          aria-haspopup="menu"
+          aria-label={t("composer.localCwdDropdown.tooltip")}
+          className="group inline-flex max-w-full items-center gap-2 rounded-[18px] px-5 py-3 transition-colors hover:bg-token-foreground/5"
+          title={t("composer.localCwdDropdown.tooltip")}
+          onClick={onToggleOpen}
+        >
+          <span
+            className={[
+              "heading-xl truncate font-normal",
+              selection.kind === "projectless" ? "text-token-foreground/55" : "text-token-foreground",
+            ].join(" ")}
+          >
             {triggerLabel}
           </span>
-        </span>
-        <ChevronDownIcon className="icon-2xs shrink-0 text-token-input-placeholder-foreground" />
-      </Button>
+          <ChevronDownIcon
+            className={[
+              "mt-0.5 h-4 w-4 shrink-0 text-token-foreground/60 transition-transform",
+              isOpen ? "rotate-180" : "",
+            ].join(" ")}
+          />
+        </button>
+      ) : (
+        <Button
+          aria-controls={isOpen ? menuId : undefined}
+          aria-expanded={isOpen}
+          aria-label={t("composer.localCwdDropdown.tooltip")}
+          aria-haspopup="menu"
+          className="max-w-full gap-2"
+          color="ghost"
+          data-state={isOpen ? "open" : "closed"}
+          size="composerSm"
+          title={t("composer.localCwdDropdown.tooltip")}
+          onClick={onToggleOpen}
+        >
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+              <ProjectOptionLeadingIcon
+                connectedRemoteConnections={connectedRemoteConnections}
+                option={selectedOption}
+                remoteConnectionHostIds={remoteConnectionHostIds}
+                selection={selection}
+              />
+            </span>
+            <span className="min-w-0 max-w-40 truncate text-sm leading-[18px]">
+              {triggerLabel}
+            </span>
+          </span>
+          <ChevronDownIcon className="icon-2xs shrink-0 text-token-input-placeholder-foreground" />
+        </Button>
+      )}
 
       {isOpen ? (
         <div
-          className="app-card absolute right-0 bottom-[calc(100%+8px)] z-30 w-[288px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]"
+          className={[
+            "app-card absolute z-30 shadow-[0_12px_30px_rgba(0,0,0,0.18)]",
+            variant === "hero"
+              ? "top-[calc(100%+12px)] left-1/2 w-[min(440px,calc(100vw-2rem))] -translate-x-1/2 rounded-[20px] p-2"
+              : "right-0 bottom-[calc(100%+8px)] w-[288px] rounded-[14px] p-2",
+          ].join(" ")}
           id={menuId}
         >
           <div className="flex flex-col gap-2">
@@ -334,48 +576,46 @@ export function HotkeyWindowProjectMenuControlView({
               />
             </div>
 
-            <div className="vertical-scroll-fade-mask max-h-[232px] overflow-y-auto [--edge-fade-distance:1.5rem]">
-              {filteredWorkspaceOptions.length === 0 ? (
+            <div
+              className={[
+                "vertical-scroll-fade-mask overflow-y-auto",
+                variant === "hero"
+                  ? "max-h-[280px] [--edge-fade-distance:1.5rem]"
+                  : "max-h-[232px] [--edge-fade-distance:1.5rem]",
+              ].join(" ")}
+            >
+              <ProjectOptionRow
+                connectedRemoteConnections={connectedRemoteConnections}
+                isSelected={selection.kind === "projectless"}
+                option={null}
+                remoteConnectionHostIds={remoteConnectionHostIds}
+                selection={selection}
+                onSelect={onClearProject}
+              />
+              {isLoading ? (
                 <div className="px-3 py-2 text-sm text-token-text-secondary">
-                  {isLoading
-                    ? t("electron.onboarding.workspace.loading")
-                    : t("composer.localCwdDropdown.noResults")}
+                  {t("electron.onboarding.workspace.loading")}
+                </div>
+              ) : filteredProjectOptions.length === 0 ? (
+                <div className="px-3 py-2 text-sm text-token-text-secondary">
+                  {t("composer.localCwdDropdown.noResults")}
                 </div>
               ) : (
-                filteredWorkspaceOptions.map((option) => {
+                filteredProjectOptions.map((option) => {
                   const isSelected =
-                    selectedWorkspaceRoot !== null &&
-                    areSamePath(selectedWorkspaceRoot, option.root);
+                    selection.kind !== "projectless" &&
+                    selectedOption !== null &&
+                    isSameProjectOption(selectedOption, option);
                   return (
-                    <button
-                      key={option.root}
-                      type="button"
-                      className={[
-                        "flex w-full items-start justify-between gap-3 rounded-[10px] px-3 py-2 text-left",
-                        isSelected ? "app-nav-item-active" : "app-nav-item-idle",
-                      ].join(" ")}
-                      title={option.root}
-                      onClick={() => onSelectWorkspaceRoot(option.root)}
-                    >
-                      <span className="flex min-w-0 flex-1 items-start gap-2">
-                        <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
-                          {option.isCodexWorktree ? (
-                            <WorktreeIcon className="icon-xs shrink-0" />
-                          ) : option.hasGitRoot ? (
-                            <WorkspaceProjectGitIcon className="icon-xs shrink-0" />
-                          ) : (
-                            <WorkspaceProjectFolderIcon className="icon-xs shrink-0" />
-                          )}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[13px]">{option.label}</span>
-                          <span className="mt-1 block truncate text-[12px] leading-5 text-token-text-secondary">
-                            {option.root}
-                          </span>
-                        </span>
-                      </span>
-                      {isSelected ? <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" /> : null}
-                    </button>
+                    <ProjectOptionRow
+                      key={getProjectOptionKey(option)}
+                      connectedRemoteConnections={connectedRemoteConnections}
+                      isSelected={isSelected}
+                      option={option}
+                      remoteConnectionHostIds={remoteConnectionHostIds}
+                      selection={selection}
+                      onSelect={() => onSelectProject(option)}
+                    />
                   );
                 })
               )}
@@ -385,25 +625,217 @@ export function HotkeyWindowProjectMenuControlView({
               <button
                 type="button"
                 className="app-nav-item-idle flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
-                onClick={onClearProject}
-              >
-                <WorkspaceProjectClearIcon className="h-4 w-4 shrink-0 text-token-text-secondary" />
-                <span>{t("composer.localCwdDropdown.clearProject")}</span>
-              </button>
-              <button
-                type="button"
-                className="app-nav-item-idle mt-1 flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
-                onClick={onAddProject}
+                onClick={onAddLocalProject}
               >
                 <WorkspaceProjectAddIcon className="h-4 w-4 shrink-0 text-token-text-secondary" />
                 <span>{t("composer.localCwdDropdown.addWorkspaceRoot")}</span>
               </button>
+              {allowRemoteProjects ? (
+                <button
+                  type="button"
+                  className="app-nav-item-idle mt-1 flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-left text-[13px]"
+                  onClick={onAddRemoteProject}
+                >
+                  <SettingsRemoteHostIcon
+                    className="h-4 w-4 shrink-0 text-token-text-secondary"
+                    hostId={connectedRemoteConnections[0]?.hostId ?? "remote"}
+                    hostIdsForColorAssignment={
+                      remoteConnectionHostIds.length > 0 ? remoteConnectionHostIds : ["remote"]
+                    }
+                  />
+                  <span>{t("settings.remoteConnections.createRemoteProject")}</span>
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
       ) : null}
     </div>
   );
+}
+
+function ProjectOptionRow({
+  connectedRemoteConnections,
+  isSelected,
+  option,
+  remoteConnectionHostIds,
+  selection,
+  onSelect,
+}: {
+  connectedRemoteConnections: RemoteConnection[];
+  isSelected: boolean;
+  option: WorkspaceProjectOption | null;
+  remoteConnectionHostIds: string[];
+  selection: HotkeyWindowProjectSelection;
+  onSelect: () => void;
+}) {
+  const { t } = useI18n();
+  const label = option === null ? t("composer.localCwdDropdown.clearProject") : option.label;
+  const description =
+    option == null
+      ? undefined
+      : option.kind === "local"
+        ? option.workspaceRoot
+        : option.remotePath;
+  const meta =
+    option == null
+      ? undefined
+      : option.kind === "remote"
+        ? option.hostDisplayName
+        : undefined;
+
+  return (
+    <button
+      type="button"
+      className={[
+        "flex w-full items-start justify-between gap-3 rounded-[10px] px-3 py-2 text-left",
+        isSelected ? "app-nav-item-active" : "app-nav-item-idle",
+      ].join(" ")}
+      title={description}
+      onClick={onSelect}
+    >
+      <span className="flex min-w-0 flex-1 items-start gap-2">
+        <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
+          <ProjectOptionLeadingIcon
+            connectedRemoteConnections={connectedRemoteConnections}
+            option={option}
+            remoteConnectionHostIds={remoteConnectionHostIds}
+            selection={selection}
+          />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="min-w-0 truncate text-[13px]">{label}</span>
+            {meta ? (
+              <span className="truncate text-[11px] text-token-text-secondary">{meta}</span>
+            ) : null}
+          </span>
+          {description ? (
+            <span className="mt-1 block truncate text-[12px] leading-5 text-token-text-secondary">
+              {description}
+            </span>
+          ) : null}
+        </span>
+      </span>
+      {isSelected ? <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" /> : null}
+    </button>
+  );
+}
+
+function ProjectOptionLeadingIcon({
+  connectedRemoteConnections,
+  option,
+  remoteConnectionHostIds,
+  selection,
+}: {
+  connectedRemoteConnections: RemoteConnection[];
+  option: WorkspaceProjectOption | null;
+  remoteConnectionHostIds: string[];
+  selection: HotkeyWindowProjectSelection;
+}) {
+  if (option == null) {
+    return selection.kind === "projectless" ? (
+      <WorkspaceProjectClearIcon className="h-4 w-4 shrink-0 text-token-text-secondary" />
+    ) : (
+      <WorkspaceProjectAddIcon className="h-4 w-4 shrink-0 text-token-text-secondary" />
+    );
+  }
+
+  if (option.kind === "remote") {
+    const hostIdsForColorAssignment =
+      remoteConnectionHostIds.length > 0 ? remoteConnectionHostIds : [option.hostId];
+    return (
+      <SettingsRemoteHostIcon
+        className="h-4 w-4 shrink-0"
+        hostId={option.hostId}
+        hostIdsForColorAssignment={hostIdsForColorAssignment}
+      />
+    );
+  }
+
+  if (option.isCodexWorktree) {
+    return <WorktreeIcon className="icon-xs shrink-0" />;
+  }
+  if (option.hasGitRoot) {
+    return <WorkspaceProjectGitIcon className="icon-xs shrink-0" />;
+  }
+  if (connectedRemoteConnections.length === 0 && selection.kind === "projectless") {
+    return <SettingsLocalHostIcon className="h-4 w-4 shrink-0 text-token-text-secondary" />;
+  }
+  return <WorkspaceProjectFolderIcon className="icon-xs shrink-0" />;
+}
+
+function normalizeSelection(
+  selection: HotkeyWindowProjectSelection | null | undefined,
+): HotkeyWindowProjectSelection {
+  if (!selection) {
+    return { kind: "projectless" };
+  }
+  if (selection.kind === "local") {
+    const workspaceRoot = normalizeOptionalPath(selection.workspaceRoot);
+    return workspaceRoot === null ? { kind: "projectless" } : { kind: "local", workspaceRoot };
+  }
+  if (selection.kind === "remote") {
+    const hostId = selection.hostId.trim();
+    const projectId = selection.projectId.trim();
+    const remotePath = selection.remotePath.trim();
+    if (hostId.length === 0 || projectId.length === 0 || remotePath.length === 0) {
+      return { kind: "projectless" };
+    }
+    return {
+      kind: "remote",
+      hostId,
+      projectId,
+      remotePath,
+    };
+  }
+  return { kind: "projectless" };
+}
+
+function toSelection(option: WorkspaceProjectOption): HotkeyWindowProjectSelection {
+  if (option.kind === "remote") {
+    return {
+      kind: "remote",
+      hostId: option.hostId,
+      projectId: option.projectId,
+      remotePath: option.remotePath,
+    };
+  }
+  return {
+    kind: "local",
+    workspaceRoot: option.workspaceRoot,
+  };
+}
+
+function findMatchingSelection(
+  options: WorkspaceProjectOption[],
+  selection: HotkeyWindowProjectSelection,
+) {
+  return options.find((option) => {
+    if (selection.kind === "local" && option.kind === "local") {
+      return areSamePath(option.workspaceRoot, selection.workspaceRoot);
+    }
+    if (selection.kind === "remote" && option.kind === "remote") {
+      return option.projectId === selection.projectId;
+    }
+    return false;
+  }) ?? null;
+}
+
+function isSameProjectOption(left: WorkspaceProjectOption, right: WorkspaceProjectOption) {
+  if (left.kind === "local" && right.kind === "local") {
+    return areSamePath(left.workspaceRoot, right.workspaceRoot);
+  }
+  if (left.kind === "remote" && right.kind === "remote") {
+    return left.projectId === right.projectId;
+  }
+  return false;
+}
+
+function getProjectOptionKey(option: WorkspaceProjectOption) {
+  return option.kind === "local"
+    ? `local:${normalizeComparablePath(option.workspaceRoot)}`
+    : `remote:${option.projectId}`;
 }
 
 function getWorkspaceRootLabel(workspaceRoot: string, labels: Record<string, string>) {
@@ -438,13 +870,6 @@ function dedupeWorkspaceRoots(...groups: Array<Array<string> | string | null>) {
     }
   }
   return deduped;
-}
-
-function findMatchingWorkspaceRoot(workspaceRoots: string[], candidate: string | null) {
-  if (candidate === null) {
-    return null;
-  }
-  return workspaceRoots.find((workspaceRoot) => areSamePath(workspaceRoot, candidate)) ?? null;
 }
 
 function normalizeOptionalPath(value: string | null | undefined) {

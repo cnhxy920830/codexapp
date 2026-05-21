@@ -59,6 +59,14 @@ test("workspace selection shell keeps extracted learn-more frame during loading 
     /if \(isSelectProjectMode\) \{\s*return \(\s*<LocalEnvironmentsPageFrame\s+subtitle=\{renderLearnMoreDescription\(/s,
   );
   assert.match(source, /<WorkspaceSelectionCard[\s\S]*isLoading=\{isWorkspaceRootsLoading\}/);
+  assert.match(
+    source,
+    /if \(isLoading\) \{\s*return \(\s*<SettingsGroup className="gap-2">\s*<SettingsGroup\.Header[\s\S]*actions=\{addProjectAction\}/s,
+  );
+  assert.match(
+    source,
+    /if \(groups\.length === 0\) \{\s*return \(\s*<SettingsGroup className="gap-2">\s*<SettingsGroup\.Header[\s\S]*actions=\{addProjectAction\}/s,
+  );
   assert.doesNotMatch(source, /workspaceRootsErrorMessage \? <InlineError message=\{workspaceRootsErrorMessage\} \/> : null/);
 });
 
@@ -86,6 +94,7 @@ test("remote add-project dialog source keeps extracted validation bridge instead
   assert.match(serviceSource, /export function normalizeRemoteProjectPath\(path: string\)/);
 
   assert.match(dialogSource, /readRemoteWorkspaceDirectoryEntries\(\{/);
+  assert.match(dialogSource, /const isPickMode = mode === "pick";/);
   assert.match(dialogSource, /kind: "conflicting-remote-project"/);
   assert.match(dialogSource, /kind: "path-validation-pending"/);
   assert.match(dialogSource, /t\("projectSetupDialog\.conflict\.remoteProjectAlreadyMapped\.standalone"/);

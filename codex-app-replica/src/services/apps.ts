@@ -1,6 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { emitQueryCacheInvalidated } from "./queryCache";
 import { batchWriteConfigValueForHost } from "./settings";
+
+const APPS_QUERY_KEY = ["apps", "list"] as const;
 
 export type AppsListParams = {
   hostId?: string | null;
@@ -67,7 +70,7 @@ export async function readAppTools(params: ReadAppToolsParams) {
 
 export async function setAppEnabled(params: AppSetEnabledParams) {
   const { appId, enabled, expectedVersion, filePath, hostId } = params;
-  return batchWriteConfigValueForHost({
+  await batchWriteConfigValueForHost({
     hostId,
     edits: [
       {
@@ -80,6 +83,7 @@ export async function setAppEnabled(params: AppSetEnabledParams) {
     expectedVersion: expectedVersion ?? null,
     reloadUserConfig: true,
   });
+  await emitQueryCacheInvalidated([...APPS_QUERY_KEY, hostId ?? null]);
 }
 
 export function onAppsSnapshotUpdated(handler: (snapshot: AppsListResponse) => void) {

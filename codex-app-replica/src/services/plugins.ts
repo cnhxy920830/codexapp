@@ -1,5 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
+import { emitQueryCacheInvalidated } from "./queryCache";
 import { batchWriteConfigValueForHost } from "./settings";
+
+const PLUGIN_QUERY_KEY = ["plugins"] as const;
 
 export type PluginListSnapshot = {
   marketplaces: PluginMarketplaceEntry[];
@@ -236,7 +239,7 @@ export async function uninstallPlugin(params: PluginUninstallParams): Promise<vo
 
 export async function setPluginEnabled(params: PluginSetEnabledParams): Promise<void> {
   const { enabled, expectedVersion, filePath, hostId, pluginId } = params;
-  return batchWriteConfigValueForHost({
+  await batchWriteConfigValueForHost({
     hostId,
     edits: [
       {
@@ -249,6 +252,7 @@ export async function setPluginEnabled(params: PluginSetEnabledParams): Promise<
     expectedVersion: expectedVersion ?? null,
     reloadUserConfig: true,
   });
+  await emitQueryCacheInvalidated([...PLUGIN_QUERY_KEY, hostId ?? null]);
 }
 
 export async function addMarketplace(params: MarketplaceAddParams): Promise<MarketplaceAddResponse> {

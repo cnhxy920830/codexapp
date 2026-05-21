@@ -34,12 +34,14 @@ test("browser use settings keeps extracted data and permissions row structure", 
   assert.match(source, /ALL_BROWSING_DATA_TYPES\.map\(\(dataType\) => \(/);
   assert.match(source, /label=\{t\("settings\.browserUse\.browser\.annotationScreenshots\.label"\)\}/);
   assert.match(source, /label=\{t\("settings\.browserUse\.approval\.label"\)\}/);
-  assert.match(source, /label=\{t\("settings\.browserUse\.historyApproval\.label"\)\}/);
-  assert.match(source, /label=\{t\("settings\.browserUse\.downloadApproval\.label"\)\}/);
-  assert.match(source, /label=\{t\("settings\.browserUse\.uploadApproval\.label"\)\}/);
+  assert.doesNotMatch(source, /label=\{t\("settings\.browserUse\.historyApproval\.label"\)\}/);
+  assert.doesNotMatch(source, /label=\{t\("settings\.browserUse\.downloadApproval\.label"\)\}/);
+  assert.doesNotMatch(source, /label=\{t\("settings\.browserUse\.uploadApproval\.label"\)\}/);
 
   const triggerMatches = source.match(/className="w-\[152px\]"/g) ?? [];
-  assert.equal(triggerMatches.length, 5);
+  assert.equal(triggerMatches.length, 1);
+  assert.match(source, /className="w-\[168px\]"/);
+  assert.match(source, /color="secondary"/);
 });
 
 test("browser use settings keeps extracted approval learn-more link and warning row", () => {
@@ -67,16 +69,14 @@ test("browser use settings keeps extracted approval learn-more link and warning 
   assert.match(source, /warningIcon:\s*\(\s*<ElevatedRiskIcon className="icon-xs shrink-0 text-token-editor-warning-foreground" \/>/s);
 });
 
-test("browser use settings keeps extracted six origin sections and compact dialog ownership", () => {
+test("browser use settings keeps extracted two origin sections and compact dialog ownership", () => {
   const source = readSource(COMPONENT_SOURCE_PATH);
 
   assert.match(source, /const BROWSER_USE_ORIGIN_SECTIONS: ReadonlyArray<OriginSectionConfig> = \[/);
-  assert.match(source, /\{ kind: "denied", resource: "origins" \}/);
-  assert.match(source, /\{ kind: "allowed", resource: "origins" \}/);
-  assert.match(source, /\{ kind: "denied", resource: "downloads" \}/);
-  assert.match(source, /\{ kind: "allowed", resource: "downloads" \}/);
-  assert.match(source, /\{ kind: "denied", resource: "uploads" \}/);
-  assert.match(source, /\{ kind: "allowed", resource: "uploads" \}/);
+  assert.match(source, /\{ kind: "denied" \}/);
+  assert.match(source, /\{ kind: "allowed" \}/);
+  assert.doesNotMatch(source, /resource: "downloads"/);
+  assert.doesNotMatch(source, /resource: "uploads"/);
 
   assert.match(source, /<SettingsGroup\.Header\s+actions=\{\s*<Button color="secondary" disabled=\{isDisabled\} size="toolbar" onClick=\{onRequestAdd\}>/s);
   assert.match(source, /className="justify-center"/);
@@ -86,10 +86,26 @@ test("browser use settings keeps extracted six origin sections and compact dialo
   assert.match(source, /aria-modal="true"/);
 });
 
+test("browser use settings subscribes to extracted query invalidation and global state owners", () => {
+  const source = readSource(COMPONENT_SOURCE_PATH);
+
+  assert.match(source, /const loadBrowserUseSettings = useEffectEvent\(async \(\) => \{/);
+  assert.match(source, /setSettingsState\(await readBrowserUseSettings\(\)\);/);
+  assert.match(source, /const syncAnnotationScreenshotsMode = useEffectEvent\(async \(\) => \{/);
+  assert.match(source, /setAnnotationScreenshotsMode\(await readBrowserAnnotationScreenshotsMode\(\)\);/);
+  assert.match(source, /void onQueryCacheInvalidated\(\(notification\) => \{/);
+  assert.match(source, /queryKeyMatchesPrefix\(queryKey, BROWSER_USE_SETTINGS_QUERY_KEY\)/);
+  assert.match(source, /void loadBrowserUseSettings\(\);/);
+  assert.match(source, /void onGlobalStateUpdated\(\(notification\) => \{/);
+  assert.match(source, /notification\.keys\.includes\("browser-annotation-screenshots-mode"\)/);
+  assert.match(source, /void syncAnnotationScreenshotsMode\(\);/);
+});
+
 test("browser use settings service uses extracted browser-use command contract", () => {
   const source = readSource(SERVICE_SOURCE_PATH);
 
-  assert.match(source, /invoke<BrowserUseSettingsState>\("browser-use-origin-state-read"\)/);
+  assert.match(source, /export const BROWSER_USE_SETTINGS_QUERY_KEY = \[\s*"browser-use-origin-state-read",?\s*\] as const;/s);
+  assert.match(source, /return invoke<BrowserUseSettingsState>\(BROWSER_USE_SETTINGS_QUERY_KEY\[0\]\);/);
   assert.match(source, /invoke<BrowserUseSettingsState>\("browser-use-approval-mode-write", \{ params \}\)/);
   assert.match(source, /invoke<BrowserUseSettingsState>\("browser-use-history-approval-mode-write", \{ params \}\)/);
   assert.match(source, /invoke<BrowserUseSettingsState>\("browser-use-file-transfer-approval-mode-write", \{ params \}\)/);
@@ -98,6 +114,7 @@ test("browser use settings service uses extracted browser-use command contract",
   assert.match(source, /invoke<BrowserUseSettingsState>\("browser-use-file-transfer-origin-add", \{/);
   assert.match(source, /invoke<BrowserUseSettingsState>\("browser-use-file-transfer-origin-remove", \{/);
   assert.match(source, /targetOrigin: params\.origin/);
+  assert.match(source, /await emitQueryCacheInvalidated\(BROWSER_USE_SETTINGS_QUERY_KEY\)\.catch\(\(\) => undefined\);/);
 });
 
 test("replica statsig exposes dynamic config values needed by browser use settings", () => {
@@ -114,6 +131,14 @@ test("replica statsig exposes dynamic config values needed by browser use settin
   assert.match(source, /dynamicConfigs,/);
   assert.match(source, /function extractDynamicConfigValues\(response: unknown\)/);
   assert.match(source, /readNamedValueCollection\(response, "dynamic_configs"\)/);
+});
+
+test("tauri global settings allow browser annotation screenshots mode", () => {
+  const source = readSource(
+    path.join(process.cwd(), "src-tauri", "src", "global_settings.rs"),
+  );
+
+  assert.match(source, /"browser-annotation-screenshots-mode"/);
 });
 
 function readSource(filePath: string) {

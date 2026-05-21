@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  ClockIcon,
   MoreActionsIcon,
   PauseCircleIcon,
   PencilIcon,
@@ -21,6 +22,15 @@ import {
 } from "./automationsPageUtils";
 
 const AUTOMATIONS_HELP_URL = "https://developers.openai.com/codex/app/automations";
+
+function AutomationLoadingIcon() {
+  return (
+    <div className="relative flex h-8 w-8 shrink-0 items-center justify-center text-token-description-foreground">
+      <span className="absolute h-8 w-8 animate-spin rounded-full border border-token-border/50 border-t-token-foreground/70" />
+      <ClockIcon className="h-4 w-4" />
+    </div>
+  );
+}
 
 type AutomationsOverviewPaneProps = {
   isLoading: boolean;
@@ -326,8 +336,8 @@ export function AutomationsOverviewPane({
     return (
       <div className="mx-auto flex w-full max-w-[var(--thread-content-max-width)] flex-1 flex-col gap-2 px-panel pt-panel pb-panel">
         <AutomationsOverviewHeader t={t} />
-        <div className="app-text-muted flex items-center gap-2 rounded-md px-2 py-2 text-[13px]">
-          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[var(--app-shell-border-heavy)] border-t-transparent" />
+        <div className="app-text-muted flex items-center gap-3 rounded-md px-2 py-2 text-[13px]">
+          <AutomationLoadingIcon />
           {t("inbox.automations.loading")}
         </div>
       </div>

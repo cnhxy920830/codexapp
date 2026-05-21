@@ -2,7 +2,13 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } 
 import { createPortal } from "react-dom";
 import type { AppToast } from "../../components/AppToastRegion";
 import { useI18n } from "../../i18n/i18n";
-import type { ThreadHistoryEntry } from "../../services/history";
+import {
+  getRecentThreads,
+  getRecentThreadsForHost,
+  onThreadEvent,
+  onThreadReadStateChanged,
+  type ThreadHistoryEntry,
+} from "../../services/history";
 import { LOCAL_SETTINGS_HOST_ID } from "../../services/settingsHosts";
 import type {
   PullRequestBoardItem,
@@ -66,7 +72,6 @@ type PullRequestsRoutePageProps = {
   onSetRightPanelCloseAction: (action: (() => void) | null) => void;
   onSetRightPanelVisible: (visible: boolean) => void;
   onShowToast: (toast: AppToast) => void;
-  recentThreads: ThreadHistoryEntry[];
   rightPanelHost: RefObject<HTMLDivElement | null>;
 };
 
@@ -76,7 +81,6 @@ export function PullRequestsRoutePage({
   onSetRightPanelCloseAction,
   onSetRightPanelVisible,
   onShowToast,
-  recentThreads,
   rightPanelHost,
 }: PullRequestsRoutePageProps) {
   const { t } = useI18n();
@@ -94,6 +98,7 @@ export function PullRequestsRoutePage({
   const [pageErrorDetail, setPageErrorDetail] = useState<string | null>(null);
   const [boardItems, setBoardItems] = useState<PullRequestBoardItem[]>([]);
   const [boardLoading, setBoardLoading] = useState(false);
+  const [recentThreads, setRecentThreads] = useState<ThreadHistoryEntry[]>([]);
   const [detail, setDetail] = useState<PullRequestStatusSuccess | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -106,10 +111,12 @@ export function PullRequestsRoutePage({
   const [detailRefreshNonce, setDetailRefreshNonce] = useState(0);
   const [diffRefreshNonce, setDiffRefreshNonce] = useState(0);
   const [metadataRefreshNonce, setMetadataRefreshNonce] = useState(0);
+  const [recentThreadsRefreshNonce, setRecentThreadsRefreshNonce] = useState(0);
   const metadataRequestIdRef = useRef(0);
   const boardRequestIdRef = useRef(0);
   const detailRequestIdRef = useRef(0);
   const diffRequestIdRef = useRef(0);
+  const recentThreadsRequestIdRef = useRef(0);
   const lastAutoOpenBoardKeyRef = useRef<string | null>(null);
   const lastBoardQueryKeyRef = useRef<string | null>(null);
 
@@ -280,6 +287,79 @@ export function PullRequestsRoutePage({
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    const requestId = ++recentThreadsRequestIdRef.current;
+
+    const load = async () => {
+      const visibleRemoteHostIds = [...new Set(connectedRemoteHostIds)];
+      const settledResults = await Promise.allSettled([
+        getRecentThreads(),
+        ...visibleRemoteHostIds.map((hostId) => getRecentThreadsForHost(hostId)),
+      ]);
+      if (cancelled || requestId !== recentThreadsRequestIdRef.current) {
+        return;
+      }
+
+      const fulfilledResults = settledResults.flatMap((result) =>
+        result.status === "fulfilled" ? [result.value] : [],
+      );
+      if (fulfilledResults.length === 0) {
+        return;
+      }
+
+      setRecentThreads(
+        fulfilledResults
+          .flat()
+          .sort((left, right) => right.updatedAt - left.updatedAt),
+      );
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [connectedRemoteHostIds, recentThreadsRefreshNonce]);
+
+  useEffect(() => {
+    let disposed = false;
+    let cleanupThreadEvents: (() => void) | undefined;
+    let cleanupThreadReadStateChanged: (() => void) | undefined;
+
+    const refreshRecentThreads = () => {
+      if (!disposed) {
+        setRecentThreadsRefreshNonce((current) => current + 1);
+      }
+    };
+
+    void onThreadEvent(() => {
+      refreshRecentThreads();
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+      cleanupThreadEvents = dispose;
+    });
+
+    void onThreadReadStateChanged(() => {
+      refreshRecentThreads();
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+      cleanupThreadReadStateChanged = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      void cleanupThreadEvents?.();
+      void cleanupThreadReadStateChanged?.();
+    };
+  }, []);
+
+  useEffect(() => {
     const handlePopState = () => {
       setRouteState(parsePullRequestsRouteState(getWindowSearch(), readStoredRepoKey()));
     };
@@ -354,13 +434,12 @@ export function PullRequestsRoutePage({
 
     return recentThreads
       .filter((thread) => {
-        const threadHostId = thread.hostId ?? LOCAL_SETTINGS_HOST_ID;
         const threadBranch = thread.gitInfo?.branch?.trim() ?? "";
-        return threadHostId === selectedHostId && threadBranch === targetBranch;
+        return threadBranch === targetBranch;
       })
       .sort((left, right) => right.updatedAt - left.updatedAt)
       .map((thread) => ({
-        hostId: thread.hostId ?? LOCAL_SETTINGS_HOST_ID,
+        hostId: selectedHostId,
         id: thread.id,
         title:
           (thread.name ?? thread.preview).trim()

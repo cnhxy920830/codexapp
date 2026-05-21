@@ -6,6 +6,7 @@ import {
   XCircleIcon,
 } from "../../components/AppShellIcons";
 import { Button } from "../../components/Button";
+import { type MarkdownLinkContext } from "../../components/markdownPreviewLinks";
 import { Spinner } from "../../components/Spinner";
 import { Tooltip } from "../../components/Tooltip";
 import type { AppToast } from "../../components/AppToastRegion";
@@ -25,6 +26,11 @@ import {
 } from "../../services/history";
 import { onAppsSnapshotUpdated, readAppsSnapshot, type AppInfo } from "../../services/apps";
 import { readProjectlessThreadCwd } from "../../services/projectlessThreads";
+import {
+  onQueryCacheInvalidated,
+  queryKeyMatchesPrefix,
+  type QueryCacheInvalidateNotification,
+} from "../../services/queryCache";
 import { generateScratchpadCompletionSummary } from "../../services/scratchpad";
 import { readPluginsSnapshot, type PluginSummary } from "../../services/plugins";
 import { LOCAL_SETTINGS_HOST_ID } from "../../services/settingsHosts";
@@ -36,6 +42,14 @@ import type { RowSummaryState, ScratchpadRow, ThreadRuntimeState } from "./scrat
 
 const INITIAL_ROW_ID = "scratchpad-0";
 const SCRATCHPAD_HOST_ID = LOCAL_SETTINGS_HOST_ID;
+const PLUGIN_QUERY_KEY = ["plugins"] as const;
+const APPS_QUERY_KEY = ["apps", "list"] as const;
+const SKILLS_QUERY_KEY = ["skills"] as const;
+
+type ScratchpadPageDataRefreshOptions = {
+  forceRefetchApps?: boolean;
+  forceReloadSkills?: boolean;
+};
 
 export function ScratchpadPage({
   onOpenConversation,
@@ -70,6 +84,7 @@ export function ScratchpadPage({
   const rowsRef = useRef(rows);
   const threadConversationsByIdRef = useRef(threadConversationsById);
   const drainingConversationIdsRef = useRef(new Set<string>());
+  const isDisposedRef = useRef(false);
   const summaryRequestsRef = useRef(new Set<string>());
   const nextRowNumberRef = useRef(1);
 
@@ -80,6 +95,12 @@ export function ScratchpadPage({
   useEffect(() => {
     threadConversationsByIdRef.current = threadConversationsById;
   }, [threadConversationsById]);
+
+  useEffect(() => {
+    return () => {
+      isDisposedRef.current = true;
+    };
+  }, []);
 
   const connectedConversationIds = useMemo(() => {
     return Array.from(
@@ -122,31 +143,40 @@ export function ScratchpadPage({
     };
   }, [connectedConversationIds]);
 
+  const refreshPageData = useEffectEvent(async (options: ScratchpadPageDataRefreshOptions = {}) => {
+    const [nextApps, nextPlugins, nextSkills] = await Promise.all([
+      readAppsSnapshot({
+        hostId: SCRATCHPAD_HOST_ID,
+        forceRefetch: options.forceRefetchApps ?? false,
+      })
+        .then((response) => response.data)
+        .catch(() => []),
+      readPluginsSnapshot(null, SCRATCHPAD_HOST_ID)
+        .then((response) => response.marketplaces.flatMap((marketplace) => marketplace.plugins))
+        .catch(() => []),
+      readSkillsSnapshot(null, {
+        hostId: SCRATCHPAD_HOST_ID,
+        forceReload: options.forceReloadSkills ?? false,
+      }).catch(() => []),
+    ]);
+
+    if (isDisposedRef.current) {
+      return;
+    }
+
+    setApps(nextApps);
+    setPlugins(nextPlugins);
+    setSkills(nextSkills);
+  });
+
   useEffect(() => {
     let cancelled = false;
     let disposeAppsUpdated: (() => void) | undefined;
 
-    const loadPageData = async () => {
-      const [nextApps, nextPlugins, nextSkills] = await Promise.all([
-        readAppsSnapshot({ hostId: SCRATCHPAD_HOST_ID }).then((response) => response.data).catch(() => []),
-        readPluginsSnapshot(null, SCRATCHPAD_HOST_ID)
-          .then((response) => response.marketplaces.flatMap((marketplace) => marketplace.plugins))
-          .catch(() => []),
-        readSkillsSnapshot(null, { hostId: SCRATCHPAD_HOST_ID }).catch(() => []),
-      ]);
-
-      if (cancelled) {
-        return;
-      }
-      setApps(nextApps);
-      setPlugins(nextPlugins);
-      setSkills(nextSkills);
-    };
-
-    void loadPageData();
+    void refreshPageData();
 
     void onAppsSnapshotUpdated((snapshot) => {
-      if (cancelled) {
+      if (cancelled || isDisposedRef.current) {
         return;
       }
       setApps(snapshot.data);
@@ -161,6 +191,46 @@ export function ScratchpadPage({
     return () => {
       cancelled = true;
       disposeAppsUpdated?.();
+    };
+  }, []);
+
+  const handleQueryCacheInvalidate = useEffectEvent((notification: QueryCacheInvalidateNotification) => {
+    const shouldRefreshPlugins = queryKeyMatchesPrefix(notification.queryKey, PLUGIN_QUERY_KEY);
+    const shouldRefreshApps =
+      shouldRefreshPlugins || queryKeyMatchesPrefix(notification.queryKey, APPS_QUERY_KEY);
+    const shouldRefreshSkills =
+      shouldRefreshPlugins || queryKeyMatchesPrefix(notification.queryKey, SKILLS_QUERY_KEY);
+
+    if (!shouldRefreshApps && !shouldRefreshPlugins && !shouldRefreshSkills) {
+      return;
+    }
+
+    void refreshPageData({
+      forceRefetchApps: shouldRefreshApps,
+      forceReloadSkills: shouldRefreshSkills,
+    });
+  });
+
+  useEffect(() => {
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+
+    void onQueryCacheInvalidated((notification) => {
+      if (!disposed) {
+        handleQueryCacheInvalidate(notification);
+      }
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+
+      cleanup = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      cleanup?.();
     };
   }, []);
 
@@ -724,6 +794,7 @@ export function ScratchpadPagePreview({
   threadConversationsById = {},
   threadRuntimeById = {},
 }: ScratchpadPagePreviewProps) {
+  const enabledSkills = useMemo(() => skills.filter((skill) => skill.enabled), [skills]);
   const resolvedDefaultDraftPlaceholder =
     defaultDraftPlaceholder ??
     t(
@@ -757,7 +828,7 @@ export function ScratchpadPagePreview({
               plugins={plugins}
               row={row}
               runtime={row.conversationId ? threadRuntimeById[row.conversationId] ?? null : null}
-              skills={skills}
+              skills={enabledSkills}
               summaryState={summaryByRowId[row.id] ?? null}
               t={t}
               thread={row.conversationId ? threadConversationsById[row.conversationId] ?? null : null}
@@ -901,8 +972,8 @@ function deriveRowPresentation(
   const timing = findTurnTiming(thread?.turnTimings ?? [], row.turnId);
   const timestampMs = timing?.turnStartedAtMs ?? row.createdAtMs ?? null;
   const turnStatus = normalizeTurnStatus(timing?.status ?? findTurn(thread?.turns ?? [], row.turnId)?.status ?? null);
-  const hasPendingApproval = row.turnId ? runtime?.pendingApprovalTurnIds.has(row.turnId) === true : false;
-  const hasPendingUserInput = row.turnId ? runtime?.pendingUserInputTurnIds.has(row.turnId) === true : false;
+  const hasPendingApproval = hasPendingApprovalForTurn(thread, runtime, row.turnId);
+  const hasPendingUserInput = hasPendingUserInputForTurn(thread, runtime, row.turnId);
   const finalAssistantMessage = row.turnId ? findFinalAssistantMessage(thread?.items ?? [], row.turnId) : null;
   const reasoningFallback = row.turnId ? findReasoningFallback(thread?.items ?? [], row.turnId) : null;
 
@@ -992,6 +1063,18 @@ function ScratchpadPromptRowText({
     };
   }, [text]);
 
+  const linkContext = useMemo<MarkdownLinkContext>(
+    () => ({
+      cwd: null,
+      hostId,
+      canFileLinkOpenInSidePanel: null,
+      onExternalLinkOpenInBrowser: null,
+      onFileLinkOpen: null,
+      onFileLinkOpenInBrowser: null,
+    }),
+    [hostId],
+  );
+
   if (conversationId) {
     const button = (
       <button
@@ -1002,12 +1085,26 @@ function ScratchpadPromptRowText({
         className="min-w-0 cursor-interaction truncate text-left text-base text-token-foreground hover:underline"
         onClick={() => onOpenConversation?.(conversationId)}
       >
-        <ScratchpadPromptContent apps={apps} hostId={hostId} plugins={plugins} skills={skills} text={text} t={t} />
+        <ScratchpadPromptContent
+          apps={apps}
+          className="min-w-0 flex-1 truncate text-base"
+          context={linkContext}
+          plugins={plugins}
+          skills={skills}
+          text={text}
+          t={t}
+        />
       </button>
     );
 
     return (
-      <Tooltip align="start" disabled={!isTruncated} side="top" tooltipContent={text}>
+      <Tooltip
+        align="start"
+        disabled={!isTruncated}
+        side="top"
+        tooltipBodyClassName="max-w-[300px] text-center"
+        tooltipContent={text}
+      >
         {button}
       </Tooltip>
     );
@@ -1020,12 +1117,26 @@ function ScratchpadPromptRowText({
       }}
       className="min-w-0 truncate text-base text-token-foreground"
     >
-      <ScratchpadPromptContent apps={apps} hostId={hostId} plugins={plugins} skills={skills} text={text} t={t} />
+      <ScratchpadPromptContent
+        apps={apps}
+        className="min-w-0 flex-1 truncate text-base"
+        context={linkContext}
+        plugins={plugins}
+        skills={skills}
+        text={text}
+        t={t}
+      />
     </div>
   );
 
   return (
-    <Tooltip align="start" disabled={!isTruncated} side="top" tooltipContent={text}>
+    <Tooltip
+      align="start"
+      disabled={!isTruncated}
+      side="top"
+      tooltipBodyClassName="max-w-[300px] text-center"
+      tooltipContent={text}
+    >
       {content}
     </Tooltip>
   );
@@ -1221,7 +1332,10 @@ function isThreadBusy(thread: ThreadConversation, runtime: ThreadRuntimeState | 
   if (turnStatus === "inProgress") {
     return true;
   }
-  if (runtime?.pendingApprovalTurnIds.has(lastTurn.id) || runtime?.pendingUserInputTurnIds.has(lastTurn.id)) {
+  if (
+    hasPendingApprovalForTurn(thread, runtime, lastTurn.id) ||
+    hasPendingUserInputForTurn(thread, runtime, lastTurn.id)
+  ) {
     return true;
   }
   return false;
@@ -1301,6 +1415,59 @@ function hasPendingApproval(items: ThreadConversationItem[], turnId: string) {
 
 function hasPendingUserInput(items: ThreadConversationItem[], turnId: string) {
   return items.some((item) => item.turnId === turnId && item.type === "userInput" && item.completed !== true);
+}
+
+function hasPendingApprovalForTurn(
+  thread: ThreadConversation | null,
+  runtime: ThreadRuntimeState | null,
+  turnId: string | null,
+) {
+  if (turnId == null) {
+    return false;
+  }
+
+  if (runtime?.pendingApprovalTurnIds.has(turnId) === true) {
+    return true;
+  }
+
+  if (hasPendingApproval(thread?.items ?? [], turnId)) {
+    return true;
+  }
+
+  return hasThreadRuntimeFlag(thread, turnId, "waitingOnApproval");
+}
+
+function hasPendingUserInputForTurn(
+  thread: ThreadConversation | null,
+  runtime: ThreadRuntimeState | null,
+  turnId: string | null,
+) {
+  if (turnId == null) {
+    return false;
+  }
+
+  if (runtime?.pendingUserInputTurnIds.has(turnId) === true) {
+    return true;
+  }
+
+  if (hasPendingUserInput(thread?.items ?? [], turnId)) {
+    return true;
+  }
+
+  return hasThreadRuntimeFlag(thread, turnId, "waitingOnUserInput");
+}
+
+function hasThreadRuntimeFlag(
+  thread: ThreadConversation | null,
+  turnId: string,
+  flag: "waitingOnApproval" | "waitingOnUserInput",
+) {
+  const latestTurnId = thread?.turns.at(-1)?.id ?? null;
+  if (latestTurnId !== turnId) {
+    return false;
+  }
+
+  return thread?.threadRuntimeStatus?.type === "active" && thread.threadRuntimeStatus.activeFlags.includes(flag);
 }
 
 function cloneRuntimeState(runtime: ThreadRuntimeState | undefined): ThreadRuntimeState {

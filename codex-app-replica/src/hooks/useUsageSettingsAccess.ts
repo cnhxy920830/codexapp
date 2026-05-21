@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { readAccountInfo } from "../services/auth";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { ACCOUNT_INFO_QUERY_KEY, readAccountInfo } from "../services/auth";
+import { onQueryCacheInvalidated, queryKeyMatchesPrefix } from "../services/queryCache";
 
 type UsageSettingsAccessState = {
   isUsageSettingsAccessLoading: boolean;
@@ -13,45 +14,52 @@ export function useUsageSettingsAccess({
   authMethod: string | null;
   isAuthLoading: boolean;
 }): UsageSettingsAccessState {
+  const usesChatGptAuth = authMethod === "chatgpt";
+  const requestIdRef = useRef(0);
   const [state, setState] = useState<UsageSettingsAccessState>({
-    isUsageSettingsAccessLoading: isAuthLoading || authMethod === "chatgpt",
+    isUsageSettingsAccessLoading: isAuthLoading || usesChatGptAuth,
     isUsageSettingsVisible: false,
   });
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadUsageSettingsAccess = useEffectEvent(
+    async ({
+      preserveStateOnError,
+      resetBeforeLoad,
+    }: {
+      preserveStateOnError: boolean;
+      resetBeforeLoad: boolean;
+    }) => {
+      const requestId = requestIdRef.current + 1;
+      requestIdRef.current = requestId;
 
-    if (isAuthLoading) {
-      setState({
-        isUsageSettingsAccessLoading: true,
-        isUsageSettingsVisible: false,
-      });
-      return () => {
-        cancelled = true;
-      };
-    }
+      if (isAuthLoading) {
+        setState({
+          isUsageSettingsAccessLoading: true,
+          isUsageSettingsVisible: false,
+        });
+        return;
+      }
 
-    if (authMethod !== "chatgpt") {
-      setState({
-        isUsageSettingsAccessLoading: false,
-        isUsageSettingsVisible: false,
-      });
-      return () => {
-        cancelled = true;
-      };
-    }
+      if (!usesChatGptAuth) {
+        setState({
+          isUsageSettingsAccessLoading: false,
+          isUsageSettingsVisible: false,
+        });
+        return;
+      }
 
-    setState({
-      isUsageSettingsAccessLoading: true,
-      isUsageSettingsVisible: false,
-    });
+      if (resetBeforeLoad) {
+        setState({
+          isUsageSettingsAccessLoading: true,
+          isUsageSettingsVisible: false,
+        });
+      }
 
-    void readAccountInfo()
-      .then((response) => {
-        if (cancelled) {
+      try {
+        const response = await readAccountInfo();
+        if (requestId !== requestIdRef.current) {
           return;
         }
-
         const normalizedPlan = response.plan?.trim().toLowerCase();
         setState({
           isUsageSettingsAccessLoading: false,
@@ -60,9 +68,16 @@ export function useUsageSettingsAccess({
             normalizedPlan === "pro" ||
             normalizedPlan === "prolite",
         });
-      })
-      .catch(() => {
-        if (cancelled) {
+      } catch {
+        if (requestId !== requestIdRef.current) {
+          return;
+        }
+
+        if (preserveStateOnError) {
+          setState((current) => ({
+            isUsageSettingsAccessLoading: false,
+            isUsageSettingsVisible: current.isUsageSettingsVisible,
+          }));
           return;
         }
 
@@ -70,12 +85,59 @@ export function useUsageSettingsAccess({
           isUsageSettingsAccessLoading: false,
           isUsageSettingsVisible: false,
         });
+      }
+    },
+  );
+
+  useEffect(() => {
+    if (isAuthLoading) {
+      requestIdRef.current += 1;
+      setState({
+        isUsageSettingsAccessLoading: true,
+        isUsageSettingsVisible: false,
       });
+      return;
+    }
+
+    if (!usesChatGptAuth) {
+      requestIdRef.current += 1;
+      setState({
+        isUsageSettingsAccessLoading: false,
+        isUsageSettingsVisible: false,
+      });
+      return;
+    }
+
+    void loadUsageSettingsAccess({
+      preserveStateOnError: false,
+      resetBeforeLoad: true,
+    });
+  }, [isAuthLoading, usesChatGptAuth]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void onQueryCacheInvalidated((notification) => {
+      if (!disposed && queryKeyMatchesPrefix(notification.queryKey, ACCOUNT_INFO_QUERY_KEY)) {
+        void loadUsageSettingsAccess({
+          preserveStateOnError: true,
+          resetBeforeLoad: false,
+        });
+      }
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+      unlisten = dispose;
+    });
 
     return () => {
-      cancelled = true;
+      disposed = true;
+      unlisten?.();
     };
-  }, [authMethod, isAuthLoading]);
+  }, []);
 
   return state;
 }

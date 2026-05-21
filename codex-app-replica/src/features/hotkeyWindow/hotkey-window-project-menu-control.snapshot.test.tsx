@@ -37,41 +37,114 @@ test("hotkey window project menu control snapshots", async (t) => {
 
 type SnapshotMap = {
   emptyState: string;
+  heroOpen: string;
+  homeNoRemoteMenuOpen: string;
   menuOpen: string;
   noResults: string;
 };
 
 function buildSnapshots(): SnapshotMap {
-  const projectOptions = [
+  const connectedRemoteConnections = [
     {
-      hasGitRoot: true,
-      isCodexWorktree: false,
-      label: "codex",
-      root: "D:\\workspace\\codex",
-    },
-    {
-      hasGitRoot: false,
-      isCodexWorktree: true,
-      label: "feature-worktree",
-      root: "D:\\Codex\\.codex\\worktrees\\feature-worktree",
+      autoConnect: false,
+      displayName: "staging-box",
+      hostId: "remote-staging",
+      identity: null,
+      source: "ssh",
+      sshAlias: null,
+      sshHost: null,
+      sshPort: null,
     },
   ];
+  const localProject = {
+    kind: "local" as const,
+    hasGitRoot: true,
+    isCodexWorktree: false,
+    label: "codex",
+    workspaceRoot: "D:\\workspace\\codex",
+  };
+  const worktreeProject = {
+    kind: "local" as const,
+    hasGitRoot: false,
+    isCodexWorktree: true,
+    label: "feature-worktree",
+    workspaceRoot: "D:\\Codex\\.codex\\worktrees\\feature-worktree",
+  };
+  const remoteProject = {
+    kind: "remote" as const,
+    hostDisplayName: "staging-box",
+    hostId: "remote-staging",
+    label: "codex-remote",
+    projectId: "remote-project-1",
+    remotePath: "/srv/codex",
+  };
+  const projectOptions = [localProject, worktreeProject, remoteProject];
 
   return {
     emptyState: renderSnapshot(
       <StaticI18nProvider>
         <div className="w-[320px] p-4">
           <HotkeyWindowProjectMenuControlView
-            filteredWorkspaceOptions={projectOptions}
+            allowRemoteProjects
+            connectedRemoteConnections={connectedRemoteConnections}
+            filteredProjectOptions={projectOptions}
             isLoading={false}
             isOpen={false}
             query=""
             selectedOption={null}
-            selectedWorkspaceRoot={null}
-            onAddProject={noop}
+            selection={{ kind: "projectless" }}
+            variant="home"
+            onAddLocalProject={noop}
+            onAddRemoteProject={noop}
             onClearProject={noop}
             onQueryChange={noopString}
-            onSelectWorkspaceRoot={noopString}
+            onSelectProject={noopProjectOption}
+            onToggleOpen={noop}
+          />
+        </div>
+      </StaticI18nProvider>,
+    ),
+    heroOpen: renderSnapshot(
+      <StaticI18nProvider>
+        <div className="w-[520px] p-4">
+          <HotkeyWindowProjectMenuControlView
+            allowRemoteProjects
+            connectedRemoteConnections={connectedRemoteConnections}
+            filteredProjectOptions={projectOptions}
+            isLoading={false}
+            isOpen
+            query=""
+            selectedOption={remoteProject}
+            selection={{ kind: "remote", hostId: "remote-staging", projectId: "remote-project-1", remotePath: "/srv/codex" }}
+            variant="hero"
+            onAddLocalProject={noop}
+            onAddRemoteProject={noop}
+            onClearProject={noop}
+            onQueryChange={noopString}
+            onSelectProject={noopProjectOption}
+            onToggleOpen={noop}
+          />
+        </div>
+      </StaticI18nProvider>,
+    ),
+    homeNoRemoteMenuOpen: renderSnapshot(
+      <StaticI18nProvider>
+        <div className="w-[320px] p-4">
+          <HotkeyWindowProjectMenuControlView
+            allowRemoteProjects={false}
+            connectedRemoteConnections={connectedRemoteConnections}
+            filteredProjectOptions={[localProject, worktreeProject]}
+            isLoading={false}
+            isOpen
+            query=""
+            selectedOption={localProject}
+            selection={{ kind: "local", workspaceRoot: localProject.workspaceRoot }}
+            variant="home"
+            onAddLocalProject={noop}
+            onAddRemoteProject={noop}
+            onClearProject={noop}
+            onQueryChange={noopString}
+            onSelectProject={noopProjectOption}
             onToggleOpen={noop}
           />
         </div>
@@ -81,16 +154,20 @@ function buildSnapshots(): SnapshotMap {
       <StaticI18nProvider>
         <div className="w-[320px] p-4">
           <HotkeyWindowProjectMenuControlView
-            filteredWorkspaceOptions={projectOptions}
+            allowRemoteProjects
+            connectedRemoteConnections={connectedRemoteConnections}
+            filteredProjectOptions={projectOptions}
             isLoading={false}
             isOpen
             query=""
-            selectedOption={projectOptions[0]}
-            selectedWorkspaceRoot={projectOptions[0].root}
-            onAddProject={noop}
+            selectedOption={localProject}
+            selection={{ kind: "local", workspaceRoot: localProject.workspaceRoot }}
+            variant="home"
+            onAddLocalProject={noop}
+            onAddRemoteProject={noop}
             onClearProject={noop}
             onQueryChange={noopString}
-            onSelectWorkspaceRoot={noopString}
+            onSelectProject={noopProjectOption}
             onToggleOpen={noop}
           />
         </div>
@@ -100,16 +177,20 @@ function buildSnapshots(): SnapshotMap {
       <StaticI18nProvider>
         <div className="w-[320px] p-4">
           <HotkeyWindowProjectMenuControlView
-            filteredWorkspaceOptions={[]}
+            allowRemoteProjects
+            connectedRemoteConnections={connectedRemoteConnections}
+            filteredProjectOptions={[]}
             isLoading={false}
             isOpen
             query="zzz"
-            selectedOption={projectOptions[0]}
-            selectedWorkspaceRoot={projectOptions[0].root}
-            onAddProject={noop}
+            selectedOption={localProject}
+            selection={{ kind: "local", workspaceRoot: localProject.workspaceRoot }}
+            variant="home"
+            onAddLocalProject={noop}
+            onAddRemoteProject={noop}
             onClearProject={noop}
             onQueryChange={noopString}
-            onSelectWorkspaceRoot={noopString}
+            onSelectProject={noopProjectOption}
             onToggleOpen={noop}
           />
         </div>
@@ -161,4 +242,5 @@ function translate(key: MessageKey, values?: MessageValues) {
 
 const noop = () => {};
 const noopString = (_value: string) => {};
+const noopProjectOption = (_value: unknown) => {};
 const noopLocale = async (_locale: LocaleCode) => {};

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useI18n } from "../i18n/i18n";
+import { MarkdownPreview } from "./MarkdownPreview";
 import {
   ChevronDownIcon,
   CloseTabIcon,
   MoreActionsIcon,
 } from "./AppShellIcons";
+import { Tooltip } from "./Tooltip";
 import { ToggleSwitch } from "./ToggleSwitch";
 import type { AppInfo, AppTool } from "../services/apps";
 
@@ -74,6 +76,7 @@ export function PluginsAppToolsDialog({
     : t("skills.appsPage.toolsDialog.enableApp");
   const canTryInChat = app.isAccessible && app.isEnabled;
   const description = app.description ?? t("skills.appsPage.toolsDialog.subtitle");
+  const manageUrl = buildManageOnChatGptUrl(app);
   const summary = t("skills.appsPage.toolsDialog.summary", {
     actionTypes: toolSections.map((section) => formatSectionSummary(section)).join(", "),
     appName: app.name,
@@ -110,14 +113,16 @@ export function PluginsAppToolsDialog({
 
           <div className="flex shrink-0 items-center gap-2">
             {showEnableToggle && app.isAccessible ? (
-              <div title={toggleTooltip}>
-                <ToggleSwitch
-                  ariaLabel={toggleTooltip}
-                  checked={app.isEnabled}
-                  disabled={updatingAppId === app.id}
-                  onChange={(enabled) => void onSetAppEnabled(enabled)}
-                />
-              </div>
+              <Tooltip tooltipContent={toggleTooltip}>
+                <div>
+                  <ToggleSwitch
+                    ariaLabel={toggleTooltip}
+                    checked={app.isEnabled}
+                    disabled={updatingAppId === app.id}
+                    onChange={(enabled) => void onSetAppEnabled(enabled)}
+                  />
+                </div>
+              </Tooltip>
             ) : null}
 
             <div className="relative">
@@ -133,10 +138,10 @@ export function PluginsAppToolsDialog({
                 <div className="app-card absolute top-[calc(100%+8px)] right-0 z-10 w-[210px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
                   <button
                     type="button"
-                    disabled={app.installUrl == null}
+                    disabled={manageUrl == null}
                     onClick={() => {
                       setIsMoreActionsOpen(false);
-                      void onOpenAppUrl(app.installUrl);
+                      void onOpenAppUrl(manageUrl);
                     }}
                     className="app-nav-item-idle w-full rounded-[10px] px-3 py-2 text-left text-[13px] disabled:opacity-50"
                   >
@@ -214,9 +219,12 @@ export function PluginsAppToolsDialog({
                             <div className="min-w-0 truncate text-[14px]" title={tool.name}>
                               {tool.name}
                             </div>
-                            <div className="app-text-muted whitespace-pre-wrap text-[13px] leading-6">
-                              {tool.description}
-                            </div>
+                            <MarkdownPreview
+                              className="app-text-muted text-[13px] leading-6 [&>p]:my-0"
+                              cwd={null}
+                              hostId={null}
+                              text={tool.description}
+                            />
                           </div>
                         ))}
                       </div>
@@ -229,22 +237,27 @@ export function PluginsAppToolsDialog({
         </div>
 
         <div className="mt-4 flex justify-end">
-          <div title={canTryInChat ? undefined : t("skills.appsPage.toolsDialog.tryInChatDisabled")}>
-            <button
-              type="button"
-              disabled={!canTryInChat}
-              onClick={() => {
-                if (!canTryInChat) {
-                  return;
-                }
-                onTryInChat?.();
-                onOpenChange(false);
-              }}
-              className="app-control rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
-            >
-              {t("skills.appsPage.toolsDialog.tryInChat")}
-            </button>
-          </div>
+          <Tooltip
+            disabled={canTryInChat}
+            tooltipContent={t("skills.appsPage.toolsDialog.tryInChatDisabled")}
+          >
+            <div>
+              <button
+                type="button"
+                disabled={!canTryInChat}
+                onClick={() => {
+                  if (!canTryInChat) {
+                    return;
+                  }
+                  onTryInChat?.();
+                  onOpenChange(false);
+                }}
+                className="app-control rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
+              >
+                {t("skills.appsPage.toolsDialog.tryInChat")}
+              </button>
+            </div>
+          </Tooltip>
         </div>
       </div>
     </div>
@@ -282,6 +295,21 @@ function buildToolSections(tools: AppTool[]): ToolSection[] {
 
 function formatSectionSummary(section: ToolSection) {
   return `${section.tools.length} ${section.title.toLowerCase()}`;
+}
+
+function buildManageOnChatGptUrl(app: AppInfo) {
+  const trimmedInstallUrl = app.installUrl?.trim();
+  if (!trimmedInstallUrl) {
+    return null;
+  }
+
+  try {
+    const url = new URL(trimmedInstallUrl);
+    url.hash = `settings/Connectors?connector=${encodeURIComponent(app.id)}&referrer=app_directory`;
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 function AppToolsIcon({ className }: { className?: string }) {

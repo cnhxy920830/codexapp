@@ -1,7 +1,7 @@
 import { isWithinCodexWorktrees } from "../../services/codexHome";
 import type { GitOrigin } from "../../services/gitOrigins";
 import type { ThreadHistoryEntry } from "../../services/history";
-import { getLocalEnvironmentProjectName, normalizePathForComparison } from "../../services/localEnvironments";
+import { normalizePathForComparison } from "../../services/localEnvironments";
 import type { PendingWorktreeEntry } from "../../services/pendingWorktrees";
 
 const WORKSPACE_ONBOARDING_EXPERIMENT_NAME = "93537254";
@@ -204,7 +204,7 @@ export function deriveCandidateWorkspaceRoots({
 export function buildWorkspaceRootOptions(roots: string[], labels: Record<string, string>) {
   return roots.map((root) => ({
     root,
-    label: getLocalEnvironmentProjectName(root, labels[root]) ?? root,
+    label: getWorkspaceRootLabel(root, labels[root]),
   }));
 }
 
@@ -215,6 +215,16 @@ export function countSelectedRoots(selectedRoots: Record<string, boolean>, roots
 export function filterExistingWorkspaceRootOptions(options: WorkspaceRootOption[], existingPaths: string[]) {
   const existing = new Set(existingPaths.map(normalizeComparablePath));
   return options.filter((option) => existing.has(normalizeComparablePath(option.root)));
+}
+
+export function stripWorkspaceRootExtendedPrefix(path: string) {
+  const uncPathMatch = path.match(/^\\\\\?\\UNC\\(.*)$/i);
+  if (uncPathMatch != null) {
+    return `\\\\${uncPathMatch[1]}`;
+  }
+
+  const drivePathMatch = path.match(/^\\\\\?\\([a-zA-Z]:[\\/].*)$/);
+  return drivePathMatch == null ? path : drivePathMatch[1];
 }
 
 export function getPendingWorktreeCandidateRoot(entry: PendingWorktreeEntry) {
@@ -304,7 +314,21 @@ function dedupeWorkspaceRootSequence(roots: string[]) {
 }
 
 function normalizeComparablePath(path: string) {
-  return normalizePathForComparison(path).replace(/\/+$/, "").toLowerCase();
+  return normalizePathForComparison(stripWorkspaceRootExtendedPrefix(path)).replace(/\/+$/, "").toLowerCase();
+}
+
+function getWorkspaceRootLabel(root: string, label?: string | null) {
+  const trimmedLabel = label?.trim();
+  if (trimmedLabel && trimmedLabel.length > 0) {
+    return trimmedLabel;
+  }
+
+  return getWorkspaceRootFallbackLabel(root);
+}
+
+function getWorkspaceRootFallbackLabel(root: string) {
+  const normalizedRoot = normalizePathForComparison(stripWorkspaceRootExtendedPrefix(root)).replace(/\/+$/, "");
+  return normalizedRoot.split("/").at(-1) ?? normalizedRoot;
 }
 
 function shouldUseWorkspaceOnboardingDefaultProjectName(arm: WorkspaceOnboardingExperimentArm) {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { CheckIcon, InfoIcon } from "../../../components/AppShellIcons";
+import { Tooltip } from "../../../components/Tooltip";
 import type { MessageKey } from "../../../i18n/messages";
 import { WelcomeHeaderIcon, WelcomeHeaderSourceIcon } from "./icons";
 
@@ -11,10 +12,8 @@ export function WelcomeShell({ children }: { children: ReactNode }) {
   return (
     <div className="fixed inset-0 overflow-hidden select-none">
       <div className="absolute inset-0 bg-[var(--app-shell-main-surface)] electron:bg-transparent" />
-      <div className="fixed inset-0 flex items-center justify-center px-6 pb-8 pt-0">
-        <div className="flex h-full w-full items-center justify-center overflow-auto bg-[var(--app-shell-main-surface)] text-[var(--app-shell-text)]">
-          {children}
-        </div>
+      <div className="fixed inset-0 flex items-center justify-center overflow-hidden bg-[var(--app-shell-main-surface)] text-[var(--app-shell-text)]">
+        {children}
       </div>
     </div>
   );
@@ -231,30 +230,24 @@ export function ImportGroupRow({
 }
 
 export function InlineTooltip({ content, label }: { content: string; label: string }) {
-  const [isOpen, setIsOpen] = useState(false);
-
   return (
-    <span className="relative inline-flex">
+    <Tooltip
+      delayDuration={0}
+      side="top"
+      sideOffset={6}
+      tooltipBodyClassName="!text-white"
+      tooltipClassName="!border-transparent !bg-black px-1.5 py-1.5 text-center text-xs leading-4 font-medium !text-white shadow-lg"
+      tooltipContent={<span className="block !text-white">{content}</span>}
+      tooltipMaxWidth={272}
+    >
       <button
         type="button"
         aria-label={label}
         className="inline-flex h-4 w-4 items-center justify-center rounded-full text-[var(--app-shell-subtle)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-shell-text)]"
-        onBlur={() => setIsOpen(false)}
-        onFocus={() => setIsOpen(true)}
-        onMouseEnter={() => setIsOpen(true)}
-        onMouseLeave={() => setIsOpen(false)}
       >
         <InfoIcon className="h-3.5 w-3.5" />
       </button>
-      {isOpen ? (
-        <span
-          role="tooltip"
-          className="pointer-events-none absolute top-full left-1/2 z-10 mt-1 w-max max-w-[17rem] -translate-x-1/2 rounded-[6px] bg-black px-2 py-1.5 text-center text-xs leading-4 font-medium text-white shadow-lg"
-        >
-          {content}
-        </span>
-      ) : null}
-    </span>
+    </Tooltip>
   );
 }
 

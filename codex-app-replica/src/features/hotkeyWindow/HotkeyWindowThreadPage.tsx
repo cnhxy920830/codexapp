@@ -1,15 +1,12 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useI18n } from "../../i18n/i18n";
 import type { ThreadConversation } from "../../services/history";
-import {
-  readHotkeyWindowHotkeyState,
-  type HotkeyWindowHotkeyStateResponse,
-} from "../../services/settings";
 import {
   HOTKEY_HOME_ROUTE_PATH,
   HOTKEY_NEW_THREAD_ROUTE_PATH,
 } from "../../services/windowNavigation";
 import { HotkeyWindowDetailLayout } from "./HotkeyWindowDetailLayout";
+import { useHotkeyWindowHotkeyState } from "./hotkeyWindowHotkeyState";
 
 export function HotkeyWindowThreadPage({
   children,
@@ -23,31 +20,10 @@ export function HotkeyWindowThreadPage({
   threadConversation: ThreadConversation | null;
 }) {
   const { t } = useI18n();
-  const [hotkeyState, setHotkeyState] =
-    useState<HotkeyWindowHotkeyStateResponse | undefined>(undefined);
+  const hotkeyState = useHotkeyWindowHotkeyState();
 
   useEffect(() => {
-    if (conversationId !== null) {
-      return;
-    }
-
-    let cancelled = false;
-
-    void readHotkeyWindowHotkeyState()
-      .then((state) => {
-        if (!cancelled) {
-          setHotkeyState(state);
-        }
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [conversationId]);
-
-  useEffect(() => {
-    if (conversationId !== null || hotkeyState === undefined) {
+    if (conversationId !== null || hotkeyState === null) {
       return;
     }
 

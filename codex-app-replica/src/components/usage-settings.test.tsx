@@ -42,7 +42,20 @@ test("usage settings and app share extracted usage-access gate", () => {
   assert.match(appSource, /const \{\s*isUsageSettingsVisible: showUsageSettings,\s*\} = useUsageSettingsAccess\(/s);
   assert.doesNotMatch(appSource, /isUsageSettingsPlanSupported/);
 
-  assert.match(hookSource, /void readAccountInfo\(\)/);
+  assert.match(hookSource, /await readAccountInfo\(\)/);
+  assert.match(hookSource, /onQueryCacheInvalidated\(\(notification\) => \{/);
+  assert.match(hookSource, /queryKeyMatchesPrefix\(notification\.queryKey, ACCOUNT_INFO_QUERY_KEY\)/);
+  assert.match(hookSource, /const requestId = requestIdRef\.current \+ 1;/);
+  assert.match(hookSource, /if \(requestId !== requestIdRef\.current\) \{/);
+  assert.match(
+    hookSource,
+    /void loadUsageSettingsAccess\(\{\s*preserveStateOnError: true,\s*resetBeforeLoad: false,\s*\}\);/s,
+  );
+  assert.match(
+    hookSource,
+    /void loadUsageSettingsAccess\(\{\s*preserveStateOnError: false,\s*resetBeforeLoad: true,\s*\}\);/s,
+  );
+  assert.match(hookSource, /setState\(\(current\) => \(\{\s*isUsageSettingsAccessLoading: false,\s*isUsageSettingsVisible: current\.isUsageSettingsVisible,/s);
   assert.match(hookSource, /normalizedPlan === "plus"/);
   assert.match(hookSource, /normalizedPlan === "pro"/);
   assert.match(hookSource, /normalizedPlan === "prolite"/);

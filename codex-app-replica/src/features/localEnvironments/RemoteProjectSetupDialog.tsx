@@ -13,8 +13,10 @@ import {
 
 type RemoteProjectSetupDialogProps = {
   connectedRemoteConnections: RemoteConnection[];
+  initialDirectoryPath?: string | null;
   initialHostId: string;
   isSaving: boolean;
+  mode?: "pick" | "setup";
   remoteProjects: RemoteProject[];
   onClose: () => void;
   onSave: (params: { hostId: string; remotePath: string }) => void | Promise<void>;
@@ -29,13 +31,16 @@ type SubmitBlocker =
 
 export function RemoteProjectSetupDialog({
   connectedRemoteConnections,
+  initialDirectoryPath = null,
   initialHostId,
   isSaving,
+  mode = "setup",
   remoteProjects,
   onClose,
   onSave,
 }: RemoteProjectSetupDialogProps) {
   const { t } = useI18n();
+  const isPickMode = mode === "pick";
   const fallbackHostId = connectedRemoteConnections[0]?.hostId ?? "";
   const [selectedHostId, setSelectedHostId] = useState("");
   const [remotePath, setRemotePath] = useState("");
@@ -52,11 +57,11 @@ export function RemoteProjectSetupDialog({
 
   useEffect(() => {
     setSelectedHostId(resolvedInitialHostId);
-    setRemotePath("");
+    setRemotePath(initialDirectoryPath ?? "");
     setValidatedDirectoryPath(null);
     setValidationErrorPath(null);
     setIsPathValidationPending(false);
-  }, [resolvedInitialHostId]);
+  }, [initialDirectoryPath, resolvedInitialHostId]);
 
   const connectedHostIds = useMemo(() => {
     return connectedRemoteConnections.map((remoteConnection) => remoteConnection.hostId);
@@ -70,6 +75,9 @@ export function RemoteProjectSetupDialog({
     [validatedDirectoryPath],
   );
   const conflictingRemoteProject = useMemo(() => {
+    if (isPickMode) {
+      return null;
+    }
     if (!selectedConnection || !normalizedValidatedPath) {
       return null;
     }
@@ -223,11 +231,17 @@ export function RemoteProjectSetupDialog({
   return (
     <div className="fixed inset-0 z-20 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
       <div className="app-card w-full max-w-[460px] rounded-[18px] px-5 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]">
-        <div className="text-[18px] font-medium text-token-text-primary">{t("projectSetupDialog.title")}</div>
+        <div className="text-[18px] font-medium text-token-text-primary">
+          {isPickMode ? t("workspaceRootDialog.title.pick") : t("projectSetupDialog.title")}
+        </div>
         <div className="mt-2 text-[13px] leading-6 text-token-text-secondary">
-          {connectedRemoteConnections.length > 0
-            ? t("projectSetupDialog.description")
-            : t("projectSetupDialog.description.noConnectedRemotes")}
+          {isPickMode
+            ? t("workspaceRootDialog.description.pick", {
+                host: selectedConnection?.displayName ?? "",
+              })
+            : connectedRemoteConnections.length > 0
+              ? t("projectSetupDialog.description")
+              : t("projectSetupDialog.description.noConnectedRemotes")}
         </div>
 
         <div className="mt-5 flex flex-col gap-4">
@@ -321,9 +335,11 @@ export function RemoteProjectSetupDialog({
             />
           </label>
 
-          <div className="text-[13px] leading-6 text-token-text-secondary">
-            {t("projectSetupDialog.remoteMode.standalone.description")}
-          </div>
+          {isPickMode ? null : (
+            <div className="text-[13px] leading-6 text-token-text-secondary">
+              {t("projectSetupDialog.remoteMode.standalone.description")}
+            </div>
+          )}
         </div>
 
         <div className="mt-4 min-h-5">
@@ -347,7 +363,7 @@ export function RemoteProjectSetupDialog({
             onClick={() => void handleSubmit()}
             size="composer"
           >
-            {t("workspaceRootDialog.confirmAdd")}
+            {isPickMode ? t("workspaceRootDialog.confirmPick") : t("workspaceRootDialog.confirmAdd")}
           </Button>
         </div>
       </div>

@@ -163,6 +163,7 @@ use auth_bridge::shared_state;
 use auth_bridge::start_conversation;
 use auth_bridge::start_review;
 use auth_bridge::start_thread;
+use auth_bridge::start_thread_for_host;
 use auth_bridge::start_turn;
 use auth_bridge::start_turn_with_input;
 use auth_bridge::steer_turn;
@@ -404,14 +405,19 @@ use window_navigation::open_debug_window;
 use window_navigation::open_in_main_window;
 use window_navigation::open_in_new_window;
 use window_navigation::show_diff;
+use window_navigation::show_file_preview;
 use window_navigation::show_plan_summary;
 use window_navigation::show_settings;
 use window_navigation::take_pending_debug_window_origin_conversation;
+use window_navigation::take_pending_diff;
+use window_navigation::take_pending_file_preview;
 use window_navigation::take_pending_plan_summary;
 use window_navigation::take_pending_window_route;
 use window_navigation::update_diff_if_open;
 use window_navigation::DebugWindowOriginConversations;
 use window_navigation::PendingDebugWindowOriginConversations;
+use window_navigation::PendingDiffs;
+use window_navigation::PendingFilePreviews;
 use window_navigation::PendingPlanSummaries;
 use window_navigation::PendingWindowRoutes;
 use workspace_agents::codex_agents_md;
@@ -509,6 +515,8 @@ pub fn run() {
         .manage(BrowserSidebarState::default())
         .manage(PrimaryWindowModeState::default())
         .manage(DebugWindowOriginConversations::default())
+        .manage(PendingDiffs::default())
+        .manage(PendingFilePreviews::default())
         .manage(PendingPlanSummaries::default())
         .manage(PendingDebugWindowOriginConversations::default())
         .manage(PendingWindowRoutes::default())
@@ -699,6 +707,7 @@ pub fn run() {
             discard_conversation_from_cache,
             start_conversation,
             start_thread,
+            start_thread_for_host,
             fork_thread,
             fork_conversation_from_latest,
             archive_thread,
@@ -802,9 +811,12 @@ pub fn run() {
             open_in_new_window,
             debug_window_origin_conversation_changed,
             show_diff,
+            show_file_preview,
             show_plan_summary,
             show_settings,
             take_pending_debug_window_origin_conversation,
+            take_pending_diff,
+            take_pending_file_preview,
             take_pending_plan_summary,
             take_pending_window_route,
             update_diff_if_open,

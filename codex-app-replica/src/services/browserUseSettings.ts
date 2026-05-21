@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { emitQueryCacheInvalidated } from "./queryCache";
 import { getGlobalState, setGlobalState } from "./settings";
 
 export type BrowserUseApprovalMode = "alwaysAsk" | "neverAsk";
@@ -24,39 +25,59 @@ export type BrowserBrowsingDataClearResponse = {
   ok: boolean;
 };
 
+export const BROWSER_USE_SETTINGS_QUERY_KEY = [
+  "browser-use-origin-state-read",
+] as const;
+
 export async function readBrowserUseSettings() {
-  return invoke<BrowserUseSettingsState>("browser-use-origin-state-read");
+  return invoke<BrowserUseSettingsState>(BROWSER_USE_SETTINGS_QUERY_KEY[0]);
 }
 
 export async function writeBrowserUseApprovalMode(params: {
   approvalMode: BrowserUseApprovalMode;
 }) {
-  return invoke<BrowserUseSettingsState>("browser-use-approval-mode-write", { params });
+  try {
+    return await invoke<BrowserUseSettingsState>("browser-use-approval-mode-write", { params });
+  } finally {
+    await emitQueryCacheInvalidated(BROWSER_USE_SETTINGS_QUERY_KEY).catch(() => undefined);
+  }
 }
 
 export async function writeBrowserUseHistoryApprovalMode(params: {
   approvalMode: BrowserUseApprovalMode;
 }) {
-  return invoke<BrowserUseSettingsState>("browser-use-history-approval-mode-write", { params });
+  try {
+    return await invoke<BrowserUseSettingsState>("browser-use-history-approval-mode-write", { params });
+  } finally {
+    await emitQueryCacheInvalidated(BROWSER_USE_SETTINGS_QUERY_KEY).catch(() => undefined);
+  }
 }
 
 export async function writeBrowserUseFileTransferApprovalMode(params: {
   kind: BrowserUseFileTransferKind;
   approvalMode: BrowserUseApprovalMode;
 }) {
-  return invoke<BrowserUseSettingsState>("browser-use-file-transfer-approval-mode-write", { params });
+  try {
+    return await invoke<BrowserUseSettingsState>("browser-use-file-transfer-approval-mode-write", { params });
+  } finally {
+    await emitQueryCacheInvalidated(BROWSER_USE_SETTINGS_QUERY_KEY).catch(() => undefined);
+  }
 }
 
 export async function addBrowserUseOrigin(params: {
   kind: BrowserUseOriginKind;
   origin: string;
 }) {
-  return invoke<BrowserUseSettingsState>("browser-use-origin-add", {
-    params: {
-      kind: params.kind,
-      targetOrigin: params.origin,
-    },
-  });
+  try {
+    return await invoke<BrowserUseSettingsState>("browser-use-origin-add", {
+      params: {
+        kind: params.kind,
+        targetOrigin: params.origin,
+      },
+    });
+  } finally {
+    await emitQueryCacheInvalidated(BROWSER_USE_SETTINGS_QUERY_KEY).catch(() => undefined);
+  }
 }
 
 export async function addBrowserUseFileTransferOrigin(params: {
@@ -64,25 +85,33 @@ export async function addBrowserUseFileTransferOrigin(params: {
   transferKind: BrowserUseFileTransferKind;
   origin: string;
 }) {
-  return invoke<BrowserUseSettingsState>("browser-use-file-transfer-origin-add", {
-    params: {
-      kind: params.kind,
-      targetOrigin: params.origin,
-      transferKind: params.transferKind,
-    },
-  });
+  try {
+    return await invoke<BrowserUseSettingsState>("browser-use-file-transfer-origin-add", {
+      params: {
+        kind: params.kind,
+        targetOrigin: params.origin,
+        transferKind: params.transferKind,
+      },
+    });
+  } finally {
+    await emitQueryCacheInvalidated(BROWSER_USE_SETTINGS_QUERY_KEY).catch(() => undefined);
+  }
 }
 
 export async function removeBrowserUseOrigin(params: {
   kind: BrowserUseOriginKind;
   origin: string;
 }) {
-  return invoke<BrowserUseSettingsState>("browser-use-origin-remove", {
-    params: {
-      kind: params.kind,
-      targetOrigin: params.origin,
-    },
-  });
+  try {
+    return await invoke<BrowserUseSettingsState>("browser-use-origin-remove", {
+      params: {
+        kind: params.kind,
+        targetOrigin: params.origin,
+      },
+    });
+  } finally {
+    await emitQueryCacheInvalidated(BROWSER_USE_SETTINGS_QUERY_KEY).catch(() => undefined);
+  }
 }
 
 export async function removeBrowserUseFileTransferOrigin(params: {
@@ -90,13 +119,17 @@ export async function removeBrowserUseFileTransferOrigin(params: {
   transferKind: BrowserUseFileTransferKind;
   origin: string;
 }) {
-  return invoke<BrowserUseSettingsState>("browser-use-file-transfer-origin-remove", {
-    params: {
-      kind: params.kind,
-      targetOrigin: params.origin,
-      transferKind: params.transferKind,
-    },
-  });
+  try {
+    return await invoke<BrowserUseSettingsState>("browser-use-file-transfer-origin-remove", {
+      params: {
+        kind: params.kind,
+        targetOrigin: params.origin,
+        transferKind: params.transferKind,
+      },
+    });
+  } finally {
+    await emitQueryCacheInvalidated(BROWSER_USE_SETTINGS_QUERY_KEY).catch(() => undefined);
+  }
 }
 
 export async function clearBrowserBrowsingData(dataTypes: BrowserBrowsingDataType[]) {

@@ -6,6 +6,7 @@ import {
   SearchIcon,
   WorkspaceFileIcon,
 } from "../../components/AppShellIcons";
+import { LoadingPage } from "../../components/LoadingPage";
 import { useI18n } from "../../i18n/i18n";
 import {
   readPullRequestFileContent,
@@ -347,34 +348,22 @@ export function PullRequestCodeReviewPane({
   }, [activeFilePath, diffFiles, isLoadFullFilesEnabled, loadFullFile]);
 
   if (isCodeReviewLoading) {
-    return (
-      <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4">
-        <div className="app-card-muted rounded-[14px] px-4 py-10 text-center text-[13px] leading-6">
-          {t("pullRequestsPage.detail.checks.loading")}
-        </div>
-      </div>
-    );
+    return <LoadingPage />;
   }
 
   if (codeReviewError) {
     return (
-      <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4">
-        <div className="app-card-error rounded-[14px] px-4 py-3 text-[13px] leading-6">
-          <div className="font-medium">{t("pullRequestsPage.codeReview.error")}</div>
-          <div className="mt-2 break-words text-[12px] leading-5 opacity-80">{codeReviewError}</div>
-        </div>
-      </div>
+      <CodeReviewCenteredMessage>
+        {t("pullRequestsPage.codeReview.error")}
+      </CodeReviewCenteredMessage>
     );
   }
 
   if (diffFiles.length === 0) {
     return (
-      <div className="mt-4 flex min-h-0 flex-1 flex-col gap-4">
-        <div className="app-card-muted rounded-[14px] px-4 py-3 text-[13px] leading-6">
-          <div className="font-medium">{t("codex.review.noDiff")}</div>
-          <div className="mt-2 text-[12px] leading-5 opacity-80">{t("codex.review.noDiff.baseDescription")}</div>
-        </div>
-      </div>
+      <CodeReviewCenteredMessage>
+        {t("pullRequestsPage.codeReview.empty")}
+      </CodeReviewCenteredMessage>
     );
   }
 
@@ -559,6 +548,14 @@ export function PullRequestCodeReviewPane({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function CodeReviewCenteredMessage({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex h-full items-center justify-center px-4 py-8 text-sm text-token-description-foreground">
+      {children}
     </div>
   );
 }

@@ -72,7 +72,7 @@ test("keyboard shortcuts source uses extracted title owner and shared keycap own
   );
   assert.match(
     source,
-    /<TooltipKeycap keysLabel=\{shortcutLabel\} \/>/,
+    /<TooltipKeycap\s+className="!px-2 !py-1 !text-sm"\s+keysLabel=\{shortcutLabel\}\s*\/>/,
   );
   assert.match(
     tooltipSource,
@@ -116,7 +116,7 @@ test("keyboard shortcuts settings snapshots", async (t) => {
         assert.match(actual, /Ctrl\+Alt\+F/);
         assert.match(
           actual,
-          /<kbd class=\"inline-flex !rounded-md !border-0 !bg-current\/10 !font-sans !text-xs !text-current !shadow-none !px-1\.5 !py-0\.5 !leading-none\">Ctrl\+Alt\+F<\/kbd>/,
+          /<kbd class=\"inline-flex !rounded-md !border-0 !bg-current\/10 !font-sans !text-xs !text-current !shadow-none !px-1\.5 !py-0\.5 !leading-none !px-2 !py-1 !text-sm\">Ctrl\+Alt\+F<\/kbd>/,
         );
         assert.match(actual, /Clear shortcut for Find/);
         assert.match(actual, /Reset shortcut for Find/);

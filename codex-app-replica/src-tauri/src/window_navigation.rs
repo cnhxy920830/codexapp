@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use serde::Serialize;
+use serde_json::Value;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
@@ -7,13 +8,17 @@ use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow, WebviewWindowBuil
 
 const MAIN_WINDOW_LABEL: &str = "main";
 const NAVIGATE_TO_ROUTE_EVENT: &str = "navigate-to-route";
-const TOGGLE_DIFF_PANEL_EVENT: &str = "toggle-diff-panel";
 const DEBUG_WINDOW_LABEL: &str = "debug-window";
 const DEBUG_WINDOW_ROUTE_PATH: &str = "/debug";
 const DEBUG_WINDOW_TITLE: &str = "Debug";
 pub const APP_CONNECT_OAUTH_CALLBACK_ROUTE_PATH: &str = "/app-connect-oauth-callback";
 const DEBUG_WINDOW_ORIGIN_CONVERSATION_CHANGED_EVENT: &str =
     "debug-window-origin-conversation-changed";
+const FILE_PREVIEW_ROUTE_PATH: &str = "/file-preview";
+const FILE_PREVIEW_WINDOW_LABEL_PREFIX: &str = "file-preview-window";
+const FILE_PREVIEW_WINDOW_TITLE: &str = "File";
+const EDITOR_DIFF_ROUTE_PATH: &str = "/diff";
+const EDITOR_DIFF_WINDOW_LABEL_PREFIX: &str = "editor-diff-window";
 const PLAN_SUMMARY_ROUTE_PATH: &str = "/plan-summary";
 const PLAN_SUMMARY_WINDOW_LABEL_PREFIX: &str = "plan-summary-window";
 const THREAD_WINDOW_LABEL_PREFIX: &str = "thread-window";
@@ -85,6 +90,71 @@ impl PendingPlanSummaries {
 }
 
 #[derive(Default)]
+pub struct PendingDiffs {
+    diffs_by_label: Mutex<HashMap<String, PendingDiff>>,
+}
+
+impl PendingDiffs {
+    fn insert(&self, label: &str, diff: PendingDiff) -> Result<(), String> {
+        let mut diffs = self
+            .diffs_by_label
+            .lock()
+            .map_err(|_| "pending diffs mutex poisoned".to_string())?;
+        diffs.insert(label.to_string(), diff);
+        Ok(())
+    }
+
+    fn get(&self, label: &str) -> Result<Option<PendingDiff>, String> {
+        let diffs = self
+            .diffs_by_label
+            .lock()
+            .map_err(|_| "pending diffs mutex poisoned".to_string())?;
+        Ok(diffs.get(label).cloned())
+    }
+
+    fn take(&self, label: &str) -> Result<Option<PendingDiff>, String> {
+        let mut diffs = self
+            .diffs_by_label
+            .lock()
+            .map_err(|_| "pending diffs mutex poisoned".to_string())?;
+        Ok(diffs.remove(label))
+    }
+}
+
+#[derive(Default)]
+pub struct PendingFilePreviews {
+    previews_by_label: Mutex<HashMap<String, PendingFilePreview>>,
+}
+
+impl PendingFilePreviews {
+    fn insert(&self, label: &str, preview: PendingFilePreview) -> Result<(), String> {
+        let mut previews = self
+            .previews_by_label
+            .lock()
+            .map_err(|_| "pending file previews mutex poisoned".to_string())?;
+        previews.insert(label.to_string(), preview);
+        Ok(())
+    }
+
+    fn remove(&self, label: &str) -> Result<(), String> {
+        let mut previews = self
+            .previews_by_label
+            .lock()
+            .map_err(|_| "pending file previews mutex poisoned".to_string())?;
+        previews.remove(label);
+        Ok(())
+    }
+
+    fn take(&self, label: &str) -> Result<Option<PendingFilePreview>, String> {
+        let mut previews = self
+            .previews_by_label
+            .lock()
+            .map_err(|_| "pending file previews mutex poisoned".to_string())?;
+        Ok(previews.remove(label))
+    }
+}
+
+#[derive(Default)]
 pub struct PendingDebugWindowOriginConversations {
     conversations_by_label: Mutex<HashMap<String, String>>,
 }
@@ -141,16 +211,11 @@ impl DebugWindowOriginConversations {
     }
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct NavigateToRouteNotification {
     path: String,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-struct ToggleDiffPanelNotification {
-    open: bool,
+    state: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -166,7 +231,7 @@ pub struct OpenInNewWindowParams {
     pub path: String,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ShowDiffParams {
     pub conversation_id: String,
@@ -182,6 +247,15 @@ pub struct ShowPlanSummaryParams {
     pub plan_content: String,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ShowFilePreviewParams {
+    pub file_path: String,
+    pub contents: String,
+    pub line: Option<u32>,
+    pub column: Option<u32>,
+}
+
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateDiffIfOpenParams {
@@ -190,6 +264,8 @@ pub struct UpdateDiffIfOpenParams {
 }
 
 pub type PendingPlanSummary = ShowPlanSummaryParams;
+pub type PendingDiff = ShowDiffParams;
+pub type PendingFilePreview = ShowFilePreviewParams;
 
 #[tauri::command(rename = "show-settings")]
 pub fn show_settings(app: AppHandle, window: Window, section: String) -> Result<(), String> {
@@ -307,28 +383,103 @@ pub async fn show_plan_summary(
 }
 
 #[tauri::command(rename = "show-diff")]
-pub fn show_diff(window: Window, params: ShowDiffParams) -> Result<(), String> {
-    let ShowDiffParams {
-        conversation_id: _,
-        unified_diff: _,
-        cwd: _,
-    } = params;
+pub fn show_diff(
+    app: AppHandle,
+    pending_diffs: State<'_, PendingDiffs>,
+    pending_window_routes: State<'_, PendingWindowRoutes>,
+    params: ShowDiffParams,
+) -> Result<(), String> {
+    let diff = normalized_pending_diff(params)?;
+    let label = editor_diff_window_label(&diff);
 
-    window
-        .emit(
-            TOGGLE_DIFF_PANEL_EVENT,
-            ToggleDiffPanelNotification { open: true },
-        )
-        .map_err(|err| format!("failed to emit {TOGGLE_DIFF_PANEL_EVENT}: {err}"))
+    pending_diffs.insert(&label, diff)?;
+    pending_window_routes.insert(&label, EDITOR_DIFF_ROUTE_PATH.to_string())?;
+
+    if let Some(window) = app.get_webview_window(&label) {
+        navigate_window_to_route(&window, EDITOR_DIFF_ROUTE_PATH)?;
+        return show_and_focus_window(&window);
+    }
+
+    match create_thread_window(&app, &label) {
+        Ok(window) => show_and_focus_window(&window),
+        Err(err) => {
+            let _ = pending_window_routes.remove(&label);
+            Err(err)
+        }
+    }
+}
+
+#[tauri::command(rename = "show-file-preview")]
+pub fn show_file_preview(
+    app: AppHandle,
+    window: Window,
+    pending_file_previews: State<'_, PendingFilePreviews>,
+    pending_window_routes: State<'_, PendingWindowRoutes>,
+    params: ShowFilePreviewParams,
+) -> Result<(), String> {
+    let preview = normalized_pending_file_preview(params)?;
+    let label = file_preview_window_label(window.label());
+
+    pending_file_previews.insert(&label, preview.clone())?;
+    pending_window_routes.insert(&label, FILE_PREVIEW_ROUTE_PATH.to_string())?;
+
+    if let Some(file_preview_window) = app.get_webview_window(&label) {
+        file_preview_window
+            .set_title(&file_preview_window_title(&preview.file_path))
+            .map_err(|err| format!("failed to set {label} title: {err}"))?;
+        navigate_window_to_route_with_state(
+            &file_preview_window,
+            FILE_PREVIEW_ROUTE_PATH,
+            Some(serde_json::to_value(&preview).map_err(|err| {
+                format!("failed to serialize file preview navigation state: {err}")
+            })?),
+        )?;
+        return show_and_focus_window(&file_preview_window);
+    }
+
+    match create_file_preview_window(&app, &label) {
+        Ok(file_preview_window) => {
+            file_preview_window
+                .set_title(&file_preview_window_title(&preview.file_path))
+                .map_err(|err| format!("failed to set {label} title: {err}"))?;
+            show_and_focus_window(&file_preview_window)
+        }
+        Err(err) => {
+            let _ = pending_file_previews.remove(&label);
+            let _ = pending_window_routes.remove(&label);
+            Err(err)
+        }
+    }
 }
 
 #[tauri::command(rename = "update-diff-if-open")]
-pub fn update_diff_if_open(params: UpdateDiffIfOpenParams) -> Result<(), String> {
-    let UpdateDiffIfOpenParams {
-        conversation_id: _,
-        unified_diff: _,
-    } = params;
+pub fn update_diff_if_open(
+    app: AppHandle,
+    pending_diffs: State<'_, PendingDiffs>,
+    pending_window_routes: State<'_, PendingWindowRoutes>,
+    params: UpdateDiffIfOpenParams,
+) -> Result<(), String> {
+    let conversation_id = normalized_conversation_id(&params.conversation_id)?;
+    let unified_diff = normalized_unified_diff(&params.unified_diff)?;
+    let label = editor_diff_window_label_for_conversation(&conversation_id);
 
+    let Some(window) = app.get_webview_window(&label) else {
+        return Ok(());
+    };
+    let cwd = pending_diffs
+        .get(&label)?
+        .and_then(|existing_diff| existing_diff.cwd);
+
+    pending_diffs.insert(
+        &label,
+        PendingDiff {
+            conversation_id,
+            unified_diff,
+            cwd,
+        },
+    )?;
+    pending_window_routes.insert(&label, EDITOR_DIFF_ROUTE_PATH.to_string())?;
+    navigate_window_to_route(&window, EDITOR_DIFF_ROUTE_PATH)?;
     Ok(())
 }
 
@@ -366,6 +517,22 @@ pub fn take_pending_plan_summary(
     pending_plan_summaries: State<'_, PendingPlanSummaries>,
 ) -> Result<Option<PendingPlanSummary>, String> {
     pending_plan_summaries.take(window.label())
+}
+
+#[tauri::command]
+pub fn take_pending_diff(
+    window: Window,
+    pending_diffs: State<'_, PendingDiffs>,
+) -> Result<Option<PendingDiff>, String> {
+    pending_diffs.take(window.label())
+}
+
+#[tauri::command]
+pub fn take_pending_file_preview(
+    window: Window,
+    pending_file_previews: State<'_, PendingFilePreviews>,
+) -> Result<Option<PendingFilePreview>, String> {
+    pending_file_previews.take(window.label())
 }
 
 #[tauri::command]
@@ -409,11 +576,20 @@ fn show_and_focus_window(window: &WebviewWindow) -> Result<(), String> {
 }
 
 fn navigate_window_to_route(window: &WebviewWindow, path: &str) -> Result<(), String> {
+    navigate_window_to_route_with_state(window, path, None)
+}
+
+fn navigate_window_to_route_with_state(
+    window: &WebviewWindow,
+    path: &str,
+    state: Option<Value>,
+) -> Result<(), String> {
     window
         .emit(
             NAVIGATE_TO_ROUTE_EVENT,
             NavigateToRouteNotification {
                 path: path.to_string(),
+                state,
             },
         )
         .map_err(|err| format!("failed to emit {NAVIGATE_TO_ROUTE_EVENT}: {err}"))
@@ -452,6 +628,23 @@ fn create_debug_window(app: &AppHandle) -> Result<WebviewWindow, String> {
         .center()
         .build()
         .map_err(|err| format!("failed to create {DEBUG_WINDOW_LABEL} window: {err}"))
+}
+
+fn create_file_preview_window(app: &AppHandle, label: &str) -> Result<WebviewWindow, String> {
+    let mut config = app
+        .config()
+        .app
+        .windows
+        .first()
+        .cloned()
+        .ok_or_else(|| "missing window template config".to_string())?;
+    config.label = label.to_string();
+
+    WebviewWindowBuilder::from_config(app, &config)
+        .map_err(|err| format!("failed to clone window template: {err}"))?
+        .title(FILE_PREVIEW_WINDOW_TITLE)
+        .build()
+        .map_err(|err| format!("failed to create {label} window: {err}"))
 }
 
 fn send_debug_window_origin_conversation_changed(
@@ -508,6 +701,51 @@ fn normalized_plan_content(plan_content: &str) -> Result<String, String> {
     Ok(plan_content.to_string())
 }
 
+fn normalized_unified_diff(unified_diff: &str) -> Result<String, String> {
+    if unified_diff.trim().is_empty() {
+        return Err("unifiedDiff must not be empty".to_string());
+    }
+
+    Ok(unified_diff.to_string())
+}
+
+fn normalized_pending_diff(params: ShowDiffParams) -> Result<PendingDiff, String> {
+    let conversation_id = normalized_conversation_id(&params.conversation_id)?;
+    let unified_diff = normalized_unified_diff(&params.unified_diff)?;
+    let cwd = params.cwd.and_then(|cwd| {
+        let trimmed = cwd.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    });
+
+    Ok(PendingDiff {
+        conversation_id,
+        unified_diff,
+        cwd,
+    })
+}
+
+fn normalized_pending_file_preview(
+    params: ShowFilePreviewParams,
+) -> Result<PendingFilePreview, String> {
+    let file_path = normalized_file_preview_file_path(&params.file_path)?;
+
+    Ok(PendingFilePreview {
+        file_path,
+        contents: params.contents,
+        line: params.line,
+        column: params.column,
+    })
+}
+
+fn normalized_file_preview_file_path(file_path: &str) -> Result<String, String> {
+    let trimmed = file_path.trim();
+    if trimmed.is_empty() {
+        return Err("filePath must not be empty".to_string());
+    }
+
+    Ok(trimmed.to_string())
+}
+
 fn thread_window_label(host_id: &str, path: &str) -> Result<String, String> {
     let (route_kind, thread_id) =
         parse_main_window_route(path).ok_or_else(|| format!("invalid main window path: {path}"))?;
@@ -534,6 +772,34 @@ fn plan_summary_window_label(summary: &PendingPlanSummary) -> Result<String, Str
         "{PLAN_SUMMARY_WINDOW_LABEL_PREFIX}-{}-{content_hash:016x}",
         sanitize_label_component(&summary.conversation_id),
     ))
+}
+
+fn editor_diff_window_label(diff: &PendingDiff) -> String {
+    editor_diff_window_label_for_conversation(&diff.conversation_id)
+}
+
+fn editor_diff_window_label_for_conversation(conversation_id: &str) -> String {
+    format!(
+        "{EDITOR_DIFF_WINDOW_LABEL_PREFIX}-{}",
+        sanitize_label_component(conversation_id)
+    )
+}
+
+fn file_preview_window_label(owner_label: &str) -> String {
+    format!(
+        "{FILE_PREVIEW_WINDOW_LABEL_PREFIX}-{}",
+        sanitize_label_component(owner_label)
+    )
+}
+
+fn file_preview_window_title(file_path: &str) -> String {
+    let trimmed = file_path.trim();
+    trimmed
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|segment| !segment.is_empty())
+        .unwrap_or(trimmed)
+        .to_string()
 }
 
 fn parse_main_window_route(path: &str) -> Option<(&str, &str)> {
@@ -583,6 +849,14 @@ fn is_valid_main_window_route(path: &str) -> bool {
         return true;
     }
 
+    if path == FILE_PREVIEW_ROUTE_PATH {
+        return true;
+    }
+
+    if path == EDITOR_DIFF_ROUTE_PATH {
+        return true;
+    }
+
     let Some(id) = path
         .strip_prefix("/local/")
         .or_else(|| path.strip_prefix("/remote/"))
@@ -599,20 +873,32 @@ fn is_valid_main_window_route_byte(byte: u8) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::editor_diff_window_label;
+    use super::file_preview_window_label;
+    use super::file_preview_window_title;
     use super::is_valid_main_window_route;
     use super::is_valid_settings_section;
     use super::normalized_conversation_id;
+    use super::normalized_file_preview_file_path;
     use super::normalized_host_id;
+    use super::normalized_pending_diff;
+    use super::normalized_pending_file_preview;
     use super::normalized_plan_content;
+    use super::normalized_unified_diff;
     use super::plan_summary_window_label;
     use super::settings_route_path;
     use super::thread_window_label;
     use super::validated_main_window_route;
+    use super::PendingDiff;
+    use super::PendingFilePreview;
     use super::PendingPlanSummary;
     use super::ShowDiffParams;
+    use super::ShowFilePreviewParams;
     use super::UpdateDiffIfOpenParams;
     use super::APP_CONNECT_OAUTH_CALLBACK_ROUTE_PATH;
     use super::DEBUG_WINDOW_ROUTE_PATH;
+    use super::EDITOR_DIFF_ROUTE_PATH;
+    use super::FILE_PREVIEW_ROUTE_PATH;
 
     #[test]
     fn accepts_hyphenated_settings_sections() {
@@ -636,6 +922,14 @@ mod tests {
         assert_eq!(
             validated_main_window_route(APP_CONNECT_OAUTH_CALLBACK_ROUTE_PATH),
             Ok(APP_CONNECT_OAUTH_CALLBACK_ROUTE_PATH.to_string())
+        );
+        assert_eq!(
+            validated_main_window_route(FILE_PREVIEW_ROUTE_PATH),
+            Ok(FILE_PREVIEW_ROUTE_PATH.to_string())
+        );
+        assert_eq!(
+            validated_main_window_route(EDITOR_DIFF_ROUTE_PATH),
+            Ok(EDITOR_DIFF_ROUTE_PATH.to_string())
         );
         assert_eq!(
             validated_main_window_route("/local/550e8400-e29b-41d4-a716-446655440000"),
@@ -706,6 +1000,56 @@ mod tests {
     }
 
     #[test]
+    fn validates_pending_file_preview_payload() {
+        assert_eq!(
+            normalized_pending_file_preview(ShowFilePreviewParams {
+                file_path: "  docs/spec.md  ".to_string(),
+                contents: "line 1\nline 2".to_string(),
+                line: Some(3),
+                column: Some(8),
+            }),
+            Ok(PendingFilePreview {
+                file_path: "docs/spec.md".to_string(),
+                contents: "line 1\nline 2".to_string(),
+                line: Some(3),
+                column: Some(8),
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_blank_file_preview_path() {
+        assert_eq!(
+            normalized_file_preview_file_path("   "),
+            Err("filePath must not be empty".to_string())
+        );
+    }
+
+    #[test]
+    fn builds_file_preview_window_label_per_owner() {
+        assert_eq!(
+            file_preview_window_label("main"),
+            "file-preview-window-main".to_string()
+        );
+        assert_eq!(
+            file_preview_window_label("thread-window-local-local-thread-1"),
+            "file-preview-window-thread-window-local-local-thread-1".to_string()
+        );
+    }
+
+    #[test]
+    fn derives_file_preview_window_title_from_basename() {
+        assert_eq!(
+            file_preview_window_title("C:/repo/src/example.ts"),
+            "example.ts".to_string()
+        );
+        assert_eq!(
+            file_preview_window_title("models\\protein.pdb"),
+            "protein.pdb".to_string()
+        );
+    }
+
+    #[test]
     fn builds_deterministic_plan_summary_window_labels() {
         let summary = PendingPlanSummary {
             conversation_id: "thread_abc-123".to_string(),
@@ -733,6 +1077,46 @@ mod tests {
                 cwd: Some("C:/repo".to_string()),
             }
         );
+    }
+
+    #[test]
+    fn validates_pending_diff_payload() {
+        assert_eq!(
+            normalized_unified_diff("@@ -1 +1 @@\n-old\n+new\n"),
+            Ok("@@ -1 +1 @@\n-old\n+new\n".to_string())
+        );
+
+        assert_eq!(
+            normalized_pending_diff(ShowDiffParams {
+                conversation_id: "thread_abc-123".to_string(),
+                unified_diff: "@@ -1 +1 @@\n-old\n+new\n".to_string(),
+                cwd: Some("  C:/repo  ".to_string()),
+            }),
+            Ok(PendingDiff {
+                conversation_id: "thread_abc-123".to_string(),
+                unified_diff: "@@ -1 +1 @@\n-old\n+new\n".to_string(),
+                cwd: Some("C:/repo".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_blank_pending_diff_payload() {
+        assert_eq!(
+            normalized_unified_diff("   "),
+            Err("unifiedDiff must not be empty".to_string())
+        );
+    }
+
+    #[test]
+    fn builds_deterministic_editor_diff_window_labels() {
+        let label = editor_diff_window_label(&PendingDiff {
+            conversation_id: "thread_abc-123".to_string(),
+            unified_diff: "@@ -1 +1 @@\n-old\n+new\n".to_string(),
+            cwd: None,
+        });
+
+        assert_eq!(label, "editor-diff-window-thread-abc-123");
     }
 
     #[test]

@@ -24,13 +24,15 @@ const ACCOUNT_SETTINGS_SOURCE_PATH = path.join(
 test("account settings uses extracted shared settings shell and row layout", () => {
   const source = readSource(ACCOUNT_SETTINGS_SOURCE_PATH);
 
+  assert.match(source, /import\s+\{\s*SettingsValueRow\s*\}\s+from\s+"\.\/SettingsRow";/);
   assert.match(source, /SettingsSectionTitle/);
   assert.match(source, /title=\{<SettingsSectionTitle slug="account" \/>}/);
   assert.match(source, /SettingsGroup\.Header/);
   assert.match(source, /SettingsGroup\.Content/);
   assert.match(source, /SettingsSurface/);
-  assert.match(source, /grid min-h-14 items-center gap-1 px-4 py-2 sm:grid-cols-\[160px_minmax\(0,1fr\)\] sm:gap-6/);
   assert.match(source, /subtitle=\{t\("settings\.account\.subtitle"\)\}/);
+  assert.doesNotMatch(source, /subtitleClassName=/);
+  assert.match(source, /<SettingsValueRow label=\{label\}>/);
 });
 
 test("account settings keeps extracted auth gate, local auth override, and non-loading buttons", () => {

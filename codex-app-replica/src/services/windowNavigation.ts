@@ -7,6 +7,7 @@ export const APP_CONNECT_OAUTH_CALLBACK_ROUTE_PATH = "/app-connect-oauth-callbac
 export const DEBUG_WINDOW_ROUTE_PATH = "/debug";
 export const EDITOR_DIFF_ROUTE_PATH = "/diff";
 export const FIRST_RUN_ROUTE_PATH = "/first-run";
+export const FILE_PREVIEW_ROUTE_PATH = "/file-preview";
 export const GLOBAL_DICTATION_ROUTE_PATH = "/global-dictation";
 export const HOTKEY_HOME_ROUTE_PATH = "/hotkey-window";
 export const HOTKEY_NEW_THREAD_ROUTE_PATH = "/hotkey-window/new-thread";
@@ -24,6 +25,19 @@ export type DebugWindowOriginConversationChangedNotification = {
 export type PendingPlanSummaryState = {
   conversationId: string;
   planContent: string;
+};
+
+export type PendingDiffState = {
+  conversationId: string;
+  cwd: string | null;
+  unifiedDiff: string;
+};
+
+export type PendingFilePreviewState = {
+  filePath: string;
+  contents: string;
+  line?: number;
+  column?: number;
 };
 
 export type ShowDiffParams = {
@@ -48,6 +62,10 @@ export async function showPlanSummary(params: PendingPlanSummaryState) {
 
 export async function showDiff(params: ShowDiffParams) {
   await invoke("show-diff", { params });
+}
+
+export async function showFilePreview(params: PendingFilePreviewState) {
+  await invoke("show-file-preview", { params });
 }
 
 export async function updateDiffIfOpen(params: UpdateDiffIfOpenParams) {
@@ -110,6 +128,14 @@ export async function takePendingDebugWindowOriginConversation() {
 
 export async function takePendingPlanSummary() {
   return invoke<PendingPlanSummaryState | null>("take_pending_plan_summary");
+}
+
+export async function takePendingDiff() {
+  return invoke<PendingDiffState | null>("take_pending_diff");
+}
+
+export async function takePendingFilePreview() {
+  return invoke<PendingFilePreviewState | null>("take_pending_file_preview");
 }
 
 export async function takePendingWindowRoute() {

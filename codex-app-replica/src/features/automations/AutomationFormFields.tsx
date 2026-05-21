@@ -19,6 +19,7 @@ import type {
   ScheduleConfig,
   TranslateFn,
 } from "./automationsPageUtils";
+import type { MessageKey } from "../../i18n/messages";
 import {
   formatWorkspaceRootsLabel,
   getScheduleConfigForAutomation,
@@ -40,6 +41,7 @@ export type AutomationFormFieldsProps = {
   }) => void;
   onDraftChange: Dispatch<SetStateAction<AutomationRecord | null>>;
   showPromptField?: boolean;
+  useCreateCompactRailProjectPlaceholder?: boolean;
   variant?: AutomationFormFieldsVariant;
   workspaceRootLabels: Record<string, string>;
   workspaceRootOptions: string[];
@@ -88,12 +90,14 @@ function useSelectorState({
   draft,
   locale,
   modelOptions,
+  projectPlaceholderKey,
   t,
   workspaceRootLabels,
 }: {
   draft: AutomationRecord;
   locale: string;
   modelOptions: ModelListEntry[];
+  projectPlaceholderKey: MessageKey;
   t: TranslateFn;
   workspaceRootLabels: Record<string, string>;
 }): SelectorState {
@@ -108,7 +112,7 @@ function useSelectorState({
             workspaceRootLabels,
             t,
           )
-        : t("settings.automations.projectDropdown.placeholder");
+        : t(projectPlaceholderKey);
     const selectedModelLabel =
       draft.kind === "cron" && draft.model && modelOptions.length > 0
         ? modelOptions.find((option) => option.id === draft.model)?.id ?? draft.model
@@ -127,7 +131,7 @@ function useSelectorState({
       selectedWorkspaceRootId,
       selectedWorkspaceRootLabel,
     };
-  }, [draft, locale, modelOptions, t, workspaceRootLabels]);
+  }, [draft, locale, modelOptions, projectPlaceholderKey, t, workspaceRootLabels]);
 }
 
 export function AutomationFormFields({
@@ -139,11 +143,16 @@ export function AutomationFormFields({
   onOpenLocalEnvironmentsSettings,
   onDraftChange,
   showPromptField = true,
+  useCreateCompactRailProjectPlaceholder = false,
   variant = "stacked",
   workspaceRootLabels,
   workspaceRootOptions,
   t,
 }: AutomationFormFieldsProps) {
+  const projectPlaceholderKey =
+    useCreateCompactRailProjectPlaceholder && draft.kind === "cron"
+      ? "settings.automations.cwdPlaceholder"
+      : "settings.automations.projectDropdown.placeholder";
   const {
     scheduleConfig,
     selectedModelLabel,
@@ -154,6 +163,7 @@ export function AutomationFormFields({
     draft,
     locale,
     modelOptions,
+    projectPlaceholderKey,
     t,
     workspaceRootLabels,
   });
@@ -196,7 +206,7 @@ export function AutomationFormFields({
   ) : (
     <FieldWrapper label={t("inbox.automations.folder.label")}>
       <CompactRailSelect
-        ariaLabel={t("settings.automations.projectDropdown.placeholder")}
+        ariaLabel={t(projectPlaceholderKey)}
         className={triggerClassName}
         icon={<FolderIcon className="h-4 w-4 shrink-0" />}
         menuTitle={t("inbox.automations.folder.label")}
@@ -423,12 +433,31 @@ export function AutomationFormFields({
           />
         </FormField>
       ) : null}
-      {projectField}
-      {executionEnvironmentField}
-      {localEnvironmentField}
-      {scheduleField}
-      {modelField}
-      {reasoningField}
+      {isCompactRail ? (
+        draft.kind === "heartbeat" ? (
+          <>
+            {projectField}
+            {scheduleField}
+          </>
+        ) : (
+          <>
+            {executionEnvironmentField}
+            {projectField}
+            {scheduleField}
+            {modelField}
+            {reasoningField}
+          </>
+        )
+      ) : (
+        <>
+          {projectField}
+          {executionEnvironmentField}
+          {localEnvironmentField}
+          {scheduleField}
+          {modelField}
+          {reasoningField}
+        </>
+      )}
     </div>
   );
 }

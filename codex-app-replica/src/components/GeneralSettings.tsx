@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   type ComposerPermissionMode,
   type ComposerPermissionModeVisibility,
@@ -336,10 +343,8 @@ export function GeneralSettings({
   const showAgentEnvironmentSetting =
     isWindowsPlatform && availableTerminalShells.includes("wsl");
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
+  const loadGeneralSettings = useEffectEvent(
+    async (canCommit: () => boolean = () => true) => {
       try {
         const nextGpuTearingDebugSettings = readGpuTearingDebugSettings();
         const [
@@ -353,20 +358,21 @@ export function GeneralSettings({
           ambientSuggestionsEnabledResult,
           macMenuBarEnabledResult,
           dictationDictionaryResult,
-        ] =
-          await Promise.allSettled([
-            readGeneralSettingsSnapshot(),
-            readTerminalShellOptions(),
-            showDefaultOpenTargetSetting ? readOpenInTargets({ cwd: null }) : Promise.resolve(null),
-            isWindowsPlatform ? readHotkeyWindowHotkeyState() : Promise.resolve(null),
-            getGlobalState("notifications-turn-mode"),
-            getGlobalState("notifications-permissions-enabled"),
-            getGlobalState("notifications-questions-enabled"),
-            getGlobalState("ambient-suggestions-enabled"),
-            isMacOsPlatform ? readMacMenuBarEnabledPreference() : Promise.resolve(true),
-            readDictationDictionary(),
-          ]);
-        if (cancelled) {
+        ] = await Promise.allSettled([
+          readGeneralSettingsSnapshot(),
+          readTerminalShellOptions(),
+          showDefaultOpenTargetSetting
+            ? readOpenInTargets({ cwd: null })
+            : Promise.resolve(null),
+          isWindowsPlatform ? readHotkeyWindowHotkeyState() : Promise.resolve(null),
+          getGlobalState("notifications-turn-mode"),
+          getGlobalState("notifications-permissions-enabled"),
+          getGlobalState("notifications-questions-enabled"),
+          getGlobalState("ambient-suggestions-enabled"),
+          isMacOsPlatform ? readMacMenuBarEnabledPreference() : Promise.resolve(true),
+          readDictationDictionary(),
+        ]);
+        if (!canCommit()) {
           return;
         }
 
@@ -438,16 +444,16 @@ export function GeneralSettings({
               : notificationTurnModeResult.status === "rejected"
                 ? notificationTurnModeResult.reason
                 : notificationPermissionsEnabledResult.status === "rejected"
-                ? notificationPermissionsEnabledResult.reason
-                : notificationQuestionsEnabledResult.status === "rejected"
-                ? notificationQuestionsEnabledResult.reason
-                  : ambientSuggestionsEnabledResult.status === "rejected"
+                  ? notificationPermissionsEnabledResult.reason
+                  : notificationQuestionsEnabledResult.status === "rejected"
+                    ? notificationQuestionsEnabledResult.reason
+                    : ambientSuggestionsEnabledResult.status === "rejected"
                       ? ambientSuggestionsEnabledResult.reason
                       : macMenuBarEnabledResult.status === "rejected"
                         ? macMenuBarEnabledResult.reason
-                      : dictationDictionaryResult.status === "rejected"
-                        ? dictationDictionaryResult.reason
-                      : null;
+                        : dictationDictionaryResult.status === "rejected"
+                          ? dictationDictionaryResult.reason
+                          : null;
         setError(
           nonBlockingError == null
             ? null
@@ -456,38 +462,42 @@ export function GeneralSettings({
               : String(nonBlockingError),
         );
       } catch (err) {
-        if (!cancelled) {
+        if (canCommit()) {
           setError(err instanceof Error ? err.message : String(err));
         }
       } finally {
-        if (!cancelled) {
+        if (canCommit()) {
           setIsLoading(false);
         }
       }
-    };
+    },
+  );
 
-    void load();
+  useEffect(() => {
+    let cancelled = false;
+
+    void loadGeneralSettings(() => !cancelled);
 
     return () => {
       cancelled = true;
     };
-  }, [isWindowsPlatform, showDefaultOpenTargetSetting]);
+  }, [isWindowsPlatform, loadGeneralSettings, showDefaultOpenTargetSetting]);
 
-  useEffect(() => {
-    if (!isWindowsPlatform) {
-      setGlobalDictationHotkeyState(null);
-      setGlobalDictationHistoryItems([]);
-      return;
-    }
+  const loadGlobalDictationSettings = useEffectEvent(
+    async (canCommit: () => boolean = () => true) => {
+      if (!isWindowsPlatform) {
+        if (canCommit()) {
+          setGlobalDictationHotkeyState(null);
+          setGlobalDictationHistoryItems([]);
+        }
+        return;
+      }
 
-    let cancelled = false;
-
-    const loadGlobalDictationSettings = async () => {
       const [hotkeyStateResult, historyResult] = await Promise.allSettled([
         readGlobalDictationHotkeyState(),
         readGlobalDictationHistory(),
       ]);
-      if (cancelled) {
+      if (!canCommit()) {
         return;
       }
 
@@ -500,14 +510,46 @@ export function GeneralSettings({
       if (historyResult.status === "fulfilled") {
         setGlobalDictationHistoryItems(historyResult.value.items);
       }
-    };
+    },
+  );
 
-    void loadGlobalDictationSettings();
+  useEffect(() => {
+    if (!isWindowsPlatform) {
+      setGlobalDictationHotkeyState(null);
+      setGlobalDictationHistoryItems([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    void loadGlobalDictationSettings(() => !cancelled);
 
     return () => {
       cancelled = true;
     };
-  }, [isWindowsPlatform]);
+  }, [isWindowsPlatform, loadGlobalDictationSettings]);
+
+  const loadAccountInfo = useEffectEvent(
+    async (canCommit: () => boolean = () => true) => {
+      if (authSnapshot?.authState.authMethod !== "chatgpt") {
+        if (canCommit()) {
+          setAccountInfo(null);
+        }
+        return;
+      }
+
+      try {
+        const nextAccountInfo = await readAccountInfo();
+        if (canCommit()) {
+          setAccountInfo(nextAccountInfo);
+        }
+      } catch {
+        if (canCommit()) {
+          setAccountInfo(null);
+        }
+      }
+    },
+  );
 
   useEffect(() => {
     if (authSnapshot?.authState.authMethod !== "chatgpt") {
@@ -517,42 +559,34 @@ export function GeneralSettings({
 
     let cancelled = false;
 
-    const loadAccountInfo = async () => {
-      try {
-        const nextAccountInfo = await readAccountInfo();
-        if (!cancelled) {
-          setAccountInfo(nextAccountInfo);
-        }
-      } catch {
-        if (!cancelled) {
-          setAccountInfo(null);
-        }
-      }
-    };
-
-    void loadAccountInfo();
+    void loadAccountInfo(() => !cancelled);
 
     return () => {
       cancelled = true;
     };
   }, [
+    authSnapshot?.activeLoginId,
     authSnapshot?.authState.authMethod,
     authSnapshot?.authState.email,
     authSnapshot?.authState.planAtLogin,
+    loadAccountInfo,
   ]);
 
-  useEffect(() => {
-    if (authSnapshot?.authState.authMethod !== "chatgpt") {
-      setServiceTier(null);
-      setCanUseFastMode(false);
-      setIsSpeedLoading(false);
-      return;
-    }
+  const loadSpeedSettings = useEffectEvent(
+    async (canCommit: () => boolean = () => true) => {
+      if (authSnapshot?.authState.authMethod !== "chatgpt") {
+        if (canCommit()) {
+          setServiceTier(null);
+          setCanUseFastMode(false);
+          setIsSpeedLoading(false);
+        }
+        return;
+      }
 
-    let cancelled = false;
-    setIsSpeedLoading(true);
+      if (canCommit()) {
+        setIsSpeedLoading(true);
+      }
 
-    const loadSpeedSettings = async () => {
       const [configResult, configRequirementsResult, modelsResult] =
         await Promise.allSettled([
           readConfigForHost({
@@ -569,7 +603,7 @@ export function GeneralSettings({
           }),
         ]);
 
-      if (cancelled) {
+      if (!canCommit()) {
         return;
       }
 
@@ -588,20 +622,31 @@ export function GeneralSettings({
           : false,
       );
       setIsSpeedLoading(false);
-    };
+    },
+  );
 
-    void loadSpeedSettings();
+  useEffect(() => {
+    if (authSnapshot?.authState.authMethod !== "chatgpt") {
+      setServiceTier(null);
+      setCanUseFastMode(false);
+      setIsSpeedLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    void loadSpeedSettings(() => !cancelled);
 
     return () => {
       cancelled = true;
     };
-  }, [authSnapshot?.activeLoginId, authSnapshot?.authState.authMethod]);
+  }, [authSnapshot?.activeLoginId, authSnapshot?.authState.authMethod, loadSpeedSettings]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadExternalImports = async () => {
-      setIsDetectingExternalImports(true);
+  const loadExternalImports = useEffectEvent(
+    async (canCommit: () => boolean = () => true) => {
+      if (canCommit()) {
+        setIsDetectingExternalImports(true);
+      }
 
       const [detectResult, statusResult] = await Promise.allSettled([
         detectExternalAgentImports({
@@ -616,7 +661,7 @@ export function GeneralSettings({
         }),
       ]);
 
-      if (cancelled) {
+      if (!canCommit()) {
         return;
       }
 
@@ -642,14 +687,18 @@ export function GeneralSettings({
       }
 
       setIsDetectingExternalImports(false);
-    };
+    },
+  );
 
-    void loadExternalImports();
+  useEffect(() => {
+    let cancelled = false;
+
+    void loadExternalImports(() => !cancelled);
 
     return () => {
       cancelled = true;
     };
-  }, [workspaceRoot]);
+  }, [loadExternalImports, workspaceRoot]);
 
   useEffect(() => {
     if (!isLanguageMenuOpen && !isOpenTargetMenuOpen && !isTerminalShellMenuOpen) {
@@ -680,6 +729,29 @@ export function GeneralSettings({
       document.removeEventListener("pointerdown", handlePointerDown);
     };
   }, [isLanguageMenuOpen, isOpenTargetMenuOpen, isTerminalShellMenuOpen]);
+
+  const handleWindowFocus = useEffectEvent(() => {
+    void loadGeneralSettings();
+    void loadGlobalDictationSettings();
+    void loadAccountInfo();
+    void loadSpeedSettings();
+    void loadExternalImports();
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleFocus = () => {
+      handleWindowFocus();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [handleWindowFocus]);
 
   const persistChoice = async (
     field:

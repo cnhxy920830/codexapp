@@ -33,7 +33,11 @@ const USER_MESSAGE_EDIT_COMPOSER_PATH = path.join(
   "src/features/chat/UserMessageEditComposer.tsx",
 );
 const APP_PATH = path.join(process.cwd(), "src/App.tsx");
+const SHARED_PROMPT_LINK_CONTENT_PATH = path.join(process.cwd(), "src/components/PromptLinkContent.tsx");
 const TOOLTIP_PATH = path.join(process.cwd(), "src/components/Tooltip.tsx");
+const APPS_SERVICE_PATH = path.join(process.cwd(), "src/services/apps.ts");
+const PLUGINS_SERVICE_PATH = path.join(process.cwd(), "src/services/plugins.ts");
+const SKILLS_SERVICE_PATH = path.join(process.cwd(), "src/services/skills.ts");
 
 test("scratchpad page owns its registered header content", async () => {
   const scratchpadSource = await readFile(SCRATCHPAD_PAGE_PATH, "utf8");
@@ -50,7 +54,10 @@ test("scratchpad submitted row text uses the shared tooltip owner instead of tit
   const tooltipSource = await readFile(TOOLTIP_PATH, "utf8");
 
   assert.match(scratchpadSource, /import\s+\{\s*Tooltip\s*\}\s+from\s+"..\/..\/components\/Tooltip"/);
-  assert.match(scratchpadSource, /<Tooltip align="start" disabled=\{!isTruncated\} side="top" tooltipContent=\{text\}>/);
+  assert.match(
+    scratchpadSource,
+    /<Tooltip[\s\S]*align="start"[\s\S]*disabled=\{!isTruncated\}[\s\S]*side="top"[\s\S]*tooltipBodyClassName="max-w-\[300px\] text-center"[\s\S]*tooltipContent=\{text\}[\s\S]*>/,
+  );
   assert.doesNotMatch(scratchpadSource, /function ScratchpadTooltip/);
   assert.doesNotMatch(scratchpadSource, /\stitle=\{/);
   assert.match(tooltipSource, /export function Tooltip/);
@@ -140,10 +147,7 @@ test("scratchpad prompt parser and renderers keep extracted agent mention family
   );
   const sharedPromptLinksSource = await readFile(SHARED_PROMPT_EDITOR_LINKS_PATH, "utf8");
   const promptInputSource = await readFile(SHARED_PROMPT_EDITOR_DOM_PATH, "utf8");
-  const promptContentSource = await readFile(
-    path.join(process.cwd(), "src/features/scratchpad/ScratchpadPromptContent.tsx"),
-    "utf8",
-  );
+  const promptContentSource = await readFile(SHARED_PROMPT_LINK_CONTENT_PATH, "utf8");
 
   assert.match(promptLinksSource, /type PromptEditorMentionSegment as ScratchpadPromptMentionSegment/);
   assert.match(sharedPromptLinksSource, /{ type: "agent" \| "app" \| "plugin" \| "skill" }/);
@@ -152,25 +156,43 @@ test("scratchpad prompt parser and renderers keep extracted agent mention family
   assert.match(promptInputSource, /if \(segment\.type === "agent"\) \{\s*return null;\s*\}/s);
   assert.match(promptInputSource, /label: `\$\$\{candidate\.label\}`/);
   assert.match(promptContentSource, /case "agent":/);
-  assert.match(promptContentSource, /const textLabel = `@\$\{part\.displayLabel\}`;/);
+  assert.match(promptContentSource, /label=\{`@\$\{segment\.displayLabel\}`\}/);
   assert.match(promptContentSource, /cursor-default/);
 });
 
 test("scratchpad submitted rows reuse the shared prompt-link owner shape and keep unsupported links raw", async () => {
   const scratchpadSource = await readFile(SCRATCHPAD_PAGE_PATH, "utf8");
-  const promptContentSource = await readFile(
+  const promptContentSource = await readFile(SHARED_PROMPT_LINK_CONTENT_PATH, "utf8");
+  const scratchpadPromptContentSource = await readFile(
     path.join(process.cwd(), "src/features/scratchpad/ScratchpadPromptContent.tsx"),
     "utf8",
   );
 
   assert.match(scratchpadSource, /readPluginsSnapshot\(null, SCRATCHPAD_HOST_ID\)/);
   assert.match(scratchpadSource, /plugins=\{plugins\}/);
-  assert.match(promptContentSource, /parseScratchpadPromptSegments\(text,\s*\{\s*apps,\s*plugins,\s*skills,\s*\}\s*\)/s);
-  assert.match(promptContentSource, /<I18N_CONTEXT\.Provider value=\{i18nValue\}>/);
+  assert.match(scratchpadPromptContentSource, /<I18N_CONTEXT\.Provider value=\{i18nValue\}>/);
+  assert.match(scratchpadPromptContentSource, /<PromptLinkContent/);
+  assert.match(promptContentSource, /const PROMPT_LINK_PATTERN = /);
+  assert.match(promptContentSource, /classifyPromptLink\(\{/);
   assert.match(promptContentSource, /<MarkdownOwnedLink/);
-  assert.match(promptContentSource, /case "url":\s*case "unknown":\s*return <Fragment key=\{`link-\$\{index\}`\}>\{part\.raw\}<\/Fragment>;/s);
-  assert.match(promptContentSource, /if \(!part\.resolved\) \{\s*return <Fragment key=\{`link-\$\{index\}`\}>\{`\$\$\{part\.displayLabel\}`\}<\/Fragment>;\s*\}/s);
-  assert.match(promptContentSource, /if \(!part\.resolved\) \{\s*return <Fragment key=\{`link-\$\{index\}`\}>\{`@\$\{part\.displayLabel\}`\}<\/Fragment>;\s*\}/s);
+  assert.match(promptContentSource, /return parts\.length === 0 \? \[text\] : parts;/);
+  assert.match(promptContentSource, /renderPromptLinkSegment\([\s\S]*\) \?\? raw/);
+  assert.match(
+    promptContentSource,
+    /case "app":[\s\S]*if \(!segment\.resolved\) \{[\s\S]*prefix: "\$",[\s\S]*text: segment\.displayLabel,[\s\S]*\}/,
+  );
+  assert.match(
+    promptContentSource,
+    /case "plugin":[\s\S]*if \(!segment\.resolved\) \{[\s\S]*prefix: "@",[\s\S]*text: segment\.displayLabel,[\s\S]*\}/,
+  );
+  assert.match(
+    promptContentSource,
+    /case "skill":[\s\S]*if \(!segment\.resolved\) \{[\s\S]*prefix: "\$",[\s\S]*text: segment\.displayLabel,[\s\S]*\}/,
+  );
+  assert.match(
+    promptContentSource,
+    /case "agent":[\s\S]*if \(segment\.conversationId == null && segment\.roleName == null\) \{[\s\S]*return null;\s*\}/,
+  );
 });
 
 test("scratchpad page binds page-owned data and command flows to the explicit local host owner", async () => {
@@ -178,9 +200,15 @@ test("scratchpad page binds page-owned data and command flows to the explicit lo
 
   assert.match(scratchpadSource, /import\s+\{\s*LOCAL_SETTINGS_HOST_ID\s*\}\s+from\s+"..\/..\/services\/settingsHosts"/);
   assert.match(scratchpadSource, /const SCRATCHPAD_HOST_ID = LOCAL_SETTINGS_HOST_ID;/);
-  assert.match(scratchpadSource, /readAppsSnapshot\(\{ hostId: SCRATCHPAD_HOST_ID \}\)/);
+  assert.match(
+    scratchpadSource,
+    /readAppsSnapshot\(\{\s*hostId: SCRATCHPAD_HOST_ID,\s*forceRefetch: options\.forceRefetchApps \?\? false,\s*\}\)/s,
+  );
   assert.match(scratchpadSource, /readPluginsSnapshot\(null, SCRATCHPAD_HOST_ID\)/);
-  assert.match(scratchpadSource, /readSkillsSnapshot\(null, \{ hostId: SCRATCHPAD_HOST_ID \}\)/);
+  assert.match(
+    scratchpadSource,
+    /readSkillsSnapshot\(null, \{\s*hostId: SCRATCHPAD_HOST_ID,\s*forceReload: options\.forceReloadSkills \?\? false,\s*\}\)/s,
+  );
   assert.match(scratchpadSource, /hostId: SCRATCHPAD_HOST_ID,\s*input: \[createTextInput\(text\)\]/s);
   assert.match(scratchpadSource, /const resumedThread = await maybeResumeConversation\(\{\s*conversationId: row\.conversationId,\s*hostId: SCRATCHPAD_HOST_ID,/s);
   assert.match(scratchpadSource, /<ScratchpadPagePreview[\s\S]*hostId=\{SCRATCHPAD_HOST_ID\}/);
@@ -189,6 +217,110 @@ test("scratchpad page binds page-owned data and command flows to the explicit lo
   assert.doesNotMatch(scratchpadSource, /readAppsSnapshot\(\{ hostId: null \}\)/);
   assert.doesNotMatch(scratchpadSource, /readPluginsSnapshot\(null, null\)/);
   assert.doesNotMatch(scratchpadSource, /readSkillsSnapshot\(null, \{ hostId: null \}\)/);
+});
+
+test("scratchpad page filters skills to enabled items before handing them to row and prompt renderers", async () => {
+  const scratchpadSource = await readFile(SCRATCHPAD_PAGE_PATH, "utf8");
+
+  assert.match(scratchpadSource, /const enabledSkills = useMemo\(\(\) => skills\.filter\(\(skill\) => skill\.enabled\), \[skills\]\);/);
+  assert.match(scratchpadSource, /skills=\{enabledSkills\}/);
+  assert.match(
+    scratchpadSource,
+    /<ScratchpadPagePreview[\s\S]*skills=\{skills\}[\s\S]*\/>/,
+  );
+  assert.match(
+    scratchpadSource,
+    /<ScratchpadRowItem[\s\S]*skills=\{enabledSkills\}[\s\S]*\/>/,
+  );
+});
+
+test("scratchpad pending follow-up gating and trailing states fall back to thread runtime status from hydrated threads", async () => {
+  const scratchpadSource = await readFile(SCRATCHPAD_PAGE_PATH, "utf8");
+
+  assert.match(
+    scratchpadSource,
+    /const hasPendingApproval = hasPendingApprovalForTurn\(thread, runtime, row\.turnId\);/,
+  );
+  assert.match(
+    scratchpadSource,
+    /const hasPendingUserInput = hasPendingUserInputForTurn\(thread, runtime, row\.turnId\);/,
+  );
+  assert.match(
+    scratchpadSource,
+    /hasPendingApprovalForTurn\(thread, runtime, lastTurn\.id\) \|\|\s*hasPendingUserInputForTurn\(thread, runtime, lastTurn\.id\)/s,
+  );
+  assert.match(
+    scratchpadSource,
+    /function hasThreadRuntimeFlag\([\s\S]*thread\?\.threadRuntimeStatus\?\.type === "active" && thread\.threadRuntimeStatus\.activeFlags\.includes\(flag\);/s,
+  );
+  assert.match(
+    scratchpadSource,
+    /function hasPendingApprovalForTurn\([\s\S]*return hasThreadRuntimeFlag\(thread, turnId, "waitingOnApproval"\);/s,
+  );
+  assert.match(
+    scratchpadSource,
+    /function hasPendingUserInputForTurn\([\s\S]*return hasThreadRuntimeFlag\(thread, turnId, "waitingOnUserInput"\);/s,
+  );
+});
+
+test("scratchpad page refreshes apps, plugins, and skills from query-cache invalidation while the page stays open", async () => {
+  const scratchpadSource = await readFile(SCRATCHPAD_PAGE_PATH, "utf8");
+
+  assert.match(
+    scratchpadSource,
+    /import\s+\{\s*onQueryCacheInvalidated,\s*queryKeyMatchesPrefix,\s*type QueryCacheInvalidateNotification,\s*\}\s+from\s+"..\/..\/services\/queryCache"/s,
+  );
+  assert.match(scratchpadSource, /const PLUGIN_QUERY_KEY = \["plugins"\] as const;/);
+  assert.match(scratchpadSource, /const APPS_QUERY_KEY = \["apps", "list"\] as const;/);
+  assert.match(scratchpadSource, /const SKILLS_QUERY_KEY = \["skills"\] as const;/);
+  assert.match(
+    scratchpadSource,
+    /const handleQueryCacheInvalidate = useEffectEvent\(\(notification: QueryCacheInvalidateNotification\) => \{/,
+  );
+  assert.match(
+    scratchpadSource,
+    /const shouldRefreshPlugins = queryKeyMatchesPrefix\(notification\.queryKey, PLUGIN_QUERY_KEY\);/,
+  );
+  assert.match(
+    scratchpadSource,
+    /const shouldRefreshApps =\s*shouldRefreshPlugins \|\| queryKeyMatchesPrefix\(notification\.queryKey, APPS_QUERY_KEY\);/s,
+  );
+  assert.match(
+    scratchpadSource,
+    /const shouldRefreshSkills =\s*shouldRefreshPlugins \|\| queryKeyMatchesPrefix\(notification\.queryKey, SKILLS_QUERY_KEY\);/s,
+  );
+  assert.match(
+    scratchpadSource,
+    /void refreshPageData\(\{\s*forceRefetchApps: shouldRefreshApps,\s*forceReloadSkills: shouldRefreshSkills,\s*\}\);/s,
+  );
+  assert.match(scratchpadSource, /void onQueryCacheInvalidated\(\(notification\) => \{/);
+});
+
+test("apps, plugins, and skills writes emit query-cache invalidation for scratchpad mention refresh", async () => {
+  const appsServiceSource = await readFile(APPS_SERVICE_PATH, "utf8");
+  const pluginsServiceSource = await readFile(PLUGINS_SERVICE_PATH, "utf8");
+  const skillsServiceSource = await readFile(SKILLS_SERVICE_PATH, "utf8");
+
+  assert.match(appsServiceSource, /import\s+\{\s*emitQueryCacheInvalidated\s*\}\s+from\s+"\.\/queryCache"/);
+  assert.match(appsServiceSource, /const APPS_QUERY_KEY = \["apps", "list"\] as const;/);
+  assert.match(
+    appsServiceSource,
+    /await emitQueryCacheInvalidated\(\[\.\.\.APPS_QUERY_KEY, hostId \?\? null\]\);/,
+  );
+
+  assert.match(pluginsServiceSource, /import\s+\{\s*emitQueryCacheInvalidated\s*\}\s+from\s+"\.\/queryCache"/);
+  assert.match(pluginsServiceSource, /const PLUGIN_QUERY_KEY = \["plugins"\] as const;/);
+  assert.match(
+    pluginsServiceSource,
+    /await emitQueryCacheInvalidated\(\[\.\.\.PLUGIN_QUERY_KEY, hostId \?\? null\]\);/,
+  );
+
+  assert.match(skillsServiceSource, /import\s+\{\s*emitQueryCacheInvalidated\s*\}\s+from\s+"\.\/queryCache"/);
+  assert.match(skillsServiceSource, /const SKILLS_QUERY_KEY = \["skills"\] as const;/);
+  assert.match(
+    skillsServiceSource,
+    /await emitQueryCacheInvalidated\(\[\.\.\.SKILLS_QUERY_KEY, hostId \?\? null\]\);/,
+  );
 });
 
 test("scratchpad at-mention autocomplete uses app-only candidates and shared row labels", async () => {

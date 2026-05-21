@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 type SettingsRowVariant = "default" | "nested";
+type SettingsValueRowVariant = "default" | "compact";
 
 export function SettingsRow({
   className,
@@ -42,6 +43,36 @@ export function SettingsRow({
         </div>
       </div>
       <div className={controlClassName}>{control}</div>
+    </div>
+  );
+}
+
+export function SettingsValueRow({
+  children,
+  label,
+  variant = "default",
+}: {
+  children: ReactNode;
+  label: ReactNode;
+  variant?: SettingsValueRowVariant;
+}) {
+  const rowClassName =
+    variant === "compact"
+      ? "h-[1.875rem] w-full grid-cols-[auto_minmax(0,1fr)] gap-x-6 overflow-x-hidden rounded-lg text-base leading-[18px] text-token-foreground electron:opacity-75"
+      : "min-h-14 gap-1 px-4 py-2 sm:grid-cols-[160px_minmax(0,1fr)] sm:gap-6";
+  const labelClassName =
+    variant === "compact"
+      ? "flex items-center pr-2 pl-1 text-left"
+      : "text-sm text-token-text-secondary";
+  const valueClassName =
+    variant === "compact"
+      ? "flex items-center justify-end justify-self-stretch overflow-hidden"
+      : "text-sm text-token-text-primary";
+
+  return (
+    <div className={joinClasses("grid items-center", rowClassName)}>
+      <div className={joinClasses("min-w-0", labelClassName)}>{label}</div>
+      <div className={joinClasses("min-w-0", valueClassName)}>{children}</div>
     </div>
   );
 }

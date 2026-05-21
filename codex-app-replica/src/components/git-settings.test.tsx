@@ -58,6 +58,24 @@ test("git settings keeps extracted gate conditions, worktree nesting, and save h
   assert.doesNotMatch(source, /window\.addEventListener\("keydown"/);
 });
 
+test("git settings keeps extracted global-state subscription ownership for git and worktree keys", () => {
+  const source = readSource(SOURCE_PATH);
+
+  assert.match(source, /import \{ onGlobalStateUpdated \} from "\.\.\/services\/settings";/);
+  assert.match(source, /void onGlobalStateUpdated\(\(notification\) => \{/);
+  assert.match(source, /notification\.keys\.includes\("git-branch-prefix"\)/);
+  assert.match(source, /notification\.keys\.includes\("git-always-force-push"\)/);
+  assert.match(source, /notification\.keys\.includes\("git-create-pull-request-as-draft"\)/);
+  assert.match(source, /notification\.keys\.includes\("git-pull-request-merge-method"\)/);
+  assert.match(source, /notification\.keys\.includes\("git-show-sidebar-pr-icons"\)/);
+  assert.match(source, /notification\.keys\.includes\("git-commit-instructions"\)/);
+  assert.match(source, /notification\.keys\.includes\("git-pr-instructions"\)/);
+  assert.match(source, /notification\.keys\.includes\("worktree-auto-cleanup-enabled"\)/);
+  assert.match(source, /notification\.keys\.includes\("worktree-keep-count"\)/);
+  assert.match(source, /void reloadGitSettings\(\);/);
+  assert.match(source, /void reloadWorktreeSettings\(\);/);
+});
+
 test("git settings keeps extracted instruction header actions and auto-cleanup confirm dialog", () => {
   const source = readSource(SOURCE_PATH);
 

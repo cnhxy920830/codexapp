@@ -8,6 +8,8 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { I18N_CONTEXT } from "../../i18n/i18n";
 import { MESSAGES, type LocaleCode, type MessageKey, type MessageValues } from "../../i18n/messages";
+import type { PullRequestDiffFile, PullRequestDiffHunk } from "../../lib/unifiedDiff";
+import { EditorDiffFileSurface } from "./EditorDiffFileSurface";
 import { EditorDiffPage } from "./EditorDiffPage";
 
 const SNAPSHOT_PATH = path.join(
@@ -48,6 +50,61 @@ test("editor diff page snapshots", async (t) => {
         </div>
       </StaticI18nProvider>,
     ),
+    markdownRichPreview: renderSnapshot(
+      <StaticI18nProvider>
+        <div className="h-[900px]">
+          <EditorDiffFileSurface
+            cwd="D:\\workspace\\codex"
+            file={createPreviewFile("docs/readme.md")}
+            isOpen
+            onToggleOpen={() => undefined}
+            previewOverride={{
+              kind: "markdown",
+              text: "# Readme\n\nHello **preview**",
+            }}
+            richPreviewEnabled
+            viewMode="unified"
+          />
+        </div>
+      </StaticI18nProvider>,
+    ),
+    imageRichPreview: renderSnapshot(
+      <StaticI18nProvider>
+        <div className="h-[900px]">
+          <EditorDiffFileSurface
+            cwd="D:\\workspace\\codex"
+            file={createPreviewFile("assets/diagram.png", { isBinary: true })}
+            isOpen
+            onToggleOpen={() => undefined}
+            previewOverride={{
+              dataUrl:
+                "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9pZl9sQAAAAASUVORK5CYII=",
+              kind: "image",
+            }}
+            richPreviewEnabled={false}
+            viewMode="unified"
+          />
+        </div>
+      </StaticI18nProvider>,
+    ),
+    pdfRichPreview: renderSnapshot(
+      <StaticI18nProvider>
+        <div className="h-[900px]">
+          <EditorDiffFileSurface
+            cwd="D:\\workspace\\codex"
+            file={createPreviewFile("docs/spec.pdf", { isBinary: true })}
+            isOpen
+            onToggleOpen={() => undefined}
+            previewOverride={{
+              fileDataUrl: "data:application/pdf;base64,JVBERi0xLjQK",
+              kind: "pdf",
+            }}
+            richPreviewEnabled={false}
+            viewMode="unified"
+          />
+        </div>
+      </StaticI18nProvider>,
+    ),
   };
 
   if (UPDATE_SNAPSHOTS) {
@@ -66,9 +123,35 @@ test("editor diff page snapshots", async (t) => {
 });
 
 type SnapshotMap = {
+  imageRichPreview: string;
   loadedDiff: string;
+  markdownRichPreview: string;
   missingRouteState: string;
+  pdfRichPreview: string;
 };
+
+function createPreviewFile(
+  path: string,
+  overrides?: Partial<PullRequestDiffFile>,
+): PullRequestDiffFile {
+  return {
+    additions: 0,
+    deletions: 0,
+    headerLines: [],
+    hunkMetadata: [] as PullRequestDiffHunk[],
+    hunks: [],
+    isBinary: false,
+    isPartial: false,
+    newObjectId: null,
+    newPath: path,
+    oldObjectId: null,
+    oldPath: path,
+    patch: "",
+    path,
+    status: "modified",
+    ...overrides,
+  };
+}
 
 function renderSnapshot(element: ReactElement) {
   return normalizeMarkup(renderToStaticMarkup(element));

@@ -3,6 +3,7 @@ import { Button } from "../../components/Button";
 import { CheckIcon, FolderIcon, PlusIcon } from "../../components/AppShellIcons";
 import { Spinner } from "../../components/Spinner";
 import { useI18n } from "../../i18n/i18n";
+import { stripWorkspaceRootExtendedPrefix } from "./selectWorkspaceModel";
 
 export type WorkspaceRootOptionView = {
   root: string;
@@ -125,7 +126,7 @@ export function SelectWorkspacePageView({
                           key={option.root}
                           checked={selectedRootsSet.has(option.root)}
                           checkboxId={`workspace-root-${index}`}
-                          description={option.root}
+                          description={stripWorkspaceRootExtendedPrefix(option.root)}
                           disabled={isLoadingRoots}
                           label={option.label}
                           onCheckedChange={(checked) => onToggleWorkspace(option.root, checked)}
@@ -516,5 +517,5 @@ function joinClasses(...values: Array<string | false | null | undefined>) {
 }
 
 function normalizeComparablePath(path: string) {
-  return path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  return stripWorkspaceRootExtendedPrefix(path).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
 }

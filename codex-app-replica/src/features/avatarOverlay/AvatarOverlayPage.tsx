@@ -31,10 +31,13 @@ import {
 } from "../../services/avatarOverlay";
 import {
   getRecentThreads,
+  getRecentThreadsForHost,
   onThreadEvent,
   readThread,
+  readThreadForHost,
   sendFollowUpMessage,
   type ThreadConversation,
+  type ThreadConversationItem,
   type ThreadHistoryEntry,
 } from "../../services/history";
 import {
@@ -46,24 +49,40 @@ import {
 } from "../../services/customAvatars";
 import { listRemoteTasks, type RemoteTask } from "../../services/remoteTasks";
 import { onGlobalStateUpdated, readSelectedAvatarId } from "../../services/settings";
+import {
+  REMOTE_CONNECTIONS_SHARED_OBJECT_KEY,
+  onRemoteAppServerConnectionStateChanged,
+  onSharedObjectUpdated,
+  readConnectedSettingsRemoteConnections,
+  readSettingsRemoteConnectionsSnapshot,
+} from "../../services/settingsHosts";
 import { openInMainWindow } from "../../services/windowNavigation";
 import { AvatarOverlayView } from "./AvatarOverlayView";
 import { DEFAULT_AVATAR_OVERLAY_LAYOUT, type AvatarOverlayLayout } from "./avatarOverlayLayout";
 import type { AvatarOverlayContextMenuPosition } from "./AvatarOverlayContextMenu";
+import {
+  ACTIVE_ACTIVITY_POLL_INTERVAL_MS,
+  getNextActivityRefreshDelayMs,
+  mergeSyntheticRequestItemsIntoConversation,
+  removeRequestConversationItem,
+  updateSyntheticRequestItemsForThread,
+  upsertMcpServerElicitationConversationItem,
+  upsertPermissionRequestConversationItem,
+  upsertUserInputConversationItem,
+} from "./avatarOverlayActivity";
 import {
   deriveAvatarOverlayNotifications,
   type AvatarOverlayNotification,
 } from "./avatarOverlayNotifications";
 
 const RECENT_THREAD_LIMIT = 20;
-const DEFAULT_ACTIVITY_POLL_INTERVAL_MS = 60_000;
-const ACTIVE_ACTIVITY_POLL_INTERVAL_MS = 15_000;
 const THREAD_EVENT_REFRESH_DEBOUNCE_MS = 300;
 const REMOTE_TASK_LIMIT = 20;
 const DRAG_THRESHOLD_PX = 4;
 const DRAG_VELOCITY_WINDOW_MS = 100;
 const DRAG_MIN_FLING_SPEED_PX_PER_SECOND = 320;
 const DRAG_MAX_FLING_SPEED_PX_PER_SECOND = 1600;
+const LOCAL_HOST_ID = "local";
 const AVATAR_OVERLAY_REGION_SELECTORS = [
   "[data-avatar-overlay-hit-region]",
   "[data-avatar-mascot='true']",
@@ -130,16 +149,86 @@ export function AvatarOverlayPage({ initialAvatarId }: AvatarOverlayPageProps) {
     Map<string, ThreadConversation>
   >(() => new Map());
   const [remoteTasks, setRemoteTasks] = useState<RemoteTask[]>([]);
-  const [remoteTaskRefreshTick, setRemoteTaskRefreshTick] = useState(0);
+  const [syntheticRequestItemsByThreadId, setSyntheticRequestItemsByThreadId] = useState<
+    Map<string, ThreadConversationItem[]>
+  >(() => new Map());
   const [dismissedNotificationTurnKeys, setDismissedNotificationTurnKeys] = useState<
     Map<string, string | null>
   >(() => new Map());
   const recentThreadIdsRef = useRef<Set<string>>(new Set());
+  const syntheticRequestItemsByThreadIdRef = useRef<Map<string, ThreadConversationItem[]>>(
+    new Map(),
+  );
   const hasLoadedRemoteTasksRef = useRef(false);
+  const connectedRemoteHostIdsRef = useRef<string[]>([]);
   const interactiveRegionRef = useRef<HTMLElement | null>(null);
   const dragRef = useRef<ActiveDrag | null>(null);
   const lastMeasuredOverlayRef = useRef<MeasuredOverlayState | null>(null);
   const missingCustomAvatarRefreshIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    syntheticRequestItemsByThreadIdRef.current = syntheticRequestItemsByThreadId;
+  }, [syntheticRequestItemsByThreadId]);
+
+  const refreshRecentActivity = useEffectEvent(async () => {
+    const remoteHostIds = connectedRemoteHostIdsRef.current;
+    const threadGroups = await Promise.all([
+      getRecentThreads(),
+      ...remoteHostIds.map((hostId) => getRecentThreadsForHost(hostId)),
+    ]);
+    const mergedThreads = threadGroups
+      .flat()
+      .sort((left, right) => right.updatedAt - left.updatedAt)
+      .slice(0, RECENT_THREAD_LIMIT);
+    recentThreadIdsRef.current = new Set(mergedThreads.map((thread) => thread.id));
+
+    const detailThreads = mergedThreads.filter(
+      (thread) =>
+        thread.source?.parentThreadId == null &&
+        (thread.status.type !== "idle" || thread.hasUnreadTurn === true) &&
+        thread.status.type !== "notLoaded",
+    );
+    const detailEntries = await Promise.all(
+      detailThreads.map(async (thread) => {
+        try {
+          const conversation =
+            thread.hostId == null || thread.hostId === "local"
+              ? await readThread(thread.id)
+              : await readThreadForHost({
+                  threadId: thread.id,
+                  hostId: thread.hostId,
+                });
+          return [thread.id, conversation] as const;
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    const nextConversationsByThreadId = new Map<string, ThreadConversation>();
+    for (const detailEntry of detailEntries) {
+      if (detailEntry != null) {
+        nextConversationsByThreadId.set(
+          detailEntry[0],
+          mergeSyntheticRequestItemsIntoConversation(
+            detailEntry[1],
+            syntheticRequestItemsByThreadIdRef.current,
+          ),
+        );
+      }
+    }
+
+    setRecentThreads(mergedThreads);
+    setConversationsByThreadId(nextConversationsByThreadId);
+  });
+
+  const refreshRemoteActivity = useEffectEvent(async () => {
+    const response = await listRemoteTasks({
+      taskFilter: "current",
+      limit: REMOTE_TASK_LIMIT,
+    });
+    setRemoteTasks(response.items ?? []);
+  });
 
   useEffect(() => {
     const unsubscribe = subscribeCustomAvatars((nextSnapshot) => {
@@ -202,56 +291,73 @@ export function AvatarOverlayPage({ initialAvatarId }: AvatarOverlayPageProps) {
       return undefined;
     }
 
-    let cancelled = false;
-    let queuedRefreshId: number | null = null;
+    let disposed = false;
+    let cleanupSharedObjects: (() => void) | undefined;
+    let cleanupConnectionStates: (() => void) | undefined;
 
-    const loadRecentActivity = async () => {
+    const refreshConnectedRemoteHosts = async () => {
       try {
-        const latestThreads = await getRecentThreads();
-        if (cancelled) {
+        const remoteConnections = await readSettingsRemoteConnectionsSnapshot().catch(() => []);
+        const connectedRemoteConnections =
+          await readConnectedSettingsRemoteConnections(remoteConnections).catch(() => []);
+        if (disposed) {
           return;
         }
-
-        const trimmedThreads = latestThreads.slice(0, RECENT_THREAD_LIMIT);
-        recentThreadIdsRef.current = new Set(trimmedThreads.map((thread) => thread.id));
-
-        const detailThreads = trimmedThreads.filter(
-          (thread) =>
-            thread.source?.parentThreadId == null &&
-            (thread.status.type !== "idle" ||
-              thread.hasUnreadTurn === true) &&
-            thread.status.type !== "notLoaded",
+        connectedRemoteHostIdsRef.current = connectedRemoteConnections.map(
+          (connection) => connection.hostId,
         );
-        const detailEntries = await Promise.all(
-          detailThreads.map(async (thread) => {
-            try {
-              return [thread.id, await readThread(thread.id)] as const;
-            } catch {
-              return null;
+        void refreshRecentActivity()
+          .catch(() => undefined)
+          .finally(() => {
+            if (!disposed) {
+              setNowMs(Date.now());
             }
-          }),
-        );
-
-        if (cancelled) {
-          return;
-        }
-
-        const nextConversationsByThreadId = new Map<string, ThreadConversation>();
-        for (const detailEntry of detailEntries) {
-          if (detailEntry != null) {
-            nextConversationsByThreadId.set(detailEntry[0], detailEntry[1]);
-          }
-        }
-
-        setRecentThreads(trimmedThreads);
-        setConversationsByThreadId(nextConversationsByThreadId);
-        setNowMs(Date.now());
+          });
       } catch {
-        if (!cancelled) {
-          setNowMs(Date.now());
+        if (!disposed) {
+          connectedRemoteHostIdsRef.current = [];
         }
       }
     };
+
+    void refreshConnectedRemoteHosts();
+
+    void onSharedObjectUpdated((notification) => {
+      if (notification.key === REMOTE_CONNECTIONS_SHARED_OBJECT_KEY) {
+        void refreshConnectedRemoteHosts();
+      }
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+      cleanupSharedObjects = dispose;
+    });
+
+    void onRemoteAppServerConnectionStateChanged(() => {
+      void refreshConnectedRemoteHosts();
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+      cleanupConnectionStates = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      void cleanupSharedObjects?.();
+      void cleanupConnectionStates?.();
+    };
+  }, [refreshRecentActivity]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+
+    let cancelled = false;
+    let queuedRefreshId: number | null = null;
 
     const queueRefresh = () => {
       if (queuedRefreshId != null) {
@@ -260,17 +366,51 @@ export function AvatarOverlayPage({ initialAvatarId }: AvatarOverlayPageProps) {
 
       queuedRefreshId = window.setTimeout(() => {
         queuedRefreshId = null;
-        void loadRecentActivity();
+        void refreshRecentActivity()
+          .catch(() => undefined)
+          .finally(() => {
+            if (!cancelled) {
+              setNowMs(Date.now());
+            }
+          });
       }, THREAD_EVENT_REFRESH_DEBOUNCE_MS);
     };
 
-    void loadRecentActivity();
-
-    const pollId = window.setInterval(() => {
-      void loadRecentActivity();
-    }, ACTIVE_ACTIVITY_POLL_INTERVAL_MS);
+    void refreshRecentActivity()
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) {
+          setNowMs(Date.now());
+        }
+      });
 
     const unlistenPromise = onThreadEvent((event) => {
+      if (event.type === "toolRequestUserInputRequested") {
+        setSyntheticRequestItemsByThreadId((current) =>
+          updateSyntheticRequestItemsForThread(current, event.threadId, (items) =>
+            upsertUserInputConversationItem(items, event),
+          ),
+        );
+      } else if (event.type === "permissionsRequestApprovalRequested") {
+        setSyntheticRequestItemsByThreadId((current) =>
+          updateSyntheticRequestItemsForThread(current, event.threadId, (items) =>
+            upsertPermissionRequestConversationItem(items, event),
+          ),
+        );
+      } else if (event.type === "mcpServerElicitationRequested") {
+        setSyntheticRequestItemsByThreadId((current) =>
+          updateSyntheticRequestItemsForThread(current, event.threadId, (items) =>
+            upsertMcpServerElicitationConversationItem(items, event),
+          ),
+        );
+      } else if (event.type === "serverRequestResolved") {
+        setSyntheticRequestItemsByThreadId((current) =>
+          updateSyntheticRequestItemsForThread(current, event.threadId, (items) =>
+            removeRequestConversationItem(items, event.requestId),
+          ),
+        );
+      }
+
       if ("threadId" in event && recentThreadIdsRef.current.has(event.threadId)) {
         queueRefresh();
       }
@@ -278,15 +418,12 @@ export function AvatarOverlayPage({ initialAvatarId }: AvatarOverlayPageProps) {
 
     return () => {
       cancelled = true;
-      if (pollId != null) {
-        window.clearInterval(pollId);
-      }
       if (queuedRefreshId != null) {
         window.clearTimeout(queuedRefreshId);
       }
       void unlistenPromise.then((dispose) => dispose()).catch(() => undefined);
     };
-  }, []);
+  }, [refreshRecentActivity]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -295,50 +432,21 @@ export function AvatarOverlayPage({ initialAvatarId }: AvatarOverlayPageProps) {
 
     let cancelled = false;
 
-    const loadRemoteActivity = async () => {
-      try {
-        const response = await listRemoteTasks({
-          taskFilter: "current",
-          limit: REMOTE_TASK_LIMIT,
-        });
-        if (cancelled) {
-          return;
-        }
-
-        setRemoteTasks(response.items ?? []);
-        setNowMs(Date.now());
-      } catch {
-        if (!cancelled) {
-          setNowMs(Date.now());
-        }
-      } finally {
-        if (!cancelled) {
-          setRemoteTaskRefreshTick((current) => current + 1);
-        }
-      }
-    };
-
     if (!hasLoadedRemoteTasksRef.current) {
       hasLoadedRemoteTasksRef.current = true;
-      void loadRemoteActivity();
-      return () => {
-        cancelled = true;
-      };
+      void refreshRemoteActivity()
+        .catch(() => undefined)
+        .finally(() => {
+          if (!cancelled) {
+            setNowMs(Date.now());
+          }
+        });
     }
-
-    const hasRunningRemoteTask = remoteTasks.some((task) => {
-      const status = task.task_status_display?.latest_turn_status_display?.turn_status;
-      return status === "pending" || status === "in_progress";
-    });
-    const timeoutId = window.setTimeout(() => {
-      void loadRemoteActivity();
-    }, hasRunningRemoteTask ? ACTIVE_ACTIVITY_POLL_INTERVAL_MS : DEFAULT_ACTIVITY_POLL_INTERVAL_MS);
 
     return () => {
       cancelled = true;
-      window.clearTimeout(timeoutId);
     };
-  }, [remoteTaskRefreshTick, remoteTasks]);
+  }, [refreshRemoteActivity]);
 
   const avatarOptions = useMemo(
     () => buildAvatarOptions(customAvatarsSnapshot.avatars),
@@ -387,19 +495,40 @@ export function AvatarOverlayPage({ initialAvatarId }: AvatarOverlayPageProps) {
   );
 
   useEffect(() => {
-    if (typeof window === "undefined" || notificationState.nextExpiresAtMs == null) {
+    if (typeof window === "undefined") {
       return undefined;
     }
 
-    const delayMs = Math.max(notificationState.nextExpiresAtMs - Date.now(), 0);
+    const nextRefresh = getNextActivityRefreshDelayMs({
+      hasRunningCloudSession,
+      hasRunningLocalSession,
+      nextExpiresAtMs: notificationState.nextExpiresAtMs,
+    });
+    if (nextRefresh == null) {
+      return undefined;
+    }
+
     const timeoutId = window.setTimeout(() => {
-      setNowMs(Date.now());
-    }, delayMs + 1);
+      setNowMs((current) => Math.max(Date.now(), current + 1));
+      if (!nextRefresh.shouldRefreshActivity) {
+        return;
+      }
+      void Promise.all([
+        hasRunningLocalSession ? refreshRecentActivity() : Promise.resolve(),
+        hasRunningCloudSession ? refreshRemoteActivity() : Promise.resolve(),
+      ]).catch(() => undefined);
+    }, nextRefresh.delayMs);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [notificationState.nextExpiresAtMs]);
+  }, [
+    hasRunningCloudSession,
+    hasRunningLocalSession,
+    notificationState.nextExpiresAtMs,
+    refreshRecentActivity,
+    refreshRemoteActivity,
+  ]);
 
   useAvatarOverlayPointerInteractivity({
     interactiveRegionRef,
@@ -543,6 +672,15 @@ export function AvatarOverlayPage({ initialAvatarId }: AvatarOverlayPageProps) {
   const handleOpenNotification = (notification: AvatarOverlayNotification) => {
     setContextMenuPosition(null);
     setIsReplyEditorActive(false);
+    if (
+      notification.localConversationId != null &&
+      notification.hostId != null &&
+      notification.hostId !== LOCAL_HOST_ID
+    ) {
+      void openInMainWindow(`/remote/${encodeURIComponent(notification.localConversationId)}`);
+      return;
+    }
+
     void openInMainWindow(notification.actionPath);
   };
 

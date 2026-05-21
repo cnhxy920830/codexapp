@@ -1,6 +1,7 @@
 /// <reference types="node" />
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
@@ -12,6 +13,14 @@ import { AppConnectOAuthCallbackPage } from "./AppConnectOAuthCallbackPage";
 const SNAPSHOT_PATH = path.join(
   process.cwd(),
   "src/features/apps/__snapshots__/app-connect-oauth-callback-page.snap.json",
+);
+const SOURCE_PATH = path.join(
+  process.cwd(),
+  "src/features/apps/AppConnectOAuthCallbackPage.tsx",
+);
+const SERVICE_SOURCE_PATH = path.join(
+  process.cwd(),
+  "src/services/appConnectOAuth.ts",
 );
 const UPDATE_SNAPSHOTS =
   process.env.APP_CONNECT_OAUTH_CALLBACK_PAGE_UPDATE_SNAPSHOTS === "1";
@@ -40,6 +49,49 @@ test("app connect oauth callback page snapshots", async () => {
   assert.match(actualSnapshots.page, /animate-spin/);
   assert.match(actualSnapshots.page, /icon-sm/);
   assert.doesNotMatch(actualSnapshots.page, /button/);
+});
+
+test("app connect oauth callback route completion matches extracted navigation contract", () => {
+  const source = readFileSync(SOURCE_PATH, "utf8");
+
+  assert.match(
+    source,
+    /if \(pending\?\.resumeTarget\.kind === "plugin-install"\) \{\s*onNavigate\(returnTo, \{\s*initialHostId: pending\.hostId,\s*initialTab: "plugins",\s*\}\);\s*return;\s*\}/s,
+  );
+  assert.match(
+    source,
+    /onNavigate\(returnTo, \{\s*connectAppId: pending\?\.appId,\s*initialHostId: pending\?\.hostId,\s*initialTab: "apps",\s*\}\);/s,
+  );
+  assert.doesNotMatch(source, /initialMode:\s*"manage"/);
+});
+
+test("app connect oauth callback service matches extracted post-callback refresh contract", () => {
+  const source = readFileSync(SERVICE_SOURCE_PATH, "utf8");
+
+  assert.match(
+    source,
+    /const previousApps = await readAppsSnapshot\(\{\s*hostId,\s*forceRefetch: false,\s*\}\)\.catch\(\(\) => null\);/s,
+  );
+  assert.match(
+    source,
+    /const nextApps = await readAppsSnapshot\(\{\s*hostId,\s*forceRefetch: true,\s*\}\)\.catch\(\(\) => null\);/s,
+  );
+  assert.match(
+    source,
+    /const shouldRefreshAmbientSuggestions = previousApps != null && !hadConnectedApps && hasConnectedApps;/,
+  );
+  assert.match(
+    source,
+    /refreshAmbientSuggestions\(\{\s*hostId,\s*projectRoot: "~",\s*mode: "first-plugin-connect",\s*\}\)/s,
+  );
+  assert.match(
+    source,
+    /emitQueryCacheInvalidated\(\["ambient-suggestions"\]\)/,
+  );
+  assert.match(
+    source,
+    /emitQueryCacheInvalidated\(\["ambient-suggestions-refresh"\]\)/,
+  );
 });
 
 type SnapshotMap = {

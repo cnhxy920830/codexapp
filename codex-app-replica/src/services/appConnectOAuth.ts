@@ -3,6 +3,7 @@ import {
   emitQueryCacheInvalidated,
 } from "./queryCache";
 import { readAppsSnapshot } from "./apps";
+import { refreshAmbientSuggestions } from "./debug";
 
 const APP_CONNECT_OAUTH_PENDING_STORAGE_KEY =
   "codex-app-replica.app-connect-oauth-pending.v1";
@@ -203,6 +204,11 @@ export async function finishAppConnectOAuthCallback({
     };
   }
 
+  const previousApps = await readAppsSnapshot({
+    hostId,
+    forceRefetch: false,
+  }).catch(() => null);
+
   try {
     const response = await invoke<FinishAppConnectOAuthCallbackResponse>(
       "finish-app-connect-oauth-callback",
@@ -227,14 +233,30 @@ export async function finishAppConnectOAuthCallback({
           kind: "request-failed",
         };
   } finally {
+    const nextApps = await readAppsSnapshot({
+      hostId,
+      forceRefetch: true,
+    }).catch(() => null);
+    const hadConnectedApps =
+      previousApps != null && previousApps.data.some((app) => app.isAccessible && app.isEnabled);
+    const hasConnectedApps = nextApps?.data.some((app) => app.isAccessible && app.isEnabled) === true;
+    const shouldRefreshAmbientSuggestions = previousApps != null && !hadConnectedApps && hasConnectedApps;
+
     await Promise.allSettled([
-      readAppsSnapshot({
-        hostId,
-        forceRefetch: true,
-      }),
       emitQueryCacheInvalidated(["apps", "list", hostId]),
       emitQueryCacheInvalidated(["mcp-settings"]),
       emitQueryCacheInvalidated(["mcp-settings", "app-connect"]),
+      ...(shouldRefreshAmbientSuggestions
+        ? [
+            refreshAmbientSuggestions({
+              hostId,
+              projectRoot: "~",
+              mode: "first-plugin-connect",
+            }),
+            emitQueryCacheInvalidated(["ambient-suggestions"]),
+            emitQueryCacheInvalidated(["ambient-suggestions-refresh"]),
+          ]
+        : []),
     ]);
     clearPendingAppConnect({ oauthState });
   }

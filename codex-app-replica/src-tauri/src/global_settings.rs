@@ -118,6 +118,7 @@ fn ensure_supported_key(key: &str) -> Result<(), String> {
         | "chronicle-setup-completion-pending"
         | "use-copilot-auth-if-available"
         | "browser-sidebar-comment-mode-coachmark-dismissed"
+        | "browser-annotation-screenshots-mode"
         | "electron:onboarding-override"
         | "electron:onboarding-welcome-pending"
         | "electron:onboarding-projectless-completed"
@@ -310,6 +311,7 @@ mod tests {
             "chronicle-setup-completion-pending",
             "use-copilot-auth-if-available",
             "browser-sidebar-comment-mode-coachmark-dismissed",
+            "browser-annotation-screenshots-mode",
             "electron:onboarding-override",
             "electron:onboarding-welcome-pending",
             "electron:onboarding-projectless-completed",

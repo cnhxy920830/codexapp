@@ -134,7 +134,10 @@ test("keyboard shortcuts page reuses shared tooltip and keycap owners instead of
   const pageSource = readSource(PAGE_SOURCE_PATH);
   const tooltipSource = readSource(TOOLTIP_SOURCE_PATH);
 
-  assert.match(pageSource, /<TooltipKeycap keysLabel=\{shortcutLabel\} \/>/);
+  assert.match(
+    pageSource,
+    /<TooltipKeycap\s+className="!px-2 !py-1 !text-sm"\s+keysLabel=\{shortcutLabel\}\s*\/>/,
+  );
   assert.match(pageSource, /<Tooltip tooltipContent=\{ariaLabel\}>/);
   assert.doesNotMatch(pageSource, /function ShortcutTooltip/);
 

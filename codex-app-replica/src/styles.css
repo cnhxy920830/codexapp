@@ -159,6 +159,70 @@ pre,
   background-size: 800% 900%;
 }
 
+@keyframes avatar-overlay-badge-enter {
+  from {
+    opacity: 0;
+    transform: translateY(3px) scale(0.7);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes avatar-overlay-edge-control-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+@keyframes avatar-overlay-row-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes avatar-overlay-reply-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.avatar-overlay-badge-enter {
+  animation: avatar-overlay-badge-enter 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.avatar-overlay-edge-control-enter {
+  animation: avatar-overlay-edge-control-enter 140ms ease-out;
+}
+
+.avatar-overlay-row-enter {
+  animation: avatar-overlay-row-enter 180ms ease-out both;
+}
+
+.avatar-overlay-reply-enter {
+  animation: avatar-overlay-reply-enter 160ms ease-out;
+}
+
 *,
 *::before,
 *::after {
@@ -496,6 +560,16 @@ body[data-hotkey-window-home-composer-menu-open] .hotkey-window-home-underlay {
 
 .app-text-input::placeholder {
   color: var(--app-shell-subtle);
+}
+
+.skills-page-card-grid {
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+
+@container (width >= 581px) {
+  .skills-page-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .pdfPreviewPage {

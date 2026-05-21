@@ -2,6 +2,7 @@ import { useEffect, useEffectEvent, useState } from "react";
 import { Button } from "./Button";
 import { SettingsContentLayout } from "./SettingsContentLayout";
 import { SettingsGroup } from "./SettingsGroup";
+import { SettingsValueRow } from "./SettingsRow";
 import { SettingsSectionTitle } from "./SettingsSectionTitle";
 import { SettingsSurface } from "./SettingsSurface";
 import { useI18n } from "../i18n/i18n";
@@ -56,7 +57,7 @@ export function AccountSettings({
 
   useEffect(() => {
     void loadAccountInfo();
-  }, [loadAccountInfo, usesChatGptAuth, authSnapshot.activeLoginId, authSnapshot.authState.authMethod]);
+  }, [usesChatGptAuth, authSnapshot.activeLoginId, authSnapshot.authState.authMethod]);
 
   useEffect(() => {
     let disposed = false;
@@ -78,7 +79,7 @@ export function AccountSettings({
       disposed = true;
       unlisten?.();
     };
-  }, [loadAccountInfo]);
+  }, []);
 
   const emailValue = accountInfo?.email ?? authSnapshot.authState.email;
   const accountIdValue = accountInfo?.accountId ?? authSnapshot.authState.accountId;
@@ -121,20 +122,19 @@ export function AccountSettings({
     <SettingsContentLayout
       title={<SettingsSectionTitle slug="account" />}
       subtitle={t("settings.account.subtitle")}
-      subtitleClassName="text-pretty"
     >
       <SettingsGroup>
         <SettingsGroup.Header title={t("settings.account.current.title")} />
         <SettingsGroup.Content>
           <SettingsSurface>
-            <SettingsValueRow
+            <AccountValueRow
               label={t("settings.account.authMethod")}
               value={usesChatGptAuth ? t("settings.account.authMethod.chatgptToken") : null}
             />
-            <SettingsValueRow label={t("settings.account.email")} value={emailValue} />
-            <SettingsValueRow label={t("settings.account.accountId")} value={accountIdValue} />
-            <SettingsValueRow label={t("settings.account.userId")} value={userIdValue} />
-            <SettingsValueRow label={t("settings.account.plan")} value={planValue} />
+            <AccountValueRow label={t("settings.account.email")} value={emailValue} />
+            <AccountValueRow label={t("settings.account.accountId")} value={accountIdValue} />
+            <AccountValueRow label={t("settings.account.userId")} value={userIdValue} />
+            <AccountValueRow label={t("settings.account.plan")} value={planValue} />
           </SettingsSurface>
         </SettingsGroup.Content>
       </SettingsGroup>
@@ -190,7 +190,7 @@ export function AccountSettings({
   );
 }
 
-function SettingsValueRow({
+function AccountValueRow({
   label,
   value,
 }: {
@@ -198,12 +198,9 @@ function SettingsValueRow({
   value: string | null;
 }) {
   return (
-    <div className="grid min-h-14 items-center gap-1 px-4 py-2 sm:grid-cols-[160px_minmax(0,1fr)] sm:gap-6">
-      <div className="min-w-0 text-sm text-token-text-secondary">{label}</div>
-      <div className="min-w-0 text-sm text-token-text-primary">
-        {value != null && value.length > 0 ? <span className="truncate">{value}</span> : <UnavailableValue />}
-      </div>
-    </div>
+    <SettingsValueRow label={label}>
+      {value != null && value.length > 0 ? <span className="truncate">{value}</span> : <UnavailableValue />}
+    </SettingsValueRow>
   );
 }
 

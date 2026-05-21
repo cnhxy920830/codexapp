@@ -42,6 +42,10 @@ const DETAIL_PANE_SOURCE_PATH = path.join(
   process.cwd(),
   "src/features/automations/AutomationsDetailPane.tsx",
 );
+const PREVIOUS_RUNS_SOURCE_PATH = path.join(
+  process.cwd(),
+  "src/features/automations/AutomationPreviousRunsList.tsx",
+);
 
 test("cron automation drafts default to worktree execution environment", () => {
   const draft = buildAutomationDraft("cron");
@@ -84,6 +88,10 @@ test("automations create dialog keeps extracted shell sizing and pointer-dismiss
   assert.match(source, /max-h-\[95vh\]/);
   assert.match(source, /max-w-\[800px\]/);
   assert.match(source, /top-\[22px\]/);
+  assert.match(source, /AutomationDialogOverlay/);
+  assert.match(source, /AutomationTemplateHeader/);
+  assert.match(source, /data-testid="automation-template-toggle-button"/);
+  assert.doesNotMatch(source, /isTemplateMode/);
 });
 
 test("automations create dialog renders extracted worktree-first cron defaults", () => {
@@ -96,7 +104,7 @@ test("automations create dialog renders extracted worktree-first cron defaults",
         heartbeatThreadOptions={[]}
         isSaving={false}
         locale="en-US"
-        localEnvironmentState={createLocalEnvironmentState()}
+        localEnvironmentState={createLocalEnvironmentState({ visible: true })}
         modelOptions={createModelOptions()}
         onCancel={noop}
         onClearDraft={noop}
@@ -121,7 +129,42 @@ test("automations create dialog renders extracted worktree-first cron defaults",
   assert.match(markup, /Model/);
   assert.match(markup, /Reasoning/);
   assert.match(markup, /Worktree/);
+  assert.match(markup, /Choose a folder/);
   assert.doesNotMatch(markup, /<button[^>]*>Local<\/button>/);
+  assert.doesNotMatch(markup, /Local environment/);
+});
+
+test("automations create dialog initial template mode keeps base composer shell plus overlay title", () => {
+  const draft = buildAutomationDraft("cron") as CronAutomationRecord;
+  const markup = renderToStaticMarkup(
+    <StaticI18nProvider>
+      <AutomationsCreateDialog
+        canSave={false}
+        draft={draft}
+        heartbeatThreadOptions={[]}
+        initialTemplateMode={true}
+        isSaving={false}
+        locale="en-US"
+        localEnvironmentState={createLocalEnvironmentState()}
+        modelOptions={createModelOptions()}
+        onCancel={noop}
+        onClearDraft={noop}
+        onCreate={noop}
+        onDraftChange={noopDraftChange}
+        onOpenLocalEnvironmentsSettings={noopOpenSettings}
+        onSelectTemplateDraft={noopSelectTemplateDraft}
+        quickStartBaseDraft={draft}
+        saveTooltip="Select project and choose a model to create"
+        t={translate}
+        workspaceRootLabels={{}}
+        workspaceRootOptions={[]}
+      />
+    </StaticI18nProvider>,
+  );
+
+  assert.match(markup, /Automation templates/);
+  assert.match(markup, /Create new/);
+  assert.match(markup, /What should Codex do\?/);
 });
 
 test("automation save state requires project and model for cron automations", () => {
@@ -224,11 +267,22 @@ test("automations route page keeps extracted save-state and sandbox wiring", () 
   assert.match(detailPaneSource, /InfoIcon/);
 });
 
+test("automation previous runs keep extracted row-level context menu and archived tooltip", () => {
+  const source = readSource(PREVIOUS_RUNS_SOURCE_PATH);
+
+  assert.match(source, /<ContextMenu/);
+  assert.match(source, /tooltipContent=\{t\("inbox\.automations\.history\.archivedTooltip"\)\}/);
+  assert.doesNotMatch(source, /MoreActionsIcon/);
+  assert.doesNotMatch(source, /group-hover:opacity-100/);
+});
+
 function readSource(filePath: string) {
   return readFileSync(filePath, "utf8");
 }
 
-function createLocalEnvironmentState(): AutomationLocalEnvironmentState {
+function createLocalEnvironmentState(
+  overrides: Partial<AutomationLocalEnvironmentState> = {},
+): AutomationLocalEnvironmentState {
   return {
     environments: [],
     error: null,
@@ -237,6 +291,7 @@ function createLocalEnvironmentState(): AutomationLocalEnvironmentState {
     selectedConfigPath: null,
     visible: false,
     workspaceRoot: null,
+    ...overrides,
   };
 }
 

@@ -40,6 +40,9 @@ import {
 } from "../../services/settings";
 import { HotkeyBranchSwitcherControl } from "./HotkeyBranchSwitcherControl";
 import { HotkeyWorktreeBranchControl } from "./HotkeyWorktreeBranchControl";
+import {
+  type HotkeyWindowProjectSelection,
+} from "./HotkeyWindowProjectMenuControl";
 
 type HotkeyNewThreadMode = "local" | "cloud" | "worktree";
 
@@ -50,7 +53,7 @@ export function HotkeyWindowNewThreadComposerOwner({
   codexHome,
   composerEnterBehavior,
   guardianApprovalEnabledByStatsig,
-  selectedWorkspaceRoot,
+  selectedProject,
   onOpenLocalEnvironmentsSettings,
   onStartCloudConversation,
   onStartLocalConversation,
@@ -59,22 +62,28 @@ export function HotkeyWindowNewThreadComposerOwner({
   codexHome: string | null;
   composerEnterBehavior: ComposerEnterBehavior;
   guardianApprovalEnabledByStatsig: boolean;
-  selectedWorkspaceRoot: string | null;
+  selectedProject: HotkeyWindowProjectSelection;
   onOpenLocalEnvironmentsSettings: (params: {
     configPath: string | null;
+    hostId: string | null;
     workspaceRoot: string;
   }) => void;
   onStartCloudConversation: (params: {
     draft: string;
+    hostId: string | null;
+    cwd: string;
     permissionOverrides: TurnStartPermissionOverrides;
-    workspaceRoot: string;
+    workspaceRoots: string[];
   }) => Promise<void>;
   onStartLocalConversation: (params: {
     draft: string;
+    hostId: string | null;
     permissionOverrides: TurnStartPermissionOverrides;
     workspaceRoot: string | null;
+    workspaceRoots: string[];
   }) => Promise<void>;
   onStartWorktreeConversation: (params: {
+    hostId: string;
     id: string;
     localEnvironmentConfigPath: string | null;
     permissionOverrides: TurnStartPermissionOverrides;
@@ -102,6 +111,14 @@ export function HotkeyWindowNewThreadComposerOwner({
   const [permissionsRequirements, setPermissionsRequirements] = useState<ConfigRequirements | null>(null);
   const [selectedPermissionMode, setSelectedPermissionMode] = useState<HotkeyPermissionAgentMode | null>(null);
   const [composerFocusNonce] = useState(0);
+  const selectedWorkspaceRoot =
+    selectedProject.kind === "remote"
+      ? selectedProject.remotePath
+      : selectedProject.kind === "local"
+        ? selectedProject.workspaceRoot
+        : null;
+  const selectedHostId = selectedProject.kind === "remote" ? selectedProject.hostId : null;
+  const selectedWorkspaceRoots = selectedWorkspaceRoot === null ? [] : [selectedWorkspaceRoot];
 
   useEffect(() => {
     return listenGitStateChanged(() => {
@@ -117,7 +134,7 @@ export function HotkeyWindowNewThreadComposerOwner({
 
     let cancelled = false;
 
-    void readGitOrigins({ dirs: [selectedWorkspaceRoot] })
+    void readGitOrigins({ dirs: [selectedWorkspaceRoot], hostId: selectedHostId })
       .then((response) => {
         if (cancelled) {
           return;
@@ -136,7 +153,7 @@ export function HotkeyWindowNewThreadComposerOwner({
     return () => {
       cancelled = true;
     };
-  }, [gitReloadNonce, selectedWorkspaceRoot]);
+  }, [gitReloadNonce, selectedHostId, selectedWorkspaceRoot]);
 
   useEffect(() => {
     if (selectedWorkspaceRoot === null) {
@@ -147,7 +164,7 @@ export function HotkeyWindowNewThreadComposerOwner({
 
     let cancelled = false;
 
-    void listLocalEnvironments({ workspaceRoot: selectedWorkspaceRoot })
+    void listLocalEnvironments({ hostId: selectedHostId, workspaceRoot: selectedWorkspaceRoot })
       .then((response) => {
         if (cancelled) {
           return;
@@ -173,18 +190,18 @@ export function HotkeyWindowNewThreadComposerOwner({
     return () => {
       cancelled = true;
     };
-  }, [selectedWorkspaceRoot]);
+  }, [selectedHostId, selectedWorkspaceRoot]);
 
   useEffect(() => {
     let cancelled = false;
 
     void Promise.allSettled([
       readConfigForHost({
-        hostId: null,
+        hostId: selectedHostId,
         cwd: selectedWorkspaceRoot,
         includeLayers: false,
       }),
-      getConfigRequirementsForHost({ hostId: null }),
+      getConfigRequirementsForHost({ hostId: selectedHostId }),
       readGeneralSettingsSnapshot(),
     ]).then(([configResult, requirementsResult, settingsResult]) => {
       if (cancelled) {
@@ -207,7 +224,7 @@ export function HotkeyWindowNewThreadComposerOwner({
     return () => {
       cancelled = true;
     };
-  }, [selectedWorkspaceRoot]);
+  }, [selectedHostId, selectedWorkspaceRoot]);
 
   useEffect(() => {
     setStartingState({ type: "working-tree" });
@@ -304,12 +321,12 @@ export function HotkeyWindowNewThreadComposerOwner({
       buildTurnStartPermissionOverrides({
         agentMode: composerPermissionMode,
         config: permissionsConfigWithStatsigFeatures,
-        workspaceRoots: selectedWorkspaceRoot === null ? [] : [selectedWorkspaceRoot],
+        workspaceRoots: selectedWorkspaceRoots,
       }),
     [
       composerPermissionMode,
       permissionsConfigWithStatsigFeatures,
-      selectedWorkspaceRoot,
+      selectedWorkspaceRoots,
     ],
   );
 
@@ -349,6 +366,7 @@ export function HotkeyWindowNewThreadComposerOwner({
         }
 
         await onStartWorktreeConversation({
+          hostId: selectedHostId ?? "local",
           id: `local:pending-${crypto.randomUUID()}`,
           localEnvironmentConfigPath: selectedEnvironmentConfigPath,
           permissionOverrides,
@@ -366,17 +384,21 @@ export function HotkeyWindowNewThreadComposerOwner({
         }
 
         await onStartCloudConversation({
+          cwd: selectedWorkspaceRoot,
           draft: nextDraft,
+          hostId: selectedHostId,
           permissionOverrides,
-          workspaceRoot: selectedWorkspaceRoot,
+          workspaceRoots: selectedWorkspaceRoots,
         });
         return;
       }
 
       await onStartLocalConversation({
         draft: nextDraft,
+        hostId: selectedHostId,
         permissionOverrides,
         workspaceRoot: selectedWorkspaceRoot,
+        workspaceRoots: selectedWorkspaceRoots,
       });
     } catch (submitError) {
       const nextError = getErrorMessage(submitError);
@@ -392,7 +414,7 @@ export function HotkeyWindowNewThreadComposerOwner({
     setTurnError(null);
     setIsCreatingGitRepository(true);
     try {
-      await initializeGitRepository({ cwd: selectedWorkspaceRoot, hostId: null });
+      await initializeGitRepository({ cwd: selectedWorkspaceRoot, hostId: selectedHostId });
       emitGitStateChanged();
     } catch (error) {
       const nextError = getErrorMessage(error);
@@ -432,6 +454,7 @@ export function HotkeyWindowNewThreadComposerOwner({
         gitRoot={gitRoot}
         isCreatingGitRepository={isCreatingGitRepository}
         mode={mode}
+        selectedHostId={selectedHostId}
         selectedEnvironmentConfigPath={selectedEnvironmentConfigPath}
         selectedEnvironmentEntry={selectedEnvironmentEntry}
         selectedWorkspaceRoot={selectedWorkspaceRoot}
@@ -454,6 +477,7 @@ function HotkeyWindowNewThreadFooterControls({
   gitRoot,
   isCreatingGitRepository,
   mode,
+  selectedHostId,
   selectedEnvironmentConfigPath,
   selectedEnvironmentEntry,
   selectedWorkspaceRoot,
@@ -476,6 +500,7 @@ function HotkeyWindowNewThreadFooterControls({
   gitRoot: string | null;
   isCreatingGitRepository: boolean;
   mode: HotkeyNewThreadMode;
+  selectedHostId: string | null;
   selectedEnvironmentConfigPath: string | null;
   selectedEnvironmentEntry: LocalEnvironmentConfigEntry | null;
   selectedWorkspaceRoot: string | null;
@@ -486,6 +511,7 @@ function HotkeyWindowNewThreadFooterControls({
   onModeChange: (mode: HotkeyNewThreadMode) => void;
   onOpenLocalEnvironmentsSettings: (params: {
     configPath: string | null;
+    hostId: string | null;
     workspaceRoot: string;
   }) => void;
   onSelectedEnvironmentConfigPathChange: (configPath: string) => void;
@@ -549,6 +575,7 @@ function HotkeyWindowNewThreadFooterControls({
                 onClick={() =>
                   onOpenLocalEnvironmentsSettings({
                     configPath: null,
+                    hostId: selectedHostId,
                     workspaceRoot: selectedWorkspaceRoot,
                   })
                 }
@@ -565,6 +592,7 @@ function HotkeyWindowNewThreadFooterControls({
               onClick={() =>
                 onOpenLocalEnvironmentsSettings({
                   configPath: selectedEnvironmentConfigPath,
+                  hostId: selectedHostId,
                   workspaceRoot: selectedWorkspaceRoot,
                 })
               }

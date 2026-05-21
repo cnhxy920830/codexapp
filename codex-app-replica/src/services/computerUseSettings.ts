@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { emitQueryCacheInvalidated } from "./queryCache";
 
 export type ComputerUseVisibilityState = {
   hasApprovalStore: boolean;
@@ -32,6 +33,14 @@ export type ChromeExtensionInstalledState = {
   installed: boolean;
 };
 
+export const COMPUTER_USE_APPROVALS_QUERY_KEY = [
+  "computer-use-app-approvals-read",
+] as const;
+
+export const COMPUTER_USE_SOUND_MODE_QUERY_KEY = [
+  "computer-use-sound-mode-read",
+] as const;
+
 export async function readComputerUseApprovalsVisibility() {
   return invoke<ComputerUseVisibilityState>("computer-use-app-approvals-visibility");
 }
@@ -41,7 +50,11 @@ export async function readComputerUseApprovals() {
 }
 
 export async function removeComputerUseApproval(params: { bundleIdentifier: string }) {
-  return invoke<ComputerUseApprovalsState | null>("computer-use-app-approval-remove", { params });
+  try {
+    return await invoke<ComputerUseApprovalsState | null>("computer-use-app-approval-remove", { params });
+  } finally {
+    await emitQueryCacheInvalidated(COMPUTER_USE_APPROVALS_QUERY_KEY).catch(() => undefined);
+  }
 }
 
 export async function readComputerUseSoundMode() {
@@ -51,7 +64,11 @@ export async function readComputerUseSoundMode() {
 export async function writeComputerUseSoundMode(params: {
   value: ComputerUseSoundModeValue;
 }) {
-  return invoke<ComputerUseSoundModeWriteResponse>("computer-use-sound-mode-write", { params });
+  try {
+    return await invoke<ComputerUseSoundModeWriteResponse>("computer-use-sound-mode-write", { params });
+  } finally {
+    await emitQueryCacheInvalidated(COMPUTER_USE_SOUND_MODE_QUERY_KEY).catch(() => undefined);
+  }
 }
 
 export async function readChromeExtensionInstalled(params: { extensionId: string }) {

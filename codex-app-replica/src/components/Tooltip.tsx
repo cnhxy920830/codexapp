@@ -47,6 +47,7 @@ export function Tooltip({
   disabled = false,
   side = "top",
   sideOffset = 2,
+  tooltipClassName,
   tooltipBodyClassName,
   tooltipContent,
   tooltipMaxWidth = 300,
@@ -57,6 +58,7 @@ export function Tooltip({
   disabled?: boolean;
   side?: TooltipSide;
   sideOffset?: number;
+  tooltipClassName?: string;
   tooltipBodyClassName?: string;
   tooltipContent: ReactNode;
   tooltipMaxWidth?: number;
@@ -189,7 +191,10 @@ export function Tooltip({
               ref={tooltipRef}
               id={tooltipId}
               role="tooltip"
-              className="bg-token-dropdown-background text-token-foreground border-token-border fixed z-50 w-fit select-none rounded-lg border px-2 py-1 text-sm whitespace-normal break-words"
+              className={joinClasses(
+                "bg-token-dropdown-background text-token-foreground border-token-border fixed z-50 w-fit select-none rounded-lg border px-2 py-1 text-sm whitespace-normal break-words",
+                tooltipClassName,
+              )}
               style={{
                 left: `${position.left}px`,
                 maxWidth: `${tooltipMaxWidth}px`,

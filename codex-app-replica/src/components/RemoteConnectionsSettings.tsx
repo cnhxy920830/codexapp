@@ -10,12 +10,15 @@ import {
   PlusIcon,
   RefreshIcon,
   TrashIcon,
+  WarningIcon,
 } from "./AppShellIcons";
 import { Button } from "./Button";
 import { SettingsContentLayout } from "./SettingsContentLayout";
 import { SettingsGroup } from "./SettingsGroup";
 import { SettingsSurface } from "./SettingsSurface";
+import { Spinner } from "./Spinner";
 import { ToggleSwitch } from "./ToggleSwitch";
+import { Tooltip } from "./Tooltip";
 import { useI18n } from "../i18n/i18n";
 import {
   type MessageKey,
@@ -509,7 +512,6 @@ export function RemoteConnectionsSettings({
           onToggleAutoConnect={(hostId, autoConnect) => void handleToggleAutoConnect(hostId, autoConnect)}
           isRefreshingConnections={isRefreshingConnections}
           pendingAutoConnectHostId={pendingAutoConnectHostId}
-          statusError={connectionsError}
           onAddConnection={() => void handleOpenAddDialog()}
         />
       </SettingsContentLayout>
@@ -868,7 +870,6 @@ function DeviceConnectionsSection({
   onToggleAutoConnect,
   isRefreshingConnections,
   pendingAutoConnectHostId,
-  statusError,
 }: {
   connections: DeviceConnection[];
   remoteControlConnectionsState: RemoteControlConnectionsState;
@@ -890,7 +891,6 @@ function DeviceConnectionsSection({
   onToggleAutoConnect: (hostId: string, autoConnect: boolean) => void;
   isRefreshingConnections: boolean;
   pendingAutoConnectHostId: string | null;
-  statusError: string | null;
 }) {
   const { t } = useI18n();
   const [editingEnvId, setEditingEnvId] = useState<string | null>(null);
@@ -1021,7 +1021,6 @@ function DeviceConnectionsSection({
                 connection={connection}
                 pendingAutoConnectHostId={pendingAutoConnectHostId}
                 response={connectionStates[connection.hostId] ?? null}
-                statusError={statusError}
                 onDeleteConnection={onDeleteConnection}
                 onEditConnection={onEditConnection}
                 onLoginRequired={onLoginRequired}
@@ -1047,7 +1046,6 @@ function SshConnectionRow({
   connection,
   pendingAutoConnectHostId,
   response,
-  statusError,
   onDeleteConnection,
   onEditConnection,
   onLoginRequired,
@@ -1059,7 +1057,6 @@ function SshConnectionRow({
   connection: RemoteConnection;
   pendingAutoConnectHostId: string | null;
   response: AppServerConnectionStateResponse | null;
-  statusError: string | null;
   onDeleteConnection: (connection: DeviceConnection) => void;
   onEditConnection: (hostId: string) => void;
   onLoginRequired: (hostId: string) => void;
@@ -1076,7 +1073,21 @@ function SshConnectionRow({
     installedCodexVersion: null,
   };
   const connectionError = normalizeConnectionError(resolvedResponse.error);
-  const meta = buildConnectionMeta(t, resolvedResponse.state, connectionError);
+  const restartAvailableNotice = buildRestartAvailableNotice({
+    appServerVersion: resolvedResponse.appServerVersion,
+    installedCodexVersion: resolvedResponse.installedCodexVersion,
+    state: resolvedResponse.state,
+  });
+  const {
+    bannerError,
+    isRestartAvailableNotice,
+    statusState,
+  } = buildSshBannerState({
+    error: connectionError,
+    restartAvailableNotice,
+    state: resolvedResponse.state,
+  });
+  const meta = buildConnectionMeta(t, statusState, bannerError);
   const isPendingAutoConnect = pendingAutoConnectHostId === connection.hostId;
   const canRestart =
     resolvedResponse.state === "connected" ||
@@ -1089,29 +1100,26 @@ function SshConnectionRow({
       label={connection.displayName}
       description={t("settings.remoteConnections.deviceConnections.sshSubtitle")}
       status={
-        <span
-          className={buildConnectionDotClassName(
-            resolvedResponse.state,
-            connectionError,
-          )}
-          aria-hidden="true"
-          title={meta.label}
+        <ConnectionStatusDot
+          label={meta.label}
+          message={meta.message}
+          state={statusState}
         />
       }
       banner={
-        statusError != null ? (
-          <div className="rounded-md border border-token-border-error p-2 text-sm text-token-error-foreground">
-            {statusError}
-          </div>
-        ) : connectionError?.code === "login-required" ? (
-          <button
-            type="button"
-            className="text-left text-sm text-token-text-secondary underline underline-offset-2"
-            onClick={() => onLoginRequired(connection.hostId)}
-          >
-            {t("settings.remoteConnections.loginRequiredCta")}
-          </button>
-        ) : null
+        bannerError == null ? null : (
+          <SshConnectionBanner
+            action={buildSshBannerAction({
+              hostId: connection.hostId,
+              message: meta.message,
+              onLoginRequired,
+              onRestartConnection,
+              action: meta.action,
+            })}
+            isInformational={isRestartAvailableNotice}
+            message={meta.message}
+          />
+        )
       }
       control={
         <div className="flex items-center gap-2">
@@ -1151,6 +1159,100 @@ function SshConnectionRow({
       }
     />
   );
+}
+
+type SshBannerAction =
+  | { kind: "login"; label: string }
+  | { kind: "restart"; label: string; tooltipText?: string };
+
+type SshBannerModel = {
+  label: string;
+  message: string;
+  action: SshBannerAction | null;
+};
+
+function SshConnectionBanner({
+  action,
+  isInformational,
+  message,
+}: {
+  action: { label: string; onClick: () => void; tooltipText?: string } | null;
+  isInformational: boolean;
+  message: string;
+}) {
+  const Icon = isInformational ? InfoIcon : WarningIcon;
+  const iconClassName = isInformational
+    ? "icon-xs shrink-0 text-token-charts-blue"
+    : "icon-xs shrink-0 text-token-charts-red";
+  const button = action == null ? null : (
+    <Button
+      className="h-6 shrink-0 !bg-white enabled:hover:!bg-white/90 dark:!bg-token-bg-primary dark:enabled:hover:!bg-token-bg-primary/90"
+      color="secondary"
+      size="default"
+      onClick={action.onClick}
+    >
+      {action.label}
+    </Button>
+  );
+
+  return (
+    <div className="mt-1 flex min-w-0 items-center justify-between gap-3 rounded-[18px] bg-token-foreground/5 py-1.5 pr-1.5 pl-4 text-sm text-token-text-secondary">
+      <div className="mr-2 flex min-w-0 flex-1 items-center gap-2">
+        <Icon aria-hidden="true" className={iconClassName} />
+        <span className="min-w-0 flex-1 break-words">{message}</span>
+      </div>
+      {action?.tooltipText == null || button == null ? (
+        button
+      ) : (
+        <Tooltip tooltipContent={action.tooltipText}>{button}</Tooltip>
+      )}
+    </div>
+  );
+}
+
+function ConnectionStatusDot({
+  label,
+  message,
+  state,
+}: {
+  label: string;
+  message: string;
+  state: AppServerConnectionState;
+}) {
+  const dot =
+    state === "connecting" ? (
+      <span
+        aria-label={label}
+        className="icon-2xs inline-flex shrink-0 items-center justify-center text-token-description-foreground"
+        role="img"
+      >
+        <Spinner className="icon-2xs" />
+      </span>
+    ) : state === "restarting" ? (
+      <span
+        aria-label={label}
+        className="icon-2xs inline-flex shrink-0 items-center justify-center text-token-charts-blue"
+        role="img"
+      >
+        <Spinner className="icon-2xs text-token-charts-blue" />
+      </span>
+    ) : state === "error" ? (
+      <span
+        aria-label={label}
+        className="icon-2xs inline-flex shrink-0 items-center justify-center text-token-charts-red"
+        role="img"
+      >
+        <WarningIcon className="icon-2xs text-token-charts-red" />
+      </span>
+    ) : (
+      <span
+        aria-label={label}
+        className={buildConnectionDotClassName(state)}
+        role="img"
+      />
+    );
+
+  return <Tooltip tooltipContent={message}>{dot}</Tooltip>;
 }
 
 function RemoteControlConnectionRow({
@@ -2136,42 +2238,220 @@ function buildConnectionMeta(
   t: (key: MessageKey, values?: MessageValues) => string,
   state: AppServerConnectionState,
   error: ConnectionError | null,
-) {
+) : SshBannerModel {
   if (state === "error" && error?.code === "login-required") {
-    return { label: t("settings.remoteConnections.state.loginRequired") };
+    return {
+      label: t("threadPage.remoteConnectionStatusBadge.unauthed"),
+      message: t("appServer.error.loginRequired"),
+      action: {
+        kind: "login",
+        label: t("threadPage.remoteConnectionStatusBadge.login"),
+      },
+    };
   }
   if (state === "connected") {
-    return { label: t("settings.remoteConnections.state.connected") };
+    return {
+      label: t("threadPage.remoteConnectionStatusBadge.connected"),
+      message: t("threadPage.remoteConnectionStatusBadge.connected"),
+      action: null,
+    };
   }
   if (state === "connecting") {
-    return { label: t("settings.remoteConnections.state.connecting") };
+    return {
+      label: t("threadPage.remoteConnectionStatusBadge.connecting"),
+      message: t("threadPage.remoteConnectionStatusBadge.connecting"),
+      action: null,
+    };
   }
   if (state === "restarting") {
-    return { label: t("settings.remoteConnections.state.restarting") };
+    return {
+      label: t("threadPage.remoteConnectionStatusBadge.restarting"),
+      message: t("threadPage.remoteConnectionStatusBadge.restarting"),
+      action: null,
+    };
+  }
+  if (state === "error" && error?.code === "update-required") {
+    const message = t("appServer.error.unsupportedVersion", {
+      minVersion:
+        error.minRequiredVersion ?? REMOTE_CONNECTION_MIN_REQUIRED_VERSION,
+      currentVersion: error.currentVersion ?? "—",
+    });
+    return {
+      label: t("threadPage.remoteConnectionStatusBadge.updateRequired"),
+      message,
+      action: null,
+    };
+  }
+  if (state === "error" && error?.code === "restart-required") {
+    const message =
+      error.currentVersion == null || error.installedVersion == null
+        ? t("appServer.error.genericRestartRequired")
+        : t("appServer.error.restartAvailable", {
+            currentVersion: error.currentVersion,
+            installedVersion: error.installedVersion,
+          });
+    return {
+      label: t("threadPage.remoteConnectionStatusBadge.restartRequired"),
+      message,
+      action: {
+        kind: "restart",
+        label: t("threadPage.remoteConnectionStatusBadge.restartNow"),
+        tooltipText: t(
+          "threadPage.remoteConnectionStatusBadge.restartNowTooltip",
+        ),
+      },
+    };
+  }
+  if (state === "error" && error?.code === "connection-failed") {
+    return {
+      label: t("threadPage.remoteConnectionStatusBadge.error"),
+      message: `${t("threadPage.remoteConnectionStatusBadge.error")}: ${error.message}`,
+      action: null,
+    };
   }
   if (state === "error") {
-    return { label: t("settings.remoteConnections.state.error") };
+    return {
+      label: t("threadPage.remoteConnectionStatusBadge.error"),
+      message: t("threadPage.remoteConnectionStatusBadge.error"),
+      action: null,
+    };
   }
-  return { label: t("settings.remoteConnections.state.disconnected") };
+  return {
+    label: t("threadPage.remoteConnectionStatusBadge.disconnected"),
+    message: t("threadPage.remoteConnectionStatusBadge.disconnected"),
+    action: null,
+  };
 }
 
 function buildConnectionDotClassName(
   state: AppServerConnectionState,
-  error: ConnectionError | null,
 ) {
   if (state === "connected") {
     return "block size-2 rounded-full bg-token-charts-green";
-  }
-  if (state === "connecting" || state === "restarting") {
-    return "block size-2 rounded-full bg-token-charts-blue";
-  }
-  if (state === "error" && error?.code === "login-required") {
-    return "block size-2 rounded-full bg-token-charts-yellow";
   }
   if (state === "error") {
     return "block size-2 rounded-full bg-token-charts-red";
   }
   return "block size-2 rounded-full bg-gray-400";
+}
+
+function buildRestartAvailableNotice({
+  appServerVersion,
+  installedCodexVersion,
+  state,
+}: {
+  appServerVersion: string | null;
+  installedCodexVersion: string | null;
+  state: AppServerConnectionState | null;
+}) {
+  if (
+    state == null ||
+    appServerVersion == null ||
+    installedCodexVersion == null ||
+    !isRestartVersionOutdated({
+      appServerVersion,
+      installedCodexVersion,
+    })
+  ) {
+    return null;
+  }
+
+  return {
+    currentVersion: appServerVersion,
+    installedVersion: installedCodexVersion,
+  };
+}
+
+function buildSshBannerState({
+  error,
+  restartAvailableNotice,
+  state,
+}: {
+  error: ConnectionError | null;
+  restartAvailableNotice: {
+    currentVersion: string;
+    installedVersion: string;
+  } | null;
+  state: AppServerConnectionState;
+}) {
+  if (state === "error") {
+    return {
+      bannerError: error ?? (restartAvailableNotice == null
+        ? null
+        : {
+            code: "restart-required" as const,
+            currentVersion: restartAvailableNotice.currentVersion,
+            installedVersion: restartAvailableNotice.installedVersion,
+          }),
+      isRestartAvailableNotice: false,
+      statusState: "error" as const,
+    };
+  }
+
+  if (restartAvailableNotice == null) {
+    return {
+      bannerError: null,
+      isRestartAvailableNotice: false,
+      statusState: state,
+    };
+  }
+
+  return {
+    bannerError: {
+      code: "restart-required" as const,
+      currentVersion: restartAvailableNotice.currentVersion,
+      installedVersion: restartAvailableNotice.installedVersion,
+    },
+    isRestartAvailableNotice: error == null,
+    statusState: "error" as const,
+  };
+}
+
+function buildSshBannerAction({
+  hostId,
+  message,
+  onLoginRequired,
+  onRestartConnection,
+  action,
+}: {
+  hostId: string;
+  message: string;
+  onLoginRequired: (hostId: string) => void;
+  onRestartConnection: (hostId: string) => void;
+  action: SshBannerAction | null;
+}) {
+  if (action == null) {
+    return null;
+  }
+
+  if (action.kind === "login") {
+    return {
+      label: action.label,
+      onClick: () => onLoginRequired(hostId),
+    };
+  }
+
+  return {
+    label: action.label,
+    tooltipText: action.tooltipText ?? message,
+    onClick: () => onRestartConnection(hostId),
+  };
+}
+
+function isRestartVersionOutdated({
+  appServerVersion,
+  installedCodexVersion,
+}: {
+  appServerVersion: string;
+  installedCodexVersion: string;
+}) {
+  const current = parseLooseVersion(appServerVersion);
+  const installed = parseLooseVersion(installedCodexVersion);
+  if (current == null || installed == null) {
+    return false;
+  }
+
+  return compareParsedLooseVersions(current, installed) < 0;
 }
 
 function isRemoteControlConnection(
@@ -2388,6 +2668,32 @@ function parseLooseVersion(version: string) {
     numbers: match[1].split(".").map((value) => Number.parseInt(value, 10)),
     prerelease: match[2] ?? null,
   };
+}
+
+function compareParsedLooseVersions(
+  left: { numbers: number[]; prerelease: string | null },
+  right: { numbers: number[]; prerelease: string | null },
+) {
+  const maxLength = Math.max(left.numbers.length, right.numbers.length);
+  for (let index = 0; index < maxLength; index += 1) {
+    const leftValue = left.numbers[index] ?? 0;
+    const rightValue = right.numbers[index] ?? 0;
+    if (leftValue !== rightValue) {
+      return leftValue < rightValue ? -1 : 1;
+    }
+  }
+
+  if (left.prerelease == null && right.prerelease == null) {
+    return 0;
+  }
+  if (left.prerelease == null) {
+    return 1;
+  }
+  if (right.prerelease == null) {
+    return -1;
+  }
+
+  return left.prerelease.localeCompare(right.prerelease);
 }
 
 function buildRemoteControlAvailabilityLabel(

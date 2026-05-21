@@ -296,7 +296,11 @@ export function WorktreeInitV2Page({
         currentEntry,
         currentEntry.sourceWorkspaceRoot,
       );
-      await onConversationReady?.(conversationId);
+      if (onConversationReady) {
+        await onConversationReady(conversationId);
+      } else {
+        navigateToPath(conversationPathBuilder(conversationId));
+      }
     } catch (error) {
       void cancelPendingWorktree({ hostId: currentEntry.hostId, id: currentEntry.id }).catch(() => undefined);
       onShowToast?.({

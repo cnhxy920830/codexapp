@@ -78,7 +78,7 @@ export function PendingWorktreeConversationStartManager() {
       disposed = true;
       cleanup?.();
     };
-  }, [handlePendingWorktreesUpdated]);
+  }, []);
 
   useEffect(() => {
     const entries = readPendingWorktreesSnapshot()

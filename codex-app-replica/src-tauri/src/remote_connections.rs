@@ -13,6 +13,9 @@ use crate::codex_app_config::{
     CodexAppRemoteProject,
 };
 use crate::global_settings::{read_global_settings, write_global_settings};
+use crate::hotkey_window::{
+    hotkey_window_hotkey_state_shared_object_key, hotkey_window_hotkey_state_snapshot,
+};
 use crate::pending_worktrees::{
     pending_worktrees_shared_object_key, pending_worktrees_snapshot_value,
 };
@@ -569,6 +572,12 @@ pub async fn get_shared_object_snapshot(
 
     if let Some(value) = crate::primary_runtime::shared_object_snapshot(&app, &key) {
         return Ok(SharedObjectSnapshotResponse { value });
+    }
+
+    if key == hotkey_window_hotkey_state_shared_object_key() {
+        return Ok(SharedObjectSnapshotResponse {
+            value: hotkey_window_hotkey_state_snapshot(&app)?,
+        });
     }
 
     let value = tauri::async_runtime::spawn_blocking(move || {

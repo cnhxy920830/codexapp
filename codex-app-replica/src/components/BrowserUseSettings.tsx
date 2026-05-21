@@ -13,28 +13,29 @@ import { useReplicaStatsigDynamicConfigValue } from "../features/statsig/replica
 import { useI18n } from "../i18n/i18n";
 import type { MessageKey } from "../i18n/messages";
 import {
-  addBrowserUseFileTransferOrigin,
   addBrowserUseOrigin,
+  BROWSER_USE_SETTINGS_QUERY_KEY,
   clearBrowserBrowsingData,
   readBrowserAnnotationScreenshotsMode,
   readBrowserUseSettings,
-  removeBrowserUseFileTransferOrigin,
   removeBrowserUseOrigin,
   writeBrowserAnnotationScreenshotsMode,
   writeBrowserUseApprovalMode,
-  writeBrowserUseFileTransferApprovalMode,
-  writeBrowserUseHistoryApprovalMode,
   type BrowserAnnotationScreenshotsMode,
   type BrowserUseApprovalMode,
   type BrowserBrowsingDataType,
-  type BrowserUseFileTransferKind,
   type BrowserUseOriginKind,
   type BrowserUseSettingsState,
 } from "../services/browserUseSettings";
 import { openInBrowser } from "../services/hostFiles";
+import {
+  onQueryCacheInvalidated,
+  queryKeyMatchesPrefix,
+  type QueryCacheKey,
+} from "../services/queryCache";
+import { onGlobalStateUpdated } from "../services/settings";
 import { LOCAL_SETTINGS_HOST_ID } from "../services/settingsHosts";
 
-type BrowserUseResourceKind = "origins" | "downloads" | "uploads";
 type BrowserBrowsingDataScope = "all" | BrowserBrowsingDataType;
 
 type BrowserUseOriginSectionCopy = {
@@ -51,7 +52,6 @@ type BrowserUseOriginSectionCopy = {
 
 type OriginSectionConfig = {
   kind: BrowserUseOriginKind;
-  resource: BrowserUseResourceKind;
 };
 
 type RemoveOriginState = OriginSectionConfig & {
@@ -65,90 +65,36 @@ const BROWSER_USE_APPROVAL_LINK_DYNAMIC_CONFIG = "4168530037";
 const BROWSER_USE_LEARN_MORE_URL = "https://developers.openai.com/codex/app/computer-use";
 
 const BROWSER_USE_ORIGIN_SECTION_COPY: Record<
-  BrowserUseResourceKind,
-  Record<BrowserUseOriginKind, BrowserUseOriginSectionCopy>
+  BrowserUseOriginKind,
+  BrowserUseOriginSectionCopy
 > = {
-  origins: {
-    allowed: {
-      addDialogSubtitleKey: "settings.browserUse.allowedDomains.addDialogSubtitle",
-      addDialogTitleKey: "settings.browserUse.allowedDomains.addDialogTitle",
-      addedKey: "settings.browserUse.allowedDomains.added",
-      emptyTitleKey: "settings.browserUse.allowedDomains.emptyTitle",
-      removedKey: "settings.browserUse.allowedWebsites.saved",
-      removeDialogSubtitleKey: "settings.browserUse.allowedWebsites.removeDialogSubtitle",
-      removeDialogTitleKey: "settings.browserUse.allowedWebsites.removeDialogTitle",
-      subtitleKey: "settings.browserUse.allowedDomains.subtitle",
-      titleKey: "settings.browserUse.allowedDomains.title",
-    },
-    denied: {
-      addDialogSubtitleKey: "settings.browserUse.blockedDomains.addDialogSubtitle",
-      addDialogTitleKey: "settings.browserUse.blockedDomains.addDialogTitle",
-      addedKey: "settings.browserUse.blockedDomains.added",
-      emptyTitleKey: "settings.browserUse.blockedDomains.emptyTitle",
-      removedKey: "settings.browserUse.deniedWebsites.saved",
-      removeDialogSubtitleKey: "settings.browserUse.deniedWebsites.removeDialogSubtitle",
-      removeDialogTitleKey: "settings.browserUse.deniedWebsites.removeDialogTitle",
-      subtitleKey: "settings.browserUse.blockedDomains.subtitle",
-      titleKey: "settings.browserUse.blockedDomains.title",
-    },
+  allowed: {
+    addDialogSubtitleKey: "settings.browserUse.allowedDomains.addDialogSubtitle",
+    addDialogTitleKey: "settings.browserUse.allowedDomains.addDialogTitle",
+    addedKey: "settings.browserUse.allowedDomains.added",
+    emptyTitleKey: "settings.browserUse.allowedDomains.emptyTitle",
+    removedKey: "settings.browserUse.allowedWebsites.saved",
+    removeDialogSubtitleKey: "settings.browserUse.allowedWebsites.removeDialogSubtitle",
+    removeDialogTitleKey: "settings.browserUse.allowedWebsites.removeDialogTitle",
+    subtitleKey: "settings.browserUse.allowedDomains.subtitle",
+    titleKey: "settings.browserUse.allowedDomains.title",
   },
-  downloads: {
-    allowed: {
-      addDialogSubtitleKey: "settings.browserUse.allowedDownloadDomains.addDialogSubtitle",
-      addDialogTitleKey: "settings.browserUse.allowedDownloadDomains.addDialogTitle",
-      addedKey: "settings.browserUse.allowedDownloadDomains.added",
-      emptyTitleKey: "settings.browserUse.allowedDownloadDomains.emptyTitle",
-      removedKey: "settings.browserUse.allowedDownloadDomains.removed",
-      removeDialogSubtitleKey: "settings.browserUse.allowedDownloadDomains.removeDialogSubtitle",
-      removeDialogTitleKey: "settings.browserUse.allowedDownloadDomains.removeDialogTitle",
-      subtitleKey: "settings.browserUse.allowedDownloadDomains.subtitle",
-      titleKey: "settings.browserUse.allowedDownloadDomains.title",
-    },
-    denied: {
-      addDialogSubtitleKey: "settings.browserUse.blockedDownloadDomains.addDialogSubtitle",
-      addDialogTitleKey: "settings.browserUse.blockedDownloadDomains.addDialogTitle",
-      addedKey: "settings.browserUse.blockedDownloadDomains.added",
-      emptyTitleKey: "settings.browserUse.blockedDownloadDomains.emptyTitle",
-      removedKey: "settings.browserUse.blockedDownloadDomains.removed",
-      removeDialogSubtitleKey: "settings.browserUse.blockedDownloadDomains.removeDialogSubtitle",
-      removeDialogTitleKey: "settings.browserUse.blockedDownloadDomains.removeDialogTitle",
-      subtitleKey: "settings.browserUse.blockedDownloadDomains.subtitle",
-      titleKey: "settings.browserUse.blockedDownloadDomains.title",
-    },
-  },
-  uploads: {
-    allowed: {
-      addDialogSubtitleKey: "settings.browserUse.allowedUploadDomains.addDialogSubtitle",
-      addDialogTitleKey: "settings.browserUse.allowedUploadDomains.addDialogTitle",
-      addedKey: "settings.browserUse.allowedUploadDomains.added",
-      emptyTitleKey: "settings.browserUse.allowedUploadDomains.emptyTitle",
-      removedKey: "settings.browserUse.allowedUploadDomains.removed",
-      removeDialogSubtitleKey: "settings.browserUse.allowedUploadDomains.removeDialogSubtitle",
-      removeDialogTitleKey: "settings.browserUse.allowedUploadDomains.removeDialogTitle",
-      subtitleKey: "settings.browserUse.allowedUploadDomains.subtitle",
-      titleKey: "settings.browserUse.allowedUploadDomains.title",
-    },
-    denied: {
-      addDialogSubtitleKey: "settings.browserUse.blockedUploadDomains.addDialogSubtitle",
-      addDialogTitleKey: "settings.browserUse.blockedUploadDomains.addDialogTitle",
-      addedKey: "settings.browserUse.blockedUploadDomains.added",
-      emptyTitleKey: "settings.browserUse.blockedUploadDomains.emptyTitle",
-      removedKey: "settings.browserUse.blockedUploadDomains.removed",
-      removeDialogSubtitleKey: "settings.browserUse.blockedUploadDomains.removeDialogSubtitle",
-      removeDialogTitleKey: "settings.browserUse.blockedUploadDomains.removeDialogTitle",
-      subtitleKey: "settings.browserUse.blockedUploadDomains.subtitle",
-      titleKey: "settings.browserUse.blockedUploadDomains.title",
-    },
+  denied: {
+    addDialogSubtitleKey: "settings.browserUse.blockedDomains.addDialogSubtitle",
+    addDialogTitleKey: "settings.browserUse.blockedDomains.addDialogTitle",
+    addedKey: "settings.browserUse.blockedDomains.added",
+    emptyTitleKey: "settings.browserUse.blockedDomains.emptyTitle",
+    removedKey: "settings.browserUse.deniedWebsites.saved",
+    removeDialogSubtitleKey: "settings.browserUse.deniedWebsites.removeDialogSubtitle",
+    removeDialogTitleKey: "settings.browserUse.deniedWebsites.removeDialogTitle",
+    subtitleKey: "settings.browserUse.blockedDomains.subtitle",
+    titleKey: "settings.browserUse.blockedDomains.title",
   },
 };
 
 const BROWSER_USE_ORIGIN_SECTIONS: ReadonlyArray<OriginSectionConfig> = [
-  { kind: "denied", resource: "origins" },
-  { kind: "allowed", resource: "origins" },
-  { kind: "denied", resource: "downloads" },
-  { kind: "allowed", resource: "downloads" },
-  { kind: "denied", resource: "uploads" },
-  { kind: "allowed", resource: "uploads" },
+  { kind: "denied" },
+  { kind: "allowed" },
 ];
 
 export function BrowserUseSettings({
@@ -175,10 +121,10 @@ export function BrowserUseSettings({
       : undefined;
 
   return (
-    <SettingsContentLayout
-      title={t("settings.browserUse.title")}
-      subtitle={subtitle}
-      subtitleClassName="text-pretty"
+      <SettingsContentLayout
+        title={t("settings.browserUse.title")}
+        subtitle={subtitle}
+        subtitleClassName="text-pretty"
     >
       <FilteredPluginSettings
         hostId={selectedHostId}
@@ -215,7 +161,6 @@ function BrowserUsePermissionsPanel({
   const [annotationScreenshotsMode, setAnnotationScreenshotsMode] =
     useState<BrowserAnnotationScreenshotsMode>("always");
   const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [pendingBrowsingDataScope, setPendingBrowsingDataScope] =
     useState<BrowserBrowsingDataScope | null>(null);
@@ -229,27 +174,86 @@ function BrowserUsePermissionsPanel({
     BROWSER_USE_APPROVAL_LINK_DYNAMIC_CONFIG,
   );
 
-  const loadSettings = useEffectEvent(async () => {
+  const loadBrowserUseSettings = useEffectEvent(async () => {
     setIsLoading(true);
-    setLoadError(null);
     try {
-      const [nextSettingsState, nextAnnotationScreenshotsMode] = await Promise.all([
-        readBrowserUseSettings(),
-        readBrowserAnnotationScreenshotsMode(),
-      ]);
-      setSettingsState(nextSettingsState);
-      setAnnotationScreenshotsMode(nextAnnotationScreenshotsMode);
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : String(error));
+      setSettingsState(await readBrowserUseSettings());
+    } catch {
       setSettingsState(null);
     } finally {
       setIsLoading(false);
     }
   });
 
+  const syncAnnotationScreenshotsMode = useEffectEvent(async () => {
+    try {
+      setAnnotationScreenshotsMode(await readBrowserAnnotationScreenshotsMode());
+    } catch {
+      setAnnotationScreenshotsMode("always");
+    }
+  });
+
   useEffect(() => {
-    void loadSettings();
-  }, [loadSettings]);
+    void loadBrowserUseSettings();
+    void syncAnnotationScreenshotsMode();
+  }, []);
+
+  const handleQueryCacheInvalidate = useEffectEvent((queryKey: QueryCacheKey) => {
+    if (!queryKeyMatchesPrefix(queryKey, BROWSER_USE_SETTINGS_QUERY_KEY)) {
+      return;
+    }
+
+    void loadBrowserUseSettings();
+  });
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void onQueryCacheInvalidated((notification) => {
+      if (!disposed) {
+        handleQueryCacheInvalidate(notification.queryKey);
+      }
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+
+      unlisten = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void onGlobalStateUpdated((notification) => {
+      if (
+        !disposed &&
+        notification.keys.includes("browser-annotation-screenshots-mode")
+      ) {
+        void syncAnnotationScreenshotsMode();
+      }
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+
+      unlisten = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   const approvalOptions = useMemo(
     () => [
@@ -271,54 +275,6 @@ function BrowserUsePermissionsPanel({
     [t],
   );
 
-  const historyApprovalOptions = useMemo(
-    () => [
-      {
-        value: "alwaysAsk",
-        label: t("settings.browserUse.approval.alwaysAsk.label"),
-        description: t("settings.browserUse.historyApproval.alwaysAsk.description"),
-      },
-      {
-        value: "neverAsk",
-        label: t("settings.browserUse.approval.neverAsk.label"),
-        description: t("settings.browserUse.historyApproval.neverAsk.description"),
-      },
-    ],
-    [t],
-  );
-
-  const downloadApprovalOptions = useMemo(
-    () => [
-      {
-        value: "alwaysAsk",
-        label: t("settings.browserUse.approval.alwaysAsk.label"),
-        description: t("settings.browserUse.downloadApproval.alwaysAsk.description"),
-      },
-      {
-        value: "neverAsk",
-        label: t("settings.browserUse.approval.neverAsk.label"),
-        description: t("settings.browserUse.downloadApproval.neverAsk.description"),
-      },
-    ],
-    [t],
-  );
-
-  const uploadApprovalOptions = useMemo(
-    () => [
-      {
-        value: "alwaysAsk",
-        label: t("settings.browserUse.approval.alwaysAsk.label"),
-        description: t("settings.browserUse.uploadApproval.alwaysAsk.description"),
-      },
-      {
-        value: "neverAsk",
-        label: t("settings.browserUse.approval.neverAsk.label"),
-        description: t("settings.browserUse.uploadApproval.neverAsk.description"),
-      },
-    ],
-    [t],
-  );
-
   const annotationScreenshotOptions = useMemo(
     () => [
       {
@@ -334,9 +290,6 @@ function BrowserUsePermissionsPanel({
   );
 
   const approvalMode = settingsState?.approvalMode ?? "alwaysAsk";
-  const historyApprovalMode = settingsState?.historyApprovalMode ?? "alwaysAsk";
-  const downloadApprovalMode = settingsState?.downloadApprovalMode ?? "alwaysAsk";
-  const uploadApprovalMode = settingsState?.uploadApprovalMode ?? "alwaysAsk";
   const browserUseLearnMoreUrl = resolveBrowserUseLearnMoreUrl(
     browserUseLearnMoreDynamicConfig,
   );
@@ -345,29 +298,6 @@ function BrowserUsePermissionsPanel({
     isLoading ||
     pendingBrowsingDataScope !== null ||
     isAnnotationScreenshotsPending;
-
-  if (loadError) {
-    return (
-      <SettingsGroup>
-        <SettingsGroup.Content>
-          <SettingsSurface>
-            <MessageStateRow
-              message={
-                <div className="flex flex-col gap-3">
-                  <span>{loadError}</span>
-                  <div>
-                    <Button color="secondary" size="toolbar" onClick={() => void loadSettings()}>
-                      {t("skills.appsPage.loadError.retry")}
-                    </Button>
-                  </div>
-                </div>
-              }
-            />
-          </SettingsSurface>
-        </SettingsGroup.Content>
-      </SettingsGroup>
-    );
-  }
 
   return (
     <>
@@ -381,7 +311,7 @@ function BrowserUsePermissionsPanel({
               control={
                 <div className="flex items-center gap-1.5">
                   <Button
-                    color="ghost"
+                    color="secondary"
                     disabled={dataControlsDisabled && pendingBrowsingDataScope !== "all"}
                     size="toolbar"
                     onClick={() =>
@@ -445,7 +375,7 @@ function BrowserUsePermissionsPanel({
               description={t("settings.browserUse.browser.annotationScreenshots.description")}
               control={
                 <SettingsChoiceMenu
-                  className="w-[152px]"
+                  className="w-[168px]"
                   disabled={dataControlsDisabled}
                   onChange={(value) => {
                     void handleAnnotationScreenshotsModeChange(value);
@@ -495,93 +425,13 @@ function BrowserUsePermissionsPanel({
                 />
               }
             />
-
-            <SettingsValueRow
-              label={t("settings.browserUse.historyApproval.label")}
-              description={t("settings.browserUse.historyApproval.description")}
-              control={
-                <SettingsChoiceMenu
-                  className="w-[152px]"
-                  disabled={controlsDisabled}
-                  onChange={(value) => {
-                    if (value === historyApprovalMode) {
-                      return;
-                    }
-                    void updateSettingsState(
-                      "historyApproval",
-                      () =>
-                        writeBrowserUseHistoryApprovalMode({
-                          approvalMode: value as BrowserUseApprovalMode,
-                        }),
-                      "settings.browserUse.historyApproval.saveError",
-                    );
-                  }}
-                  options={historyApprovalOptions}
-                  value={historyApprovalMode}
-                />
-              }
-            />
-
-            <SettingsValueRow
-              label={t("settings.browserUse.downloadApproval.label")}
-              description={t("settings.browserUse.downloadApproval.description")}
-              control={
-                <SettingsChoiceMenu
-                  className="w-[152px]"
-                  disabled={controlsDisabled}
-                  onChange={(value) => {
-                    if (value === downloadApprovalMode) {
-                      return;
-                    }
-                    void updateSettingsState(
-                      "downloadApproval",
-                      () =>
-                        writeBrowserUseFileTransferApprovalMode({
-                          kind: "download",
-                          approvalMode: value as BrowserUseApprovalMode,
-                        }),
-                      "settings.browserUse.downloadApproval.saveError",
-                    );
-                  }}
-                  options={downloadApprovalOptions}
-                  value={downloadApprovalMode}
-                />
-              }
-            />
-
-            <SettingsValueRow
-              label={t("settings.browserUse.uploadApproval.label")}
-              description={t("settings.browserUse.uploadApproval.description")}
-              control={
-                <SettingsChoiceMenu
-                  className="w-[152px]"
-                  disabled={controlsDisabled}
-                  onChange={(value) => {
-                    if (value === uploadApprovalMode) {
-                      return;
-                    }
-                    void updateSettingsState(
-                      "uploadApproval",
-                      () =>
-                        writeBrowserUseFileTransferApprovalMode({
-                          kind: "upload",
-                          approvalMode: value as BrowserUseApprovalMode,
-                        }),
-                      "settings.browserUse.uploadApproval.saveError",
-                    );
-                  }}
-                  options={uploadApprovalOptions}
-                  value={uploadApprovalMode}
-                />
-              }
-            />
           </SettingsSurface>
         </SettingsGroup.Content>
       </SettingsGroup>
 
       {BROWSER_USE_ORIGIN_SECTIONS.map((section) => (
         <OriginSection
-          key={`${section.resource}:${section.kind}`}
+          key={section.kind}
           config={section}
           isDisabled={controlsDisabled}
           isLoading={isLoading}
@@ -592,7 +442,7 @@ function BrowserUsePermissionsPanel({
           onRequestRemove={(origin) => {
             setRemoveOriginState({ ...section, origin });
           }}
-          origins={getOriginList(settingsState, section.resource, section.kind)}
+          origins={getOriginList(settingsState, section.kind)}
         />
       ))}
 
@@ -605,10 +455,8 @@ function BrowserUsePermissionsPanel({
             setAddDialogState(null);
           }}
           onConfirm={() => void handleAddOrigin(addDialogState)}
-          title={t(getOriginSectionCopy(addDialogState.resource, addDialogState.kind).addDialogTitleKey)}
-          subtitle={t(
-            getOriginSectionCopy(addDialogState.resource, addDialogState.kind).addDialogSubtitleKey,
-          )}
+          title={t(getOriginSectionCopy(addDialogState.kind).addDialogTitleKey)}
+          subtitle={t(getOriginSectionCopy(addDialogState.kind).addDialogSubtitleKey)}
           footer={
             <>
               <Button
@@ -653,14 +501,10 @@ function BrowserUsePermissionsPanel({
           onClose={() => setRemoveOriginState(null)}
           onConfirm={() => void handleRemoveOrigin(removeOriginState)}
           title={t(
-            getOriginSectionCopy(removeOriginState.resource, removeOriginState.kind)
-              .removeDialogTitleKey,
+            getOriginSectionCopy(removeOriginState.kind).removeDialogTitleKey,
             { origin: removeOriginState.origin },
           )}
-          subtitle={t(
-            getOriginSectionCopy(removeOriginState.resource, removeOriginState.kind)
-              .removeDialogSubtitleKey,
-          )}
+          subtitle={t(getOriginSectionCopy(removeOriginState.kind).removeDialogSubtitleKey)}
           footer={
             <>
               <Button
@@ -758,21 +602,14 @@ function BrowserUsePermissionsPanel({
       return;
     }
 
-    const sectionCopy = getOriginSectionCopy(state.resource, state.kind);
-    setPendingAction(`add:${state.resource}:${state.kind}`);
+    const sectionCopy = getOriginSectionCopy(state.kind);
+    setPendingAction(`add:${state.kind}`);
 
     try {
-      const nextSettingsState =
-        state.resource === "origins"
-          ? await addBrowserUseOrigin({
-              kind: state.kind,
-              origin: nextOrigin,
-            })
-          : await addBrowserUseFileTransferOrigin({
-              kind: state.kind,
-              origin: nextOrigin,
-              transferKind: getFileTransferKind(state.resource),
-            });
+      const nextSettingsState = await addBrowserUseOrigin({
+        kind: state.kind,
+        origin: nextOrigin,
+      });
 
       setSettingsState(nextSettingsState);
       setOriginDraft("");
@@ -796,21 +633,14 @@ function BrowserUsePermissionsPanel({
       return;
     }
 
-    const sectionCopy = getOriginSectionCopy(state.resource, state.kind);
-    setPendingAction(`remove:${state.resource}:${state.kind}:${state.origin}`);
+    const sectionCopy = getOriginSectionCopy(state.kind);
+    setPendingAction(`remove:${state.kind}:${state.origin}`);
 
     try {
-      const nextSettingsState =
-        state.resource === "origins"
-          ? await removeBrowserUseOrigin({
-              kind: state.kind,
-              origin: state.origin,
-            })
-          : await removeBrowserUseFileTransferOrigin({
-              kind: state.kind,
-              origin: state.origin,
-              transferKind: getFileTransferKind(state.resource),
-            });
+      const nextSettingsState = await removeBrowserUseOrigin({
+        kind: state.kind,
+        origin: state.origin,
+      });
 
       setSettingsState(nextSettingsState);
       setRemoveOriginState(null);
@@ -900,7 +730,7 @@ function OriginSection({
   origins: string[];
 }) {
   const { t } = useI18n();
-  const copy = getOriginSectionCopy(config.resource, config.kind);
+  const copy = getOriginSectionCopy(config.kind);
 
   return (
     <SettingsGroup>
@@ -931,7 +761,7 @@ function OriginSection({
           ) : (
             origins.map((origin) => (
               <SettingsValueRow
-                key={`${config.resource}:${config.kind}:${origin}`}
+                key={`${config.kind}:${origin}`}
                 label={<span className="font-medium">{origin}</span>}
                 control={
                   <Button
@@ -1063,10 +893,6 @@ function LoadingStateRow() {
   );
 }
 
-function MessageStateRow({ message }: { message: ReactNode }) {
-  return <div className="p-4 text-sm text-token-text-secondary">{message}</div>;
-}
-
 function DialogOverlay({
   children,
   onDismiss,
@@ -1146,43 +972,17 @@ function ElevatedRiskIcon({ className }: { className?: string }) {
   );
 }
 
-function getFileTransferKind(
-  resource: Exclude<BrowserUseResourceKind, "origins">,
-): BrowserUseFileTransferKind {
-  switch (resource) {
-    case "downloads":
-      return "download";
-    case "uploads":
-      return "upload";
-  }
-}
-
 function getOriginList(
   settingsState: BrowserUseSettingsState | null,
-  resource: BrowserUseResourceKind,
   kind: BrowserUseOriginKind,
 ) {
-  switch (resource) {
-    case "origins":
-      return kind === "allowed"
-        ? settingsState?.allowedOrigins ?? []
-        : settingsState?.deniedOrigins ?? [];
-    case "downloads":
-      return kind === "allowed"
-        ? settingsState?.allowedDownloadOrigins ?? []
-        : settingsState?.deniedDownloadOrigins ?? [];
-    case "uploads":
-      return kind === "allowed"
-        ? settingsState?.allowedUploadOrigins ?? []
-        : settingsState?.deniedUploadOrigins ?? [];
-  }
+  return kind === "allowed"
+    ? settingsState?.allowedOrigins ?? []
+    : settingsState?.deniedOrigins ?? [];
 }
 
-function getOriginSectionCopy(
-  resource: BrowserUseResourceKind,
-  kind: BrowserUseOriginKind,
-) {
-  return BROWSER_USE_ORIGIN_SECTION_COPY[resource][kind];
+function getOriginSectionCopy(kind: BrowserUseOriginKind) {
+  return BROWSER_USE_ORIGIN_SECTION_COPY[kind];
 }
 
 function getClearBrowsingDataRowLabelKey(dataType: BrowserBrowsingDataType): MessageKey {

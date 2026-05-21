@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArchiveIcon,
   CheckCircleFilledIcon,
-  MoreActionsIcon,
 } from "../../components/AppShellIcons";
+import { Tooltip } from "../../components/Tooltip";
 import type { AutomationInboxItem } from "../../services/automations";
+import { ContextMenu } from "../../components/ContextMenu";
 import type { TranslateFn } from "./automationsPageUtils";
 
 type AutomationPreviousRunsListProps = {
@@ -18,10 +19,6 @@ type AutomationPreviousRunsListProps = {
   t: TranslateFn;
 };
 
-type RowMenuState = {
-  id: string;
-};
-
 export function AutomationPreviousRunsList({
   automationId,
   formatRootLabel,
@@ -32,36 +29,6 @@ export function AutomationPreviousRunsList({
   threadTitleById,
   t,
 }: AutomationPreviousRunsListProps) {
-  const [openMenu, setOpenMenu] = useState<RowMenuState | null>(null);
-  const menuRootRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (openMenu === null) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (menuRootRef.current?.contains(event.target as Node)) {
-        return;
-      }
-      setOpenMenu(null);
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpenMenu(null);
-      }
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [openMenu]);
-
   const items = useMemo(
     () =>
       inboxItems
@@ -118,12 +85,19 @@ export function AutomationPreviousRunsList({
         ) : (
           <CheckCircleFilledIcon className="h-3.5 w-3.5 text-[var(--app-shell-subtle)]" />
         );
-
-        return (
+        const contextMenuItems = [
+          {
+            id: unread ? "mark-read" : "mark-unread",
+            label: unread
+              ? t("inbox.contextMenu.markRead")
+              : t("inbox.contextMenu.markUnread"),
+            onSelect: () => {
+              void onSetInboxItemReadState(item.id, unread);
+            },
+          },
+        ];
+        const row = (
           <div
-            key={item.id}
-            ref={openMenu?.id === item.id ? menuRootRef : undefined}
-            title={archived ? t("inbox.automations.history.archivedTooltip") : undefined}
             className={[
               "group flex items-center gap-2 rounded-md py-2 pr-3 pl-1 text-base [content-visibility:auto] [contain-intrinsic-size:auto_64px]",
               canOpenThread
@@ -159,37 +133,25 @@ export function AutomationPreviousRunsList({
                 </span>
               </div>
             </div>
-            <div className="relative shrink-0">
-              <button
-                type="button"
-                aria-label={unread ? t("inbox.contextMenu.markRead") : t("inbox.contextMenu.markUnread")}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setOpenMenu((current) =>
-                    current?.id === item.id ? null : { id: item.id },
-                  );
-                }}
-                className="flex h-6 w-6 items-center justify-center rounded-[8px] text-[var(--app-shell-subtle)] opacity-0 hover:bg-[var(--app-shell-control-hover)] hover:text-[var(--app-shell-title)] group-hover:opacity-100 group-focus-within:opacity-100"
-              >
-                <MoreActionsIcon className="h-3.5 w-3.5" />
-              </button>
-              {openMenu?.id === item.id ? (
-                <div className="app-card absolute top-8 right-0 z-20 min-w-[144px] rounded-[12px] p-1 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setOpenMenu(null);
-                      void onSetInboxItemReadState(item.id, unread);
-                    }}
-                    className="app-nav-item-idle flex w-full items-center rounded-[9px] px-3 py-2 text-left text-[13px]"
-                  >
-                    {unread ? t("inbox.contextMenu.markRead") : t("inbox.contextMenu.markUnread")}
-                  </button>
-                </div>
-              ) : null}
-            </div>
           </div>
+        );
+
+        return (
+          <ContextMenu
+            key={item.id}
+            items={contextMenuItems}
+          >
+            {archived ? (
+              <Tooltip
+                align="start"
+                tooltipContent={t("inbox.automations.history.archivedTooltip")}
+              >
+                <div>{row}</div>
+              </Tooltip>
+            ) : (
+              row
+            )}
+          </ContextMenu>
         );
       })}
     </div>

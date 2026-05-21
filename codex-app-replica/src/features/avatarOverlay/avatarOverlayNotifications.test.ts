@@ -110,6 +110,78 @@ test("avatar overlay notifications derive waiting from latest-turn requests only
   assert.equal(notifications.length, 0);
 });
 
+test("avatar overlay notifications derive waiting from reopened thread runtime status", () => {
+  const threadId = "thread-3";
+  const notifications = deriveAvatarOverlayNotifications({
+    conversationsByThreadId: new Map([
+      [
+        threadId,
+        createConversation({
+          hostId: "devbox",
+          threadRuntimeStatus: {
+            activeFlags: ["waitingOnApproval"],
+            type: "active",
+          },
+          turns: [
+            createTurn({
+              id: "turn-1",
+              status: "completed",
+            }),
+          ],
+        }),
+      ],
+    ]),
+    nowMs: 2_000_000,
+    recentThreads: [
+      createHistoryEntry({
+        hasUnreadTurn: false,
+        hostId: "devbox",
+        id: threadId,
+        status: { type: "idle" },
+      }),
+    ],
+    remoteTasks: [],
+    translate,
+  }).notifications;
+
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0]?.status, "waiting");
+  assert.equal(notifications[0]?.source, "remote-host");
+  assert.equal(notifications[0]?.hostId, "devbox");
+});
+
+test("avatar overlay notifications derive failed from reopened thread runtime status", () => {
+  const threadId = "thread-4";
+  const notifications = deriveAvatarOverlayNotifications({
+    conversationsByThreadId: new Map([
+      [
+        threadId,
+        createConversation({
+          threadRuntimeStatus: { type: "systemError" },
+          turns: [
+            createTurn({
+              id: "turn-1",
+              status: "completed",
+            }),
+          ],
+        }),
+      ],
+    ]),
+    nowMs: 2_000_000,
+    recentThreads: [
+      createHistoryEntry({
+        id: threadId,
+        status: { type: "idle" },
+      }),
+    ],
+    remoteTasks: [],
+    translate,
+  }).notifications;
+
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0]?.status, "failed");
+});
+
 function createHistoryEntry(
   overrides: Partial<ThreadHistoryEntry> & Pick<ThreadHistoryEntry, "id" | "status">,
 ): ThreadHistoryEntry {
@@ -129,18 +201,21 @@ function createHistoryEntry(
 
 function createConversation(options?: {
   hasUnreadTurn?: boolean;
+  hostId?: string | null;
   items?: ThreadConversationItem[];
+  threadRuntimeStatus?: ThreadConversation["threadRuntimeStatus"];
   turns?: ThreadConversationTurn[];
 }): ThreadConversation {
   return {
     cwd: "D:\\workspace\\codex-app",
     hasUnreadTurn: options?.hasUnreadTurn ?? false,
-    hostId: "local",
+    hostId: options?.hostId ?? "local",
     id: "thread",
     items: options?.items ?? [],
     latestCollaborationMode: null,
     latestTokenUsageInfo: null,
     source: null,
+    threadRuntimeStatus: options?.threadRuntimeStatus ?? null,
     threadGoal: null,
     title: "Thread title",
     turnTimings: [],

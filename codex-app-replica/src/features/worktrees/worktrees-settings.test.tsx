@@ -69,11 +69,14 @@ test("worktrees settings keeps extracted worktree row interactions and app routi
   assert.doesNotMatch(source, /onDismissToast\?\.\(\);/);
   assert.match(source, /<Button className="shrink-0" color="danger" loading=\{isDeleting\} onClick=\{\(\) => void handleDelete\(\)\} size="toolbar">/);
   assert.match(source, /repoRoot=\{group\.repoRoot\}/);
-  assert.match(source, /const displayRepoRoot = repoRoot \?\? worktrees\[0\]\?\.dir \?\? null;/);
-  assert.match(source, /const isRepositoryMetadataLoading = false;/);
+  assert.match(source, /if \(repoRoot == null\) \{\s*setResolvedRepoRoot\(null\);\s*setIsRepositoryMetadataLoading\(false\);\s*return;\s*\}/s);
+  assert.match(source, /void readGitOrigins\(\{\s*dirs: \[repoRoot\],\s*hostId,\s*\}\)/s);
+  assert.match(source, /const gitRoot = response\.origins\.at\(0\)\?\.root\?\.trim\(\) \?\? null;/);
+  assert.match(source, /setResolvedRepoRoot\(gitRoot \?\? repoRoot\);/);
+  assert.match(source, /const unsubscribe = listenGitStateChanged\(refreshRepoRoot\);/);
+  assert.match(source, /const displayRepoRoot = resolvedRepoRoot \?\? repoRoot \?\? worktrees\[0\]\?\.dir \?\? null;/);
   assert.match(source, /t\("settings\.worktrees\.repository\.loading"\)/);
   assert.match(source, /<span className="truncate font-mono text-sm">\{displayRepoRoot\}<\/span>/);
-  assert.doesNotMatch(source, /readGitOrigins/);
   assert.match(source, /<Spinner className="icon-xxs" \/>/);
   assert.match(source, /t\("settings\.worktrees\.row\.conversations\.loading"\)/);
   assert.match(
@@ -86,7 +89,10 @@ test("worktrees settings keeps extracted worktree row interactions and app routi
   assert.match(source, /item\.type !== "collabAgentToolCall" \|\| !item\.receiverThreadIds\.includes\(conversationId\)/);
   assert.match(source, /const promptTitle = normalizeConversationTitleText\(item\.prompt\);/);
 
-  assert.match(appSource, /onViewConversation=\{\(threadId, hostId\) => void viewConversationForHost\(threadId, hostId\)\}/);
+  assert.match(
+    appSource,
+    /onViewConversation=\{\(threadId\) => void handleNavigateToRoute\(buildLocalThreadRoutePath\(threadId, "default"\)\)\}/,
+  );
   assert.match(serviceSource, /hostId\?: string \| null;/);
 });
 

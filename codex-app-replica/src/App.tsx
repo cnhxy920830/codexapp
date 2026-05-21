@@ -31,15 +31,18 @@ import {
   type ThreadConversationUserInput,
   type ThreadConversationUserInputComment,
   getRecentThreads,
+  getRecentThreadsForHost,
   interruptTurn,
   markConversationAsRead,
   markConversationAsUnread,
   onThreadReadStateChanged,
   onThreadEvent,
   readThread,
+  readThreadForHost,
   startReview,
   startConversation,
   startThread,
+  startThreadForHost,
   steerTurn,
   startTurn,
   startTurnWithInput,
@@ -265,6 +268,7 @@ import {
   AVATAR_OVERLAY_ROUTE_PATH,
   DEBUG_WINDOW_ROUTE_PATH,
   EDITOR_DIFF_ROUTE_PATH,
+  FILE_PREVIEW_ROUTE_PATH,
   FIRST_RUN_ROUTE_PATH,
   GLOBAL_DICTATION_ROUTE_PATH,
   HOTKEY_NEW_THREAD_ROUTE_PATH,
@@ -279,6 +283,8 @@ import {
   setPrimaryWindowMode,
   WORKTREE_INIT_V2_ROUTE_PREFIX,
   WELCOME_ROUTE_PATH,
+  takePendingDiff,
+  takePendingFilePreview,
   takePendingPlanSummary,
   takePendingWindowRoute,
 } from "./services/windowNavigation";
@@ -304,21 +310,27 @@ import {
   getSettingsRemoteHostColor,
   LOCAL_SETTINGS_HOST_ID,
   normalizeRemoteConnectionsSnapshot,
+  normalizeRemoteProjectsSnapshot,
   normalizeSelectedSettingsHostId,
   onRemoteAppServerConnectionStateChanged,
   onSharedObjectUpdated,
   readSettingsRemoteConnectionStates,
   readInitialSettingsHostId,
   readSettingsRemoteConnectionsSnapshot,
+  readSettingsRemoteProjectsSnapshot,
   REMOTE_CONNECTIONS_SHARED_OBJECT_KEY,
+  REMOTE_PROJECTS_SHARED_OBJECT_KEY,
   type AppServerConnectionState,
   type RemoteConnection,
+  type RemoteProject,
 } from "./services/settingsHosts";
 import {
+  onActiveWorkspaceRootsUpdated,
   onOnboardingPickWorkspaceOrCreateDefaultResult,
   onWorkspaceRootOptionsUpdated,
   clearActiveWorkspaceRoot,
   pickWorkspaceOrCreateDefault,
+  readActiveWorkspaceRoots,
   readWorkspaceRootOptions,
 } from "./services/workspaceRoots";
 import { createPendingWorktree, type PendingWorktreeStartingState } from "./services/pendingWorktrees";
@@ -409,8 +421,10 @@ type AppRoute =
   | "avatar-overlay"
   | "debug";
 type SkillsRouteInitialTab = "plugins" | "skills" | "apps";
+type SkillsRouteInitialMode = "browse" | "manage";
 type SkillsPageRouteState = {
   connectAppId?: string;
+  initialMode?: SkillsRouteInitialMode;
   initialTab?: SkillsRouteInitialTab;
   pluginDeepLinkAuthBlocked?: boolean;
 };
@@ -418,8 +432,12 @@ type NavigateToRouteState = {
   conversationId?: string;
   connectAppId?: string;
   cwd?: string | null;
+  contents?: string;
+  column?: number;
+  filePath?: string;
   focusComposerNonce?: number;
   initialHostId?: string;
+  initialMode?: SkillsRouteInitialMode;
   initialTab?: SkillsRouteInitialTab;
   licensesBackPath?: string;
   localEnvironmentRouteSearch?: string;
@@ -427,6 +445,7 @@ type NavigateToRouteState = {
   pluginDeepLinkAuthBlocked?: boolean;
   prefillCwd?: string | null;
   prefillPrompt?: string;
+  line?: number;
   unifiedDiff?: string;
 };
 type NavigateToRouteNotification = {
@@ -664,7 +683,7 @@ function isPlanSummaryRoute(path: string) {
 }
 
 function isFilePreviewRoute(path: string) {
-  return stripRouteSearchAndHash(path) === "/file-preview";
+  return stripRouteSearchAndHash(path) === FILE_PREVIEW_ROUTE_PATH;
 }
 
 function isHotkeyHomeRoute(path: string) {
@@ -1146,6 +1165,15 @@ function countInProgressTurns(conversation: ThreadConversation) {
   return conversation.turns.reduce((count, turn) => count + (isInProgressTurnStatus(turn.status) ? 1 : 0), 0);
 }
 
+function normalizeOptionalGlobalStateString(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function App() {
   const { locale, t } = useI18n();
   const [isMaximized, setIsMaximized] = useState(false);
@@ -1275,7 +1303,11 @@ function App() {
   const [settingsRemoteConnectionStates, setSettingsRemoteConnectionStates] = useState<
     Record<string, AppServerConnectionState>
   >({});
+  const [activeRemoteProjectId, setActiveRemoteProjectId] = useState<string | null>(null);
+  const [remoteProjects, setRemoteProjects] = useState<RemoteProject[]>([]);
   const [selectedSettingsHostId, setSelectedSettingsHostId] = useState<string>(() => readInitialSettingsHostId());
+  const [currentWindowHostId, setCurrentWindowHostId] = useState<string>(() => readInitialSettingsHostId());
+  const [localActiveWorkspaceRoot, setLocalActiveWorkspaceRoot] = useState<string | null>(null);
   const [hasComputerUseApprovalStore, setHasComputerUseApprovalStore] = useState(false);
   const [codexHome, setCodexHome] = useState<string | null>(null);
   const [configSnapshot, setConfigSnapshot] = useState<ConfigSnapshot | null>(null);
@@ -1284,6 +1316,13 @@ function App() {
   const [selectedLocalPermissionMode, setSelectedLocalPermissionMode] =
     useState<HotkeyPermissionAgentMode | null>(null);
   const [commandKeymapState, setCommandKeymapState] = useState<CommandKeymapState | null>(null);
+  const selectedRemoteProject = useMemo(() => {
+    if (activeRemoteProjectId === null) {
+      return null;
+    }
+
+    return remoteProjects.find((project) => project.id === activeRemoteProjectId) ?? null;
+  }, [activeRemoteProjectId, remoteProjects]);
   const avatarOptions = useMemo(
     () => buildAvatarOptions(customAvatarsSnapshot.avatars),
     [customAvatarsSnapshot.avatars],
@@ -1344,6 +1383,9 @@ function App() {
   const sideChatConversationsByIdRef = useRef<Record<string, ThreadConversation>>({});
   const selectedThreadIdRef = useRef<string | null>(null);
   const threadConversationRef = useRef<ThreadConversation | null>(null);
+  const defaultLocalThreadRouteIdRef = useRef<string | null>(null);
+  const defaultLocalThreadRouteResolvedRef = useRef(false);
+  const defaultLocalThreadRouteLastCwdRef = useRef<string | null>(null);
   const recentThreadsRef = useRef<ThreadHistoryEntry[]>([]);
   const loadedConversationsByIdRef = useRef(new Map<string, ThreadConversation>());
   const snapshotSessionStartedAtMsRef = useRef(Date.now());
@@ -1356,9 +1398,20 @@ function App() {
   const workspaceFileTabsByThreadIdRef = useRef(new Map<string, WorkspaceFileRightPanelTabState[]>());
   const activeWorkspaceFileTabIdByThreadIdRef = useRef(new Map<string, string>());
   const openProjectPath = launchContext?.openProjectPath ?? null;
-  const chatWorkspaceRoot = threadConversation?.cwd ?? openProjectPath ?? null;
-  const settingsWorkspaceRoot = chatWorkspaceRoot;
-  const settingsCwd = threadConversation?.cwd ?? openProjectPath ?? null;
+  const defaultConversationCwd =
+    threadConversation?.cwd ??
+    openProjectPath ??
+    selectedRemoteProject?.remotePath ??
+    null;
+  const defaultConversationHostId =
+    threadConversation?.hostId ??
+    (openProjectPath !== null ? currentWindowHostId : selectedRemoteProject?.hostId ?? null);
+  const chatWorkspaceRoot = defaultConversationCwd;
+  const settingsWorkspaceRoot =
+    selectedSettingsHostId === LOCAL_SETTINGS_HOST_ID
+      ? localActiveWorkspaceRoot
+      : null;
+  const settingsCwd = defaultConversationCwd;
   const isApiKeyAuth = authSnapshot.authState.authMethod === "apikey";
   const isChatGptAuth = authSnapshot.authState.authMethod === "chatgpt";
   const isWorktreeThread = isWithinCodexWorktrees(threadConversation?.cwd ?? null, codexHome);
@@ -1887,7 +1940,7 @@ function App() {
       disposed = true;
       unlistenGlobalState?.();
     };
-  }, [refreshPinnedThreads]);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1977,13 +2030,24 @@ function App() {
     }
   });
 
+  const refreshLocalActiveWorkspaceRoot = useEffectEvent(async () => {
+    try {
+      const response = await readActiveWorkspaceRoots(LOCAL_SETTINGS_HOST_ID);
+      setLocalActiveWorkspaceRoot(response.roots[0] ?? null);
+    } catch {
+      setLocalActiveWorkspaceRoot(null);
+    }
+  });
+
   useEffect(() => {
     let disposed = false;
     let unlistenGlobalState: (() => void) | undefined;
     let unlistenWorkspaceRootOptions: (() => void) | undefined;
+    let unlistenActiveWorkspaceRoots: (() => void) | undefined;
 
     void refreshLoginOnboardingState();
     void refreshPersistedWorkspaceRoots();
+    void refreshLocalActiveWorkspaceRoot();
 
     void onGlobalStateUpdated((notification) => {
       if (
@@ -2015,12 +2079,23 @@ function App() {
       unlistenWorkspaceRootOptions = dispose;
     });
 
+    void onActiveWorkspaceRootsUpdated(() => {
+      void refreshLocalActiveWorkspaceRoot();
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+      unlistenActiveWorkspaceRoots = dispose;
+    });
+
     return () => {
       disposed = true;
       unlistenGlobalState?.();
       unlistenWorkspaceRootOptions?.();
+      unlistenActiveWorkspaceRoots?.();
     };
-  }, [refreshLoginOnboardingState, refreshPersistedWorkspaceRoots]);
+  }, []);
 
   useEffect(() => {
     if (
@@ -2308,6 +2383,84 @@ function App() {
   }, [currentRoute]);
 
   useEffect(() => {
+    let disposed = false;
+    let unlistenGlobalState: (() => void) | undefined;
+    let unlistenSharedObject: (() => void) | undefined;
+
+    const syncRemoteProjectState = async () => {
+      try {
+        const [activeRemoteProjectResponse, remoteProjectsSnapshot] = await Promise.all([
+          getGlobalState("active-remote-project-id"),
+          readSettingsRemoteProjectsSnapshot(),
+        ]);
+        if (disposed) {
+          return;
+        }
+        setActiveRemoteProjectId(normalizeOptionalGlobalStateString(activeRemoteProjectResponse.value));
+        setRemoteProjects(remoteProjectsSnapshot);
+      } catch {
+        if (disposed) {
+          return;
+        }
+        setActiveRemoteProjectId(null);
+        setRemoteProjects([]);
+      }
+    };
+
+    void syncRemoteProjectState();
+
+    void onGlobalStateUpdated((notification) => {
+      if (!notification.keys.includes("active-remote-project-id")) {
+        return;
+      }
+
+      void getGlobalState("active-remote-project-id")
+        .then((response) => {
+          if (disposed) {
+            return;
+          }
+
+          setActiveRemoteProjectId(normalizeOptionalGlobalStateString(response.value));
+        })
+        .catch(() => {
+          if (!disposed) {
+            setActiveRemoteProjectId(null);
+          }
+        });
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+      unlistenGlobalState = dispose;
+    });
+
+    void onSharedObjectUpdated((notification) => {
+      if (notification.key !== REMOTE_PROJECTS_SHARED_OBJECT_KEY) {
+        return;
+      }
+
+      if (disposed) {
+        return;
+      }
+
+      setRemoteProjects(normalizeRemoteProjectsSnapshot(notification.value));
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+      unlistenSharedObject = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      unlistenGlobalState?.();
+      unlistenSharedObject?.();
+    };
+  }, []);
+
+  useEffect(() => {
     if (!managesPowerSaveBlocker) {
       return;
     }
@@ -2407,7 +2560,7 @@ function App() {
 
   useEffect(() => {
     void loadCommandKeymapState();
-  }, [loadCommandKeymapState]);
+  }, []);
 
   const handleCommandKeymapStateInvalidated = useEffectEvent(() => {
     void loadCommandKeymapState();
@@ -2433,7 +2586,7 @@ function App() {
       disposed = true;
       unlisten?.();
     };
-  }, [handleCommandKeymapStateInvalidated]);
+  }, []);
 
   useEffect(() => {
     if (!isThreadActionsMenuOpen) {
@@ -2774,7 +2927,7 @@ function App() {
     return () => {
       unlisten?.();
     };
-  }, [applyThreadReadStateChanged]);
+  }, []);
 
   const handleAppStateSnapshotRequest = useEffectEvent(
     async ({ reason, requestId }: { reason: string; requestId: string }) => {
@@ -3015,14 +3168,45 @@ function App() {
     return true;
   });
 
+  const applyPendingDiff = useEffectEvent(async () => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    const pendingDiff = await takePendingDiff();
+    if (pendingDiff == null) {
+      return false;
+    }
+
+    window.history.replaceState(pendingDiff, "", EDITOR_DIFF_ROUTE_PATH);
+    setEditorDiffRouteState(pendingDiff);
+    return true;
+  });
+
+  const applyPendingFilePreview = useEffectEvent(async () => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    const pendingFilePreview = await takePendingFilePreview();
+    if (pendingFilePreview == null) {
+      return false;
+    }
+
+    window.history.replaceState(pendingFilePreview, "", FILE_PREVIEW_ROUTE_PATH);
+    return true;
+  });
+
   useEffect(() => {
     let cancelled = false;
 
     void Promise.all([
       takePendingWindowRoute(),
+      takePendingDiff(),
+      takePendingFilePreview(),
       takePendingPlanSummary(),
     ])
-      .then(([path, planSummary]) => {
+      .then(([path, pendingDiff, pendingFilePreview, planSummary]) => {
         if (cancelled) {
           return;
         }
@@ -3034,6 +3218,15 @@ function App() {
           setThreadShellVariant("default");
           initialWindowPageKindRef.current = "plan-summary";
           setCurrentRoute("plan-summary");
+        }
+
+        if (pendingDiff && typeof window !== "undefined") {
+          window.history.replaceState(pendingDiff, "", EDITOR_DIFF_ROUTE_PATH);
+          setEditorDiffRouteState(pendingDiff);
+        }
+
+        if (pendingFilePreview && typeof window !== "undefined") {
+          window.history.replaceState(pendingFilePreview, "", FILE_PREVIEW_ROUTE_PATH);
         }
 
         if (typeof path !== "string") {
@@ -3068,7 +3261,9 @@ function App() {
         if (isEditorDiffRoute(path)) {
           setThreadShellVariant("default");
           initialWindowPageKindRef.current = "editor-diff";
-          setEditorDiffRouteState(typeof window === "undefined" ? null : window.history.state);
+          setEditorDiffRouteState(
+            pendingDiff ?? (typeof window === "undefined" ? null : window.history.state),
+          );
           setCurrentRoute("editor-diff");
           return;
         }
@@ -3714,7 +3909,10 @@ function App() {
                 clearConversation: false,
               });
             } else {
-              const thread = await readThread(activeThreadId);
+              const thread = await readThreadForHost({
+                threadId: activeThreadId,
+                hostId: threads.find((entry) => entry.id === activeThreadId)?.hostId ?? null,
+              });
               if (!cancelled && threadLoadRequestIdRef.current === requestId) {
                 const mergedThread = mergeSyntheticRequestItemsIntoConversation(
                   thread,
@@ -3992,7 +4190,7 @@ function App() {
     return () => {
       window.removeEventListener("keydown", handleGlobalShortcutKeyDown);
     };
-  }, [handleGlobalShortcutKeyDown]);
+  }, []);
 
   const handleWorkspaceFileSelected = (file: WorkspaceFilePreviewTarget) => {
     const workspaceFileTab = createWorkspaceFileRightPanelTab(file);
@@ -4065,7 +4263,7 @@ function App() {
     void markConversationAsRead(conversation.id).catch(() => undefined);
   };
 
-  const syncProjectGroups = (activeThreadId: string | null, threads: Awaited<ReturnType<typeof getRecentThreads>>) => {
+  const syncProjectGroups = (activeThreadId: string | null, threads: ThreadHistoryEntry[]) => {
     recentThreadsRef.current = threads;
     selectedThreadIdRef.current = activeThreadId;
     setRecentThreads(threads);
@@ -4079,7 +4277,7 @@ function App() {
     );
   };
 
-  const loadThreadConversation = async (threadId: string) => {
+  const loadThreadConversation = async (threadId: string, hostId?: string | null) => {
     const requestId = threadLoadRequestIdRef.current + 1;
     threadLoadRequestIdRef.current = requestId;
     setIsThreadConversationLoading(true);
@@ -4088,7 +4286,14 @@ function App() {
     setIsThreadGoalEditorOpen(false);
     setThreadConversation(null);
     try {
-      const thread = await readThread(threadId);
+      const resolvedHostId =
+        hostId ??
+        recentThreadsRef.current.find((entry) => entry.id === threadId)?.hostId ??
+        null;
+      const thread = await readThreadForHost({
+        threadId,
+        hostId: resolvedHostId,
+      });
       const mergedThread = mergeSyntheticRequestItemsIntoConversation(thread, syntheticRequestItemsByThreadId);
       loadedConversationsByIdRef.current.set(thread.id, mergedThread);
       syncSelectedCollaborationModeFromConversation(thread);
@@ -4180,12 +4385,11 @@ function App() {
   };
 
   const refreshRecentThreadsAfterUnarchive = async (hostId: string) => {
-    if (hostId !== LOCAL_SETTINGS_HOST_ID) {
-      return;
-    }
-
     try {
-      const threads = await getRecentThreads();
+      const threads =
+        hostId === LOCAL_SETTINGS_HOST_ID
+          ? await getRecentThreads()
+          : await getRecentThreadsForHost(hostId);
       syncProjectGroups(selectedThreadId ?? threads[0]?.id ?? null, threads);
     } catch {
       // Keep the current sidebar state when refresh fails.
@@ -4298,13 +4502,29 @@ function App() {
   };
 
   const createAndSelectThread = async () => {
-    const cwd = threadConversation?.cwd ?? openProjectPath ?? null;
-    const threadId = await startThread(cwd);
-    const threads = await getRecentThreads();
+    const hostId =
+      threadConversation?.hostId ??
+      (openProjectPath !== null ? currentWindowHostId : selectedRemoteProject?.hostId ?? currentWindowHostId);
+    const cwd =
+      threadConversation?.cwd ??
+      openProjectPath ??
+      (hostId !== LOCAL_SETTINGS_HOST_ID ? selectedRemoteProject?.remotePath ?? null : null);
+    const threadId =
+      hostId === LOCAL_SETTINGS_HOST_ID
+        ? await startThread(cwd)
+        : await startThreadForHost({
+            cwd,
+            hostId,
+            collaborationMode: buildCollaborationModePayload("default"),
+          });
+    const threads =
+      hostId === LOCAL_SETTINGS_HOST_ID
+        ? await getRecentThreads()
+        : await getRecentThreadsForHost(hostId);
     setThreadShellVariant("default");
     syncProjectGroups(threadId, threads);
     setCurrentRoute("chat");
-    return loadThreadConversation(threadId);
+    return loadThreadConversation(threadId, hostId);
   };
   const isAuthenticated = authSnapshot.authState.authMethod !== null;
 
@@ -4461,6 +4681,11 @@ function App() {
         openProjectPath: prefillCwd ?? null,
       });
     }
+    if (state?.initialHostId && state.initialHostId.trim().length > 0) {
+      setCurrentWindowHostId(state.initialHostId.trim());
+    } else if (prefillCwd !== undefined) {
+      setCurrentWindowHostId(LOCAL_SETTINGS_HOST_ID);
+    }
     setComposerDraft(state?.prefillPrompt ?? "");
     setComposerFocusNonce(state?.focusComposerNonce ?? Date.now());
     setCurrentRoute("chat");
@@ -4489,6 +4714,7 @@ function App() {
     }
 
     if (isFilePreviewRoute(path)) {
+      await applyPendingFilePreview();
       setThreadShellVariant("default");
       setSkillsRouteState(null);
       setCurrentRoute("file-preview");
@@ -4507,6 +4733,7 @@ function App() {
     }
 
     if (isEditorDiffRoute(path)) {
+      await applyPendingDiff();
       setThreadShellVariant("default");
       setSkillsRouteState(null);
       setEditorDiffRouteState(state ?? (typeof window === "undefined" ? null : window.history.state));
@@ -4597,6 +4824,7 @@ function App() {
       }
       setSkillsRouteState({
         connectAppId: state?.connectAppId,
+        initialMode: state?.initialMode,
         initialTab: state?.initialTab,
         pluginDeepLinkAuthBlocked: state?.pluginDeepLinkAuthBlocked,
       });
@@ -4729,44 +4957,71 @@ function App() {
 
   const startHotkeyHomeLocalConversation = useEffectEvent(async (params: {
     draft: string;
+    hostId: string | null;
     permissionOverrides: TurnStartPermissionOverrides;
     workspaceRoot: string | null;
+    workspaceRoots: string[];
   }) => {
     const text = params.draft.trim();
     if (text.length === 0) {
       return;
     }
 
+    const hostId = params.hostId ?? LOCAL_SETTINGS_HOST_ID;
     const cwd = params.workspaceRoot;
-    const threadId = await startThread(cwd);
+    const threadId =
+      hostId === LOCAL_SETTINGS_HOST_ID
+        ? await startThread(cwd)
+        : await startThreadForHost({
+            cwd,
+            hostId,
+            collaborationMode: buildCollaborationModePayload("default"),
+          });
 
     if (text === "/review") {
       const review = await startReview({ threadId, delivery: reviewDelivery });
-      const threads = await getRecentThreads();
+      const threads =
+        hostId === LOCAL_SETTINGS_HOST_ID
+          ? await getRecentThreads()
+          : await getRecentThreadsForHost(hostId);
       syncProjectGroups(review.reviewThreadId, threads);
       setActiveTurn({ threadId: review.reviewThreadId, turnId: review.turnId });
-      await openInHotkeyWindow(buildLocalThreadRoutePath(review.reviewThreadId, "hotkey"));
+      await openInHotkeyWindow(
+        hostId === LOCAL_SETTINGS_HOST_ID
+          ? buildLocalThreadRoutePath(review.reviewThreadId, "hotkey")
+          : buildRemoteThreadRoutePath(review.reviewThreadId, "hotkey"),
+      );
       return;
     }
 
     const turnId = await startTurn({
+      hostId: params.hostId,
       threadId,
       text,
       cwd,
       collaborationMode: buildSelectedCollaborationModePayloadForThread(threadId),
       ...params.permissionOverrides,
     });
-    const threads = await getRecentThreads();
+    const threads =
+      hostId === LOCAL_SETTINGS_HOST_ID
+        ? await getRecentThreads()
+        : await getRecentThreadsForHost(hostId);
     syncProjectGroups(threadId, threads);
     completeImplementPlanFlowForThread(threadId);
     setActiveTurn({ threadId, turnId });
-    await openInHotkeyWindow(buildLocalThreadRoutePath(threadId, "hotkey"));
+    await openInHotkeyWindow(
+      hostId === LOCAL_SETTINGS_HOST_ID
+        ? buildLocalThreadRoutePath(threadId, "hotkey")
+        : buildRemoteThreadRoutePath(threadId, "hotkey"),
+    );
   });
 
   const startHotkeyHomeCloudConversation = useEffectEvent(async (params: {
     draft: string;
+    cwd: string;
+    hostId: string | null;
     permissionOverrides: TurnStartPermissionOverrides;
-    workspaceRoot: string;
+    workspaceRoots: string[];
   }) => {
     const text = params.draft.trim();
     if (text.length === 0) {
@@ -4774,20 +5029,29 @@ function App() {
     }
 
     const threadId = await startConversation({
-      hostId: LOCAL_SETTINGS_HOST_ID,
+      hostId: params.hostId,
       text,
-      cwd: params.workspaceRoot,
-      workspaceRoots: [params.workspaceRoot],
+      cwd: params.cwd,
+      workspaceRoots: params.workspaceRoots,
       collaborationMode: buildCollaborationModePayload("default"),
       ...params.permissionOverrides,
     });
-    const threads = await getRecentThreads();
+    const hostId = params.hostId ?? LOCAL_SETTINGS_HOST_ID;
+    const threads =
+      hostId === LOCAL_SETTINGS_HOST_ID
+        ? await getRecentThreads()
+        : await getRecentThreadsForHost(hostId);
     syncProjectGroups(threadId, threads);
     completeImplementPlanFlowForThread(threadId);
-    await openInHotkeyWindow(buildRemoteThreadRoutePath(threadId, "hotkey"));
+    await openInHotkeyWindow(
+      hostId === LOCAL_SETTINGS_HOST_ID
+        ? buildLocalThreadRoutePath(threadId, "hotkey")
+        : buildRemoteThreadRoutePath(threadId, "hotkey"),
+    );
   });
 
   const startHotkeyHomeWorktreeConversation = useEffectEvent(async (params: {
+    hostId: string;
     id: string;
     localEnvironmentConfigPath: string | null;
     permissionOverrides: TurnStartPermissionOverrides;
@@ -4801,10 +5065,10 @@ function App() {
     }
 
     await createPendingWorktree({
-      hostId: LOCAL_SETTINGS_HOST_ID,
+      hostId: params.hostId,
       request: {
         id: params.id,
-        hostId: LOCAL_SETTINGS_HOST_ID,
+        hostId: params.hostId,
         label: null,
         initialThreadTitle: null,
         sourceWorkspaceRoot: params.workspaceRoot,
@@ -4978,7 +5242,7 @@ function App() {
 
     try {
       await openInNewWindow({
-        hostId: LOCAL_SETTINGS_HOST_ID,
+        hostId: currentPageConversation?.hostId ?? LOCAL_SETTINGS_HOST_ID,
         path,
       });
       setIsThreadActionsMenuOpen(false);
@@ -5342,12 +5606,8 @@ function App() {
     setTurnError(null);
     try {
       let thread = threadConversation;
-      if (!thread) {
-        thread = await createAndSelectThread();
-      }
-      const threadId = thread.id;
-      const cwd = thread.cwd || openProjectPath || null;
-      const pendingPdfComments = pendingPdfCommentsByThreadIdRef.current[threadId] ?? [];
+      const draftThreadId = selectedThreadId ?? "";
+      const pendingPdfComments = pendingPdfCommentsByThreadIdRef.current[draftThreadId] ?? [];
       const input = buildThreadConversationInputWithPendingPdfComments({
         text,
         pendingPdfComments,
@@ -5361,6 +5621,12 @@ function App() {
           : t("commentAttachments.numAnnotations", {
               count: pendingPdfComments.length,
             });
+      if (!thread) {
+        thread = await createAndSelectThread();
+      }
+      const threadId = thread.id;
+      const cwd = thread.cwd || openProjectPath || selectedRemoteProject?.remotePath || null;
+      const hostId = thread.hostId ?? LOCAL_SETTINGS_HOST_ID;
       if (activeTurn && activeTurn.threadId === threadId) {
         const effectiveFollowUpAction = invertFollowUpAction
           ? followUpQueueMode === "queue"
@@ -5427,6 +5693,7 @@ function App() {
       const turnId =
         pendingPdfComments.length > 0 || text.length === 0
           ? await startTurnWithInput({
+              hostId,
               threadId,
               input,
               cwd,
@@ -5434,6 +5701,7 @@ function App() {
               ...localComposerPermissionOverrides,
             })
           : await startTurn({
+              hostId,
               threadId,
               text,
               cwd,
@@ -5471,6 +5739,7 @@ function App() {
     try {
       const cwd = threadConversation?.cwd ?? openProjectPath ?? null;
       const turnId = await startTurnWithInput({
+        hostId: threadConversation?.hostId ?? LOCAL_SETTINGS_HOST_ID,
         threadId: selectedThreadId,
         input: [comment],
         cwd,
@@ -5511,7 +5780,8 @@ function App() {
 
     setError(null);
     try {
-      const cwd = conversation?.cwd ?? openProjectPath ?? null;
+      const cwd = conversation?.cwd ?? openProjectPath ?? selectedRemoteProject?.remotePath ?? null;
+      const hostId = conversation?.hostId ?? LOCAL_SETTINGS_HOST_ID;
       if (activeTurn && activeTurn.threadId === threadId) {
         const effectiveFollowUpAction = invertFollowUpAction
           ? followUpQueueMode === "queue"
@@ -5564,6 +5834,7 @@ function App() {
         return;
       }
       const turnId = await startTurn({
+        hostId,
         threadId,
         text,
         cwd,
@@ -5619,6 +5890,7 @@ function App() {
       const nextInput = replaceFirstTextInput(editableMessage.input, normalizedMessage);
       const cwd = rollbackResult.cwd || openProjectPath || null;
       const turnId = await startTurnWithInput({
+        hostId: conversation?.hostId ?? LOCAL_SETTINGS_HOST_ID,
         threadId: editableMessage.threadId,
         input: nextInput,
         cwd,
@@ -5665,6 +5937,7 @@ function App() {
       const nextInput = replaceFirstTextInput(editableUserMessage.input, normalizedMessage);
       const cwd = rollbackResult.cwd || openProjectPath || null;
       const turnId = await startTurnWithInput({
+        hostId: threadConversation?.hostId ?? LOCAL_SETTINGS_HOST_ID,
         threadId: editableUserMessage.threadId,
         input: nextInput,
         cwd,
@@ -6329,7 +6602,7 @@ function App() {
           cachedConversations={Array.from(loadedConversationsByIdRef.current.values())}
           isRecentThreadsLoading={!hasLoadedInitialThreadSnapshot}
           onShowToast={(toast) => setAppToast(toast)}
-          onViewConversation={(threadId, hostId) => void viewConversationForHost(threadId, hostId)}
+          onViewConversation={(threadId) => void handleNavigateToRoute(buildLocalThreadRoutePath(threadId, "default"))}
           recentThreads={recentThreadEntries}
           selectedHostId={selectedSettingsHostId}
         />
@@ -6364,6 +6637,10 @@ function App() {
     return null;
   };
   const isHotkeyLocalThreadPage = currentRoute === "chat" && isHotkeyLocalThreadShell;
+  const isDefaultLocalThreadPage =
+    currentRoute === "chat" &&
+    currentThreadShellRoute?.shell === "default" &&
+    currentThreadShellRoute.kind === "local";
   const isDefaultRemoteThreadPage =
     currentRoute === "chat" &&
     currentThreadShellRoute?.shell === "default" &&
@@ -6417,6 +6694,52 @@ function App() {
     selectedThreadId == null
       ? threadConversation?.latestCollaborationMode ?? null
       : (getSelectedCollaborationModeForThread(selectedThreadId) ?? threadConversation?.latestCollaborationMode ?? null);
+  const defaultLocalThreadRouteId = isDefaultLocalThreadPage ? currentThreadShellRoute?.threadId ?? null : null;
+  const shouldShowLocalThreadRouteLoading =
+    isDefaultLocalThreadPage && currentPageConversation === null;
+  const shouldShowChatRouteHeader =
+    !(isDefaultLocalThreadPage && currentPageConversation === null);
+
+  useEffect(() => {
+    if (defaultLocalThreadRouteIdRef.current !== defaultLocalThreadRouteId) {
+      defaultLocalThreadRouteIdRef.current = defaultLocalThreadRouteId;
+      defaultLocalThreadRouteResolvedRef.current = false;
+      defaultLocalThreadRouteLastCwdRef.current = null;
+    }
+
+    if (
+      defaultLocalThreadRouteId !== null &&
+      currentPageConversation?.id === defaultLocalThreadRouteId
+    ) {
+      defaultLocalThreadRouteResolvedRef.current = true;
+      const trimmedCwd = currentPageConversation.cwd?.trim() ?? "";
+      if (trimmedCwd.length > 0) {
+        defaultLocalThreadRouteLastCwdRef.current = currentPageConversation.cwd;
+      }
+    }
+  }, [defaultLocalThreadRouteId, currentPageConversation]);
+
+  useEffect(() => {
+    if (
+      !isDefaultLocalThreadPage ||
+      isThreadConversationLoading ||
+      currentPageConversation !== null ||
+      !defaultLocalThreadRouteResolvedRef.current
+    ) {
+      return;
+    }
+
+    void handleNavigateToRoute("/", {
+      focusComposerNonce: Date.now(),
+      prefillCwd: defaultLocalThreadRouteLastCwdRef.current,
+    });
+  }, [
+    currentPageConversation,
+    handleNavigateToRoute,
+    isDefaultLocalThreadPage,
+    isThreadConversationLoading,
+  ]);
+
   const showLocalCompactComposerOverlay =
     currentRoute === "chat" &&
     currentThreadShellRoute?.shell === "default" &&
@@ -6560,25 +6883,14 @@ function App() {
       <HotkeyWindowHomePage
         codexHome={codexHome}
         composerEnterBehavior={composerEnterBehavior}
-        initialWorkspaceRoot={openProjectPath}
-        onOpenLocalEnvironmentsSettings={({ configPath, workspaceRoot }) => {
-          const searchParams = new URLSearchParams({
-            mode: configPath === null ? "edit" : "preview",
-            workspaceRoot,
-          });
-          if (configPath !== null) {
-            searchParams.set("configPath", configPath);
-          }
-          const nextPath = `/settings/local-environments?${searchParams.toString()}`;
-          if (typeof window !== "undefined" && window.location.pathname + window.location.search !== nextPath) {
-            window.history.replaceState(window.history.state, "", nextPath);
-          }
-          setThreadShellVariant("default");
-          setSelectedSettingsHostId(LOCAL_SETTINGS_HOST_ID);
-          setSettingsSection("local-environments");
-          setSettingsSectionState({ localEnvironmentRouteSearch: `?${searchParams.toString()}` });
-          setCurrentRoute("settings");
-        }}
+        initialProjectSelection={
+          currentWindowHostId === LOCAL_SETTINGS_HOST_ID && openProjectPath
+            ? {
+                kind: "local",
+                workspaceRoot: openProjectPath,
+              }
+            : null
+        }
         onStartCloudConversation={startHotkeyHomeCloudConversation}
         onStartLocalConversation={startHotkeyHomeLocalConversation}
         onStartWorktreeConversation={startHotkeyHomeWorktreeConversation}
@@ -6592,8 +6904,31 @@ function App() {
         codexHome={codexHome}
         composerEnterBehavior={composerEnterBehavior}
         guardianApprovalEnabledByStatsig={defaultFeatures.guardian_approval}
-        initialWorkspaceRoot={openProjectPath}
-        onOpenLocalEnvironmentsSettings={({ configPath, workspaceRoot }) => {
+        initialProjectSelection={
+          currentWindowHostId !== LOCAL_SETTINGS_HOST_ID && openProjectPath
+            ? {
+                kind: "remote",
+                hostId: currentWindowHostId,
+                projectId: `hotkey-new-thread:${currentWindowHostId}:${openProjectPath}`,
+                remotePath: openProjectPath,
+              }
+            : openProjectPath
+              ? {
+                  kind: "local",
+                  workspaceRoot: openProjectPath,
+                }
+              : null
+        }
+        onOpenCreateRemoteProject={() => {
+          setThreadShellVariant("default");
+          setSelectedSettingsHostId(currentWindowHostId);
+          setSettingsSection("local-environments");
+          setSettingsSectionState({
+            pendingViewAction: "open-create-remote-project-modal",
+          });
+          setCurrentRoute("settings");
+        }}
+        onOpenLocalEnvironmentsSettings={({ configPath, hostId, workspaceRoot }) => {
           const searchParams = new URLSearchParams({
             mode: configPath === null ? "edit" : "preview",
             workspaceRoot,
@@ -6606,7 +6941,7 @@ function App() {
             window.history.replaceState(window.history.state, "", nextPath);
           }
           setThreadShellVariant("default");
-          setSelectedSettingsHostId(LOCAL_SETTINGS_HOST_ID);
+          setSelectedSettingsHostId(hostId ?? LOCAL_SETTINGS_HOST_ID);
           setSettingsSection("local-environments");
           setSettingsSectionState({ localEnvironmentRouteSearch: `?${searchParams.toString()}` });
           setCurrentRoute("settings");
@@ -6713,7 +7048,12 @@ function App() {
   }
 
   if (currentRoute === "editor-diff") {
-    return <EditorDiffPage routeState={editorDiffRouteState} />;
+    return (
+      <EditorDiffPage
+        currentWindowHostId={currentWindowHostId}
+        routeState={editorDiffRouteState}
+      />
+    );
   }
 
   if (currentRoute === "plan-summary") {
@@ -6832,9 +7172,10 @@ function App() {
   if (currentRoute === "select-workspace") {
     return (
       <SelectWorkspacePage
+        currentWindowHostId={currentWindowHostId}
         recentThreads={recentThreadEntries}
-        onContinueToHome={({ focusComposerNonce }) => {
-          openNewConversation({ focusComposerNonce });
+        onContinueToHome={({ focusComposerNonce, hostId }) => {
+          openNewConversation({ focusComposerNonce, initialHostId: hostId });
         }}
       />
     );
@@ -6882,7 +7223,7 @@ function App() {
           </div>
 
           <div className="flex h-full min-w-0 flex-1 items-center overflow-hidden px-3">
-            {currentRoute === "chat" && !isHotkeyLocalThreadPage ? (
+            {currentRoute === "chat" && !isHotkeyLocalThreadPage && shouldShowChatRouteHeader ? (
               <ChatRouteHeader
                 heartbeatAutomationActionLabelKey={threadHeartbeatAutomationActionLabelKey}
                 heartbeatAutomationButtonTooltip={heartbeatAutomationOpenButtonTooltip}
@@ -7179,7 +7520,11 @@ function App() {
 
           <section className="min-w-0 flex-1 bg-[var(--app-shell-surface)]">
             {currentRoute === "chat" ? (
-              isThreadConversationLoading ? (
+              shouldShowLocalThreadRouteLoading ? (
+                <div className="relative min-h-0 flex-1">
+                  <LoadingPage fillParent debugName="LocalConversationPage" />
+                </div>
+              ) : isThreadConversationLoading ? (
                 <div className="relative min-h-0 flex-1">
                   <LoadingPage fillParent debugName="LocalConversationPage" />
                 </div>
@@ -7564,7 +7909,6 @@ function App() {
                     onSetRightPanelCloseAction={setPageRightPanelCloseAction}
                     onSetRightPanelVisible={setPageRightPanelVisible}
                     onShowToast={(toast) => setAppToast(toast)}
-                    recentThreads={recentThreadEntries}
                     rightPanelHost={pageRightPanelContentRef}
                   />
                 </AppShellRightPanelLayout>
@@ -7605,6 +7949,7 @@ function App() {
                     codexHome={codexHome}
                     connectAppId={skillsRouteState?.connectAppId}
                     connectedRemoteConnections={connectedSettingsRemoteConnections}
+                    initialMode={skillsRouteState?.initialMode}
                     initialTab={skillsRouteState?.initialTab}
                     isPluginsRouteEnabled={isPluginsRouteEnabled}
                     onConsumeInitialState={() => setSkillsRouteState(null)}

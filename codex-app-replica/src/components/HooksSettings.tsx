@@ -23,11 +23,13 @@ import {
   type HookSource,
   type HooksListEntry,
 } from "../services/hooks";
+import { getGlobalState, onGlobalStateUpdated } from "../services/settings";
 import {
   LOCAL_SETTINGS_HOST_ID,
   REMOTE_PROJECTS_SHARED_OBJECT_KEY,
   onSharedObjectUpdated,
   readSettingsRemoteProjectsSnapshot,
+  type RemoteProject,
 } from "../services/settingsHosts";
 import {
   onActiveWorkspaceRootsUpdated,
@@ -76,6 +78,8 @@ export function HooksSettings({
     roots: [],
   });
   const [activeProjectRoots, setActiveProjectRoots] = useState<string[]>([]);
+  const [activeRemoteProjectId, setActiveRemoteProjectId] = useState<string | null>(null);
+  const [remoteProjects, setRemoteProjects] = useState<RemoteProject[]>([]);
   const [isLoadingProjectRoots, setIsLoadingProjectRoots] = useState(true);
   const [hooksEntry, setHooksEntry] = useState<HooksListEntry | null>(null);
   const [isLoadingHooks, setIsLoadingHooks] = useState(false);
@@ -100,6 +104,7 @@ export function HooksSettings({
           return;
         }
 
+        setRemoteProjects(remoteProjects);
         const remoteProjectsForSelectedHost = remoteProjects.filter((project) => project.hostId === selectedHostId);
         setProjectRootsState({
           labels: Object.fromEntries(
@@ -131,6 +136,7 @@ export function HooksSettings({
         roots: nextProjectRootsState.roots,
       });
       setActiveProjectRoots(nextActiveProjectRoots);
+      setRemoteProjects([]);
     };
 
     void loadProjectRoots()
@@ -147,6 +153,43 @@ export function HooksSettings({
       }
     };
   }, [isRemoteHost, projectRootsReloadNonce, selectedHostId]);
+
+  useEffect(() => {
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+
+    const syncActiveRemoteProjectId = async () => {
+      try {
+        const response = await getGlobalState("active-remote-project-id");
+        if (!disposed) {
+          setActiveRemoteProjectId(normalizeOptionalGlobalStateString(response.value));
+        }
+      } catch {
+        if (!disposed) {
+          setActiveRemoteProjectId(null);
+        }
+      }
+    };
+
+    void syncActiveRemoteProjectId();
+
+    void onGlobalStateUpdated((notification) => {
+      if (!disposed && notification.keys.includes("active-remote-project-id")) {
+        void syncActiveRemoteProjectId();
+      }
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+      cleanup = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -190,9 +233,18 @@ export function HooksSettings({
     };
   }, [isRemoteHost]);
 
+  const selectedRemoteProject = useMemo(() => {
+    if (activeRemoteProjectId === null) {
+      return null;
+    }
+
+    return remoteProjects.find((project) => project.id === activeRemoteProjectId) ?? null;
+  }, [activeRemoteProjectId, remoteProjects]);
   const defaultProjectRoot = isRemoteHost
-    ? settingsCwd
-    : activeProjectRoots[0] ?? settingsCwd;
+    ? selectedRemoteProject?.hostId === selectedHostId
+      ? selectedRemoteProject.remotePath
+      : null
+    : activeProjectRoots[0] ?? null;
   const projectRoots = useMemo(
     () => uniqueProjectRoots(projectRootsState.roots, defaultProjectRoot),
     [defaultProjectRoot, projectRootsState.roots],
@@ -955,8 +1007,19 @@ function getProjectRootLabel(projectRoot: string, projectRootLabels: Record<stri
 }
 
 function deriveProjectName(projectRoot: string) {
-  const segments = projectRoot.split(/[/\\]+/).filter(Boolean);
-  return segments.at(-1) ?? null;
+  const trimmedProjectRoot = projectRoot.trim();
+  if (trimmedProjectRoot.length === 0) {
+    return null;
+  }
+
+  const segments = trimmedProjectRoot.split(/[/\\]+/).filter(Boolean);
+  return trimProjectName(segments.at(-1) ?? trimmedProjectRoot);
+}
+
+function trimProjectName(value: string) {
+  const trimmedValue = value.trim();
+  const words = trimmedValue.split(/\s+/).filter(Boolean);
+  return words.length <= 3 ? trimmedValue : words.slice(0, 3).join(" ");
 }
 
 function uniqueProjectRoots(projectRoots: string[], preferredProjectRoot: string | null) {
@@ -972,6 +1035,15 @@ function createEmptyWorkspaceRootOptionsResponse(): WorkspaceRootOptionsResponse
 
 function toError(error: unknown) {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+function normalizeOptionalGlobalStateString(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function HooksEventIcon({ className }: { className?: string }) {

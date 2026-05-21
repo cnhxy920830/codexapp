@@ -87,7 +87,6 @@ export async function restartCodexAppServer(hostId: string) {
   return invoke<void>("codex-app-server-restart", {
     params: {
       hostId,
-      killCodexProcess: true,
     },
   });
 }

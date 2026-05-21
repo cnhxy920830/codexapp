@@ -12,6 +12,7 @@ import {
   setGitShowSidebarPrIcons,
   type GitMergeMethod,
 } from "../services/gitSettings";
+import { onGlobalStateUpdated } from "../services/settings";
 import {
   DEFAULT_WORKTREES_SETTINGS,
   readWorktreesSettingsSnapshot,
@@ -80,6 +81,16 @@ export function GitSettings({
   const [keepCountDraft, setKeepCountDraft] = useState<string | null>(null);
   const [isDisableAutoCleanupConfirmOpen, setIsDisableAutoCleanupConfirmOpen] = useState(false);
 
+  const reloadGitSettings = useEffectEvent(async () => {
+    const snapshot = await readGitSettingsSnapshot();
+    setGitState(snapshot);
+  });
+
+  const reloadWorktreeSettings = useEffectEvent(async () => {
+    const snapshot = await readWorktreesSettingsSnapshot();
+    setWorktreeState(snapshot);
+  });
+
   useEffect(() => {
     let cancelled = false;
 
@@ -119,6 +130,43 @@ export function GitSettings({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let cleanup: (() => void) | undefined;
+
+    void onGlobalStateUpdated((notification) => {
+      if (
+        notification.keys.includes("git-branch-prefix") ||
+        notification.keys.includes("git-always-force-push") ||
+        notification.keys.includes("git-create-pull-request-as-draft") ||
+        notification.keys.includes("git-pull-request-merge-method") ||
+        notification.keys.includes("git-show-sidebar-pr-icons") ||
+        notification.keys.includes("git-commit-instructions") ||
+        notification.keys.includes("git-pr-instructions")
+      ) {
+        void reloadGitSettings();
+      }
+
+      if (
+        notification.keys.includes("worktree-auto-cleanup-enabled") ||
+        notification.keys.includes("worktree-keep-count")
+      ) {
+        void reloadWorktreeSettings();
+      }
+    }).then((unsubscribe) => {
+      if (disposed) {
+        unsubscribe();
+        return;
+      }
+      cleanup = unsubscribe;
+    });
+
+    return () => {
+      disposed = true;
+      cleanup?.();
+    };
+  }, [reloadGitSettings, reloadWorktreeSettings]);
 
   const setSavingFlag = (key: keyof SaveState, value: boolean) => {
     setSaving((current) => ({ ...current, [key]: value }));

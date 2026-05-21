@@ -31,9 +31,6 @@ export function SkillsSettings({
         authMethod={authMethod}
         codexHome={codexHome}
         connectedRemoteConnections={connectedRemoteConnections}
-        initialTab="skills"
-        isPluginsRouteEnabled={false}
-        onConsumeInitialState={() => undefined}
         onOpenChatWithPrompt={onOpenChatWithPrompt}
         onSelectHost={onSelectHost}
         onShowToast={onShowToast}

@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useI18n } from "../../i18n/i18n";
-import { readHotkeyWindowHotkeyState, type HotkeyWindowHotkeyStateResponse } from "../../services/settings";
 import { HOTKEY_HOME_ROUTE_PATH, HOTKEY_NEW_THREAD_ROUTE_PATH, buildWorktreeInitV2RoutePath, openInHotkeyWindow } from "../../services/windowNavigation";
 import { HotkeyWindowDetailLayout } from "./HotkeyWindowDetailLayout";
 import { WorktreeInitV2Page } from "../worktreeInit/WorktreeInitV2Page";
+import { useHotkeyWindowHotkeyState } from "./hotkeyWindowHotkeyState";
 
 export function HotkeyWindowWorktreeInitPage({
   pendingWorktreeId,
@@ -19,31 +19,10 @@ export function HotkeyWindowWorktreeInitPage({
   onNavigateToPath: (path: string) => void;
 }) {
   const { t } = useI18n();
-  const [hotkeyState, setHotkeyState] =
-    useState<HotkeyWindowHotkeyStateResponse | undefined>(undefined);
+  const hotkeyState = useHotkeyWindowHotkeyState();
 
   useEffect(() => {
-    if (pendingWorktreeId !== null) {
-      return;
-    }
-
-    let cancelled = false;
-
-    void readHotkeyWindowHotkeyState()
-      .then((state) => {
-        if (!cancelled) {
-          setHotkeyState(state);
-        }
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [pendingWorktreeId]);
-
-  useEffect(() => {
-    if (pendingWorktreeId !== null || hotkeyState === undefined) {
+    if (pendingWorktreeId !== null || hotkeyState === null) {
       return;
     }
 

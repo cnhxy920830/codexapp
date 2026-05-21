@@ -36,9 +36,19 @@ const TRAY_SCROLL_EPSILON = 2;
 const ROW_ENTER_STAGGER_SECONDS = 0.035;
 const COLLAPSED_BODY_MAX_HEIGHT_PX = 32;
 const EXPANDED_BODY_MAX_HEIGHT_PX = 512;
+const BADGE_MOTION_CLASSNAME =
+  "avatar-overlay-badge-enter transition-transform duration-150 ease-out motion-reduce:animate-none motion-reduce:transition-none hover:scale-[1.06] active:scale-[0.94]";
+const EDGE_CONTROL_MOTION_CLASSNAME =
+  "avatar-overlay-edge-control-enter transition-transform duration-150 ease-out motion-reduce:animate-none motion-reduce:transition-none hover:scale-[1.03] active:scale-[0.96]";
+const ROW_ENTER_CLASSNAME = "avatar-overlay-row-enter motion-reduce:animate-none";
+const BODY_EXPAND_TRANSITION_CLASSNAME =
+  "transition-[max-height] duration-[180ms] ease-out motion-reduce:transition-none";
+const REPLY_FORM_ENTER_CLASSNAME = "avatar-overlay-reply-enter motion-reduce:animate-none";
+const TRAY_OPEN_CLOSE_TRANSITION_CLASSNAME =
+  "transition-[opacity,transform] duration-[180ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none";
 
 const TRAY_EDGE_CONTROL_CLASSNAME =
-  "group no-drag absolute left-1/2 z-10 flex h-5 -translate-x-1/2 cursor-interaction items-center justify-center gap-0.5 rounded-full border border-token-border bg-token-main-surface-primary px-2 text-[10px] leading-none font-medium text-token-text-secondary shadow-[0px_5px_10px_-7px_rgba(0,0,0,0.22)] backdrop-blur hover:text-token-foreground hover:shadow-[0px_7px_14px_-9px_rgba(0,0,0,0.26)] focus-visible:ring-1 focus-visible:ring-token-focus-border focus-visible:outline-none forced-colors:bg-[Canvas]";
+  `group no-drag absolute left-1/2 z-10 flex h-5 -translate-x-1/2 cursor-interaction items-center justify-center gap-0.5 rounded-full border border-token-border bg-token-main-surface-primary px-2 text-[10px] leading-none font-medium text-token-text-secondary shadow-[0px_5px_10px_-7px_rgba(0,0,0,0.22)] backdrop-blur hover:text-token-foreground hover:shadow-[0px_7px_14px_-9px_rgba(0,0,0,0.26)] focus-visible:ring-1 focus-visible:ring-token-focus-border focus-visible:outline-none forced-colors:bg-[Canvas] ${EDGE_CONTROL_MOTION_CLASSNAME}`;
 const OVERLAY_BUTTON_SURFACE_CLASSNAME =
   "!bg-token-main-surface-primary enabled:hover:!bg-[color-mix(in_srgb,var(--color-token-main-surface-primary)_94%,var(--color-token-foreground))]";
 
@@ -180,7 +190,7 @@ export function AvatarOverlayView({
             }}
           >
             <div
-              className="relative overflow-hidden [corner-shape:superellipse(1.5)]"
+              className={`relative overflow-hidden [corner-shape:superellipse(1.5)] ${TRAY_OPEN_CLOSE_TRANSITION_CLASSNAME}`}
               data-avatar-overlay-size="notification-tray"
               style={{
                 maxHeight: trayMaxHeight,
@@ -300,6 +310,7 @@ function MascotButton({
           aria-label={badge.ariaLabel}
           className={[
             "no-drag absolute top-0 right-0 z-20 flex cursor-interaction items-center justify-center rounded-full border border-token-border/60 text-xs leading-none font-medium shadow-sm focus-visible:ring-2 focus-visible:ring-token-focus-border focus-visible:outline-none",
+            BADGE_MOTION_CLASSNAME,
             badge.isIconOnly ? "size-7 p-0" : "min-h-7 min-w-7 px-2 py-1",
           ].join(" ")}
           data-testid="avatar-overlay-notification-badge"
@@ -631,11 +642,11 @@ function NotificationTrayRow({
   return (
     <div
       role="listitem"
-      className="group no-drag relative w-full snap-start scroll-mt-2 text-left"
+      className={`group no-drag relative w-full snap-start scroll-mt-2 text-left ${ROW_ENTER_CLASSNAME}`}
       data-avatar-overlay-measure="notification-tray-row"
       style={{
+        animationDelay: `${Math.min(notificationIndex, 3) * ROW_ENTER_STAGGER_SECONDS}s`,
         opacity: 1,
-        transitionDelay: `${Math.min(notificationIndex, 3) * ROW_ENTER_STAGGER_SECONDS}s`,
       }}
       onBlurCapture={(event) => {
         const nextTarget = event.relatedTarget;
@@ -693,6 +704,7 @@ function NotificationTrayRow({
           <div
             className={[
               "text-size-chat-sm mt-0.5 overflow-hidden leading-4 text-token-foreground",
+              BODY_EXPAND_TRANSITION_CLASSNAME,
               showExpandedBody ? "whitespace-pre-wrap" : "line-clamp-2",
             ].join(" ")}
             style={{
@@ -809,7 +821,7 @@ function NotificationTrayRow({
 
         {isReplyEditorOpen ? (
           <form
-            className="no-drag mx-3 mb-2 border-t border-token-border/60 pt-2"
+            className={`no-drag mx-3 mb-2 border-t border-token-border/60 pt-2 ${REPLY_FORM_ENTER_CLASSNAME}`}
             onClick={(event) => {
               event.stopPropagation();
             }}

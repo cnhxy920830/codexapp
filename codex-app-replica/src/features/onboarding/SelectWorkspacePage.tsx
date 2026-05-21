@@ -3,7 +3,19 @@ import { getCodexHomePath } from "../../services/codexHome";
 import { readGitOrigins } from "../../services/gitOrigins";
 import type { ThreadHistoryEntry } from "../../services/history";
 import { readPendingWorktreesSnapshot, onPendingWorktreesUpdated } from "../../services/pendingWorktrees";
-import { getGlobalState, setGlobalState } from "../../services/settings";
+import { getGlobalState, onGlobalStateUpdated, setGlobalState } from "../../services/settings";
+import {
+  LOCAL_SETTINGS_HOST_ID,
+  onRemoteAppServerConnectionStateChanged,
+  onSharedObjectUpdated,
+  readConnectedSettingsRemoteConnections,
+  readSettingsRemoteConnectionsSnapshot,
+  readSettingsRemoteProjectsSnapshot,
+  REMOTE_PROJECTS_SHARED_OBJECT_KEY,
+  REMOTE_CONNECTIONS_SHARED_OBJECT_KEY,
+  type RemoteConnection,
+  type RemoteProject,
+} from "../../services/settingsHosts";
 import {
   onOnboardingSkipWorkspaceResult,
   onWorkspaceRootOptionPicked,
@@ -28,18 +40,28 @@ import {
   readWorkspaceOnboardingExperimentArm,
   readWorkspaceOnboardingSkipProjectName,
   shouldUsePlaygroundCopy,
+  stripWorkspaceRootExtendedPrefix,
 } from "./selectWorkspaceModel";
 import { SelectWorkspacePageView } from "./SelectWorkspacePageView";
 import { useReplicaStatsigGateValue } from "../statsig/replicaStatsig";
+import { RemoteProjectSetupDialog } from "../localEnvironments/RemoteProjectSetupDialog";
 
 type SelectWorkspacePageProps = {
-  onContinueToHome: (state: { focusComposerNonce: number }) => void;
+  currentWindowHostId: string;
+  onContinueToHome: (state: { focusComposerNonce: number; hostId: string }) => void;
   recentThreads: ThreadHistoryEntry[];
 };
 
-export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectWorkspacePageProps) {
+export function SelectWorkspacePage({
+  currentWindowHostId,
+  onContinueToHome,
+  recentThreads,
+}: SelectWorkspacePageProps) {
   const { t } = useI18n();
   const backgroundSubagentsEnabled = useReplicaStatsigGateValue("1221508807");
+  const [activeRemoteProjectId, setActiveRemoteProjectId] = useState<string | null>(null);
+  const [remoteProjects, setRemoteProjects] = useState<RemoteProject[]>([]);
+  const [connectedRemoteConnections, setConnectedRemoteConnections] = useState<RemoteConnection[]>([]);
   const [workspaceRoots, setWorkspaceRoots] = useState<string[]>([]);
   const [workspaceRootLabels, setWorkspaceRootLabels] = useState<Record<string, string>>({});
   const [pendingWorktrees, setPendingWorktrees] = useState<Awaited<ReturnType<typeof readPendingWorktreesSnapshot>>>([]);
@@ -49,6 +71,8 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
   const [pickedRoots, setPickedRoots] = useState<string[]>([]);
   const [selectedRoots, setSelectedRoots] = useState<Record<string, boolean>>({});
   const [skipErrorMessage, setSkipErrorMessage] = useState<string | null>(null);
+  const [isRemotePathDialogOpen, setIsRemotePathDialogOpen] = useState(false);
+  const [isRemotePathSaving, setIsRemotePathSaving] = useState(false);
   const [isSkipPending, setIsSkipPending] = useState(false);
   const [isLoadingWorkspaceRoots, setIsLoadingWorkspaceRoots] = useState(true);
   const [isLoadingPendingWorktrees, setIsLoadingPendingWorktrees] = useState(true);
@@ -68,9 +92,21 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     workspaceOnboardingExperimentAssignment,
   );
   const usePlaygroundCopy = shouldUsePlaygroundCopy(workspaceOnboardingExperimentArm);
+  const currentRemoteProject = useMemo(() => {
+    if (activeRemoteProjectId === null) {
+      return null;
+    }
+
+    return remoteProjects.find((project) => project.id === activeRemoteProjectId) ?? null;
+  }, [activeRemoteProjectId, remoteProjects]);
+  const currentHostId = normalizeOptionalString(currentWindowHostId) ?? LOCAL_SETTINGS_HOST_ID;
+  const isRemoteHost = currentHostId !== LOCAL_SETTINGS_HOST_ID;
   const visibleRecentThreads = useMemo(() => {
-    return filterWorkspaceRecentThreads(recentThreads, backgroundSubagentsEnabled);
-  }, [backgroundSubagentsEnabled, recentThreads]);
+    return filterWorkspaceRecentThreads(
+      recentThreads.filter((thread) => (thread.hostId ?? LOCAL_SETTINGS_HOST_ID) === currentHostId),
+      backgroundSubagentsEnabled,
+    );
+  }, [backgroundSubagentsEnabled, currentHostId, recentThreads]);
 
   const inferredRoots = useMemo(() => {
     return deriveCandidateWorkspaceRoots({
@@ -121,8 +157,120 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     autoLaunchApplied: workspaceOnboardingAutoLaunchApplied,
     hasPersistedRoots: workspaceRoots.length > 0,
     isLoadingRoots: isLoadingWorkspaceRoots,
-    isRemoteHost: false,
+    isRemoteHost,
   });
+
+  useEffect(() => {
+    let disposed = false;
+    let cleanupGlobalStateUpdated: (() => void) | undefined;
+    let cleanupSharedObjectUpdated: (() => void) | undefined;
+    let cleanupConnectionStates: (() => void) | undefined;
+
+    const loadRemoteConnections = async () => {
+      try {
+        const remoteConnections = await readSettingsRemoteConnectionsSnapshot();
+        const nextConnectedRemoteConnections = await readConnectedSettingsRemoteConnections(remoteConnections);
+        if (!disposed) {
+          setConnectedRemoteConnections(nextConnectedRemoteConnections);
+        }
+      } catch {
+        if (!disposed) {
+          setConnectedRemoteConnections([]);
+        }
+      }
+    };
+
+    const loadRemoteProjectState = async () => {
+      try {
+        const [activeRemoteProjectResponse, remoteProjectsResponse] = await Promise.all([
+          getGlobalState("active-remote-project-id"),
+          readSettingsRemoteProjectsSnapshot(),
+        ]);
+        if (disposed) {
+          return;
+        }
+
+        setActiveRemoteProjectId(normalizeOptionalGlobalStateString(activeRemoteProjectResponse.value));
+        setRemoteProjects(remoteProjectsResponse);
+      } catch {
+        if (!disposed) {
+          setActiveRemoteProjectId(null);
+          setRemoteProjects([]);
+        }
+      }
+    };
+
+    void loadRemoteProjectState();
+    void loadRemoteConnections();
+
+    void onGlobalStateUpdated((notification) => {
+      if (!notification.keys.includes("active-remote-project-id")) {
+        return;
+      }
+
+      void getGlobalState("active-remote-project-id")
+        .then((response) => {
+          if (!disposed) {
+            setActiveRemoteProjectId(normalizeOptionalGlobalStateString(response.value));
+          }
+        })
+        .catch(() => {
+          if (!disposed) {
+            setActiveRemoteProjectId(null);
+          }
+        });
+    }).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+        return;
+      }
+      cleanupGlobalStateUpdated = cleanup;
+    });
+
+    void onSharedObjectUpdated((notification) => {
+      if (notification.key === REMOTE_CONNECTIONS_SHARED_OBJECT_KEY) {
+        void loadRemoteConnections();
+      }
+      if (notification.key !== REMOTE_PROJECTS_SHARED_OBJECT_KEY) {
+        return;
+      }
+
+      void readSettingsRemoteProjectsSnapshot()
+        .then((projects) => {
+          if (!disposed) {
+            setRemoteProjects(projects);
+          }
+        })
+        .catch(() => {
+          if (!disposed) {
+            setRemoteProjects([]);
+          }
+        });
+    }).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+        return;
+      }
+      cleanupSharedObjectUpdated = cleanup;
+    });
+
+    void onRemoteAppServerConnectionStateChanged(() => {
+      void loadRemoteConnections();
+    }).then((cleanup) => {
+      if (disposed) {
+        cleanup();
+        return;
+      }
+      cleanupConnectionStates = cleanup;
+    });
+
+    return () => {
+      disposed = true;
+      cleanupGlobalStateUpdated?.();
+      cleanupSharedObjectUpdated?.();
+      cleanupConnectionStates?.();
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,7 +278,26 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     const loadWorkspaceState = async () => {
       setIsLoadingWorkspaceRoots(true);
       try {
-        const response = await readWorkspaceRootOptions();
+        if (isRemoteHost) {
+          if (cancelled) {
+            return;
+          }
+          setWorkspaceRoots(
+            remoteProjects
+              .filter((project) => project.hostId === currentHostId)
+              .map((project) => project.remotePath),
+          );
+          setWorkspaceRootLabels(
+            Object.fromEntries(
+              remoteProjects
+                .filter((project) => project.hostId === currentHostId)
+                .map((project) => [project.remotePath, project.label] as const),
+            ),
+          );
+          return;
+        }
+
+        const response = await readWorkspaceRootOptions(currentHostId);
         if (cancelled) {
           return;
         }
@@ -153,7 +320,7 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [currentHostId, isRemoteHost, remoteProjects]);
 
   useEffect(() => {
     let disposed = false;
@@ -164,7 +331,26 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     const reloadWorkspaceState = async () => {
       setIsLoadingWorkspaceRoots(true);
       try {
-        const response = await readWorkspaceRootOptions();
+        if (isRemoteHost) {
+          if (disposed) {
+            return;
+          }
+          setWorkspaceRoots(
+            remoteProjects
+              .filter((project) => project.hostId === currentHostId)
+              .map((project) => project.remotePath),
+          );
+          setWorkspaceRootLabels(
+            Object.fromEntries(
+              remoteProjects
+                .filter((project) => project.hostId === currentHostId)
+                .map((project) => [project.remotePath, project.label] as const),
+            ),
+          );
+          return;
+        }
+
+        const response = await readWorkspaceRootOptions(currentHostId);
         if (disposed) {
           return;
         }
@@ -237,7 +423,7 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
       cleanupPicked?.();
       cleanupSkipResult?.();
     };
-  }, [t]);
+  }, [currentHostId, isRemoteHost, remoteProjects, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -245,7 +431,7 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     void readPendingWorktreesSnapshot()
       .then((entries) => {
         if (!cancelled) {
-          setPendingWorktrees(entries.filter((entry) => entry.hostId === "local"));
+          setPendingWorktrees(entries.filter((entry) => entry.hostId === currentHostId));
         }
       })
       .catch(() => {
@@ -262,14 +448,14 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [currentHostId]);
 
   useEffect(() => {
     let disposed = false;
     let cleanup: (() => void) | undefined;
 
     void onPendingWorktreesUpdated((entries) => {
-      setPendingWorktrees(entries.filter((entry) => entry.hostId === "local"));
+      setPendingWorktrees(entries.filter((entry) => entry.hostId === currentHostId));
     }).then((release) => {
       if (disposed) {
         release();
@@ -282,7 +468,7 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
       disposed = true;
       cleanup?.();
     };
-  }, []);
+  }, [currentHostId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -328,7 +514,7 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     }
 
     setIsLoadingGitOrigins(true);
-    void readGitOrigins({ dirs })
+    void readGitOrigins({ dirs, hostId: currentHostId })
       .then((response) => {
         if (!cancelled) {
           setGitOrigins(response.origins);
@@ -348,7 +534,7 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     return () => {
       cancelled = true;
     };
-  }, [pendingWorktrees, visibleRecentThreads]);
+  }, [currentHostId, pendingWorktrees, visibleRecentThreads]);
 
   useEffect(() => {
     let cancelled = false;
@@ -360,7 +546,13 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     }
 
     setIsLoadingExistingPaths(true);
-    void readExistingPaths(candidateRoots)
+    if (isRemoteHost) {
+      setExistingPaths(candidateRoots);
+      setIsLoadingExistingPaths(false);
+      return;
+    }
+
+    void readExistingPaths(candidateRoots, currentHostId)
       .then((response) => {
         if (!cancelled) {
           setExistingPaths(response.existingPaths);
@@ -380,7 +572,7 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     return () => {
       cancelled = true;
     };
-  }, [candidateRoots]);
+  }, [candidateRoots, currentHostId, isRemoteHost]);
 
   useEffect(() => {
     let cancelled = false;
@@ -449,54 +641,90 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
   }, [hasPersistedOrDerivedRoots, isLoading, selectedRootList]);
 
   return (
-    <SelectWorkspacePageView
-      hasAvailableRoots={hasAvailableRoots}
-      isEmptyState={isEmptyState}
-      isLoadingRoots={isLoading}
-      isSelectAllChecked={isSelectAllChecked}
-      isSkipPending={isSkipPending}
-      hasSelectedRoots={selectedRootList.length > 0}
-      selectedRoots={selectedRootList}
-      showPlaygroundCopy={usePlaygroundCopy}
-      skipErrorMessage={skipErrorMessage}
-      existingPaths={existingPaths}
-      isLoadingExistingPaths={isLoadingExistingPaths}
-      workspaceRootOptions={workspaceRootOptions}
-      onContinue={() => {
-        void handleContinue();
-      }}
-      onOpenFolder={() => {
-        void handleOpenFolder();
-      }}
-      onSkip={() => {
-        void handleSkipWorkspace();
-      }}
-      onStartFromScratch={() => {
-        void handleSkipWorkspace();
-      }}
-      onToggleSelectAll={(checked) => {
-        setSkipErrorMessage(null);
-        setSelectedRoots((current) => {
-          const next = { ...current };
-          for (const option of workspaceRootOptions) {
-            next[option.root] = checked;
-          }
-          return next;
-        });
-      }}
-      onToggleWorkspace={(root, checked) => {
-        setSkipErrorMessage(null);
-        setPickedRoots((current) => dedupeWorkspaceRoots([...current, root]));
-        setSelectedRoots((current) => ({
-          ...current,
-          [root]: checked,
-        }));
-      }}
-    />
+    <>
+      <SelectWorkspacePageView
+        hasAvailableRoots={hasAvailableRoots}
+        isEmptyState={isEmptyState}
+        isLoadingRoots={isLoading}
+        isRemoteHost={isRemoteHost}
+        isSelectAllChecked={isSelectAllChecked}
+        isSkipPending={isSkipPending}
+        hasSelectedRoots={selectedRootList.length > 0}
+        selectedRoots={selectedRootList}
+        showPlaygroundCopy={usePlaygroundCopy}
+        skipErrorMessage={skipErrorMessage}
+        existingPaths={existingPaths}
+        isLoadingExistingPaths={isLoadingExistingPaths}
+        workspaceRootOptions={workspaceRootOptions}
+        onContinue={() => {
+          void handleContinue();
+        }}
+        onOpenFolder={() => {
+          void handleOpenFolder();
+        }}
+        onSkip={() => {
+          void handleSkipWorkspace();
+        }}
+        onStartFromScratch={() => {
+          void handleSkipWorkspace();
+        }}
+        onToggleSelectAll={(checked) => {
+          setSkipErrorMessage(null);
+          setSelectedRoots((current) => {
+            const next = { ...current };
+            for (const option of workspaceRootOptions) {
+              next[option.root] = checked;
+            }
+            return next;
+          });
+        }}
+        onToggleWorkspace={(root, checked) => {
+          setSkipErrorMessage(null);
+          setPickedRoots((current) => dedupeWorkspaceRoots([...current, root]));
+          setSelectedRoots((current) => ({
+            ...current,
+            [root]: checked,
+          }));
+        }}
+      />
+      {isRemotePathDialogOpen ? (
+        <RemoteProjectSetupDialog
+          connectedRemoteConnections={connectedRemoteConnections}
+          initialDirectoryPath={null}
+          initialHostId={currentHostId}
+          isSaving={isRemotePathSaving}
+          mode="pick"
+          remoteProjects={remoteProjects}
+          onClose={() => {
+            if (!isRemotePathSaving) {
+              setIsRemotePathDialogOpen(false);
+            }
+          }}
+          onSave={async (params) => {
+            setIsRemotePathSaving(true);
+            try {
+              setSkipErrorMessage(null);
+              setPickedRoots((current) => dedupeWorkspaceRoots([...current, params.remotePath]));
+              setSelectedRoots((current) => ({
+                ...current,
+                [params.remotePath]: true,
+              }));
+              setIsRemotePathDialogOpen(false);
+            } finally {
+              setIsRemotePathSaving(false);
+            }
+          }}
+        />
+      ) : null}
+    </>
   );
 
   async function handleOpenFolder() {
     setSkipErrorMessage(null);
+    if (isRemoteHost) {
+      setIsRemotePathDialogOpen(true);
+      return;
+    }
     await pickWorkspaceRootOption();
   }
 
@@ -531,16 +759,23 @@ export function SelectWorkspacePage({ onContinueToHome, recentThreads }: SelectW
     const completedAt = Math.floor(Date.now() / 1000);
 
     await setGlobalState("last_completed_onboarding", completedAt);
-    await updateWorkspaceRootOptions(nextWorkspaceRoots);
+    if (!isRemoteHost) {
+      await updateWorkspaceRootOptions(nextWorkspaceRoots);
+    }
     await setGlobalState("electron:onboarding-override", "auto");
     await setGlobalState("active-remote-project-id", null);
-    await setActiveWorkspaceRoot(selectedRootList[0]);
+    if (!isRemoteHost) {
+      await setActiveWorkspaceRoot(selectedRootList[0]);
+    }
 
     continueNonceRef.current += 1;
     if (typeof window !== "undefined") {
       window.history.replaceState(window.history.state, "", "/");
     }
-    onContinueToHome({ focusComposerNonce: continueNonceRef.current });
+    onContinueToHome({
+      focusComposerNonce: continueNonceRef.current,
+      hostId: currentHostId,
+    });
   }
 }
 
@@ -554,7 +789,10 @@ function dedupeWorkspaceRoots(roots: string[]) {
       continue;
     }
 
-    const comparisonKey = normalizedRoot.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+    const comparisonKey = stripWorkspaceRootExtendedPrefix(normalizedRoot)
+      .replace(/\\/g, "/")
+      .replace(/\/+$/, "")
+      .toLowerCase();
     if (seen.has(comparisonKey)) {
       continue;
     }
@@ -577,4 +815,8 @@ function getErrorMessage(error: unknown, fallbackMessage: string) {
 
 function normalizeOptionalString(value: string | null | undefined) {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function normalizeOptionalGlobalStateString(value: unknown) {
+  return typeof value === "string" ? normalizeOptionalString(value) : null;
 }

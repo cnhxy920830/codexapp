@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "../../../i18n/i18n";
 import { refreshAmbientSuggestions } from "../../../services/debug";
 import { importExternalAgentItems } from "../../../services/externalAgentImport";
+import { emitQueryCacheInvalidated } from "../../../services/queryCache";
 import {
   readComposerPermissionModeVisibility,
   setGlobalState,
@@ -573,10 +574,20 @@ export function WelcomeFlow({
         updates.push(
           setGlobalState(AMBIENT_SUGGESTIONS_CONNECTED_APPS_CONSENT_KEY, true),
         );
-        void refreshAmbientSuggestions({
-          hostId: null,
-          projectRoot: "~",
-        }).catch(() => undefined);
+        void (async () => {
+          try {
+            await refreshAmbientSuggestions({
+              hostId: null,
+              projectRoot: "~",
+            });
+            await Promise.all([
+              emitQueryCacheInvalidated(["ambient-suggestions"]),
+              emitQueryCacheInvalidated(["ambient-suggestions-refresh"]),
+            ]);
+          } catch {
+            return undefined;
+          }
+        })();
       }
 
       if (clearActiveWorkspaceRootOnComplete) {

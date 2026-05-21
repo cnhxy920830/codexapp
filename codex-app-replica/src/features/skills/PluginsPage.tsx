@@ -1,8 +1,10 @@
 import { emit } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-shell";
-import { useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useMemo, useState, type ReactNode } from "react";
 import {
+  BrowserTabIcon,
   ChevronDownIcon,
+  SettingsCogIcon,
   DownloadIcon,
   ForwardNavigationIcon,
   MoreActionsIcon,
@@ -11,6 +13,7 @@ import {
 } from "../../components/AppShellIcons";
 import type { AppToast } from "../../components/AppToastRegion";
 import { Button } from "../../components/Button";
+import { LargeEmptyState } from "../../components/LargeEmptyState";
 import { PluginsAppToolsDialog } from "../../components/PluginsAppToolsDialog";
 import {
   AddMarketplaceDialog,
@@ -21,6 +24,7 @@ import {
   type AddMarketplaceDraft,
 } from "../../components/PluginsMarketplaceDialogs";
 import { SettingsHostDropdown } from "../../components/SettingsHostDropdown";
+import { Tooltip } from "../../components/Tooltip";
 import { ToolbarMenu } from "../../components/ToolbarMenu";
 import { ToggleSwitch } from "../../components/ToggleSwitch";
 import { useI18n } from "../../i18n/i18n";
@@ -114,6 +118,11 @@ type AppToolsState = {
   errorMessage: string | null;
   isLoading: boolean;
   tools: AppTool[];
+};
+
+type ManageSearchCopy = {
+  labelKey: MessageKey;
+  placeholderKey: MessageKey;
 };
 
 const EMPTY_ADD_MARKETPLACE_DRAFT: AddMarketplaceDraft = {
@@ -437,9 +446,14 @@ export function PluginsPage({
       .sort(compareManagedMarketplaces);
   }, [managedMarketplaces, searchQuery]);
 
+  const installedApps = useMemo(
+    () => (pageState?.apps ?? []).filter((app) => app.isAccessible),
+    [pageState?.apps],
+  );
+
   const managedApps = useMemo(() => {
     const query = normalizeText(searchQuery);
-    return (pageState?.apps ?? [])
+    return installedApps
       .filter((app) => {
         if (query.length === 0) {
           return true;
@@ -447,7 +461,7 @@ export function PluginsPage({
         return buildAppSearchText(app).includes(query);
       })
       .sort((left, right) => left.name.localeCompare(right.name));
-  }, [pageState?.apps, searchQuery]);
+  }, [installedApps, searchQuery]);
 
   const managedMcpServers = useMemo(() => {
     const query = normalizeText(searchQuery);
@@ -472,7 +486,7 @@ export function PluginsPage({
 
   const marketplaceLoadErrors = pageState?.pluginsSnapshot.marketplaceLoadErrors ?? [];
   const totalPlugins = countInstalledPlugins(pageState?.pluginsSnapshot ?? null);
-  const totalApps = pageState?.apps.length ?? 0;
+  const totalApps = installedApps.length;
   const totalMcps = buildManagedMcpServers(pageState?.config ?? null).length;
   const totalSkills = buildManagedSkills(pageState?.skills ?? [], "", t).length;
   const totalMarketplaces = managedMarketplaces.length;
@@ -485,6 +499,7 @@ export function PluginsPage({
   const canCreatePlugin = pluginCreatorPath != null && onOpenChatWithPrompt != null;
   const canCreateSkill = skillCreatorPath != null && onOpenChatWithPrompt != null;
   const isRefreshDisabled = isLoading || isRetrying;
+  const manageSearchCopy = getManageSearchCopy(currentTab);
 
   useEffect(() => {
     setSelectedAppId(null);
@@ -826,6 +841,23 @@ export function PluginsPage({
     });
   };
 
+  const handleExitManageMode = async () => {
+    const browseTab = currentTab === "skills" ? "skills" : "plugins";
+
+    try {
+      await emit(NAVIGATE_TO_ROUTE_EVENT, {
+        path: "/skills",
+        state: {
+          initialHostId: selectedHostId,
+          initialMode: "browse",
+          initialTab: browseTab,
+        },
+      });
+    } catch (error) {
+      showToast("error", toErrorMessage(error));
+    }
+  };
+
   const handleOpenMcpSettings = async () => {
     try {
       await emit(NAVIGATE_TO_ROUTE_EVENT, { path: "/settings/mcp-settings" });
@@ -882,15 +914,11 @@ export function PluginsPage({
 
   if (!isPluginsRouteEnabled) {
     return (
-      <div className="flex min-h-0 flex-1 items-center justify-center py-8">
-        <div className="w-full max-w-md text-center">
-          <div className="app-title text-[18px] font-medium">
-            {t("skills.appsPage.pluginsUnsupportedHost.title")}
-          </div>
-          <div className="app-text-muted mt-3 text-[14px] leading-6">
-            {t("skills.appsPage.pluginsUnsupportedHost.description")}
-          </div>
-        </div>
+      <div className="flex min-h-0 flex-1 items-center justify-center">
+        <LargeEmptyState
+          description={t("skills.appsPage.pluginsUnsupportedHost.description")}
+          title={t("skills.appsPage.pluginsUnsupportedHost.title")}
+        />
       </div>
     );
   }
@@ -902,23 +930,38 @@ export function PluginsPage({
         <div className="border-b border-[var(--app-shell-border)] pb-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-1 text-[13px] text-[var(--app-shell-subtle)]">
-              <span className="truncate">{t("skills.appsPage.breadcrumb.root")}</span>
+              <Button
+                color="ghost"
+                onClick={() => void handleExitManageMode()}
+                size="toolbar"
+              >
+                <span className="truncate">{t("skills.appsPage.breadcrumb.root")}</span>
+              </Button>
               <ForwardNavigationIcon className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate text-[var(--app-shell-text)]">
-                {t("skills.appsPage.breadcrumb.manage")}
-              </span>
+              <Button
+                color="ghost"
+                className="pointer-events-none min-w-0 bg-transparent text-[var(--app-shell-text)] hover:bg-transparent"
+                size="toolbar"
+              >
+                <span className="truncate text-[var(--app-shell-text)]">
+                  {t("skills.appsPage.breadcrumb.manage")}
+                </span>
+              </Button>
             </div>
 
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               {connectedRemoteConnections.length > 0 && remoteConnectionHostIds.length > 0 ? (
                 <SettingsHostDropdown
                   connectedRemoteConnections={connectedRemoteConnections}
+                  localLabelKey="skills.appsPage.hostDropdown.local"
                   onSelectHost={onSelectHost}
                   remoteConnectionHostIds={remoteConnectionHostIds}
                   selectedHostId={selectedHostId}
                   t={t}
-                  triggerClassName="hidden h-8 w-auto max-w-56 px-2 text-[13px] md:inline-flex"
+                  titleKey="skills.appsPage.hostDropdown.title"
+                  triggerClassName="hidden max-w-56 justify-start gap-1.5 md:inline-flex"
                   triggerColor="secondary"
+                  triggerSize="toolbar"
                 />
               ) : null}
 
@@ -995,22 +1038,11 @@ export function PluginsPage({
           </div>
         </div>
 
-        <div className="sticky top-0 z-10 bg-gradient-to-b from-[var(--app-shell-main-surface)] to-transparent pt-4 pb-4">
-          <div className="flex flex-col gap-3">
-            <label className="app-control flex min-w-0 items-center gap-2 rounded-[12px] px-3 py-2.5">
-              <SearchIcon className="h-4 w-4 shrink-0 text-[var(--app-shell-subtle)]" />
-              <span className="sr-only">{t("skills.appsPage.search.plugins.label")}</span>
-              <input
-                id="plugins-page-manage-search"
-                aria-label={t("skills.appsPage.search.plugins.label")}
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder={t("skills.appsPage.search.plugins")}
-                className="app-text-input min-w-0 flex-1 bg-transparent text-[13px] outline-none"
-              />
-            </label>
-
-            <div className="flex flex-wrap items-center gap-2">
+        <div className="relative h-full min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+          <div className="flex min-h-full w-full flex-col pb-panel">
+            <div className="sticky top-0 z-10 bg-gradient-to-b from-[var(--app-shell-main-surface)] to-transparent pt-4 pb-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="flex flex-wrap items-center gap-2">
               <ManageTabButton
                 count={totalPlugins}
                 isActive={currentTab === "plugins"}
@@ -1041,11 +1073,24 @@ export function PluginsPage({
                 label={t("skills.appsPage.manageTab.marketplace")}
                 onClick={() => setCurrentTab("marketplace")}
               />
-            </div>
-          </div>
-        </div>
+                </div>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-4 pb-1">
+                <label className="app-control hidden min-w-0 items-center gap-2 rounded-[12px] px-3 py-2.5 md:flex md:w-56">
+                  <SearchIcon className="h-4 w-4 shrink-0 text-[var(--app-shell-subtle)]" />
+                  <span className="sr-only">{t(manageSearchCopy.labelKey)}</span>
+                  <input
+                    id="plugins-page-manage-search"
+                    aria-label={t(manageSearchCopy.labelKey)}
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder={t(manageSearchCopy.placeholderKey)}
+                    className="app-text-input min-w-0 flex-1 bg-transparent text-[13px] outline-none"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="flex min-h-0 flex-1 flex-col gap-4 pb-1">
 
           {currentTab === "plugins" ? (
             <section className="app-card rounded-[18px] px-5 py-4">
@@ -1160,33 +1205,68 @@ export function PluginsPage({
                   ) : null}
 
                   {managedApps.map((app) => {
+                    const toggleTooltip = app.isEnabled
+                      ? t("skills.appsPage.apps.disableToggle")
+                      : t("skills.appsPage.apps.enableToggleTooltip");
                     const pluginNames = app.pluginDisplayNames.join(" · ");
+                    const description = app.description ?? t("skills.appsPage.apps.noDescription");
 
                     return (
-                      <button
-                        type="button"
+                      <div
                         key={app.id}
-                        onClick={() => setSelectedAppId(app.id)}
-                        className="w-full rounded-[14px] border border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)] px-4 py-3 text-left"
+                        className="rounded-[14px] border border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)] px-4 py-3"
                       >
                         <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="text-[14px] leading-6">{app.name}</div>
-                            {app.description ? (
-                              <div className="app-text-muted mt-1 text-[12px] leading-5">
-                                {app.description}
+                          <button
+                            type="button"
+                            onClick={() => setSelectedAppId(app.id)}
+                            className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                          >
+                            <AppLogo app={app} />
+                            <div className="min-w-0">
+                              <div className="truncate text-[14px] leading-6">{app.name}</div>
+                              <div className="app-text-muted mt-1 line-clamp-2 text-[12px] leading-5">
+                                {description}
                               </div>
-                            ) : null}
-                            {pluginNames.length > 0 ? (
-                              <div className="app-text-muted mt-1 text-[11px] leading-5">
-                                {pluginNames}
-                              </div>
-                            ) : null}
-                          </div>
+                            </div>
+                          </button>
 
-                          <ForwardNavigationIcon className="mt-0.5 h-4 w-4 shrink-0 text-[var(--app-shell-subtle)]" />
+                          <div className="flex shrink-0 items-center gap-2">
+                            <Tooltip tooltipContent={t("skills.appsPage.apps.manageOnChatGpt")}>
+                              <Button
+                                aria-label={t("skills.appsPage.apps.moreActions")}
+                                color="ghost"
+                                size="icon"
+                                uniform
+                                onClick={() => {
+                                  void handleOpenAppUrl(buildManageOnChatGptUrl(app));
+                                }}
+                              >
+                                <MoreActionsIcon className="h-4 w-4" />
+                              </Button>
+                            </Tooltip>
+                            <Tooltip tooltipContent={toggleTooltip}>
+                              <ToggleSwitch
+                                ariaLabel={t("skills.appsPage.apps.toggle")}
+                                checked={app.isEnabled}
+                                disabled={pendingToggleAppId != null}
+                                onChange={(checked) => void handleToggleAppEnabled(app, checked)}
+                              />
+                            </Tooltip>
+                          </div>
                         </div>
-                      </button>
+
+                        {pluginNames.length > 0 ? (
+                          <div className="app-text-muted mt-1 pl-11 text-[11px] leading-5">
+                            {pluginNames}
+                          </div>
+                        ) : null}
+                        <div className="mt-2 pl-11 text-[12px] text-[var(--app-shell-subtle)]">
+                          {app.isEnabled
+                            ? t("skills.appsPage.apps.enabledStatus")
+                            : t("skills.appsPage.apps.disabledStatus")}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
@@ -1231,32 +1311,36 @@ export function PluginsPage({
                         className="rounded-[14px] border border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)] px-4 py-3"
                       >
                         <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="text-[14px] leading-6">{server.name}</div>
-                            <div className="app-text-muted mt-1 truncate text-[11px] leading-5">
-                              {server.key}
+                          <div className="flex min-w-0 items-center gap-3">
+                            <McpIcon className="h-5 w-5 shrink-0 text-[var(--app-shell-subtle)]" />
+                            <div className="min-w-0">
+                              <div className="text-[14px] leading-6">{server.name}</div>
+                              <div className="app-text-muted mt-1 truncate text-[11px] leading-5">
+                                {server.key}
+                              </div>
                             </div>
                           </div>
 
                           <div className="flex shrink-0 items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => void handleOpenMcpSettings()}
-                              className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
-                            >
-                              {t("skills.appsPage.mcps.settings")}
-                            </button>
-                            <div className="text-[12px] text-[var(--app-shell-subtle)]">
-                              {server.enabled ? t("skills.card.enabledStatus") : t("skills.card.disabledStatus")}
-                            </div>
-                            <div title={toggleTooltip}>
+                            <Tooltip tooltipContent={t("skills.appsPage.mcps.settings")}>
+                              <Button
+                                aria-label={t("skills.appsPage.mcps.settings")}
+                                color="ghost"
+                                onClick={() => void handleOpenMcpSettings()}
+                                size="icon"
+                                uniform
+                              >
+                                <SettingsCogIcon className="h-4 w-4" />
+                              </Button>
+                            </Tooltip>
+                            <Tooltip tooltipContent={toggleTooltip}>
                               <ToggleSwitch
                                 ariaLabel={t("skills.appsPage.mcps.toggle")}
                                 checked={server.enabled}
                                 disabled={pendingToggleMcpKey != null}
                                 onChange={(checked) => void handleToggleMcpServerEnabled(server, checked)}
                               />
-                            </div>
+                            </Tooltip>
                           </div>
                         </div>
                       </div>
@@ -1322,14 +1406,14 @@ export function PluginsPage({
                             <div className="text-[12px] text-[var(--app-shell-subtle)]">
                               {skill.enabled ? t("skills.card.enabledStatus") : t("skills.card.disabledStatus")}
                             </div>
-                            <div title={toggleTooltip}>
+                            <Tooltip tooltipContent={toggleTooltip}>
                               <ToggleSwitch
                                 ariaLabel={t("skills.appsPage.skills.toggle")}
                                 checked={skill.enabled}
                                 disabled={pendingToggleSkillPath != null}
                                 onChange={(checked) => void handleToggleSkillEnabled(skill, checked)}
                               />
-                            </div>
+                            </Tooltip>
                           </div>
                         </div>
                       </div>
@@ -1342,19 +1426,7 @@ export function PluginsPage({
 
           {currentTab === "marketplace" ? (
             <section className="app-card rounded-[18px] px-5 py-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="text-[14px] font-medium">{t("skills.appsPage.manageTab.marketplace")}</div>
-                <Button
-                  color="secondary"
-                  disabled={isMarketplaceActionPending}
-                  onClick={() => setIsAddMarketplaceOpen(true)}
-                  size="toolbar"
-                >
-                  {t("skills.appsPage.addMarketplace.title")}
-                </Button>
-              </div>
-
-              <div className="mt-3 flex flex-col gap-3">
+              <div className="flex flex-col gap-3">
                 {marketplaceLoadErrors.length > 0 ? (
                   <MarketplaceLoadErrorsBanner
                     errors={marketplaceLoadErrors}
@@ -1387,43 +1459,54 @@ export function PluginsPage({
                           className="rounded-[14px] border border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)] px-4 py-3"
                         >
                           <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="text-[14px] font-medium leading-6">
-                                {marketplace.displayName}
-                              </div>
-                              <div className="app-text-muted mt-1 flex min-w-0 flex-col gap-0.5 text-[12px] leading-5">
-                                <span>
-                                  {t("skills.appsPage.marketplace.pluginCount", {
-                                    count: marketplace.pluginCount,
-                                  })}
-                                </span>
-                                {marketplace.path ? <span className="truncate">{marketplace.path}</span> : null}
+                            <div className="flex min-w-0 items-start gap-3">
+                              <BrowserTabIcon className="mt-0.5 h-5 w-5 shrink-0 text-[var(--app-shell-subtle)]" />
+                              <div className="min-w-0">
+                                <div className="text-[14px] font-medium leading-6">
+                                  {marketplace.displayName}
+                                </div>
+                                <div className="app-text-muted mt-1 flex min-w-0 flex-col gap-0.5 text-[12px] leading-5">
+                                  <span>
+                                    {t("skills.appsPage.marketplace.pluginCount", {
+                                      count: marketplace.pluginCount,
+                                    })}
+                                  </span>
+                                  {marketplace.path ? <span className="truncate">{marketplace.path}</span> : null}
+                                </div>
                               </div>
                             </div>
 
                             <div className="flex shrink-0 items-center gap-2">
-                              <button
-                                type="button"
-                                disabled={!marketplace.isUpgradable || isMarketplaceActionPending}
-                                aria-label={t("skills.appsPage.marketplace.upgrade.ariaLabel")}
-                                title={t(upgradeDisabledKey ?? "skills.appsPage.marketplace.upgrade")}
-                                onClick={() => void handleUpgradeMarketplace(marketplace)}
-                                className="app-control rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
+                              <Tooltip
+                                disabled={upgradeDisabledKey == null}
+                                tooltipContent={t(upgradeDisabledKey ?? "skills.appsPage.marketplace.upgrade")}
                               >
-                                {isUpgrading
-                                  ? t("skills.appsPage.marketplace.upgrade.button")
-                                  : t("skills.appsPage.marketplace.upgrade.button")}
-                              </button>
-                              <button
-                                type="button"
-                                disabled={!marketplace.isRemovable || isMarketplaceActionPending}
-                                aria-label={t("skills.appsPage.marketplace.remove.ariaLabel")}
-                                title={t(removeDisabledKey ?? "skills.appsPage.marketplace.remove")}
-                                onClick={() => setMarketplaceToRemove(marketplace)}
-                                className="app-control-weak flex size-8 items-center justify-center rounded-full text-[12px] disabled:opacity-50"
+                                <Button
+                                  aria-label={t("skills.appsPage.marketplace.upgrade.ariaLabel")}
+                                  color="secondary"
+                                  disabled={!marketplace.isUpgradable || isMarketplaceActionPending}
+                                  loading={isUpgrading}
+                                  size="toolbar"
+                                  onClick={() => void handleUpgradeMarketplace(marketplace)}
+                                >
+                                  {t("skills.appsPage.marketplace.upgrade.button")}
+                                </Button>
+                              </Tooltip>
+                              <Tooltip
+                                disabled={removeDisabledKey == null}
+                                tooltipContent={t(removeDisabledKey ?? "skills.appsPage.marketplace.remove")}
                               >
-                                <TrashIcon className="size-4" />
-                              </button>
+                                <Button
+                                  aria-label={t("skills.appsPage.marketplace.remove.ariaLabel")}
+                                  color="ghost"
+                                  disabled={!marketplace.isRemovable || isMarketplaceActionPending}
+                                  size="icon"
+                                  uniform
+                                  onClick={() => setMarketplaceToRemove(marketplace)}
+                                >
+                                  <TrashIcon className="size-4" />
+                                </Button>
+                              </Tooltip>
                             </div>
                           </div>
                         </div>
@@ -1434,6 +1517,8 @@ export function PluginsPage({
               </div>
             </section>
           ) : null}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1513,6 +1598,41 @@ function ManageTabButton({
   );
 }
 
+function getManageSearchCopy(currentTab: ManageTab): ManageSearchCopy {
+  if (currentTab === "apps") {
+    return {
+      labelKey: "skills.appsPage.search.apps.label",
+      placeholderKey: "skills.appsPage.search.apps",
+    };
+  }
+
+  if (currentTab === "mcps") {
+    return {
+      labelKey: "skills.appsPage.search.mcps.label",
+      placeholderKey: "skills.appsPage.search.mcps",
+    };
+  }
+
+  if (currentTab === "skills") {
+    return {
+      labelKey: "skills.appsPage.search.skills.label",
+      placeholderKey: "skills.appsPage.search.skills",
+    };
+  }
+
+  if (currentTab === "marketplace") {
+    return {
+      labelKey: "skills.appsPage.search.marketplace.label",
+      placeholderKey: "skills.appsPage.search.marketplace",
+    };
+  }
+
+  return {
+    labelKey: "skills.appsPage.search.plugins.label",
+    placeholderKey: "skills.appsPage.search.plugins",
+  };
+}
+
 function InlineErrorBanner({ message }: { message: string }) {
   return (
     <div className="app-card-muted rounded-[12px] px-3 py-2 text-[12px] leading-5">
@@ -1590,6 +1710,20 @@ function buildAppSearchText(app: AppInfo) {
 
 function buildMcpSearchText(server: ManagedMcpServer) {
   return normalizeText(`${server.key} ${server.name}`);
+}
+
+function buildManageOnChatGptUrl(app: AppInfo) {
+  if (app.installUrl == null) {
+    return null;
+  }
+
+  try {
+    const url = new URL(app.installUrl);
+    url.hash = `settings/Connectors?connector=${encodeURIComponent(app.id)}&referrer=app_directory`;
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 function buildManagedMcpServers(config: ConfigSnapshot | null) {
@@ -1736,6 +1870,57 @@ function normalizeText(value: string) {
   return value.trim().toLowerCase();
 }
 
+function getAppLogoUrl(app: AppInfo) {
+  const prefersDark =
+    typeof document !== "undefined" &&
+    document.documentElement.classList.contains("electron-dark");
+
+  if (prefersDark) {
+    return app.logoUrlDark ?? app.logoUrl;
+  }
+
+  return app.logoUrl ?? app.logoUrlDark;
+}
+
+function AppLogo({ app }: { app: AppInfo }) {
+  const [hasImageError, setHasImageError] = useState(false);
+  const logoUrl = getAppLogoUrl(app);
+
+  if (logoUrl == null || hasImageError) {
+    return (
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[var(--app-shell-border)] bg-[var(--app-shell-muted-surface)] text-[var(--app-shell-subtle)]">
+        <AppConnectorFallbackIcon className="h-4 w-4" />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      alt=""
+      className="h-8 w-8 shrink-0 rounded-lg"
+      src={logoUrl}
+      onError={() => setHasImageError(true)}
+    />
+  );
+}
+
+function AppConnectorFallbackIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      viewBox="0 0 20 20"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M7.45996 14.375C7.45996 13.3616 6.63844 12.54 5.625 12.54C4.61156 12.54 3.79004 13.3616 3.79004 14.375C3.79004 15.3884 4.61156 16.21 5.625 16.21C6.63844 16.21 7.45996 15.3884 7.45996 14.375ZM16.21 14.375C16.21 13.3616 15.3884 12.54 14.375 12.54C13.3616 12.54 12.54 13.3616 12.54 14.375C12.54 15.3884 13.3616 16.21 14.375 16.21C15.3884 16.21 16.21 15.3884 16.21 14.375ZM7.45996 5.625C7.45996 4.61156 6.63844 3.79004 5.625 3.79004C4.61156 3.79004 3.79004 4.61156 3.79004 5.625C3.79004 6.63844 4.61156 7.45996 5.625 7.45996C6.63844 7.45996 7.45996 6.63844 7.45996 5.625ZM16.21 5.625C16.21 4.61156 15.3884 3.79004 14.375 3.79004C13.3616 3.79004 12.54 4.61156 12.54 5.625C12.54 6.63844 13.3616 7.45996 14.375 7.45996C15.3884 7.45996 16.21 6.63844 16.21 5.625ZM17.54 14.375C17.54 16.123 16.123 17.54 14.375 17.54C12.627 17.54 11.21 16.123 11.21 14.375C11.21 12.627 12.627 11.21 14.375 11.21C16.123 11.21 17.54 12.627 17.54 14.375ZM8.79004 5.625C8.79004 7.37298 7.37298 8.79004 5.625 8.79004C3.87702 8.79004 2.45996 7.37298 2.45996 5.625C2.45996 3.87702 3.87702 2.45996 5.625 2.45996C7.37298 2.45996 8.79004 3.87702 8.79004 5.625ZM17.54 5.625C17.54 7.37298 16.123 8.79004 14.375 8.79004C13.7416 8.79004 13.153 8.60173 12.6582 8.28125L8.28125 12.6582C8.60173 13.153 8.79004 13.7416 8.79004 14.375C8.79004 16.123 7.37298 17.54 5.625 17.54C3.87702 17.54 2.45996 16.123 2.45996 14.375C2.45996 12.627 3.87702 11.21 5.625 11.21C6.25794 11.21 6.84623 11.3977 7.34082 11.7178L11.7178 7.34082C11.3977 6.84623 11.21 6.25794 11.21 5.625C11.21 3.87702 12.627 2.45996 14.375 2.45996C16.123 2.45996 17.54 3.87702 17.54 5.625Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
 function formatMcpServerName(name: string, server: McpServerDraft) {
   const customLabel = server.label.trim();
   if (customLabel.length > 0) {
@@ -1750,6 +1935,37 @@ function formatMcpServerName(name: string, server: McpServerDraft) {
   return trimmedName === trimmedName.toLowerCase()
     ? `${trimmedName[0]?.toUpperCase() ?? ""}${trimmedName.slice(1)}`
     : trimmedName;
+}
+
+function McpIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      viewBox="0 0 20 20"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M12.5001 9.99999V15.0003L17.5004 12.5001V7.49984L12.5001 9.99999Z"
+        fill="currentColor"
+      />
+      <path
+        d="M12.5001 4.99969V9.99999L17.5004 7.49984L12.5001 4.99969Z"
+        fill="currentColor"
+        fillOpacity="0.5"
+      />
+      <path
+        d="M7.4998 7.49984V12.5001L12.5001 9.99999V4.99969L7.4998 7.49984Z"
+        fill="currentColor"
+      />
+      <path
+        d="M2.49951 4.99969V9.99999L7.4998 12.5001V7.49984L2.49951 4.99969Z"
+        fill="currentColor"
+        fillOpacity="0.5"
+      />
+    </svg>
+  );
 }
 
 function dedupeSkills(skills: SkillSummary[]) {

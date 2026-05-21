@@ -104,6 +104,14 @@ export type MessageKey =
   | "skills.appsPage.actionsMenu"
   | "skills.appsPage.search.plugins"
   | "skills.appsPage.search.plugins.label"
+  | "skills.appsPage.search.apps"
+  | "skills.appsPage.search.apps.label"
+  | "skills.appsPage.search.mcps"
+  | "skills.appsPage.search.mcps.label"
+  | "skills.appsPage.search.skills"
+  | "skills.appsPage.search.skills.label"
+  | "skills.appsPage.search.marketplace"
+  | "skills.appsPage.search.marketplace.label"
   | "skills.appsPage.loading"
   | "skills.appsPage.loadError.title"
   | "skills.appsPage.loadError.retry"
@@ -145,6 +153,13 @@ export type MessageKey =
   | "skills.appsPage.mcps.disable"
   | "skills.appsPage.mcps.toggle"
   | "skills.appsPage.mcps.toggleError"
+  | "skills.appsPage.apps.noDescription"
+  | "skills.appsPage.apps.manageOnChatGpt"
+  | "skills.appsPage.apps.moreActions"
+  | "skills.appsPage.apps.disableToggle"
+  | "skills.appsPage.apps.enableToggleTooltip"
+  | "skills.appsPage.apps.enabledStatus"
+  | "skills.appsPage.apps.disabledStatus"
   | "skills.appsPage.apps.toggle"
   | "skills.appsPage.apps.toggleError"
   | "skills.appsPage.skills.enable"
@@ -253,6 +268,7 @@ export type MessageKey =
   | "plugins.hero.copy.googleDrive"
   | "plugins.hero.copy.linear"
   | "skills.recommended.error"
+  | "skills.recommended.installSuccess"
   | "skills.scope.builtIn"
   | "skills.scope.team"
   | "skills.scope.personal"
@@ -1558,11 +1574,14 @@ export type MessageKey =
   | "projectSetupDialog.invalidPath.missing"
   | "projectSetupDialog.conflict.remoteProjectAlreadyMapped.standalone"
   | "projectSetupDialog.saveError"
+  | "workspaceRootDialog.title.pick"
+  | "workspaceRootDialog.description.pick"
   | "workspaceRootDialog.remoteLabel"
   | "workspaceRootDialog.pathLabel"
   | "workspaceRootDialog.remotePlaceholder"
   | "workspaceRootDialog.remoteEmpty"
   | "workspaceRootDialog.cancel"
+  | "workspaceRootDialog.confirmPick"
   | "workspaceRootDialog.confirmAdd"
   | "settings.keyboardShortcuts.subtitle.electron"
   | "settings.keyboardShortcuts.loading"
@@ -2203,6 +2222,20 @@ export type MessageKey =
   | "settings.remoteConnections.deviceConnections.signedInDeviceOnlineSubtitle"
   | "settings.remoteConnections.deviceConnections.signedInDeviceOfflineSubtitle"
   | "settings.remoteConnections.deviceConnections.signedInDeviceUpdateRequiredSubtitle"
+  | "appServer.error.loginRequired"
+  | "appServer.error.genericRestartRequired"
+  | "appServer.error.restartAvailable"
+  | "appServer.error.unsupportedVersion"
+  | "threadPage.remoteConnectionStatusBadge.connecting"
+  | "threadPage.remoteConnectionStatusBadge.restarting"
+  | "threadPage.remoteConnectionStatusBadge.unauthed"
+  | "threadPage.remoteConnectionStatusBadge.updateRequired"
+  | "threadPage.remoteConnectionStatusBadge.restartRequired"
+  | "threadPage.remoteConnectionStatusBadge.restartNow"
+  | "threadPage.remoteConnectionStatusBadge.restartNowTooltip"
+  | "threadPage.remoteConnectionStatusBadge.login"
+  | "threadPage.remoteConnectionStatusBadge.connected"
+  | "threadPage.remoteConnectionStatusBadge.error"
   | "threadPage.remoteConnectionStatusBadge.disconnected"
   | "settings.remoteControlConnections.authRequired"
   | "settings.remoteControlConnections.rename"
@@ -2590,6 +2623,14 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "skills.appsPage.subheading.plugins": "Plugins let Codex work your way.",
     "skills.appsPage.search.plugins": "Search plugins",
     "skills.appsPage.search.plugins.label": "Search plugins",
+    "skills.appsPage.search.apps": "Search apps",
+    "skills.appsPage.search.apps.label": "Search apps",
+    "skills.appsPage.search.mcps": "Search MCP servers",
+    "skills.appsPage.search.mcps.label": "Search MCP servers",
+    "skills.appsPage.search.skills": "Search skills",
+    "skills.appsPage.search.skills.label": "Search skills",
+    "skills.appsPage.search.marketplace": "Search marketplaces",
+    "skills.appsPage.search.marketplace.label": "Search marketplaces",
     "skills.appsPage.loading": "Loading apps…",
     "skills.appsPage.loadError.title": "Unable to load apps",
     "skills.appsPage.loadError.retry": "Retry",
@@ -2703,6 +2744,13 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "skills.appsPage.mcps.disable": "Disable MCP server",
     "skills.appsPage.mcps.toggle": "Toggle MCP server enabled state",
     "skills.appsPage.mcps.toggleError": "Failed to update MCP server",
+    "skills.appsPage.apps.noDescription": "No description available",
+    "skills.appsPage.apps.manageOnChatGpt": "Manage on ChatGPT",
+    "skills.appsPage.apps.moreActions": "More actions",
+    "skills.appsPage.apps.disableToggle": "Disable app",
+    "skills.appsPage.apps.enableToggleTooltip": "Enable app",
+    "skills.appsPage.apps.enabledStatus": "Enabled",
+    "skills.appsPage.apps.disabledStatus": "Disabled",
     "skills.appsPage.apps.toggle": "Toggle app enabled state",
     "skills.appsPage.apps.toggleError": "Failed to update app",
     "skills.appsPage.skills.enable": "Enable skill",
@@ -2744,6 +2792,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "plugins.hero.copy.googleDrive": "Draft my weekly recap every Friday",
     "plugins.hero.copy.linear": "Create tickets for these bug bash findings",
     "skills.recommended.error": "Unable to load recommended skills",
+    "skills.recommended.installSuccess": "{skillName} skill installed",
     "skills.scope.builtIn": "System",
     "skills.scope.team": "Team",
     "skills.scope.personal": "Personal",
@@ -3700,7 +3749,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "inbox.automations.missing": "Automation not found",
     "inbox.automations.missingBack": "Back to automations",
     "inbox.automations.missingSubtitle": "This automation may have been deleted or is no longer available on this machine.",
-    "inbox.automations.emptySubtitle.learnMore": "Automate recurring chat work by configuring scheduled conversations. <link>Learn more</link>",
+    "inbox.automations.emptySubtitle.learnMore": "Automate work by setting up scheduled chats. <link>Learn more</link>",
     "inbox.automations.rowSummary.heartbeat": "Heartbeat • {thread}",
     "inbox.automations.editTooltip": "Edit automation",
     "inbox.automations.moreOptionsTooltip": "More options",
@@ -3790,7 +3839,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.automations.scheduleSummary.thursdaysLabel": "Thursdays",
     "settings.automations.scheduleSummary.fridaysLabel": "Fridays",
     "settings.automations.scheduleSummary.saturdaysLabel": "Saturdays",
-    "settings.automations.cwdPlaceholder": "One project path per line",
+    "settings.automations.cwdPlaceholder": "Choose a folder",
     "settings.automations.heartbeatThread.placeholder": "Select a chat",
     "settings.automations.executionEnvironment.ariaLabel": "Execution environment",
     "settings.automations.executionEnvironment.local": "Local",
@@ -4161,11 +4210,14 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "projectSetupDialog.conflict.remoteProjectAlreadyMapped.standalone":
       "This remote project on {remoteName} is already set up for {projectName}. Choose a different folder or remove that setup first.",
     "projectSetupDialog.saveError": "Failed to save project",
+    "workspaceRootDialog.title.pick": "Choose folder path",
+    "workspaceRootDialog.description.pick": "Enter a folder path on {host} to use for this project.",
     "workspaceRootDialog.remoteLabel": "Remote host",
     "workspaceRootDialog.pathLabel": "Folder path",
     "workspaceRootDialog.remotePlaceholder": "No connected remote",
     "workspaceRootDialog.remoteEmpty": "No connected remotes",
     "workspaceRootDialog.cancel": "Cancel",
+    "workspaceRootDialog.confirmPick": "Use folder",
     "workspaceRootDialog.confirmAdd": "Add project",
     "settings.keyboardShortcuts.subtitle.electron": "Customize app shortcuts",
     "settings.keyboardShortcuts.loading": "Loading shortcuts…",
@@ -4909,6 +4961,20 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.remoteConnections.deviceConnections.signedInDeviceOnlineSubtitle": "Signed in device (online)",
     "settings.remoteConnections.deviceConnections.signedInDeviceOfflineSubtitle": "Signed in device (offline)",
     "settings.remoteConnections.deviceConnections.signedInDeviceUpdateRequiredSubtitle": "Please update app-server version (current: {currentVersion}) to {requiredVersion} or newer",
+    "appServer.error.loginRequired": "You are currently logged out.",
+    "appServer.error.genericRestartRequired": "Something went wrong connecting to Codex. Try restarting",
+    "appServer.error.restartAvailable": "Restart now to update to {installedVersion}. Currently running {currentVersion}",
+    "appServer.error.unsupportedVersion": "Codex on this environment is out of date. Update to {minVersion} or newer. Current version: {currentVersion}",
+    "threadPage.remoteConnectionStatusBadge.connecting": "Connecting",
+    "threadPage.remoteConnectionStatusBadge.restarting": "Restarting",
+    "threadPage.remoteConnectionStatusBadge.unauthed": "Login required",
+    "threadPage.remoteConnectionStatusBadge.updateRequired": "Update required",
+    "threadPage.remoteConnectionStatusBadge.restartRequired": "Restart required",
+    "threadPage.remoteConnectionStatusBadge.restartNow": "Restart now",
+    "threadPage.remoteConnectionStatusBadge.restartNowTooltip": "Restarting will kill the currently running Codex process and stop any ongoing chats on this remote host",
+    "threadPage.remoteConnectionStatusBadge.login": "Login to Codex",
+    "threadPage.remoteConnectionStatusBadge.connected": "Connected",
+    "threadPage.remoteConnectionStatusBadge.error": "Error",
     "threadPage.remoteConnectionStatusBadge.disconnected": "Disconnected",
     "settings.remoteControlConnections.authRequired": "Sign in to ChatGPT in Codex Desktop, then refresh to load remote control environments",
     "settings.remoteControlConnections.rename": "Rename",
@@ -5276,6 +5342,14 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "skills.appsPage.subheading.plugins": "插件让 Codex 按你的方式运行。",
     "skills.appsPage.search.plugins": "搜索插件",
     "skills.appsPage.search.plugins.label": "搜索插件",
+    "skills.appsPage.search.apps": "搜索应用",
+    "skills.appsPage.search.apps.label": "搜索应用",
+    "skills.appsPage.search.mcps": "搜索 MCP 服务器",
+    "skills.appsPage.search.mcps.label": "搜索 MCP 服务器",
+    "skills.appsPage.search.skills": "搜索技能",
+    "skills.appsPage.search.skills.label": "搜索技能",
+    "skills.appsPage.search.marketplace": "搜索市场",
+    "skills.appsPage.search.marketplace.label": "搜索市场",
     "skills.appsPage.loading": "正在加载应用…",
     "skills.appsPage.loadError.title": "无法加载应用",
     "skills.appsPage.loadError.retry": "重试",
@@ -5388,6 +5462,13 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "skills.appsPage.mcps.disable": "禁用 MCP 服务器",
     "skills.appsPage.mcps.toggle": "切换 MCP 服务器启用状态",
     "skills.appsPage.mcps.toggleError": "更新 MCP 服务器失败",
+    "skills.appsPage.apps.noDescription": "无可用描述",
+    "skills.appsPage.apps.manageOnChatGpt": "在 ChatGPT 中管理",
+    "skills.appsPage.apps.moreActions": "更多操作",
+    "skills.appsPage.apps.disableToggle": "禁用应用",
+    "skills.appsPage.apps.enableToggleTooltip": "启用应用",
+    "skills.appsPage.apps.enabledStatus": "已启用",
+    "skills.appsPage.apps.disabledStatus": "已禁用",
     "skills.appsPage.apps.toggle": "切换应用启用状态",
     "skills.appsPage.apps.toggleError": "更新应用失败",
     "skills.appsPage.skills.enable": "启用技能",
@@ -5429,6 +5510,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "plugins.hero.copy.googleDrive": "每周五帮我起草周报",
     "plugins.hero.copy.linear": "把这次 bug bash 发现整理成工单",
     "skills.recommended.error": "无法加载推荐技能",
+    "skills.recommended.installSuccess": "{skillName} 技能已安装",
     "skills.scope.builtIn": "系统",
     "skills.scope.team": "团队",
     "skills.scope.personal": "个人",
@@ -6373,7 +6455,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "inbox.automations.missing": "未找到自动化功能",
     "inbox.automations.missingBack": "返回自动化功能",
     "inbox.automations.missingSubtitle": "该自动化功能可能已被删除，或在此设备上不再可用。",
-    "inbox.automations.emptySubtitle.learnMore": "通过设置定期对话，实现工作自动化。<link>了解更多</link>",
+    "inbox.automations.emptySubtitle.learnMore": "通过设置定时对话来实现工作自动化。<link>了解更多</link>",
     "inbox.automations.rowSummary.heartbeat": "心跳 • {thread}",
     "inbox.automations.editTooltip": "编辑自动化",
     "inbox.automations.moreOptionsTooltip": "更多选项",
@@ -6463,7 +6545,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.automations.scheduleSummary.thursdaysLabel": "每周四",
     "settings.automations.scheduleSummary.fridaysLabel": "每周五",
     "settings.automations.scheduleSummary.saturdaysLabel": "每周六",
-    "settings.automations.cwdPlaceholder": "每行一个项目路径",
+    "settings.automations.cwdPlaceholder": "选择一个文件夹",
     "settings.automations.heartbeatThread.placeholder": "选择一个对话",
     "settings.automations.executionEnvironment.ariaLabel": "运行环境",
     "settings.automations.executionEnvironment.local": "本地",
@@ -6807,11 +6889,14 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "projectSetupDialog.conflict.remoteProjectAlreadyMapped.standalone":
       "这个位于 {remoteName} 上的远程项目已经为 {projectName} 设置过了。请选择其他文件夹，或先移除现有设置。",
     "projectSetupDialog.saveError": "保存项目失败",
+    "workspaceRootDialog.title.pick": "选择文件夹路径",
+    "workspaceRootDialog.description.pick": "输入 {host} 上要用于此项目的文件夹路径。",
     "workspaceRootDialog.remoteLabel": "远程主机",
     "workspaceRootDialog.pathLabel": "文件夹路径",
     "workspaceRootDialog.remotePlaceholder": "没有已连接的远程主机",
     "workspaceRootDialog.remoteEmpty": "没有已连接的远程主机",
     "workspaceRootDialog.cancel": "取消",
+    "workspaceRootDialog.confirmPick": "使用文件夹",
     "workspaceRootDialog.confirmAdd": "添加项目",
     "settings.keyboardShortcuts.subtitle.electron": "自定义应用快捷键",
     "settings.keyboardShortcuts.loading": "正在加载快捷键…",
@@ -7529,6 +7614,20 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.remoteConnections.deviceConnections.signedInDeviceOnlineSubtitle": "已登录设备（在线）",
     "settings.remoteConnections.deviceConnections.signedInDeviceOfflineSubtitle": "已登录设备（离线）",
     "settings.remoteConnections.deviceConnections.signedInDeviceUpdateRequiredSubtitle": "请将 app-server 版本（当前：{currentVersion}）更新到 {requiredVersion} 或更高版本",
+    "appServer.error.loginRequired": "你当前已退出登录。",
+    "appServer.error.genericRestartRequired": "连接 Codex 时出现问题。请尝试重启。",
+    "appServer.error.restartAvailable": "立即重启以更新到 {installedVersion}。当前运行版本：{currentVersion}",
+    "appServer.error.unsupportedVersion": "此环境中的 Codex 版本过旧。请更新到 {minVersion} 或更高版本。当前版本：{currentVersion}",
+    "threadPage.remoteConnectionStatusBadge.connecting": "连接中",
+    "threadPage.remoteConnectionStatusBadge.restarting": "重启中",
+    "threadPage.remoteConnectionStatusBadge.unauthed": "需要登录",
+    "threadPage.remoteConnectionStatusBadge.updateRequired": "需要更新",
+    "threadPage.remoteConnectionStatusBadge.restartRequired": "需要重启",
+    "threadPage.remoteConnectionStatusBadge.restartNow": "立即重启",
+    "threadPage.remoteConnectionStatusBadge.restartNowTooltip": "重启会终止当前运行的 Codex 进程，并停止该远程主机上的所有进行中聊天",
+    "threadPage.remoteConnectionStatusBadge.login": "登录 Codex",
+    "threadPage.remoteConnectionStatusBadge.connected": "已连接",
+    "threadPage.remoteConnectionStatusBadge.error": "错误",
     "threadPage.remoteConnectionStatusBadge.disconnected": "已断开连接",
     "settings.remoteControlConnections.authRequired": "请先在 Codex Desktop 中登录 ChatGPT，然后刷新以加载远程控制环境",
     "settings.remoteControlConnections.rename": "重命名",

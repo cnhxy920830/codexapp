@@ -9,6 +9,8 @@ import { SettingsSurface } from "../../components/SettingsSurface";
 import { Spinner } from "../../components/Spinner";
 import { useReplicaStatsigGateValue } from "../statsig/replicaStatsig";
 import { useI18n } from "../../i18n/i18n";
+import { readGitOrigins } from "../../services/gitOrigins";
+import { listenGitStateChanged } from "../../services/gitStateEvents";
 import { archiveConversation, type ThreadConversation, type ThreadConversationItem, type ThreadHistoryEntry } from "../../services/history";
 import {
   LOCAL_SETTINGS_HOST_ID,
@@ -269,8 +271,54 @@ function WorktreeRepositorySection({
 }) {
   const { t } = useI18n();
   const sortedWorktrees = sortWorktreesByConversationCount(worktrees, visibleRecentThreads);
-  const displayRepoRoot = repoRoot ?? worktrees[0]?.dir ?? null;
-  const isRepositoryMetadataLoading = false;
+  const [resolvedRepoRoot, setResolvedRepoRoot] = useState<string | null>(repoRoot ?? null);
+  const [isRepositoryMetadataLoading, setIsRepositoryMetadataLoading] = useState(false);
+
+  useEffect(() => {
+    if (repoRoot == null) {
+      setResolvedRepoRoot(null);
+      setIsRepositoryMetadataLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const refreshRepoRoot = () => {
+      setResolvedRepoRoot(repoRoot);
+      setIsRepositoryMetadataLoading(true);
+      void readGitOrigins({
+        dirs: [repoRoot],
+        hostId,
+      })
+        .then((response) => {
+          if (cancelled) {
+            return;
+          }
+          const gitRoot = response.origins.at(0)?.root?.trim() ?? null;
+          setResolvedRepoRoot(gitRoot ?? repoRoot);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setResolvedRepoRoot(repoRoot);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setIsRepositoryMetadataLoading(false);
+          }
+        });
+    };
+
+    refreshRepoRoot();
+    const unsubscribe = listenGitStateChanged(refreshRepoRoot);
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [hostId, repoRoot]);
+
+  const displayRepoRoot = resolvedRepoRoot ?? repoRoot ?? worktrees[0]?.dir ?? null;
 
   return (
     <SettingsGroup>

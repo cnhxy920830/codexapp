@@ -1,4 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
+import { emitQueryCacheInvalidated } from "./queryCache";
+
+const SKILLS_QUERY_KEY = ["skills"] as const;
 
 export type SkillSummary = {
   brandColor: string | null;
@@ -113,7 +116,7 @@ export async function setSkillEnabled(params: SkillSetEnabledParams) {
     throw new Error("setSkillEnabled requires exactly one of path or name");
   }
 
-  return invoke<SkillsConfigWriteResponse>("skills-config-write", {
+  const response = await invoke<SkillsConfigWriteResponse>("skills-config-write", {
     params: {
       enabled,
       hostId: hostId ?? null,
@@ -121,4 +124,6 @@ export async function setSkillEnabled(params: SkillSetEnabledParams) {
       path: hasPath ? path : null,
     },
   });
+  await emitQueryCacheInvalidated([...SKILLS_QUERY_KEY, hostId ?? null]);
+  return response;
 }
