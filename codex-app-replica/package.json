@@ -10,18 +10,26 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@statsig/js-client": "^3.33.1",
     "@tauri-apps/api": "2.11.0",
     "@tauri-apps/plugin-shell": "2.3.5",
+    "@types/katex": "^0.16.8",
+    "3dmol": "^2.5.4",
+    "docx-preview": "^0.3.7",
+    "katex": "^0.16.47",
+    "mermaid": "^11.15.0",
+    "pdfjs-dist": "^5.6.205",
     "react": "19.2.5",
-    "react-dom": "19.2.5"
+    "react-dom": "19.2.5",
+    "statsig-js": "^5.1.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "2.11.0",
     "@tailwindcss/vite": "4.2.4",
-    "@vitejs/plugin-react": "6.0.1",
+    "@tauri-apps/cli": "2.11.0",
+    "@types/node": "25.6.0",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "@types/node": "25.6.0",
+    "@vitejs/plugin-react": "6.0.1",
     "tailwindcss": "4.2.4",
     "typescript": "6.0.3",
     "vite": "8.0.10"

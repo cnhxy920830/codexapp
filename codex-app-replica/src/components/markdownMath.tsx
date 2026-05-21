@@ -1,20 +1,10 @@
-import { c as katexRuntime } from "../assets/katex/katex-V194-jer.js";
+import katex from "katex";
+import "katex/dist/katex.min.css";
 
 const DISPLAY_MATH_DELIMITER = "$$";
 const INLINE_MATH_DELIMITER = "$";
 const DEFAULT_ERROR_COLOR = "#cc0000";
 const MATH_CODE_FENCE_LANGUAGES = new Set(["language-math", "math"]);
-
-type KatexRuntime = {
-  renderToString(expression: string, options?: {
-    displayMode?: boolean;
-    errorColor?: string;
-    strict?: boolean | "ignore" | string;
-    throwOnError?: boolean;
-  }): string;
-};
-
-const katex = katexRuntime as KatexRuntime;
 
 export type MarkdownMathBlock = {
   source: string;

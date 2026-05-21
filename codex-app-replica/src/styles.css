@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "./assets/katex/katex.css";
 
 :root {
   --app-shell-surface: var(--color-background-panel, #e9e7e3);

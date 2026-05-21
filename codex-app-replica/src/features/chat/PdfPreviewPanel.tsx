@@ -136,8 +136,6 @@ const MAX_ZOOM = 400;
 const PAGE_GAP_PX = 24;
 
 let pdfModulePromise: Promise<PdfModule> | null = null;
-const pdfModuleUrl = new URL("../../assets/pdf/pdf-C4JubaMy.js", import.meta.url).href;
-const pdfWorkerUrl = new URL("../../assets/pdf/pdf.worker.min-qwK7q_zL.mjs", import.meta.url).href;
 
 export function PdfPreviewPanel({
   comments = [],
@@ -1397,12 +1395,18 @@ async function loadPdfModule() {
     throw new Error("pdf.js can only load in the browser");
   }
 
-  pdfModulePromise ??= (import(/* @vite-ignore */ pdfModuleUrl) as Promise<PdfModule>);
-  const pdfjs = await pdfModulePromise;
-  if (pdfjs.GlobalWorkerOptions.workerSrc !== pdfWorkerUrl) {
-    pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-  }
-  return pdfjs;
+  pdfModulePromise ??= import("pdfjs-dist").then(async (pdfjsLib) => {
+    // Import worker as URL
+    const pdfjsWorker = await import("pdfjs-dist/build/pdf.worker.min.mjs?url");
+    const workerSrc = pdfjsWorker.default;
+
+    // Set worker source
+    pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
+
+    return pdfjsLib as unknown as PdfModule;
+  });
+
+  return pdfModulePromise;
 }
 
 function parsePdfDataUrl(dataUrl: string) {

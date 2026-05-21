@@ -65,7 +65,6 @@ const DOCX_WRAPPER_STYLE = `
 `;
 
 let docxRenderAsyncPromise: Promise<DocxRenderAsync | null> | null = null;
-const docxRendererModuleUrl = new URL("../../assets/docx/docx-preview-gi_LmAqq.js", import.meta.url).href;
 
 export function DocxPreviewPanel({ bytes, hostId = null, path, title, t }: DocxPreviewPanelProps) {
   const bodyContainerRef = useRef<HTMLDivElement | null>(null);
@@ -526,8 +525,11 @@ async function loadDocxRenderAsync() {
     throw new Error("docx preview can only load in the browser");
   }
 
-  docxRenderAsyncPromise ??= (import(/* @vite-ignore */ docxRendererModuleUrl) as Promise<{ renderAsync?: DocxRenderAsync }>)
-    .then((module) => module.renderAsync ?? null)
+  docxRenderAsyncPromise ??= import("docx-preview")
+    .then((module) => {
+      // docx-preview exports renderAsync as a named export
+      return module.renderAsync ?? null;
+    })
     .catch(() => null);
   return docxRenderAsyncPromise;
 }

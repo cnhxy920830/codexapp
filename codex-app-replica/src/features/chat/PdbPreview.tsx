@@ -746,26 +746,33 @@ function cleanupViewer(viewer: PdbViewer | null, container: HTMLDivElement | nul
 
 async function loadCreateViewer() {
   if (createViewerPromise == null) {
-    createViewerPromise = import("../../assets/3Dmol-B1akbDh1.js").then((module) => getCreateViewer(module));
+    createViewerPromise = import("3dmol").then((module) => {
+      // 3dmol exports $3Dmol as default, which has createViewer method
+      const $3Dmol = module.default || module;
+      if (typeof $3Dmol.createViewer === "function") {
+        // Wrap the 3dmol createViewer to match our interface
+        return ((element: HTMLDivElement, options: { backgroundColor: string; disableFog: boolean }) => {
+          const viewer = $3Dmol.createViewer(element, options);
+          // Wrap methods to match our PdbViewer interface
+          return {
+            addModel: viewer.addModel.bind(viewer),
+            addStyle: viewer.addStyle.bind(viewer),
+            clear: viewer.clear.bind(viewer),
+            removeAllModels: viewer.removeAllModels.bind(viewer),
+            render: viewer.render.bind(viewer),
+            resize: viewer.resize.bind(viewer),
+            // 3dmol's setBackgroundColor takes (hex, alpha) but we only use color
+            setBackgroundColor: (color: string) => viewer.setBackgroundColor(color, 1.0),
+            setStyle: viewer.setStyle.bind(viewer),
+            zoomTo: viewer.zoomTo.bind(viewer),
+          } as PdbViewer;
+        }) as Pdb3DmolCreateViewer;
+      }
+      throw new Error("3Dmol createViewer export was not found");
+    });
   }
 
   return createViewerPromise;
-}
-
-function getCreateViewer(module: unknown) {
-  const candidate = module as { createViewer?: unknown; default?: { createViewer?: unknown } };
-  const createViewer =
-    typeof candidate.createViewer === "function"
-      ? candidate.createViewer
-      : typeof candidate.default?.createViewer === "function"
-        ? candidate.default.createViewer
-        : null;
-
-  if (createViewer == null) {
-    throw new Error("3Dmol createViewer export was not found");
-  }
-
-  return createViewer as Pdb3DmolCreateViewer;
 }
 
 function formatScore(score: number | null) {
