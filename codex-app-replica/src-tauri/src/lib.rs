@@ -24,6 +24,7 @@ mod external_agent_import;
 mod fast_mode_rollout_metrics;
 mod git_branches;
 mod git_commit_messages;
+mod git_init;
 mod git_origins;
 mod git_origins_remote;
 mod global_dictation;
@@ -266,6 +267,8 @@ use git_branches::git_commit_changes;
 use git_branches::git_commit_dialog_read;
 use git_branches::git_create_branch;
 use git_commit_messages::generate_git_commit_message;
+use git_init::get_configuration;
+use git_init::git_init_repo;
 use git_origins::git_origins;
 use global_dictation::request_microphone_permission;
 use global_dictation_settings::global_dictation_copy_history_item;
@@ -873,7 +876,9 @@ pub fn run() {
             electron_app_state_snapshot_response,
             set_review_pane_snapshot_metrics_for_host,
             electron_window_focus_request,
-            view_focused
+            view_focused,
+            git_init_repo,
+            get_configuration
         ])
         .plugin(tauri_plugin_shell::init())
         .setup(move |app| {

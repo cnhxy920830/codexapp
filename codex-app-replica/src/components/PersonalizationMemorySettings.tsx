@@ -3,6 +3,7 @@ import type { AppToast } from "./AppToastRegion";
 import { Button } from "./Button";
 import { PersonalizationChronicleSettings } from "./PersonalizationChronicleSettings";
 import { SettingsGroup } from "./SettingsGroup";
+import { SettingsDialog, SettingsDialogFooter } from "./SettingsDialog";
 import { SettingsRow } from "./SettingsRow";
 import { SettingsSurface } from "./SettingsSurface";
 import { ToggleSwitch } from "./ToggleSwitch";
@@ -439,39 +440,27 @@ function MemoryResetDialog({
   const { t } = useI18n();
 
   return (
-    <div
-      className="codex-dialog-overlay fixed inset-0 z-50 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4"
-      onClick={onCancel}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="w-[420px] max-w-[92vw] rounded-3xl border border-token-border bg-token-dropdown-background/90 text-token-foreground shadow-lg backdrop-blur-xl outline-none"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex flex-col gap-0 px-5 py-5 text-base leading-normal tracking-normal">
-          <div className="flex flex-col items-start gap-3">
-            <div className="flex min-w-0 flex-1 flex-col gap-1 self-stretch">
-              <h2 className="heading-dialog min-w-0 font-semibold">
-                {t("settings.memory.resetDialogTitle")}
-              </h2>
-              <div className="text-base leading-normal tracking-normal text-token-description-foreground">
-                {t("settings.memory.resetDialogSubtitle")}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex w-full items-center justify-end gap-3 pt-3">
-            <Button color="ghost" disabled={isResetting} onClick={onCancel} size="toolbar">
-              {t("settings.memory.resetDialogCancel")}
-            </Button>
-            <Button color="danger" loading={isResetting} onClick={onConfirm} size="toolbar">
-              {t("settings.memory.resetDialogConfirm")}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <SettingsDialog
+      footer={
+        <SettingsDialogFooter
+          cancelLabel={t("settings.memory.resetDialogCancel")}
+          confirmLabel={t("settings.memory.resetDialogConfirm")}
+          confirmLoading={isResetting}
+          confirmTone="danger"
+          onCancel={onCancel}
+          onConfirm={onConfirm}
+        />
+      }
+      onOpenChange={(open) => {
+        if (!open) {
+          onCancel();
+        }
+      }}
+      open
+      size="compact"
+      title={t("settings.memory.resetDialogTitle")}
+      subtitle={t("settings.memory.resetDialogSubtitle")}
+    />
   );
 }
 

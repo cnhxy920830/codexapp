@@ -23,6 +23,14 @@ const PERSONALIZATION_SERVICE_PATH = path.join(
   process.cwd(),
   "src/services/personalization.ts",
 );
+const SETTINGS_DIALOG_SOURCE_PATH = path.join(
+  process.cwd(),
+  "src/components/SettingsDialog.tsx",
+);
+const TOGGLE_SWITCH_SOURCE_PATH = path.join(
+  process.cwd(),
+  "src/components/ToggleSwitch.tsx",
+);
 
 test("personalization settings keeps extracted shared shell and section order", () => {
   const source = readSource(COMPONENT_SOURCE_PATH);
@@ -71,11 +79,9 @@ test("personalization memory settings keeps extracted host-aware memory and chro
     /!enabled && isLocalHost[\s\S]*keyPath: "features\.chronicle"[\s\S]*value: false/s,
   );
   assert.match(source, /disabled=\{isBusy \|\| !state\.featureEnabled\}/);
-  assert.match(source, /role="dialog"/);
-  assert.match(source, /aria-modal="true"/);
-  assert.match(source, /w-\[420px\] max-w-\[92vw\] rounded-3xl border border-token-border bg-token-dropdown-background\/90 text-token-foreground shadow-lg backdrop-blur-xl outline-none/);
-  assert.match(source, /<Button color="ghost" disabled=\{isResetting\} onClick=\{onCancel\} size="toolbar">/);
-  assert.match(source, /<Button color="danger" loading=\{isResetting\} onClick=\{onConfirm\} size="toolbar">/);
+  assert.match(source, /import \{ SettingsDialog, SettingsDialogFooter \} from "\.\/SettingsDialog";/);
+  assert.match(source, /<SettingsDialog[\s\S]*size="compact"[\s\S]*title=\{t\("settings\.memory\.resetDialogTitle"\)\}/s);
+  assert.match(source, /<SettingsDialogFooter[\s\S]*confirmTone="danger"/s);
 });
 
 test("chronicle settings renders as extracted shared settings row", () => {
@@ -84,6 +90,16 @@ test("chronicle settings renders as extracted shared settings row", () => {
   assert.match(source, /import \{ SettingsRow \} from "\.\/SettingsRow";/);
   assert.match(source, /<SettingsRow[\s\S]*label=\{chronicleDisplayName\}/s);
   assert.match(source, /<ChronicleDescription/);
+  assert.match(source, /import \{ SettingsDialog, SettingsDialogFooter \} from "\.\/SettingsDialog";/);
+  assert.match(source, /import \{ Tooltip \} from "\.\/Tooltip";/);
+  assert.match(
+    source,
+    /<Tooltip[\s\S]*tooltipContent=\{t\("settings\.general\.experimentalFeatures\.chronicle\.memoriesRequiredTooltip"\)\}[\s\S]*<ToggleSwitch/s,
+  );
+  assert.match(source, /className=\{memoriesEnabled \? undefined : "pointer-events-none"\}/);
+  assert.match(source, /<SettingsDialogFooter[\s\S]*confirmLabel=\{t\("settings\.general\.experimentalFeatures\.chronicle\.continue"\)\}/s);
+  assert.match(source, /<SettingsDialog[\s\S]*title=\{t\("settings\.general\.experimentalFeatures\.chronicle\.consentTitle"\)\}/s);
+  assert.match(source, /<h2 className="sr-only">\{chronicleDisplayName\}<\/h2>/);
   assert.doesNotMatch(source, /<div className="space-y-2">/);
 });
 
@@ -95,6 +111,10 @@ test("app and services keep extracted personalization host plumbing", () => {
   assert.match(
     appSource,
     /<PersonalizationSettings[\s\S]*selectedHostId=\{selectedSettingsHostId\}/,
+  );
+  assert.match(
+    appSource,
+    /<PersonalizationSettings[\s\S]*focusComposerNonce: Date\.now\(\)[\s\S]*prefillPrompt: prompt/s,
   );
   assert.match(
     settingsServiceSource,
@@ -112,6 +132,20 @@ test("app and services keep extracted personalization host plumbing", () => {
     personalizationServiceSource,
     /invoke<void>\("reset-memories-for-host",/,
   );
+});
+
+test("shared settings dialog and toggle primitives support extracted personalization owners", () => {
+  const dialogSource = readSource(SETTINGS_DIALOG_SOURCE_PATH);
+  const toggleSource = readSource(TOGGLE_SWITCH_SOURCE_PATH);
+
+  assert.match(dialogSource, /export function SettingsDialog\(/);
+  assert.match(dialogSource, /role="dialog"/);
+  assert.match(dialogSource, /aria-modal="true"/);
+  assert.match(dialogSource, /size = "default"/);
+  assert.match(dialogSource, /size === "compact" \? "max-w-\[420px\] px-5 py-5" : "max-w-\[560px\] px-5 py-4"/);
+  assert.match(dialogSource, /export function SettingsDialogFooter\(/);
+  assert.match(toggleSource, /className\?: string;/);
+  assert.match(toggleSource, /className=\{joinClasses\("app-toggle", className\)\}/);
 });
 
 function readSource(filePath: string) {

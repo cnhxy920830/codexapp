@@ -10,7 +10,10 @@ import {
   type ChronicleSidecarProcessState,
 } from "../services/personalization";
 import { getGlobalState, setGlobalState } from "../services/settings";
+import { SettingsDialog, SettingsDialogFooter } from "./SettingsDialog";
+import { Button } from "./Button";
 import { SettingsRow } from "./SettingsRow";
+import { Tooltip } from "./Tooltip";
 import { ToggleSwitch } from "./ToggleSwitch";
 
 const CHRONICLE_DOCS_URL = "https://developers.openai.com/codex/memories/chronicle";
@@ -170,10 +173,6 @@ export function PersonalizationChronicleSettings({
 
   const chronicleDisplayName = t("settings.general.experimentalFeatures.chronicle.name");
   const chronicleToggleDisabled = isBusy || !memoriesEnabled;
-  const chronicleToggleTooltip = memoriesEnabled
-    ? undefined
-    : t("settings.general.experimentalFeatures.chronicle.memoriesRequiredTooltip");
-
   const reloadPermissions = () => {
     setPermissionsRefreshVersion((current) => current + 1);
   };
@@ -269,23 +268,28 @@ export function PersonalizationChronicleSettings({
           />
         }
         control={
-          <div title={chronicleToggleTooltip}>
-            <span className={memoriesEnabled ? "inline-flex" : "inline-flex cursor-not-allowed"}>
+          <Tooltip
+            disabled={memoriesEnabled}
+            tooltipContent={t("settings.general.experimentalFeatures.chronicle.memoriesRequiredTooltip")}
+          >
+            <span className={memoriesEnabled ? "inline-flex" : "inline-flex cursor-not-allowed"} tabIndex={memoriesEnabled ? undefined : 0}>
               <ToggleSwitch
                 checked={checked}
                 disabled={chronicleToggleDisabled}
+                className={memoriesEnabled ? undefined : "pointer-events-none"}
                 ariaLabel={t("settings.general.experimentalFeatures.chronicle.buttonAriaLabel", {
                   featureName: chronicleDisplayName,
                 })}
                 onChange={handleToggleChange}
               />
             </span>
-          </div>
+          </Tooltip>
         }
       />
 
       {isConsentDialogOpen ? (
         <ChronicleConsentDialog
+          chronicleDisplayName={chronicleDisplayName}
           isPending={isBusy}
           onCancel={() => setIsConsentDialogOpen(false)}
           onContinue={() =>
@@ -347,66 +351,58 @@ function ChronicleDescription({
 
 function ChronicleConsentDialog({
   isPending,
+  chronicleDisplayName,
   onCancel,
   onContinue,
 }: {
   isPending: boolean;
+  chronicleDisplayName: string;
   onCancel: () => void;
   onContinue: () => void;
 }) {
   const { t } = useI18n();
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={t("settings.general.experimentalFeatures.chronicle.consentTitle")}
-        className="app-card w-full max-w-[560px] rounded-[18px] px-5 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]"
-      >
-        <h2 className="app-title text-[15px] font-medium">
-          {t("settings.general.experimentalFeatures.chronicle.consentTitle")}
-        </h2>
-        <div className="mt-4 max-h-[calc(100vh-12rem)] space-y-3 overflow-y-auto pr-1 text-[13px] leading-6">
-          <p>{t("settings.general.experimentalFeatures.chronicle.consentBodyIntro")}</p>
-          <p>{t("settings.general.experimentalFeatures.chronicle.consentBodyConsiderations")}</p>
-          <ul className="list-disc space-y-1 pl-5">
-            <li>{renderStrongMessage(t("settings.general.experimentalFeatures.chronicle.consentBodyCost"))}</li>
-            <li>{renderStrongMessage(t("settings.general.experimentalFeatures.chronicle.consentBodyPrivacy"))}</li>
-            <li>{renderStrongMessage(t("settings.general.experimentalFeatures.chronicle.consentBodyPromptInjection"))}</li>
-          </ul>
-          <p>{t("settings.general.experimentalFeatures.chronicle.consentBodyStorageHeading")}</p>
-          <ul className="list-disc space-y-1 pl-5">
-            <li>{t("settings.general.experimentalFeatures.chronicle.consentBodyStorageProcessing")}</li>
-            <li>{t("settings.general.experimentalFeatures.chronicle.consentBodyStorageLocal")}</li>
-          </ul>
-          <p>
-            {renderInlineLinkMessage(
-              t("settings.general.experimentalFeatures.chronicle.consentBodyDisableIntro"),
-              CHRONICLE_DOCS_URL,
-            )}
-          </p>
-        </div>
-        <div className="mt-5 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={onCancel}
-            className="app-control rounded-[11px] px-3 py-1.5 text-[12px] disabled:opacity-60"
-          >
-            {t("settings.general.experimentalFeatures.chronicle.cancel")}
-          </button>
-          <button
-            type="button"
-            disabled={isPending}
-            onClick={onContinue}
-            className="app-control rounded-[11px] bg-[var(--app-shell-accent)] px-3 py-1.5 text-[12px] text-white disabled:opacity-60"
-          >
-            {isPending ? t("general.saving") : t("settings.general.experimentalFeatures.chronicle.continue")}
-          </button>
-        </div>
+    <SettingsDialog
+      footer={
+        <SettingsDialogFooter
+          cancelLabel={t("settings.general.experimentalFeatures.chronicle.cancel")}
+          confirmLabel={t("settings.general.experimentalFeatures.chronicle.continue")}
+          confirmLoading={isPending}
+          onCancel={onCancel}
+          onConfirm={onContinue}
+        />
+      }
+      onOpenChange={(open) => {
+        if (!open) {
+          onCancel();
+        }
+      }}
+      open
+      title={t("settings.general.experimentalFeatures.chronicle.consentTitle")}
+    >
+      <h2 className="sr-only">{chronicleDisplayName}</h2>
+      <div className="max-h-[calc(100vh-6rem)] min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 text-token-foreground/70">
+        <p>{t("settings.general.experimentalFeatures.chronicle.consentBodyIntro")}</p>
+        <p>{t("settings.general.experimentalFeatures.chronicle.consentBodyConsiderations")}</p>
+        <ul className="list-disc space-y-1 pl-5">
+          <li>{renderStrongMessage(t("settings.general.experimentalFeatures.chronicle.consentBodyCost"))}</li>
+          <li>{renderStrongMessage(t("settings.general.experimentalFeatures.chronicle.consentBodyPrivacy"))}</li>
+          <li>{renderStrongMessage(t("settings.general.experimentalFeatures.chronicle.consentBodyPromptInjection"))}</li>
+        </ul>
+        <p>{t("settings.general.experimentalFeatures.chronicle.consentBodyStorageHeading")}</p>
+        <ul className="list-disc space-y-1 pl-5">
+          <li>{t("settings.general.experimentalFeatures.chronicle.consentBodyStorageProcessing")}</li>
+          <li>{t("settings.general.experimentalFeatures.chronicle.consentBodyStorageLocal")}</li>
+        </ul>
+        <p>
+          {renderInlineLinkMessage(
+            t("settings.general.experimentalFeatures.chronicle.consentBodyDisableIntro"),
+            CHRONICLE_DOCS_URL,
+          )}
+        </p>
       </div>
-    </div>
+    </SettingsDialog>
   );
 }
 
@@ -438,24 +434,24 @@ function ChronicleSetupDialog({
   });
 
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="app-card w-full max-w-[520px] rounded-[18px] px-5 py-4 shadow-[0_16px_40px_rgba(0,0,0,0.22)]"
-      >
-        <h2 className="app-title text-[15px] font-medium">{title}</h2>
-        {subtitle ? <div className="app-text-muted mt-2 text-[13px] leading-6">{subtitle}</div> : null}
-        <div className="app-text-muted mt-4 space-y-3 text-[13px] leading-6">
-          {body}
-          {setupState.kind === "failed" ? (
-            <p className="text-[var(--app-shell-danger,#b42318)]">{setupState.message}</p>
-          ) : null}
-        </div>
-        {footer ? <div className="mt-5 flex items-center justify-end gap-2">{footer}</div> : null}
+    <SettingsDialog
+      footer={footer}
+      onOpenChange={(isOpen) => {
+        if (!isOpen) {
+          onClose();
+        }
+      }}
+      open={open}
+      title={title}
+      subtitle={subtitle || undefined}
+    >
+      <div className="space-y-3 text-[13px] leading-6 text-token-text-secondary">
+        {body}
+        {setupState.kind === "failed" ? (
+          <p className="text-[var(--app-shell-danger,#b42318)]">{setupState.message}</p>
+        ) : null}
       </div>
-    </div>
+    </SettingsDialog>
   );
 }
 
@@ -612,44 +608,20 @@ function resolveSetupFooter({
 }) {
   switch (setupState.kind) {
     case "screen-recording-permission-needed":
-      return (
-        <button
-          type="button"
-          onClick={() => undefined}
-          className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
-        >
-          {t("settings.general.experimentalFeatures.chronicle.openScreenRecordingSettings")}
-        </button>
-      );
+      return <button type="button" onClick={() => undefined} className="app-control rounded-[11px] px-3 py-1.5 text-[12px]">{t("settings.general.experimentalFeatures.chronicle.openScreenRecordingSettings")}</button>;
     case "accessibility-permission-needed":
-      return (
-        <button
-          type="button"
-          onClick={() => undefined}
-          className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
-        >
-          {t("settings.general.experimentalFeatures.chronicle.openAccessibilitySettings")}
-        </button>
-      );
+      return <button type="button" onClick={() => undefined} className="app-control rounded-[11px] px-3 py-1.5 text-[12px]">{t("settings.general.experimentalFeatures.chronicle.openAccessibilitySettings")}</button>;
     case "ready":
       return (
-        <button
-          type="button"
-          onClick={onAskCodex}
-          className="app-control rounded-[11px] bg-[var(--app-shell-accent)] px-3 py-1.5 text-[12px] text-white"
-        >
+        <Button color="primary" onClick={onAskCodex}>
           {t("settings.general.experimentalFeatures.chronicle.askCodex")}
-        </button>
+        </Button>
       );
     case "failed":
       return (
-        <button
-          type="button"
-          onClick={onClose}
-          className="app-control rounded-[11px] px-3 py-1.5 text-[12px]"
-        >
+        <Button color="ghost" onClick={onClose}>
           {t("settings.general.experimentalFeatures.chronicle.setupClose")}
-        </button>
+        </Button>
       );
     case "preparing":
     case "starting":

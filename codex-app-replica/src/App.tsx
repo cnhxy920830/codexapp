@@ -154,6 +154,7 @@ import { EditorDiffPage } from "./features/editorDiff/EditorDiffPage";
 import { GlobalDictationPage } from "./features/globalDictation/GlobalDictationPage";
 import { HotkeyWindowHomePage } from "./features/hotkeyWindow/HotkeyWindowHomePage";
 import { HotkeyWindowNewThreadPage } from "./features/hotkeyWindow/HotkeyWindowNewThreadPage";
+import { HotkeyWindowRemoteConversationPage } from "./features/hotkeyWindow/HotkeyWindowRemoteConversationPage";
 import { HotkeyWindowThreadPage } from "./features/hotkeyWindow/HotkeyWindowThreadPage";
 import { LoginRoutePage } from "./features/auth/LoginRoutePage";
 import { useUsageSettingsAccess } from "./hooks/useUsageSettingsAccess";
@@ -186,6 +187,7 @@ import {
   useReplicaStatsigDefaultFeatures,
   useReplicaStatsigGateValue,
   useReplicaStatsigOwner,
+  useReplicaStatsigState,
 } from "./features/statsig/replicaStatsig";
 import { WorktreesSettingsPage } from "./features/worktrees/WorktreesSettingsPage";
 import { WorktreeInitV2Page } from "./features/worktreeInit/WorktreeInitV2Page";
@@ -349,6 +351,7 @@ import {
   getCustomAvatarsSnapshot,
   subscribeCustomAvatars,
 } from "./services/customAvatars";
+import { listExperimentalFeaturesForHost } from "./services/personalization";
 
 const appWindow = getCurrentWindow();
 const IMPLEMENT_PLAN_PROMPT_PREFIX = "PLEASE IMPLEMENT THIS PLAN:";
@@ -357,6 +360,7 @@ const NAVIGATE_TO_ROUTE_EVENT = "navigate-to-route";
 const TOGGLE_DIFF_PANEL_EVENT = "toggle-diff-panel";
 const WELCOME_V2_ONBOARDING_QUERY_PARAM = "welcomeV2Onboarding";
 const HOTKEY_HOME_ROUTE_PATH = "/hotkey-window";
+const EXTENSION_PANEL_NEW_ROUTE_PATH = "/extension/panel/new";
 const RIGHT_PANEL_WIDTH_STORAGE_KEY = "codex-app-replica:right-panel-width";
 const RIGHT_PANEL_WIDTH_MODE_STORAGE_KEY = "codex-app-replica:right-panel-width-mode";
 const LEFT_SIDEBAR_OPEN_STORAGE_KEY = "codex-app-replica:left-sidebar-open";
@@ -460,6 +464,15 @@ type ThreadShellRoute = {
   kind: "local" | "remote";
   threadId: string;
   shell: ThreadShellVariant;
+};
+
+type HostExperimentalFeatureState = {
+  browserUseEnabled: boolean;
+  browserUseExternalEnabled: boolean;
+  computerUseEnabled: boolean;
+  hooksEnabled: boolean;
+  isLoading: boolean;
+  pluginHooksEnabled: boolean;
 };
 
 type WorktreeInitRoute = {
@@ -718,6 +731,19 @@ function isSelectWorkspaceRoute(path: string) {
   return path === SELECT_WORKSPACE_ROUTE_PATH;
 }
 
+function isExtensionPanelNewRoute(path: string) {
+  return stripRouteSearchAndHash(path) === EXTENSION_PANEL_NEW_ROUTE_PATH;
+}
+
+function isComputerUseSettingsSupportedPlatform() {
+  if (typeof navigator === "undefined") {
+    return true;
+  }
+
+  const platform = navigator.platform ?? "";
+  return platform.startsWith("Mac") || platform.startsWith("Win");
+}
+
 function isAvatarOverlayRoute(path: string) {
   return path === AVATAR_OVERLAY_ROUTE_PATH;
 }
@@ -761,6 +787,10 @@ function readInitialAppRoute(): AppRoute {
 
   if (typeof window !== "undefined" && isSelectWorkspaceRoute(window.location.pathname)) {
     return "select-workspace";
+  }
+
+  if (typeof window !== "undefined" && isExtensionPanelNewRoute(window.location.pathname)) {
+    return "chat";
   }
 
   if (typeof window !== "undefined" && isEditorDiffRoute(window.location.pathname)) {
@@ -1297,6 +1327,19 @@ function App() {
   const remoteConnectionsHomeBannerEnabled = useReplicaStatsigGateValue(
     REPLICA_STATSIG_GATES.remoteConnectionsHomeBanner,
   );
+  const browserUseSettingsVisible = useReplicaStatsigGateValue(
+    REPLICA_STATSIG_GATES.browserUse,
+  );
+  const browserUseExternalSettingsVisible = useReplicaStatsigGateValue(
+    REPLICA_STATSIG_GATES.browserUseExternal,
+  );
+  const computerUseSettingsVisible = useReplicaStatsigGateValue(
+    REPLICA_STATSIG_GATES.computerUse,
+  );
+  const replicaStatsigState = useReplicaStatsigState();
+  const keyboardShortcutsSettingsVisible = useReplicaStatsigGateValue(
+    REPLICA_STATSIG_GATES.hotkeyWindowSuppress,
+  );
   const [settingsSection, setSettingsSection] = useState<SettingsSection>(readInitialSettingsSection);
   const [settingsSectionState, setSettingsSectionState] = useState<SettingsSectionState>(null);
   const [settingsRemoteConnections, setSettingsRemoteConnections] = useState<RemoteConnection[]>([]);
@@ -1309,6 +1352,17 @@ function App() {
   const [currentWindowHostId, setCurrentWindowHostId] = useState<string>(() => readInitialSettingsHostId());
   const [localActiveWorkspaceRoot, setLocalActiveWorkspaceRoot] = useState<string | null>(null);
   const [hasComputerUseApprovalStore, setHasComputerUseApprovalStore] = useState(false);
+  const [isRunCodexInWindowsSubsystemForLinuxLoading, setIsRunCodexInWindowsSubsystemForLinuxLoading] =
+    useState(true);
+  const [runCodexInWindowsSubsystemForLinux, setRunCodexInWindowsSubsystemForLinux] = useState(false);
+  const [settingsExperimentalFeatures, setSettingsExperimentalFeatures] = useState<HostExperimentalFeatureState>({
+    browserUseEnabled: false,
+    browserUseExternalEnabled: false,
+    computerUseEnabled: false,
+    hooksEnabled: false,
+    isLoading: true,
+    pluginHooksEnabled: false,
+  });
   const [codexHome, setCodexHome] = useState<string | null>(null);
   const [configSnapshot, setConfigSnapshot] = useState<ConfigSnapshot | null>(null);
   const [localComposerConfigRequirements, setLocalComposerConfigRequirements] =
@@ -1447,6 +1501,7 @@ function App() {
       ? "sidebarElectron.skillsAppsRouteNavLink"
       : "sidebarElectron.skillsRouteNavLink";
   const {
+    isUsageSettingsAccessLoading,
     isUsageSettingsVisible: showUsageSettings,
   } = useUsageSettingsAccess({
     authMethod: authSnapshot.authState.authMethod,
@@ -1456,14 +1511,54 @@ function App() {
     configSnapshot === null
       ? remoteConnectionsHomeBannerEnabled || settingsSection === "connections"
       : configSnapshot.features?.remote_connections === true || remoteConnectionsHomeBannerEnabled;
+  const isLocalSettingsHost = selectedSettingsHostId === LOCAL_SETTINGS_HOST_ID;
+  const isComputerUsePlatformSupported = isComputerUseSettingsSupportedPlatform();
+  const isBrowserUseSettingsNavVisible =
+    isLocalSettingsHost &&
+    browserUseSettingsVisible &&
+    settingsExperimentalFeatures.browserUseEnabled &&
+    !runCodexInWindowsSubsystemForLinux;
+  const isBrowserUseExternalSettingsAvailable =
+    isLocalSettingsHost &&
+    browserUseExternalSettingsVisible &&
+    settingsExperimentalFeatures.browserUseExternalEnabled;
+  const isComputerUseSettingsAvailable =
+    isLocalSettingsHost &&
+    computerUseSettingsVisible &&
+    isComputerUsePlatformSupported &&
+    settingsExperimentalFeatures.computerUseEnabled;
+  const isComputerUseSettingsNavVisible =
+    isComputerUseSettingsAvailable || isBrowserUseExternalSettingsAvailable;
+  const isComputerUseSettingsVisibilityLoading =
+    isLocalSettingsHost &&
+    settingsExperimentalFeatures.isLoading &&
+    ((computerUseSettingsVisible && isComputerUsePlatformSupported) ||
+      browserUseExternalSettingsVisible);
+  const areSettingsHooksVisible =
+    settingsExperimentalFeatures.hooksEnabled &&
+    settingsExperimentalFeatures.pluginHooksEnabled;
+  const isCurrentSettingsSectionAwaitingVisibility =
+    (settingsSection === "usage" && isUsageSettingsAccessLoading) ||
+    (settingsSection === "keyboard-shortcuts" &&
+      !keyboardShortcutsSettingsVisible &&
+      replicaStatsigState.isLoading) ||
+    (settingsSection === "computer-use" && isComputerUseSettingsVisibilityLoading) ||
+    (settingsSection === "browser-use" &&
+      isLocalSettingsHost &&
+      (replicaStatsigState.isLoading ||
+        settingsExperimentalFeatures.isLoading ||
+        isRunCodexInWindowsSubsystemForLinuxLoading)) ||
+    (settingsSection === "hooks-settings" && !areSettingsHooksVisible && settingsExperimentalFeatures.isLoading);
   const hiddenSettingsSectionIds = new Set<SettingsSection>(["account", "plugins-settings", "skills-settings"]);
   const directSettingsRouteIds = new Set<SettingsSection>(["account"]);
   const visibleSettingsNavItems = settingsNavItems.filter(
     (item) =>
       !hiddenSettingsSectionIds.has(item.id) &&
       (item.id !== "connections" || isRemoteConnectionsSettingsVisible) &&
-      item.id !== "hooks-settings" &&
-      (item.id !== "computer-use" || hasComputerUseApprovalStore) &&
+      (item.id !== "keyboard-shortcuts" || keyboardShortcutsSettingsVisible) &&
+      (item.id !== "hooks-settings" || areSettingsHooksVisible) &&
+      (item.id !== "browser-use" || isBrowserUseSettingsNavVisible) &&
+      (item.id !== "computer-use" || isComputerUseSettingsNavVisible) &&
       (item.id !== "usage" || showUsageSettings),
   );
   const orderedVisibleSettingsNavItems = [
@@ -2747,7 +2842,6 @@ function App() {
     }
 
     let cancelled = false;
-
     void readComputerUseApprovalsVisibility()
       .then((state) => {
         if (!cancelled) {
@@ -2778,20 +2872,123 @@ function App() {
       currentRoute !== "settings" ||
       isCurrentSettingsSectionVisible ||
       isCurrentSettingsSectionDirectRoute ||
-      isCurrentSettingsSubpage
+      isCurrentSettingsSubpage ||
+      isCurrentSettingsSectionAwaitingVisibility
     ) {
       return;
     }
 
-    setSettingsSection(firstVisibleSettingsSection);
-    setSettingsSectionState(null);
+    void handleNavigateToRoute(`/settings/${firstVisibleSettingsSection}`);
   }, [
     currentRoute,
     firstVisibleSettingsSection,
     isCurrentSettingsSectionDirectRoute,
+    isCurrentSettingsSectionAwaitingVisibility,
     isCurrentSettingsSectionVisible,
     isCurrentSettingsSubpage,
   ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let isDisposed = false;
+    let requestId = 0;
+    let unlisten: (() => void) | undefined;
+
+    const loadRunCodexInWindowsSubsystemForLinuxState = async () => {
+      const currentRequestId = requestId + 1;
+      requestId = currentRequestId;
+      setIsRunCodexInWindowsSubsystemForLinuxLoading(true);
+
+      try {
+        const response = await getGlobalState("runCodexInWindowsSubsystemForLinux");
+        if (cancelled || requestId !== currentRequestId) {
+          return;
+        }
+
+        setRunCodexInWindowsSubsystemForLinux(response.value === true);
+        setIsRunCodexInWindowsSubsystemForLinuxLoading(false);
+      } catch {
+        if (cancelled || requestId !== currentRequestId) {
+          return;
+        }
+
+        setRunCodexInWindowsSubsystemForLinux(false);
+        setIsRunCodexInWindowsSubsystemForLinuxLoading(false);
+      }
+    };
+
+    void loadRunCodexInWindowsSubsystemForLinuxState();
+
+    void onGlobalStateUpdated((notification) => {
+      if (notification.keys.includes("runCodexInWindowsSubsystemForLinux")) {
+        void loadRunCodexInWindowsSubsystemForLinuxState();
+      }
+    }).then((dispose) => {
+      if (isDisposed) {
+        void dispose();
+        return;
+      }
+
+      unlisten = dispose;
+    });
+
+    return () => {
+      cancelled = true;
+      isDisposed = true;
+      void unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (currentRoute !== "settings") {
+      return;
+    }
+
+    let cancelled = false;
+    setSettingsExperimentalFeatures((current) => ({
+      ...current,
+      isLoading: true,
+    }));
+
+    void listExperimentalFeaturesForHost(selectedSettingsHostId)
+      .then((features) => {
+        if (cancelled) {
+          return;
+        }
+
+        const browserUseFeature = features.find((feature) => feature.name === "browser_use");
+        const browserUseExternalFeature = features.find(
+          (feature) => feature.name === "browser_use_external",
+        );
+        const computerUseFeature = features.find((feature) => feature.name === "computer_use");
+        const hooksFeature = features.find((feature) => feature.name === "hooks");
+        const pluginHooksFeature = features.find((feature) => feature.name === "plugin_hooks");
+        setSettingsExperimentalFeatures({
+          browserUseEnabled: browserUseFeature?.enabled === true,
+          browserUseExternalEnabled: browserUseExternalFeature?.enabled === true,
+          computerUseEnabled: computerUseFeature?.enabled === true,
+          hooksEnabled: hooksFeature?.enabled === true,
+          isLoading: false,
+          pluginHooksEnabled: pluginHooksFeature?.enabled === true,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSettingsExperimentalFeatures({
+            browserUseEnabled: false,
+            browserUseExternalEnabled: false,
+            computerUseEnabled: false,
+            hooksEnabled: false,
+            isLoading: false,
+            pluginHooksEnabled: false,
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentRoute, selectedSettingsHostId]);
 
   useEffect(() => {
     if (currentRoute !== "settings") {
@@ -3322,6 +3519,14 @@ function App() {
         if (isSelectWorkspaceRoute(path)) {
           setThreadShellVariant("default");
           setCurrentRoute("select-workspace");
+          return;
+        }
+
+        if (isExtensionPanelNewRoute(path)) {
+          if (typeof window !== "undefined" && window.location.pathname !== "/") {
+            window.history.replaceState(window.history.state, "", "/");
+          }
+          openNewConversation();
           return;
         }
 
@@ -4380,8 +4585,7 @@ function App() {
 
   const openArchivedChatsSettings = () => {
     setAppToast(null);
-    setSettingsSection("data-controls");
-    setCurrentRoute("settings");
+    void handleNavigateToRoute("/settings/data-controls");
   };
 
   const refreshRecentThreadsAfterUnarchive = async (hostId: string) => {
@@ -4690,6 +4894,22 @@ function App() {
     setComposerFocusNonce(state?.focusComposerNonce ?? Date.now());
     setCurrentRoute("chat");
   });
+  const shouldRedirectExtensionPanelNewToHome =
+    currentRoute === "chat" &&
+    typeof window !== "undefined" &&
+    isExtensionPanelNewRoute(window.location.pathname);
+
+  useEffect(() => {
+    if (!shouldRedirectExtensionPanelNewToHome) {
+      return;
+    }
+
+    if (window.location.pathname !== "/") {
+      window.history.replaceState(window.history.state, "", "/");
+    }
+
+    openNewConversation();
+  }, [shouldRedirectExtensionPanelNewToHome]);
 
   const focusMainComposer = () => {
     setComposerFocusNonce(Date.now());
@@ -4800,6 +5020,14 @@ function App() {
       setThreadShellVariant("default");
       setSkillsRouteState(null);
       setCurrentRoute("select-workspace");
+      return;
+    }
+
+    if (isExtensionPanelNewRoute(path)) {
+      if (typeof window !== "undefined" && window.location.pathname !== "/") {
+        window.history.replaceState(window.history.state, "", "/");
+      }
+      openNewConversation();
       return;
     }
 
@@ -6400,7 +6628,12 @@ function App() {
     if (settingsSection === "personalization") {
       return (
         <PersonalizationSettings
-          onOpenChatWithPrompt={(prompt) => openNewConversation({ prefillPrompt: prompt })}
+          onOpenChatWithPrompt={(prompt) =>
+            openNewConversation({
+              focusComposerNonce: Date.now(),
+              prefillPrompt: prompt,
+            })
+          }
           selectedHostId={selectedSettingsHostId}
           workspaceRoot={settingsWorkspaceRoot}
           onShowToast={(toast) => setAppToast(toast)}
@@ -6409,6 +6642,10 @@ function App() {
     }
 
     if (settingsSection === "browser-use") {
+      if (!isBrowserUseSettingsNavVisible) {
+        return null;
+      }
+
       return (
         <BrowserUseSettings
           hasComputerUseApprovalStore={hasComputerUseApprovalStore}
@@ -6420,7 +6657,7 @@ function App() {
     }
 
     if (settingsSection === "computer-use") {
-      if (!hasComputerUseApprovalStore) {
+      if (!isComputerUseSettingsNavVisible) {
         return null;
       }
 
@@ -6637,6 +6874,10 @@ function App() {
     return null;
   };
   const isHotkeyLocalThreadPage = currentRoute === "chat" && isHotkeyLocalThreadShell;
+  const isHotkeyRemoteThreadPage =
+    currentRoute === "chat" &&
+    currentThreadShellRoute?.shell === "hotkey" &&
+    currentThreadShellRoute.kind === "remote";
   const isDefaultLocalThreadPage =
     currentRoute === "chat" &&
     currentThreadShellRoute?.shell === "default" &&
@@ -6646,7 +6887,7 @@ function App() {
     currentThreadShellRoute?.shell === "default" &&
     currentThreadShellRoute.kind === "remote";
   const openThreadFromCurrentShell = (threadId: string) => {
-    if (isHotkeyLocalThreadPage) {
+    if (isHotkeyLocalThreadPage || isHotkeyRemoteThreadPage) {
       const nextPath = buildLocalThreadRoutePath(threadId, "hotkey");
       if (typeof window !== "undefined" && window.location.pathname !== nextPath) {
         window.history.replaceState(window.history.state, "", nextPath);
@@ -6658,7 +6899,7 @@ function App() {
     void selectThread(threadId);
   };
   const openRemoteTaskFromCurrentShell = (taskId: string) => {
-    if (isHotkeyLocalThreadPage) {
+    if (isHotkeyLocalThreadPage || isHotkeyRemoteThreadPage) {
       const nextPath = buildRemoteThreadRoutePath(taskId, "hotkey");
       if (typeof window !== "undefined" && window.location.pathname !== nextPath) {
         window.history.replaceState(window.history.state, "", nextPath);
@@ -6865,6 +7106,27 @@ function App() {
     );
   }
 
+  if (isHotkeyRemoteThreadPage) {
+    return (
+      <>
+        <HotkeyWindowRemoteConversationPage
+          onNavigateToPath={navigateHotkeyThreadPage}
+          task={remoteTaskState?.task ?? null}
+          taskId={currentThreadShellRoute?.threadId ?? selectedThreadId ?? null}
+        >
+          {isThreadConversationLoading ? (
+            <div className="relative h-full min-h-0">
+              <LoadingPage fillParent debugName="HotkeyWindowRemoteConversationPage" />
+            </div>
+          ) : (
+            chatConversationMainPane
+          )}
+        </HotkeyWindowRemoteConversationPage>
+        <AppToastRegion toast={appToast} onDismiss={() => setAppToast(null)} />
+      </>
+    );
+  }
+
   if (isDefaultRemoteThreadPage) {
     return (
       <>
@@ -6920,13 +7182,10 @@ function App() {
               : null
         }
         onOpenCreateRemoteProject={() => {
-          setThreadShellVariant("default");
-          setSelectedSettingsHostId(currentWindowHostId);
-          setSettingsSection("local-environments");
-          setSettingsSectionState({
+          void handleNavigateToRoute("/settings/local-environments", {
+            initialHostId: currentWindowHostId,
             pendingViewAction: "open-create-remote-project-modal",
           });
-          setCurrentRoute("settings");
         }}
         onOpenLocalEnvironmentsSettings={({ configPath, hostId, workspaceRoot }) => {
           const searchParams = new URLSearchParams({
@@ -6936,15 +7195,10 @@ function App() {
           if (configPath !== null) {
             searchParams.set("configPath", configPath);
           }
-          const nextPath = `/settings/local-environments?${searchParams.toString()}`;
-          if (typeof window !== "undefined" && window.location.pathname + window.location.search !== nextPath) {
-            window.history.replaceState(window.history.state, "", nextPath);
-          }
-          setThreadShellVariant("default");
-          setSelectedSettingsHostId(hostId ?? LOCAL_SETTINGS_HOST_ID);
-          setSettingsSection("local-environments");
-          setSettingsSectionState({ localEnvironmentRouteSearch: `?${searchParams.toString()}` });
-          setCurrentRoute("settings");
+          void handleNavigateToRoute(`/settings/local-environments?${searchParams.toString()}`, {
+            initialHostId: hostId ?? LOCAL_SETTINGS_HOST_ID,
+            localEnvironmentRouteSearch: `?${searchParams.toString()}`,
+          });
         }}
         onStartCloudConversation={startHotkeyHomeCloudConversation}
         onStartLocalConversation={startHotkeyHomeLocalConversation}
@@ -6968,16 +7222,11 @@ function App() {
               if (configPath !== null) {
                 searchParams.set("configPath", configPath);
               }
-              const nextPath = `/settings/local-environments?${searchParams.toString()}`;
-              if (typeof window !== "undefined" && window.location.pathname + window.location.search !== nextPath) {
-                window.history.replaceState(window.history.state, "", nextPath);
-              }
-              setThreadShellVariant("default");
               setWorktreeInitRoute(null);
-              setSelectedSettingsHostId(LOCAL_SETTINGS_HOST_ID);
-              setSettingsSection("local-environments");
-              setSettingsSectionState({ localEnvironmentRouteSearch: `?${searchParams.toString()}` });
-              setCurrentRoute("settings");
+              void handleNavigateToRoute(`/settings/local-environments?${searchParams.toString()}`, {
+                initialHostId: LOCAL_SETTINGS_HOST_ID,
+                localEnvironmentRouteSearch: `?${searchParams.toString()}`,
+              });
             }}
             onNavigateToPath={(path) => {
               void handleNavigateToRoute(path, null);
@@ -6996,16 +7245,11 @@ function App() {
               if (configPath !== null) {
                 searchParams.set("configPath", configPath);
               }
-              const nextPath = `/settings/local-environments?${searchParams.toString()}`;
-              if (typeof window !== "undefined" && window.location.pathname + window.location.search !== nextPath) {
-                window.history.replaceState(window.history.state, "", nextPath);
-              }
-              setThreadShellVariant("default");
               setWorktreeInitRoute(null);
-              setSelectedSettingsHostId(LOCAL_SETTINGS_HOST_ID);
-              setSettingsSection("local-environments");
-              setSettingsSectionState({ localEnvironmentRouteSearch: `?${searchParams.toString()}` });
-              setCurrentRoute("settings");
+              void handleNavigateToRoute(`/settings/local-environments?${searchParams.toString()}`, {
+                initialHostId: LOCAL_SETTINGS_HOST_ID,
+                localEnvironmentRouteSearch: `?${searchParams.toString()}`,
+              });
             }}
             onShowToast={(toast) => setAppToast(toast)}
             onNavigateToNewConversation={({ prefillPrompt }) => {
@@ -7179,6 +7423,10 @@ function App() {
         }}
       />
     );
+  }
+
+  if (shouldRedirectExtensionPanelNewToHome) {
+    return null;
   }
 
   return (
@@ -7447,7 +7695,9 @@ function App() {
                 <div className="mt-3 border-t border-[var(--app-shell-border)] pt-3">
                   <button
                     type="button"
-                    onClick={() => setCurrentRoute("settings")}
+                    onClick={() => {
+                      void handleNavigateToRoute("/settings/general-settings");
+                    }}
                     className="app-nav-item-idle flex h-10 w-full items-center gap-3 rounded-[12px] px-3.5 text-left text-[14px]"
                   >
                     <span className="app-text-muted flex h-4 w-4 items-center justify-center">
@@ -7496,8 +7746,7 @@ function App() {
                           key={item.id}
                           type="button"
                           onClick={() => {
-                            setSettingsSection(item.id);
-                            setSettingsSectionState(null);
+                            void handleNavigateToRoute(`/settings/${item.id}`, window.history.state);
                           }}
                           className={[
                             "flex h-10 w-full items-center gap-3 rounded-[12px] px-3.5 text-left text-[14px]",
@@ -7923,18 +8172,9 @@ function App() {
                       if (configPath !== null) {
                         searchParams.set("configPath", configPath);
                       }
-                      const nextPath = `/settings/local-environments?${searchParams.toString()}`;
-                      if (
-                        typeof window !== "undefined" &&
-                        window.location.pathname + window.location.search !== nextPath
-                      ) {
-                        window.history.replaceState(window.history.state, "", nextPath);
-                      }
-                      setSettingsSection("local-environments");
-                      setSettingsSectionState({
+                      void handleNavigateToRoute(`/settings/local-environments?${searchParams.toString()}`, {
                         localEnvironmentRouteSearch: `?${searchParams.toString()}`,
                       });
-                      setCurrentRoute("settings");
                     }}
                     onShowToast={(toast) => setAppToast(toast)}
                     recentThreads={recentThreadEntries}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Button } from "../../components/Button";
-import { CheckIcon, ChevronDownIcon, CopyPathIcon, RefreshIcon } from "../../components/AppShellIcons";
+import { ChevronDownIcon, RefreshIcon } from "../../components/AppShellIcons";
+import { CodeSnippet } from "../../components/CodeSnippet";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
 import type { MarkdownFileLinkReference } from "../../components/markdownLinkTypes";
 import type { MessageKey } from "../../i18n/messages";
@@ -404,7 +405,7 @@ function NotebookCellContents({
         {cell.source.trim().length === 0 ? (
           <NotebookEmptyBox>{t("notebookPreview.emptyRawCell")}</NotebookEmptyBox>
         ) : (
-          <CodeBlock content={cell.source} language="text" t={t} title={t("notebookPreview.rawCodeTitle")} />
+          <CodeBlock content={cell.source} language="text" title={t("notebookPreview.rawCodeTitle")} />
         )}
       </div>
     );
@@ -428,15 +429,15 @@ function NotebookCellContents({
             <details className="group/code mt-3 border-t border-token-border-light pt-2">
               <summary className="flex cursor-interaction list-none items-center gap-2 rounded-md py-1 text-left text-xs font-medium text-token-text-tertiary transition-colors hover:text-token-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-token-text-tertiary [&::-webkit-details-marker]:hidden">
                 <ChevronDownIcon className="icon-2xs shrink-0 -rotate-90 transition-transform duration-300 group-open/code:rotate-0" />
-                <NotebookPlaySmallIcon className="icon-2xs shrink-0" />
+                <NotebookCodeIcon className="icon-2xs shrink-0" />
                 <span>{t("notebookPreview.codeDisclosure")}</span>
               </summary>
               <div className="mt-2">
-                <CodeBlock content={cell.source} language="python" t={t} title={t("notebookPreview.pythonCodeTitle")} />
+                <CodeBlock content={cell.source} language="python" title={t("notebookPreview.pythonCodeTitle")} />
               </div>
             </details>
           ) : (
-            <CodeBlock content={cell.source} language="python" t={t} title={t("notebookPreview.pythonCodeTitle")} />
+            <CodeBlock content={cell.source} language="python" title={t("notebookPreview.pythonCodeTitle")} />
           )
         ) : (
           <NotebookEmptyBox>{t("notebookPreview.emptyCodeCell")}</NotebookEmptyBox>
@@ -565,7 +566,7 @@ function NotebookTextOutput({
   }
 
   if (language != null) {
-    return <CodeBlock content={rawText} language={language} showActionBar={false} t={t} />;
+    return <CodeBlock content={rawText} language={language} showActionBar={false} />;
   }
 
   return <RawPre>{rawText}</RawPre>;
@@ -579,82 +580,24 @@ function CodeBlock({
   content,
   language,
   showActionBar = true,
-  t,
   title,
 }: {
   content: string;
   language: string;
   showActionBar?: boolean;
-  t: (key: MessageKey, values?: Record<string, number | string>) => string;
   title?: string;
 }) {
   const resolvedTitle = title ?? language;
 
   return (
-    <div className="w-full min-w-0 overflow-clip rounded-lg border border-token-input-background bg-token-text-code-block-background">
-      {showActionBar ? (
-        <div className="flex items-center px-2 py-1 text-sm text-token-description-foreground select-none">
-          <div className="min-w-0 flex-1 truncate">{resolvedTitle}</div>
-          <div className="ml-auto flex shrink-0 items-center">
-            <CodeBlockCopyButton content={content} label={t("copyButton.copyCode")} t={t} />
-          </div>
-        </div>
-      ) : null}
-      <div className="overflow-auto p-2 text-size-chat" dir="ltr">
-        <code className="block font-mono text-xs whitespace-pre-wrap text-token-text-primary" data-language={language}>
-          {content}
-        </code>
-      </div>
-    </div>
-  );
-}
-
-function CodeBlockCopyButton({
-  content,
-  label,
-  t,
-}: {
-  content: string;
-  label: string;
-  t: (key: MessageKey, values?: Record<string, number | string>) => string;
-}) {
-  const [copied, setCopied] = useState(false);
-
-  useEffect(() => {
-    if (!copied) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setCopied(false);
-    }, 2000);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [copied]);
-
-  return (
-    <Button
-      aria-label={copied ? t("copyButton.copiedAriaLabel") : t("copyButton.copyAriaLabel")}
-      color="ghost"
-      size="icon"
-      title={copied ? t("copyButton.copied") : label}
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (typeof navigator !== "undefined" && navigator.clipboard?.writeText != null) {
-          void navigator.clipboard.writeText(content).then(
-            () => {
-              setCopied(true);
-            },
-            () => {},
-          );
-        }
-      }}
-    >
-      {copied ? <CheckIcon className="icon-xs" /> : <CopyPathIcon className="icon-xs" />}
-    </Button>
+    <CodeSnippet
+      content={content}
+      language={language}
+      shouldWrapCode
+      showActionBar={showActionBar}
+      title={resolvedTitle}
+      wrapperClassName="shadow-none"
+    />
   );
 }
 
@@ -717,7 +660,7 @@ function NotebookMarkdown({
       onFileLinkOpenInBrowser={markdownContext.onFileLinkOpenInBrowser}
       plugins={markdownContext.plugins}
       renderCodeBlock={({ content, language }) => (
-        <CodeBlock content={content} language={language ?? "text"} t={t} />
+        <CodeBlock content={content} language={language ?? "text"} />
       )}
       skills={markdownContext.skills}
       text={text}
@@ -1077,6 +1020,17 @@ function NotebookPlaySmallIcon({ className }: { className?: string }) {
     <svg aria-hidden="true" className={className} fill="none" viewBox="0 0 12 12">
       <path
         d="M3.75 3.63838L3.75 8.36129C3.75 8.85447 4.29447 9.15336 4.71055 8.88858L8.42137 6.52713C8.80732 6.28153 8.80732 5.71815 8.42137 5.47255L4.71055 3.11113C4.29447 2.84631 3.75 3.14518 3.75 3.63838Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+function NotebookCodeIcon({ className }: { className?: string }) {
+  return (
+    <svg aria-hidden="true" className={className} fill="none" viewBox="0 0 21 21">
+      <path
+        d="M11.9025 5.3302C12.0658 5.06755 12.3961 4.94629 12.6975 5.05774C13.0419 5.1853 13.2176 5.56881 13.09 5.91321L9.75703 14.9132L9.69745 15.0333C9.53415 15.296 9.20387 15.4172 8.90253 15.3058C8.55813 15.1782 8.3824 14.7947 8.50995 14.4503L11.843 5.45032L11.9025 5.3302ZM5.21894 5.35853C5.3974 5.03773 5.8023 4.92241 6.12324 5.10071C6.44404 5.27917 6.55935 5.68407 6.38105 6.00501L4.05976 10.1818L6.38105 14.3585L6.43476 14.4825C6.52764 14.7774 6.4039 15.1067 6.12324 15.2628C5.84224 15.4189 5.49646 15.3503 5.29511 15.1154L5.21894 15.005L2.71894 10.505C2.60736 10.3042 2.60736 10.0594 2.71894 9.85853L5.21894 5.35853ZM15.4768 5.10071C15.7578 4.9446 16.1035 5.01323 16.3049 5.24817L16.381 5.35853L18.881 9.85853C18.9926 10.0594 18.9926 10.3042 18.881 10.505L16.381 15.005C16.2026 15.3258 15.7977 15.4411 15.4768 15.2628C15.156 15.0844 15.0406 14.6795 15.2189 14.3585L17.5393 10.1818L15.2189 6.00501L15.1652 5.88099C15.0723 5.58611 15.1961 5.25684 15.4768 5.10071Z"
         fill="currentColor"
       />
     </svg>
