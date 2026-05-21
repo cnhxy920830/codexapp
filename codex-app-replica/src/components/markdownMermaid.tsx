@@ -343,6 +343,6 @@ function readDocumentIsDark() {
 }
 
 async function loadMermaidRuntime() {
-  mermaidRuntimePromise ??= import("../assets/mermaid/markdown-C2NRdfOg.js") as Promise<MermaidRuntimeModule>;
+  mermaidRuntimePromise ??= import("../utils/mermaidWrapper") as Promise<MermaidRuntimeModule>;
   return mermaidRuntimePromise;
 }

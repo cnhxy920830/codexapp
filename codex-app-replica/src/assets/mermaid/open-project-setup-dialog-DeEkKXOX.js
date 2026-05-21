@@ -1,2 +1,0 @@
-import{g as e}from"./vscode-api-CEWdDs3u.js";function t(){e.dispatchMessage(`electron-add-new-workspace-root-option`,{})}function n({hostId:t,setActive:n}={}){e.dispatchHostMessage({type:`open-create-remote-project-modal`,hostId:t,setActive:n})}export{t as n,n as t};
-//# sourceMappingURL=open-project-setup-dialog-DeEkKXOX.js.map

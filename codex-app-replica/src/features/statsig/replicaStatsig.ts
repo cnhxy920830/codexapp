@@ -5,10 +5,13 @@ import {
   useRef,
   useSyncExternalStore,
 } from "react";
-import {
-  f as statsigModule,
-  type StatsigClientLike,
-} from "../../assets/mermaid/statsig-8HjEJSa2.js";
+import { StatsigClient } from "@statsig/js-client";
+
+type StatsigClientLike = {
+  getContext: () => { user?: { appVersion?: string } };
+  initializeAsync: () => Promise<unknown>;
+  logEvent: (eventName: string, value?: string | number, metadata?: Record<string, string>) => void;
+};
 import type { AuthSnapshot } from "../../services/auth";
 import { statsigFetchThroughTauri } from "../../services/statsig";
 
@@ -414,7 +417,7 @@ async function initializeStatsigProductEventClient(
   authSnapshot: AuthSnapshot,
   signature: string,
 ) {
-  const client = new statsigModule.StatsigClient(
+  const client = new StatsigClient(
     STATSIG_SDK_KEY,
     buildStatsigUser(authSnapshot),
     {

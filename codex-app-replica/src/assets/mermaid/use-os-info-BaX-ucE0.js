@@ -1,2 +1,0 @@
-import{t as e}from"./compiler-runtime-DU4FoEWg.js";import{V as t,a as n,c as r,y as i}from"./vscode-api-CEWdDs3u.js";var a=n(i,`os-info`,{staleTime:r.INFINITE}),o=e();function s(){let e=(0,o.c)(3),n=t(a),r;return e[0]!==n.data||e[1]!==n.isLoading?(r={data:n.data,isLoading:n.isLoading},e[0]=n.data,e[1]=n.isLoading,e[2]=r):r=e[2],r}export{a as n,s as t};
-//# sourceMappingURL=use-os-info-BaX-ucE0.js.map
