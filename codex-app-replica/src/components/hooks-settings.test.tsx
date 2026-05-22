@@ -7,6 +7,8 @@ import test from "node:test";
 
 const COMPONENT_SOURCE_PATH = path.join(process.cwd(), "src/components/HooksSettings.tsx");
 const APP_SOURCE_PATH = path.join(process.cwd(), "src/App.tsx");
+const SERVICE_SOURCE_PATH = path.join(process.cwd(), "src/services/hooks.ts");
+const RUST_SOURCE_PATH = path.join(process.cwd(), "src-tauri/src/auth_bridge.rs");
 
 test("hooks settings keeps extracted shared shell ownership", () => {
   const source = readSource(COMPONENT_SOURCE_PATH);
@@ -91,6 +93,40 @@ test("hooks settings project selector and row actions follow extracted shared dr
   assert.match(source, /const closeMenu = \(options\?: \{ restoreFocus\?: boolean \}\) => \{/);
   assert.match(source, /if \(options\?\.restoreFocus\) \{\s*triggerRef\.current\?\.focus\(\);\s*\}/s);
   assert.match(source, /dropdown\.closeMenu\(\{ restoreFocus: true \}\);/);
+});
+
+test("hooks settings keeps extracted event summary order", () => {
+  const componentSource = readSource(COMPONENT_SOURCE_PATH);
+
+  assert.match(
+    componentSource,
+    /const HOOK_EVENT_ORDER: HookEventName\[] = \[\s*"preToolUse",\s*"permissionRequest",\s*"postToolUse",\s*"sessionStart",\s*"userPromptSubmit",\s*"stop",\s*\];/s,
+  );
+  assert.doesNotMatch(
+    componentSource,
+    /const HOOK_EVENT_ORDER: HookEventName\[] = \[[\s\S]*"preCompact"[\s\S]*\];/s,
+  );
+  assert.doesNotMatch(
+    componentSource,
+    /const HOOK_EVENT_ORDER: HookEventName\[] = \[[\s\S]*"postCompact"[\s\S]*\];/s,
+  );
+});
+
+test("hooks settings keeps extracted hooks query and command bridge contract", () => {
+  const serviceSource = readSource(SERVICE_SOURCE_PATH);
+  const rustSource = readSource(RUST_SOURCE_PATH);
+
+  assert.match(serviceSource, /export const HOOKS_QUERY_KEY = \["hooks"\] as const;/);
+  assert.match(serviceSource, /return invoke<HooksListResponse>\("list-hooks-for-host", \{/);
+  assert.match(serviceSource, /keyPath: "hooks\.state"/);
+  assert.match(serviceSource, /await emitQueryCacheInvalidated\(HOOKS_QUERY_KEY\);/);
+  assert.match(serviceSource, /return \[\.\.\.HOOKS_QUERY_KEY, normalizeHostId\(hostId\), cwd\] as QueryCacheKey;/);
+  assert.match(rustSource, /#\[tauri::command\(rename = "list-hooks-for-host"\)\]/);
+  assert.match(rustSource, /AppServerRequestKind::HooksList/);
+  assert.match(rustSource, /"cwds": params\.cwds/);
+  assert.match(rustSource, /match key_path\.split\('\.'\)\.next\(\)\? \{/);
+  assert.match(rustSource, /"hooks" => Some\("hooks"\),/);
+  assert.match(rustSource, /#\[tauri::command\(rename = "batch-write-config-value"\)\]/);
 });
 
 function readSource(filePath: string) {

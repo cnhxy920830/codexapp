@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { batchWriteConfigValueForHost, type ConfigSnapshot } from "./settings";
+import { type ConfigSnapshot, writeConfigValueForHost } from "./settings";
 
 export type McpServerStatusEntry = {
   name: string;
@@ -93,18 +93,13 @@ export async function restartCodexAppServer(hostId: string) {
 
 export async function setMcpServerEnabled(params: McpServerSetEnabledParams) {
   const { enabled, expectedVersion, filePath, hostId, serverName } = params;
-  return batchWriteConfigValueForHost({
+  return writeConfigValueForHost({
     hostId,
-    edits: [
-      {
-        keyPath: `mcp_servers.${serverName}.enabled`,
-        value: enabled,
-        mergeStrategy: "upsert",
-      },
-    ],
+    keyPath: `mcp_servers.${serverName}.enabled`,
+    value: enabled,
+    mergeStrategy: "upsert",
     filePath: filePath ?? null,
     expectedVersion: expectedVersion ?? null,
-    reloadUserConfig: true,
   });
 }
 

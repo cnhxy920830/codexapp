@@ -1968,7 +1968,7 @@ function ActionEditorCard({
 }) {
   const { t } = useI18n();
   const isPlatformSpecific = action.platform !== null;
-  const selectedPlatform = action.platform ?? "darwin";
+  const selectedPlatform = action.platform ?? getCurrentLocalEnvironmentPlatform();
   const checkboxId = `local-env-action-platform-specific-${action.id}`;
 
   return (
@@ -2526,6 +2526,21 @@ function buildPlatformOptions(t: (key: MessageKey, values?: Record<string, numbe
     id: platform,
     label: formatPlatformLabel(platform, t),
   }));
+}
+
+function getCurrentLocalEnvironmentPlatform(): LocalEnvironmentPlatform {
+  if (typeof navigator === "undefined") {
+    return "win32";
+  }
+
+  const platform = navigator.platform ?? "";
+  if (platform.startsWith("Mac")) {
+    return "darwin";
+  }
+  if (platform.startsWith("Linux")) {
+    return "linux";
+  }
+  return "win32";
 }
 
 function getScriptOverrides(section: LocalEnvironmentScriptSection | null) {

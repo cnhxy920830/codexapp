@@ -150,6 +150,12 @@ test("editor keeps extracted segmented controls, action platform checkbox, and s
   assert.match(source, /settings\.localEnvironments\.actions\.item\.platforms\.specific/);
   assert.match(source, /<Tooltip disabled=\{saveDisabledReason == null\} tooltipContent=\{saveDisabledReason \?\? ""\}>/);
   assert.match(source, /<Tooltip tooltipContent=\{t\("settings\.localEnvironments\.actions\.item\.tooltip\.delete"\)\}>/);
+  assert.match(source, /const selectedPlatform = action\.platform \?\? getCurrentLocalEnvironmentPlatform\(\);/);
+  assert.match(source, /function getCurrentLocalEnvironmentPlatform\(\): LocalEnvironmentPlatform \{/);
+  assert.match(source, /if \(typeof navigator === "undefined"\) {\s*return "win32";\s*}/);
+  assert.match(source, /if \(platform\.startsWith\("Mac"\)\) {\s*return "darwin";\s*}/);
+  assert.match(source, /if \(platform\.startsWith\("Linux"\)\) {\s*return "linux";\s*}/);
+  assert.doesNotMatch(source, /const selectedPlatform = action\.platform \?\? "darwin";/);
   assert.doesNotMatch(source, /function SegmentedControl\(/);
   assert.doesNotMatch(source, /loading=\{isSaving\}/);
 });

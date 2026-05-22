@@ -88,16 +88,41 @@ test("mcp settings keeps upstream oauth cache and restart command payload shape"
   assert.doesNotMatch(serviceSource, /killCodexProcess/);
 });
 
-test("mcp settings invalidates config queries after save and uninstall mutations", () => {
+test("mcp settings keeps extracted enabled-toggle mutation path and optimistic enabled overlay", () => {
+  const componentSource = readSource(COMPONENT_SOURCE_PATH);
+  const serviceSource = readSource(path.join(process.cwd(), "src/services/mcp.ts"));
+
+  assert.match(componentSource, /const \[pendingEnabledByName, setPendingEnabledByName\] = useState<Record<string, boolean>>\(\{\}\);/);
+  assert.match(
+    componentSource,
+    /server: pendingEnabledByName\[name\] === undefined\s*\?\s*server\s*:\s*\{[\s\S]*enabled: pendingEnabledByName\[name\] as boolean,[\s\S]*\}/s,
+  );
+  assert.match(componentSource, /setPendingEnabledByName\(\(current\) => \(\{ \.\.\.current, \[name\]: enabled \}\)\);/);
+  assert.match(componentSource, /await setMcpServerEnabled\(\{/);
+  assert.match(componentSource, /await emitQueryCacheInvalidated\(CONFIG_QUERY_KEY\);/);
+  assert.match(
+    componentSource,
+    /setPendingEnabledByName\(\(current\) => \{\s*const \{ \[name\]: _removed, \.\.\.rest \} = current;\s*return rest;\s*\}\);/s,
+  );
+  assert.match(serviceSource, /return writeConfigValueForHost\(\{/);
+  assert.match(serviceSource, /keyPath: `mcp_servers\.\$\{serverName\}\.enabled`/);
+  assert.doesNotMatch(serviceSource, /batchWriteConfigValueForHost\(\{/);
+});
+
+test("mcp settings relies on batch-write invalidation for save and uninstall mutations", () => {
   const source = readSource(COMPONENT_SOURCE_PATH);
 
   assert.match(
     source,
-    /await batchWriteConfigValueForHost\(\{[\s\S]*reloadUserConfig: true,[\s\S]*\}\);\s*markSelectedHostDirty\(\);\s*await load\(\);\s*await emitQueryCacheInvalidated\(CONFIG_QUERY_KEY\);\s*closeEditor\(\);/s,
+    /await batchWriteConfigValueForHost\(\{[\s\S]*reloadUserConfig: true,[\s\S]*\}\);\s*markSelectedHostDirty\(\);\s*closeEditor\(\);/s,
   );
   assert.match(
     source,
-    /await batchWriteConfigValueForHost\(\{[\s\S]*value: null,[\s\S]*reloadUserConfig: true,[\s\S]*\}\);\s*markSelectedHostDirty\(\);\s*await load\(\);\s*await emitQueryCacheInvalidated\(CONFIG_QUERY_KEY\);\s*closeEditor\(\);/s,
+    /await batchWriteConfigValueForHost\(\{[\s\S]*value: null,[\s\S]*reloadUserConfig: true,[\s\S]*\}\);\s*markSelectedHostDirty\(\);\s*closeEditor\(\);/s,
+  );
+  assert.doesNotMatch(
+    source,
+    /await batchWriteConfigValueForHost\(\{[\s\S]*reloadUserConfig: true,[\s\S]*\}\);\s*markSelectedHostDirty\(\);\s*await load\(\);\s*await emitQueryCacheInvalidated\(CONFIG_QUERY_KEY\);/s,
   );
 });
 

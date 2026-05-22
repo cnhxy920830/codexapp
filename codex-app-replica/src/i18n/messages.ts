@@ -2291,6 +2291,15 @@ export type MessageKey =
   | "settings.remoteConnections.dialog.field.sshPort.intError"
   | "settings.remoteConnections.dialog.field.sshPort.rangeError"
   | "settings.remoteConnections.dialog.field.identity.error"
+  | "settings.remoteConnections.discoveryDialog.title"
+  | "settings.remoteConnections.discoveryDialog.subtitle"
+  | "settings.remoteConnections.discoveryDialog.connections"
+  | "settings.remoteConnections.discoveryDialog.connections.ariaLabel"
+  | "settings.remoteConnections.discoveryDialog.empty"
+  | "settings.remoteConnections.discoveryDialog.addManually"
+  | "settings.remoteConnections.discoveryDialog.continue"
+  | "settings.remoteConnections.discoveryDialog.review.name"
+  | "settings.remoteConnections.discoveryDialog.save"
   | "settings.remoteConnections.delete.error"
   | "settings.remoteConnections.deviceConnections.signedInDeviceOnlineSubtitle"
   | "settings.remoteConnections.deviceConnections.signedInDeviceOfflineSubtitle"
@@ -5106,6 +5115,15 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.remoteConnections.dialog.field.sshPort.intError": "SSH port must be an integer",
     "settings.remoteConnections.dialog.field.sshPort.rangeError": "SSH port must be between 1 and 65535",
     "settings.remoteConnections.dialog.field.identity.error": "Identity file path is required",
+    "settings.remoteConnections.discoveryDialog.title": "Connect via SSH",
+    "settings.remoteConnections.discoveryDialog.subtitle": "Choose a discovered connection or add one manually",
+    "settings.remoteConnections.discoveryDialog.connections": "Discovered connections",
+    "settings.remoteConnections.discoveryDialog.connections.ariaLabel": "Discovered connections",
+    "settings.remoteConnections.discoveryDialog.empty": "No discovered connections found",
+    "settings.remoteConnections.discoveryDialog.addManually": "Add manually",
+    "settings.remoteConnections.discoveryDialog.continue": "Continue",
+    "settings.remoteConnections.discoveryDialog.review.name": "Name your connection",
+    "settings.remoteConnections.discoveryDialog.save": "Save",
     "settings.remoteConnections.delete.error": "Unable to delete connection",
     "settings.remoteConnections.deviceConnections.signedInDeviceOnlineSubtitle": "Signed in device (online)",
     "settings.remoteConnections.deviceConnections.signedInDeviceOfflineSubtitle": "Signed in device (offline)",
@@ -7835,6 +7853,15 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.remoteConnections.dialog.field.sshPort.intError": "SSH 端口必须是整数",
     "settings.remoteConnections.dialog.field.sshPort.rangeError": "SSH 端口必须介于 1 到 65535 之间",
     "settings.remoteConnections.dialog.field.identity.error": "身份文件路径为必填项",
+    "settings.remoteConnections.discoveryDialog.title": "通过 SSH 连接",
+    "settings.remoteConnections.discoveryDialog.subtitle": "选择已发现的连接，或手动添加一个连接",
+    "settings.remoteConnections.discoveryDialog.connections": "已发现的连接",
+    "settings.remoteConnections.discoveryDialog.connections.ariaLabel": "已发现的连接",
+    "settings.remoteConnections.discoveryDialog.empty": "未找到已发现的连接",
+    "settings.remoteConnections.discoveryDialog.addManually": "手动添加",
+    "settings.remoteConnections.discoveryDialog.continue": "继续",
+    "settings.remoteConnections.discoveryDialog.review.name": "为连接命名",
+    "settings.remoteConnections.discoveryDialog.save": "保存",
     "settings.remoteConnections.delete.error": "无法删除连接",
     "settings.remoteConnections.deviceConnections.signedInDeviceOnlineSubtitle": "已登录设备（在线）",
     "settings.remoteConnections.deviceConnections.signedInDeviceOfflineSubtitle": "已登录设备（离线）",

@@ -49,6 +49,7 @@ test("remote connections page keeps extracted section order and key families", (
   assert.match(source, /REMOTE_CONTROL_CONNECTIONS_STATE_SHARED_OBJECT_KEY/);
   assert.match(source, /readSettingsRemoteControlConnectionsSnapshot/);
   assert.match(source, /readSettingsRemoteControlConnectionsStateSnapshot/);
+  assert.match(source, /useReplicaStatsigGateValue\(\s*REPLICA_STATSIG_GATES\.remoteControlVisibility,\s*\)/);
   assert.match(source, /settings\.remoteConnections\.editConnection/);
   assert.match(source, /settings\.remoteControlConnections\.deleteDialog\.title/);
   assert.match(source, /settings\.remoteControlConnections\.deleteDialog\.subtitle/);
@@ -85,10 +86,11 @@ test("device connections actions stay in the extracted header and merged SSH plu
   assert.match(source, /<RefreshIcon className="h-4 w-4" \/>/);
   assert.match(source, /onClick=\{onNavigateToCreateRemoteProject\}/);
   assert.match(source, /const hasConnectedConnection = connections\.some/);
-  assert.match(source, /return \[\.\.\.sortedSshConnections, \.\.\.sortedRemoteControlConnections\]/);
+  assert.match(source, /\.\.\.\(remoteControlVisibilityGate && remoteControlConnectionsState\.available/);
   assert.match(source, /sortRemoteControlConnections\(remoteControlConnections\)/);
   assert.match(source, /if \(isRemoteControlConnection\(connection\)\)/);
-  assert.match(source, /await Promise\.all\(\[\s*refreshRemoteConnections\(\),\s*refreshRemoteControlConnections\(\),\s*\]\)/s);
+  assert.match(source, /const requests: Array<Promise<unknown>> = \[refreshRemoteConnections\(\)\];/);
+  assert.match(source, /if \(remoteControlVisibilityGate\) \{\s*requests\.push\(refreshRemoteControlConnections\(\)\);/s);
   assert.match(source, /window\.setInterval\(\(\) => \{\s*void refreshAllConnections\(\)\.catch\(/s);
   assert.match(appSource, /onNavigateToCreateRemoteProject=\{\(\) => \{/);
   assert.match(localEnvironmentsSource, /if \(!isRemoteHost\) \{/);
@@ -226,6 +228,7 @@ test("device connections auth-required and authorize evidence stay source-backed
 
   assert.match(source, /remoteControlConnectionsState\.authRequired/);
   assert.match(source, /settings\.remoteControlConnections\.authRequired/);
+  assert.match(source, /showRemoteControlAuthorizeRow=\{false\}/);
   assert.doesNotMatch(source, /settings\.remoteControlConnections\.authorize(?!d)/);
 });
 
@@ -251,6 +254,31 @@ test("SSH dialog keeps extracted add vs edit shell size and alias visibility", (
   assert.match(source, /disabled=\{isSaving \|\| isAliasTarget\}/);
   assert.match(source, /placeholder=\{\s*isAliasTarget\s*\? undefined\s*:\s*t\("settings\.remoteConnections\.dialog\.field\.sshHost\.placeholder"\)/s);
   assert.match(source, /!\s*isAliasTarget \? \(/);
+});
+
+test("SSH add flow uses the extracted discovery dialog before manual editing and auto-connects saved hosts", () => {
+  const source = readSource(SOURCE_PATH);
+
+  assert.match(source, /const \[isSshDiscoveryDialogOpen, setIsSshDiscoveryDialogOpen\] = useState\(false\);/);
+  assert.match(source, /const \[discoveredSshConnections, setDiscoveredSshConnections\] = useState<RemoteConnection\[]>\(\[\]\);/);
+  assert.match(source, /const savedSshHostIds = useMemo\(\(\) => \{\s*return new Set\(sortedSshConnections\.map\(\(connection\) => connection\.hostId\)\);/s);
+  assert.match(source, /const discoveredSshCandidates = useMemo\(\(\) => \{\s*return discoveredSshConnections\.filter\(\(connection\) => !savedSshHostIds\.has\(connection\.hostId\)\);/s);
+  assert.match(source, /const response = await discoverRemoteSshConnections\(\);/);
+  assert.match(source, /setDiscoveredSshConnections\(\s*\[\.\.\.response\.discoveredRemoteConnections\]\.sort/s);
+  assert.match(source, /setIsSshDiscoveryDialogOpen\(true\);/);
+  assert.match(source, /function SshDiscoveryDialog/);
+  assert.match(source, /settings\.remoteConnections\.discoveryDialog\.title/);
+  assert.match(source, /settings\.remoteConnections\.discoveryDialog\.addManually/);
+  assert.match(source, /settings\.remoteConnections\.discoveryDialog\.continue/);
+  assert.match(source, /settings\.remoteConnections\.discoveryDialog\.review\.name/);
+  assert.match(source, /settings\.remoteConnections\.discoveryDialog\.save/);
+  assert.match(source, /setMode\("review"\)/);
+  assert.match(source, /onAddManually=\{\(\) => \{/);
+  assert.match(source, /await saveCodexManagedRemoteSshConnections\(nextSavedConnections\);/);
+  assert.match(source, /await setRemoteConnectionAutoConnect\(nextHostId, true\);/);
+  assert.match(source, /buildHostIdForDraft\(draft\)/);
+  assert.match(source, /remote-ssh-codex-managed:/);
+  assert.match(source, /remote-ssh-discovered:/);
 });
 
 test("remote host ChatGPT login waits for completion and supports abort cancellation", () => {

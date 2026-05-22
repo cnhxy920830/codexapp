@@ -16,7 +16,6 @@ import {
   readConfigForHost,
   resolveConfigChildOrigins,
   resolveConfigWriteTargetForKeyPath,
-  writeConfigValueForHost,
 } from "../services/settings";
 import {
   emitQueryCacheInvalidated,
@@ -35,6 +34,7 @@ import {
   parseMcpServers,
   sanitizeMcpServerKey,
   serializeMcpServerDraft,
+  setMcpServerEnabled,
   type McpServerDraft,
   type McpServerStatusEntry,
 } from "../services/mcp";
@@ -71,6 +71,7 @@ export function McpSettings({
   const [draft, setDraft] = useState<McpServerDraft | null>(null);
   const [dirtyHostIds, setDirtyHostIds] = useState<string[]>([]);
   const [authorizationUrlsByName, setAuthorizationUrlsByName] = useState<Record<string, string | null>>({});
+  const [pendingEnabledByName, setPendingEnabledByName] = useState<Record<string, boolean>>({});
   const loadRequestIdRef = useRef(0);
   const effectiveWorkspaceRoot = selectedHostId === LOCAL_HOST_ID ? workspaceRoot : null;
 
@@ -204,13 +205,21 @@ export function McpSettings({
         authStatus: serverStatuses.find((entry) => entry.name === name)?.authStatus ?? null,
         isReadOnly: serverOrigins[name]?.name.type === "project",
         name,
-        server,
+        server: pendingEnabledByName[name] === undefined
+          ? server
+          : {
+              ...server,
+              base: {
+                ...server.base,
+                enabled: pendingEnabledByName[name] as boolean,
+              },
+            },
       })).sort((left, right) => {
         return getMcpServerDisplayName(left.name, left.server)
           .localeCompare(getMcpServerDisplayName(right.name, right.server))
           || left.name.localeCompare(right.name);
       }),
-    [serverOrigins, serverStatuses, servers],
+    [pendingEnabledByName, serverOrigins, serverStatuses, servers],
   );
   const selectedExistingServerConfig = useMemo(
     () => (typeof editorKey === "string" ? config?.mcpServers?.[editorKey] ?? null : null),
@@ -269,42 +278,24 @@ export function McpSettings({
 
   const persistEnabled = async (name: string, enabled: boolean) => {
     setIsSaving(true);
+    setPendingEnabledByName((current) => ({ ...current, [name]: enabled }));
     try {
-      await writeConfigValueForHost({
+      await setMcpServerEnabled({
+        serverName: name,
         hostId: selectedHostId,
-        keyPath: `mcp_servers.${name}.enabled`,
-        value: enabled,
-        mergeStrategy: "upsert",
+        filePath: null,
+        expectedVersion: null,
+        enabled,
       });
       markSelectedHostDirty();
       await load();
       await emitQueryCacheInvalidated(CONFIG_QUERY_KEY);
     } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const authenticateServer = async (name: string) => {
-    const cachedAuthorizationUrl = authorizationUrlsByName[name];
-    if (cachedAuthorizationUrl) {
-      await open(cachedAuthorizationUrl);
-      return;
-    }
-
-    setAuthorizationUrlsByName((current) => ({ ...current, [name]: null }));
-    try {
-      const response = await loginMcpServer({
-        hostId: selectedHostId,
-        name,
-      });
-      setAuthorizationUrlsByName((current) => ({ ...current, [name]: response.authorizationUrl }));
-      await open(response.authorizationUrl);
-    } catch (error) {
-      setAuthorizationUrlsByName((current) => {
+      setPendingEnabledByName((current) => {
         const { [name]: _removed, ...rest } = current;
         return rest;
       });
-      throw error;
+      setIsSaving(false);
     }
   };
 
@@ -344,11 +335,33 @@ export function McpSettings({
         reloadUserConfig: true,
       });
       markSelectedHostDirty();
-      await load();
-      await emitQueryCacheInvalidated(CONFIG_QUERY_KEY);
       closeEditor();
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const authenticateServer = async (name: string) => {
+    const cachedAuthorizationUrl = authorizationUrlsByName[name];
+    if (cachedAuthorizationUrl) {
+      await open(cachedAuthorizationUrl);
+      return;
+    }
+
+    setAuthorizationUrlsByName((current) => ({ ...current, [name]: null }));
+    try {
+      const response = await loginMcpServer({
+        hostId: selectedHostId,
+        name,
+      });
+      setAuthorizationUrlsByName((current) => ({ ...current, [name]: response.authorizationUrl }));
+      await open(response.authorizationUrl);
+    } catch (error) {
+      setAuthorizationUrlsByName((current) => {
+        const { [name]: _removed, ...rest } = current;
+        return rest;
+      });
+      throw error;
     }
   };
 
@@ -373,8 +386,6 @@ export function McpSettings({
         reloadUserConfig: true,
       });
       markSelectedHostDirty();
-      await load();
-      await emitQueryCacheInvalidated(CONFIG_QUERY_KEY);
       closeEditor();
     } finally {
       setIsSaving(false);

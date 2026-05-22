@@ -37,6 +37,10 @@ import {
   type MessageValues,
 } from "../i18n/messages";
 import {
+  REPLICA_STATSIG_GATES,
+  useReplicaStatsigGateValue,
+} from "../features/statsig/replicaStatsig";
+import {
   DialogOverlay,
   SetupDialog,
   useConnectedSettings,
@@ -165,6 +169,9 @@ export function RemoteConnectionsSettings({
       authRequired: false,
       clientAuthorized: false,
     });
+  const remoteControlVisibilityGate = useReplicaStatsigGateValue(
+    REPLICA_STATSIG_GATES.remoteControlVisibility,
+  );
   const [isLoadingConnections, setIsLoadingConnections] = useState(true);
   const [connectionsError, setConnectionsError] = useState<string | null>(null);
   const [remoteControlClients, setRemoteControlClients] = useState<RemoteControlClient[] | null>(null);
@@ -175,15 +182,13 @@ export function RemoteConnectionsSettings({
   const [editingConnectionHostId, setEditingConnectionHostId] = useState<string | null>(null);
   const [sshDialogMode, setSshDialogMode] = useState<SshDialogMode>("add");
   const [isSshDialogOpen, setIsSshDialogOpen] = useState(false);
+  const [isSshDiscoveryDialogOpen, setIsSshDiscoveryDialogOpen] = useState(false);
+  const [discoveredSshConnections, setDiscoveredSshConnections] = useState<RemoteConnection[]>([]);
   const [isSavingSshConnection, setIsSavingSshConnection] = useState(false);
   const [detailsConnection, setDetailsConnection] = useState<DeviceConnection | null>(null);
   const [connectionToDelete, setConnectionToDelete] = useState<DeviceConnection | null>(null);
   const [isDeletingConnection, setIsDeletingConnection] = useState(false);
   const [pendingAutoConnectHostId, setPendingAutoConnectHostId] = useState<string | null>(null);
-  const connectedSettings = useConnectedSettings({
-    enabled: true,
-    onShowToast,
-  });
 
   const sortedSshConnections = useMemo(() => {
     return [...sshConnections].sort((left, right) => left.displayName.localeCompare(right.displayName));
@@ -194,12 +199,30 @@ export function RemoteConnectionsSettings({
   }, [remoteControlConnections]);
 
   const deviceConnections = useMemo<DeviceConnection[]>(() => {
-    return [...sortedSshConnections, ...sortedRemoteControlConnections];
-  }, [sortedRemoteControlConnections, sortedSshConnections]);
+    return [
+      ...sortedSshConnections,
+      ...(remoteControlVisibilityGate && remoteControlConnectionsState.available
+        ? sortedRemoteControlConnections
+        : []),
+    ];
+  }, [
+    remoteControlConnectionsState.available,
+    remoteControlVisibilityGate,
+    sortedRemoteControlConnections,
+    sortedSshConnections,
+  ]);
 
   const editingConnection = useMemo(() => {
     return sortedSshConnections.find((connection) => connection.hostId === editingConnectionHostId) ?? null;
   }, [editingConnectionHostId, sortedSshConnections]);
+
+  const savedSshHostIds = useMemo(() => {
+    return new Set(sortedSshConnections.map((connection) => connection.hostId));
+  }, [sortedSshConnections]);
+
+  const discoveredSshCandidates = useMemo(() => {
+    return discoveredSshConnections.filter((connection) => !savedSshHostIds.has(connection.hostId));
+  }, [discoveredSshConnections, savedSshHostIds]);
 
   useEffect(() => {
     let disposed = false;
@@ -253,13 +276,19 @@ export function RemoteConnectionsSettings({
     };
 
     const refreshAllConnections = async () => {
-      await Promise.all([
-        refreshRemoteConnections(),
-        refreshRemoteControlConnections(),
-      ]);
+      const requests: Array<Promise<unknown>> = [refreshRemoteConnections()];
+      if (remoteControlVisibilityGate) {
+        requests.push(refreshRemoteControlConnections());
+      }
+      await Promise.all(requests);
     };
 
     const loadRemoteControl = async () => {
+      if (!remoteControlVisibilityGate) {
+        setRemoteControlClients(null);
+        setIsLoadingRemoteControlClients(false);
+        return;
+      }
       setIsLoadingRemoteControlClients(true);
       try {
         const clients = await listConnectedRemoteControlClients();
@@ -318,15 +347,16 @@ export function RemoteConnectionsSettings({
       disposeSharedObject?.();
       disposeConnectionState?.();
     };
-  }, []);
+  }, [remoteControlVisibilityGate]);
 
   const handleRefreshConnections = async () => {
     setIsRefreshingConnections(true);
     try {
-      await Promise.all([
-        refreshRemoteConnections(),
-        refreshRemoteControlConnections(),
-      ]);
+      const requests: Array<Promise<unknown>> = [refreshRemoteConnections()];
+      if (remoteControlVisibilityGate) {
+        requests.push(refreshRemoteControlConnections());
+      }
+      await Promise.all(requests);
       onShowToast?.({
         tone: "success",
         message: t("settings.remoteConnections.refresh.success"),
@@ -376,16 +406,27 @@ export function RemoteConnectionsSettings({
 
   const handleOpenAddDialog = async () => {
     try {
-      await discoverRemoteSshConnections();
-    } catch {
-      // Ignore discovery failures here; the saved snapshot remains the source for rendering.
+      const response = await discoverRemoteSshConnections();
+      setDiscoveredSshConnections(
+        [...response.discoveredRemoteConnections].sort((left, right) =>
+          left.displayName.localeCompare(right.displayName),
+        ),
+      );
+      setIsSshDiscoveryDialogOpen(true);
+    } catch (error) {
+      onShowToast?.({
+        tone: "error",
+        message: t("settings.remoteConnections.refresh.error"),
+        description: getErrorMessage(error),
+      });
+      return;
     }
-    setEditingConnectionHostId(null);
-    setSshDialogMode("add");
-    setIsSshDialogOpen(true);
   };
 
-  const handleSaveSshConnection = async (draft: SshDraft) => {
+  const handleSaveSshConnection = async (
+    draft: SshDraft,
+    options?: { autoConnectHostId?: string | null; autoConnectOnSuccess?: boolean },
+  ) => {
     const errors = validateSshDraft({
       draft,
       existingConnections: sortedSshConnections,
@@ -410,8 +451,18 @@ export function RemoteConnectionsSettings({
     setIsSavingSshConnection(true);
     try {
       await saveCodexManagedRemoteSshConnections(nextSavedConnections);
+      const shouldAutoConnect = options?.autoConnectOnSuccess ?? true;
+      const nextHostId =
+        options?.autoConnectHostId ??
+        nextConnection.hostId ??
+        buildHostIdForDraft(draft);
+      if (shouldAutoConnect && nextHostId != null) {
+        await setRemoteConnectionAutoConnect(nextHostId, true);
+      }
       setIsSshDialogOpen(false);
+      setIsSshDiscoveryDialogOpen(false);
       setEditingConnectionHostId(null);
+      setDiscoveredSshConnections([]);
       onShowToast?.({
         tone: "success",
         message: t("settings.remoteConnections.save.success"),
@@ -492,18 +543,23 @@ export function RemoteConnectionsSettings({
         title={t("settings.section.connections")}
         subtitle={t("remoteConnections.page.subheading")}
       >
-        <LocalDeviceSettingsSection
-          connectedSettings={connectedSettings}
-          onShowToast={onShowToast}
-        />
-        <RemoteControlClientsSection
-          clients={remoteControlClients}
-          isLoading={isLoadingRemoteControlClients}
-        />
+        {remoteControlVisibilityGate ? (
+          <LocalDeviceSettingsSection onShowToast={onShowToast} />
+        ) : null}
+        {remoteControlVisibilityGate ? (
+          <RemoteControlClientsSection
+            clients={remoteControlClients}
+            isLoading={isLoadingRemoteControlClients}
+          />
+        ) : null}
         <DeviceConnectionsSection
           connectionStates={connectionStates}
           connections={deviceConnections}
           remoteControlConnectionsState={remoteControlConnectionsState}
+          showRemoteControlAuthorizeRow={false}
+          showRemoteControlRows={
+            remoteControlVisibilityGate && remoteControlConnectionsState.available
+          }
           isLoading={isLoadingConnections}
           onDeleteConnection={setConnectionToDelete}
           onDeleteSshConnection={(connection) => {
@@ -571,6 +627,42 @@ export function RemoteConnectionsSettings({
         onSave={(draft) => void handleSaveSshConnection(draft)}
       />
 
+      <SshDiscoveryDialog
+        connections={discoveredSshCandidates}
+        isSaving={isSavingSshConnection}
+        open={isSshDiscoveryDialogOpen}
+        onAdd={({ displayName, hostId }) => {
+          const discoveredConnection = discoveredSshConnections.find(
+            (connection) => connection.hostId === hostId,
+          );
+          if (discoveredConnection == null) {
+            return;
+          }
+          void handleSaveSshConnection(
+            {
+              ...createDraftFromConnection(discoveredConnection),
+              displayName,
+            },
+            {
+              autoConnectHostId: hostId,
+              autoConnectOnSuccess: true,
+            },
+          );
+        }}
+        onAddManually={() => {
+          setIsSshDiscoveryDialogOpen(false);
+          setEditingConnectionHostId(null);
+          setSshDialogMode("add");
+          setIsSshDialogOpen(true);
+        }}
+        onOpenChange={(open) => {
+          setIsSshDiscoveryDialogOpen(open);
+          if (!open && !isSavingSshConnection) {
+            setDiscoveredSshConnections([]);
+          }
+        }}
+      />
+
       <DeleteConnectionDialog
         connection={connectionToDelete}
         isDeleting={isDeletingConnection}
@@ -602,13 +694,15 @@ export function RemoteConnectionsSettings({
 }
 
 function LocalDeviceSettingsSection({
-  connectedSettings,
   onShowToast,
 }: {
-  connectedSettings: ReturnType<typeof useConnectedSettings>;
   onShowToast?: (toast: AppToast) => void;
 }) {
   const { t } = useI18n();
+  const connectedSettings = useConnectedSettings({
+    enabled: true,
+    onShowToast,
+  });
   const [remoteControlEnabled, setRemoteControlEnabled] = useState(false);
   const [isLoadingRemoteControlEnabled, setIsLoadingRemoteControlEnabled] = useState(true);
   const [isSetupDialogOpen, setIsSetupDialogOpen] = useState(false);
@@ -888,6 +982,8 @@ function DeviceConnectionsSection({
   connections,
   remoteControlConnectionsState,
   connectionStates,
+  showRemoteControlAuthorizeRow,
+  showRemoteControlRows,
   isLoading,
   onAddConnection,
   onDeleteConnection,
@@ -907,6 +1003,8 @@ function DeviceConnectionsSection({
   connections: DeviceConnection[];
   remoteControlConnectionsState: RemoteControlConnectionsState;
   connectionStates: DeviceConnectionStateByHostId;
+  showRemoteControlAuthorizeRow: boolean;
+  showRemoteControlRows: boolean;
   isLoading: boolean;
   onAddConnection: () => void;
   onDeleteConnection: (connection: DeviceConnection) => void;
@@ -938,7 +1036,9 @@ function DeviceConnectionsSection({
     );
   });
   const showEmptyState =
-    connections.length === 0 && !remoteControlConnectionsState.authRequired;
+    connections.length === 0 &&
+    !remoteControlConnectionsState.authRequired &&
+    !showRemoteControlAuthorizeRow;
 
   const handleStartEditing = (connection: RemoteControlConnection) => {
     setEditingEnvId(connection.envId);
@@ -1026,6 +1126,9 @@ function DeviceConnectionsSection({
           ) : null}
           {connections.map((connection) => {
             if (isRemoteControlConnection(connection)) {
+              if (!showRemoteControlRows) {
+                return null;
+              }
               return (
                 <RemoteControlConnectionRow
                   key={connection.hostId}
@@ -1788,6 +1891,226 @@ function SshConnectionDialog({
             </>
           ) : null}
         </div>
+      </form>
+    </SettingsDialog>
+  );
+}
+
+function SshDiscoveryDialog({
+  connections,
+  isSaving,
+  open,
+  onAdd,
+  onAddManually,
+  onOpenChange,
+}: {
+  connections: RemoteConnection[];
+  isSaving: boolean;
+  open: boolean;
+  onAdd: (input: { displayName: string; hostId: string }) => void;
+  onAddManually: () => void;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const { t } = useI18n();
+  const [selectedHostId, setSelectedHostId] = useState<string | null>(null);
+  const [draftDisplayName, setDraftDisplayName] = useState("");
+  const [mode, setMode] = useState<"select" | "review">("select");
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    setSelectedHostId(null);
+    setDraftDisplayName("");
+    setMode("select");
+  }, [open]);
+
+  const selectedConnection = useMemo(() => {
+    return connections.find((connection) => connection.hostId === selectedHostId) ?? null;
+  }, [connections, selectedHostId]);
+
+  if (!open) {
+    return null;
+  }
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (selectedConnection == null || isSaving) {
+      return;
+    }
+    if (mode === "select") {
+      setDraftDisplayName(selectedConnection.sshAlias?.trim() || selectedConnection.displayName);
+      setMode("review");
+      return;
+    }
+    const displayName = draftDisplayName.trim();
+    if (displayName.length === 0) {
+      return;
+    }
+    onAdd({
+      displayName,
+      hostId: selectedConnection.hostId,
+    });
+  };
+
+  return (
+    <SettingsDialog
+      hideCloseButton
+      hideHeader
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t("settings.remoteConnections.discoveryDialog.title")}
+      bodyClassName="gap-0 px-0 py-0"
+    >
+      <form className="px-6" onSubmit={handleSubmit}>
+        {mode === "select" ? (
+          <>
+            <div className="flex flex-col gap-2">
+              <div className="min-w-0 flex-1">
+                <h2 className="heading-dialog min-w-0 font-semibold">
+                  {t("settings.remoteConnections.discoveryDialog.title")}
+                </h2>
+                <div className="text-token-description-foreground">
+                  {t("settings.remoteConnections.discoveryDialog.subtitle")}
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-col gap-3 pt-6">
+              <div className="text-base font-semibold text-token-text-primary">
+                {t("settings.remoteConnections.discoveryDialog.connections")}
+              </div>
+              {connections.length === 0 ? (
+                <div className="rounded-lg border border-token-border px-4 py-3 text-sm text-token-text-secondary">
+                  {t("settings.remoteConnections.discoveryDialog.empty")}
+                </div>
+              ) : (
+                <div
+                  role="radiogroup"
+                  aria-label={t("settings.remoteConnections.discoveryDialog.connections.ariaLabel")}
+                  className="flex max-h-[284px] flex-col gap-2 overflow-y-auto"
+                >
+                  {connections.map((connection) => {
+                    const label = connection.sshAlias?.trim() || connection.displayName;
+                    const isSelected = connection.hostId === selectedHostId;
+                    return (
+                      <button
+                        key={connection.hostId}
+                        type="button"
+                        role="radio"
+                        aria-checked={isSelected}
+                        className={[
+                          "cursor-interaction flex min-h-16 w-full shrink-0 items-center gap-3 rounded-lg border px-3 py-3 text-left outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-token-focus-border",
+                          isSelected
+                            ? "border-token-foreground bg-token-foreground/5"
+                            : "border-token-foreground/30 hover:bg-token-foreground/5",
+                        ].join(" ")}
+                        onClick={() => {
+                          setSelectedHostId(connection.hostId);
+                        }}
+                      >
+                        <span
+                          className={[
+                            "flex size-4 shrink-0 items-center justify-center rounded-full border-[1.5px]",
+                            isSelected
+                              ? "border-token-foreground bg-token-foreground"
+                              : "border-token-foreground",
+                          ].join(" ")}
+                          aria-hidden="true"
+                        >
+                          {isSelected ? (
+                            <span className="size-1.5 rounded-full bg-token-bg-primary" />
+                          ) : null}
+                        </span>
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span className="truncate text-base text-token-text-primary">
+                            {label}
+                          </span>
+                          <span className="truncate text-sm text-token-text-secondary">
+                            {connection.sshHost}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="pt-6">
+              <div className="flex w-full items-center justify-between gap-3">
+                <Button
+                  color="outline"
+                  disabled={isSaving}
+                  type="button"
+                  onClick={onAddManually}
+                >
+                  {t("settings.remoteConnections.discoveryDialog.addManually")}
+                </Button>
+                <Button
+                  color="primary"
+                  disabled={selectedConnection == null}
+                  loading={isSaving}
+                  type="submit"
+                >
+                  {t("settings.remoteConnections.discoveryDialog.continue")}
+                </Button>
+              </div>
+            </div>
+          </>
+        ) : selectedConnection == null ? null : (
+          <>
+            <div className="flex flex-col gap-2">
+              <label className="flex flex-col gap-2">
+                <span className="text-base font-medium text-token-text-primary">
+                  {t("settings.remoteConnections.discoveryDialog.review.name")}
+                </span>
+                <input
+                  autoFocus
+                  className="w-full rounded-lg border border-token-input-border bg-token-input-background px-3 py-2 text-base text-token-input-foreground outline-none focus:border-token-focus-border"
+                  value={draftDisplayName}
+                  onChange={(event) => {
+                    setDraftDisplayName(event.target.value);
+                  }}
+                />
+              </label>
+            </div>
+            <div className="pt-6">
+              <div className="overflow-hidden rounded-xl border border-token-border">
+                {buildConnectionDetailRows(selectedConnection, null).map((row) => (
+                  <div
+                    key={row.id}
+                    className="flex min-h-9 items-center justify-between gap-3 border-t border-token-border px-3 py-2 first:border-t-0"
+                  >
+                    <div className="shrink-0 text-sm text-token-text-secondary">
+                      {t(row.label)}
+                    </div>
+                    <div className="max-w-[80%] min-w-0 text-right text-sm text-token-text-primary">
+                      {typeof row.value === "string" ? (
+                        <span className="block max-w-full min-w-0 truncate">
+                          {row.value.trim().length > 0 ? row.value : "—"}
+                        </span>
+                      ) : (
+                        row.value ?? "—"
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="pt-6">
+              <div className="flex w-full justify-end">
+                <Button
+                  color="primary"
+                  disabled={draftDisplayName.trim().length === 0}
+                  loading={isSaving}
+                  size="medium"
+                  type="submit"
+                >
+                  {t("settings.remoteConnections.discoveryDialog.save")}
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
       </form>
     </SettingsDialog>
   );
@@ -3090,6 +3413,27 @@ function toSavedConnectionInput(
     sshPort,
     identity: draft.authMode === "identity" ? draft.identity.trim() : null,
   };
+}
+
+function buildHostIdForDraft(draft: SshDraft) {
+  if (draft.targetKind === "alias") {
+    return `remote-ssh-discovered:${encodeUriComponent(draft.sshHost.trim())}`;
+  }
+  return `remote-ssh-codex-managed:${encodeUriComponent(draft.displayName.trim())}`;
+}
+
+function encodeUriComponent(value: string) {
+  let encoded = "";
+  for (const character of value) {
+    if (/^[A-Za-z0-9\-_.!~*'()]$/.test(character)) {
+      encoded += character;
+      continue;
+    }
+    for (const byte of new TextEncoder().encode(character)) {
+      encoded += `%${byte.toString(16).toUpperCase().padStart(2, "0")}`;
+    }
+  }
+  return encoded;
 }
 
 function getSshValidationMessageKey(error: SshValidationError): MessageKey {

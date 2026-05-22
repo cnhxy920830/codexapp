@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { useEffect, useState, useMemo, useRef, type ReactElement, type ReactNode } from "react";
 import {
   CheckIcon,
   CheckCircleFilledIcon,
@@ -12,6 +12,8 @@ import {
   WorkspaceFileIcon,
 } from "../../components/AppShellIcons";
 import type { AppToast } from "../../components/AppToastRegion";
+import { LocalConversationPageHeader } from "./LocalConversationPageHeader";
+import { ChatHeaderToolbarActions } from "./ChatHeaderToolbarActions";
 import { useI18n } from "../../i18n/i18n";
 import type { MessageKey } from "../../i18n/messages";
 import type {
@@ -276,6 +278,15 @@ export function ChatConversationMainPane({
   const [showScrollToBottomButton, setShowScrollToBottomButton] = useState(false);
   const [threadBranchLabel, setThreadBranchLabel] = useState<string | null>(null);
   const [threadGitRoot, setThreadGitRoot] = useState<string | null>(null);
+
+  const threadTitle = threadConversation?.title.trim().length
+    ? threadConversation.title.trim()
+    : t("app.nav.newChat");
+  const threadProjectLabel = (threadConversation?.cwd ?? workspaceRoot ?? "")
+    .split(/[\\/]/u)
+    .filter((segment) => segment.length > 0)
+    .at(-1) ?? null;
+
   const userMessageSentAtMsByTurnId = useMemo(
     () =>
       new Map(
@@ -443,6 +454,33 @@ export function ChatConversationMainPane({
   }, [conversationId, latestUnifiedDiff]);
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col bg-[var(--app-shell-main-surface)]">
+      <LocalConversationPageHeader
+        conversationId={conversationId}
+        cwd={threadConversation?.cwd ?? workspaceRoot ?? null}
+        projectLabel={threadProjectLabel}
+        source={threadConversation?.source ?? null}
+        t={t}
+        threadBranchLabel={threadBranchLabel}
+        threadGitRoot={threadGitRoot}
+        title={threadTitle}
+        trailingActions={
+          <ChatHeaderToolbarActions
+            onAttachFile={() => {
+              console.log("Attach file clicked");
+            }}
+            onPasteFromClipboard={() => {
+              console.log("Paste from clipboard clicked");
+            }}
+            onSearch={() => {
+              console.log("Search clicked");
+            }}
+            onShowMore={() => {
+              console.log("More actions clicked");
+            }}
+            t={t}
+          />
+        }
+      />
       {showBlankConversationBody ? (
         <div
           className="[container-type:size] relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden"
