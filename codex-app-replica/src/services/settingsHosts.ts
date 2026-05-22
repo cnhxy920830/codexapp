@@ -65,6 +65,7 @@ export type AppServerConnectionStateResponse = {
   error: unknown | null;
   appServerVersion: string | null;
   installedCodexVersion: string | null;
+  codexHome: string | null;
 };
 
 export type RemoteAppServerConnectionStateChangedNotification = {
@@ -266,6 +267,7 @@ export async function readSettingsRemoteConnectionStateResponses(remoteConnectio
           error: null,
           appServerVersion: null,
           installedCodexVersion: null,
+          codexHome: null,
         },
       ] as const;
     }),

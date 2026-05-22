@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
 import { useI18n } from "../i18n/i18n";
 import {
   applyAppearanceSettingsSnapshot,
   type AppearanceSettingsSnapshot,
   type AppearanceTheme,
   DEFAULT_APPEARANCE_SETTINGS,
+  onGlobalStateUpdated,
   readAppearanceSettingsSnapshot,
   setGlobalState,
 } from "../services/settings";
@@ -31,6 +32,18 @@ import { ThemeEditorCard } from "./appearance/ThemeEditorCard";
 import { ThemePreviewCard } from "./appearance/ThemePreviewCard";
 
 const SYSTEM_APPEARANCE_MEDIA_QUERY = "(prefers-color-scheme: dark)";
+const APPEARANCE_SETTINGS_GLOBAL_STATE_KEYS = new Set([
+  "appearanceTheme",
+  "appearanceLightChromeTheme",
+  "appearanceDarkChromeTheme",
+  "appearanceLightCodeThemeId",
+  "appearanceDarkCodeThemeId",
+  "codeFontSize",
+  "conversationDetailMode",
+  "sansFontSize",
+  "useFontSmoothing",
+  "usePointerCursors",
+]);
 
 export function AppearanceSettings({
   onOpenChatWithPrompt,
@@ -53,34 +66,61 @@ export function AppearanceSettings({
     stateRef.current = state;
   }, [state]);
 
+  const syncSnapshot = useEffectEvent(async (canCommit: () => boolean = () => true) => {
+    try {
+      const snapshot = await readAppearanceSettingsSnapshot();
+      if (!canCommit()) {
+        return;
+      }
+      stateRef.current = snapshot;
+      setState(snapshot);
+    } catch {
+      if (!canCommit()) {
+        return;
+      }
+    } finally {
+      if (canCommit()) {
+        setIsLoading(false);
+      }
+    }
+  });
+
   useEffect(() => {
     let cancelled = false;
 
-    const load = async () => {
-      try {
-        const snapshot = await readAppearanceSettingsSnapshot();
-        if (cancelled) {
-          return;
-        }
-        stateRef.current = snapshot;
-        setState(snapshot);
-      } catch {
-        if (cancelled) {
-          return;
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    void load();
+    void syncSnapshot(() => !cancelled);
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [syncSnapshot]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlistenGlobalStateUpdated: (() => void) | null = null;
+
+    void onGlobalStateUpdated((notification) => {
+      if (!notification.keys.some((key) => APPEARANCE_SETTINGS_GLOBAL_STATE_KEYS.has(key))) {
+        return;
+      }
+
+      void syncSnapshot(() => !cancelled);
+    }).then((dispose) => {
+      if (cancelled) {
+        void dispose();
+        return;
+      }
+
+      unlistenGlobalStateUpdated = () => {
+        void dispose();
+      };
+    });
+
+    return () => {
+      cancelled = true;
+      unlistenGlobalStateUpdated?.();
+    };
+  }, [syncSnapshot]);
 
   useEffect(() => {
     applyAppearanceSettingsSnapshot(state);

@@ -23,6 +23,7 @@ import {
   type MarkdownMathInlineNode,
 } from "./markdownMath";
 import { MarkdownMermaid } from "./markdownMermaid";
+import { HighlightedCodeSnippet } from "./HighlightedCodeSnippet";
 
 type MarkdownPreviewProps = {
   allowBasicHtml?: boolean;
@@ -406,7 +407,14 @@ function renderBlocks(blocks: MarkdownBlock[], options: MarkdownRenderOptions) {
         options.renderCodeBlock?.({
           content: block.code,
           language: block.language,
-        }) ?? <MarkdownCodeBlock content={block.code} language={block.language} variant={options.variant} />;
+        }) ?? (
+          <HighlightedCodeSnippet
+            content={block.code}
+            language={block.language ?? "text"}
+            showLineNumbers={false}
+            shouldWrapCode={true}
+          />
+        );
       return <Fragment key={`code:${index}`}>{content}</Fragment>;
     }
 

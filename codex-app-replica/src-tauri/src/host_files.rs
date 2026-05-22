@@ -1,4 +1,6 @@
 use crate::auth_bridge::list_plugins;
+use crate::auth_bridge::send_request_for_host;
+use crate::auth_bridge::AppServerRequestKind;
 use crate::auth_bridge::AuthBridgeState;
 use crate::auth_bridge::PluginListParams;
 use crate::auth_bridge::PluginMarketplaceEntry;
@@ -101,16 +103,33 @@ pub struct FilePosition {
 }
 
 #[tauri::command(rename = "read-file")]
-pub fn read_file(params: ReadFileParams) -> Result<ReadFileResponse, String> {
-    ensure_supported_host_id(params.host_id.as_deref(), "read-file")?;
-    let path = resolve_requested_path(&params.path, params.cwd.as_deref())?;
-    let metadata = fs::metadata(&path).map_err(map_not_found_error)?;
-    if !metadata.is_file() {
-        return Err(format!("path is not a file: {}", path.display()));
+pub async fn read_file(
+    app: AppHandle,
+    state: State<'_, Arc<AuthBridgeState>>,
+    params: ReadFileParams,
+) -> Result<ReadFileResponse, String> {
+    if is_local_host_id(params.host_id.as_deref()) {
+        return read_local_file(params);
     }
 
-    let contents =
-        fs::read_to_string(&path).map_err(|err| format!("failed to read file: {err}"))?;
+    let path = resolve_requested_path(&params.path, params.cwd.as_deref())?;
+    let value = send_request_for_host(
+        &app,
+        state.inner(),
+        params.host_id.as_deref(),
+        AppServerRequestKind::FsReadFile,
+        serde_json::json!({
+            "path": path.display().to_string(),
+        }),
+    )
+    .await?;
+    let response: RemoteFsReadFileResponse = serde_json::from_value(value)
+        .map_err(|err| format!("invalid fs/readFile response: {err}"))?;
+    let bytes = STANDARD
+        .decode(response.data_base64)
+        .map_err(|err| format!("invalid fs/readFile base64 contents: {err}"))?;
+    let contents = String::from_utf8(bytes)
+        .map_err(|err| format!("invalid fs/readFile utf-8 contents: {err}"))?;
     Ok(ReadFileResponse { contents })
 }
 
@@ -142,6 +161,12 @@ pub fn read_file_binary(params: ReadFileParams) -> Result<ReadFileBinaryResponse
         contents_base64: STANDARD.encode(contents),
         mime_type: infer_mime_type(&path),
     })
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct RemoteFsReadFileResponse {
+    data_base64: String,
 }
 
 #[tauri::command(rename = "compile-latex-artifact")]
@@ -248,6 +273,26 @@ pub(crate) fn resolve_requested_path(path: &str, cwd: Option<&str>) -> Result<Pa
         .filter(|value| !value.is_empty())
         .ok_or_else(|| format!("relative path requires cwd: {trimmed}"))?;
     Ok(PathBuf::from(cwd).join(requested))
+}
+
+fn read_local_file(params: ReadFileParams) -> Result<ReadFileResponse, String> {
+    ensure_supported_host_id(params.host_id.as_deref(), "read-file")?;
+    let path = resolve_requested_path(&params.path, params.cwd.as_deref())?;
+    let metadata = fs::metadata(&path).map_err(map_not_found_error)?;
+    if !metadata.is_file() {
+        return Err(format!("path is not a file: {}", path.display()));
+    }
+
+    let contents =
+        fs::read_to_string(&path).map_err(|err| format!("failed to read file: {err}"))?;
+    Ok(ReadFileResponse { contents })
+}
+
+fn is_local_host_id(host_id: Option<&str>) -> bool {
+    matches!(
+        host_id.map(str::trim).filter(|value| !value.is_empty()),
+        None | Some("local")
+    )
 }
 
 fn map_not_found_error(error: std::io::Error) -> String {
@@ -395,9 +440,9 @@ mod tests {
     use super::effective_location;
     use super::ensure_supported_host_id;
     use super::normalize_browser_url;
-    use super::read_file;
     use super::read_file_binary;
     use super::read_file_metadata;
+    use super::read_local_file;
     use super::resolve_latex_tectonic_binary_path_for_platform;
     use super::resolve_requested_path;
     use super::FilePosition;
@@ -562,7 +607,7 @@ mod tests {
     fn read_file_returns_enoent_for_missing_file() {
         let root = temp_dir("missing-file");
         let missing = root.join("config.toml");
-        let error = read_file(ReadFileParams {
+        let error = read_local_file(ReadFileParams {
             host_id: Some("local".to_string()),
             path: missing.display().to_string(),
             cwd: None,

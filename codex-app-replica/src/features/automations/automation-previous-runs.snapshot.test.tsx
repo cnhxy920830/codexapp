@@ -154,6 +154,7 @@ function renderSnapshot(element: ReactElement) {
 function normalizeMarkup(markup: string) {
   return markup
     .replace(/\sd="[^"]*"/g, ' d="[path]"')
+    .replace(/animation-delay:[^;"]+;?/g, "animation-delay:[delay];")
     .replace(/>\s+</g, "><")
     .replace(/\s{2,}/g, " ")
     .trim();

@@ -212,15 +212,7 @@ export function LocalConversationCompactComposerOverlay({
       data-testid="local-conversation-compact-composer-overlay"
     >
       <div className="mx-auto w-full max-w-[var(--thread-composer-max-width)]">
-        <div className="pointer-events-auto flex flex-col gap-2">
-          {latestConversationGroup ? (
-            <LatestTurnPreview
-              group={latestConversationGroup}
-              isTurnInProgress={isResponseInProgress}
-              previewContent={previewContent}
-              t={t}
-            />
-          ) : null}
+        <div className="pointer-events-auto">
           {footerPendingRequest ? (
             <ComposerFooterPendingRequest
               pendingRequest={footerPendingRequest}
@@ -238,6 +230,16 @@ export function LocalConversationCompactComposerOverlay({
           ) : (
             <ThreadComposer
               activeCollaborationMode={activeCollaborationMode}
+              aboveComposerHeaderContent={
+                latestConversationGroup ? (
+                  <LatestTurnPreview
+                    group={latestConversationGroup}
+                    isTurnInProgress={isResponseInProgress}
+                    previewContent={previewContent}
+                    t={t}
+                  />
+                ) : null
+              }
               composerDraft={composerDraft}
               composerEnterBehavior={composerEnterBehavior}
               conversationId={threadConversation.id}

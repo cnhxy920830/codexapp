@@ -73,6 +73,19 @@ test("app connect oauth callback route completion matches extracted navigation c
   assert.doesNotMatch(source, /initialMode:\s*"manage"/);
 });
 
+test("app root uses fullRedirectUrl as the callback page identity before falling back to history key", () => {
+  const source = readFileSync(path.join(process.cwd(), "src/App.tsx"), "utf8");
+
+  assert.match(
+    source,
+    /typeof Reflect\.get\(window\.history\.state, "fullRedirectUrl"\) === "string"/,
+  );
+  assert.match(
+    source,
+    /Reflect\.get\(window\.history\.state, "fullRedirectUrl"\)[\s\S]*window\.history\.state\?\.key[\s\S]*window\.location\.href/,
+  );
+});
+
 test("app connect oauth callback service matches extracted post-callback refresh contract", () => {
   const source = readFileSync(SERVICE_SOURCE_PATH, "utf8");
 

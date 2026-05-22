@@ -206,15 +206,15 @@ export function McpSettings({
         name,
         server,
       })).sort((left, right) => {
-        return formatMcpServerLabel(left.name, left.server)
-          .localeCompare(formatMcpServerLabel(right.name, right.server))
+        return getMcpServerDisplayName(left.name, left.server)
+          .localeCompare(getMcpServerDisplayName(right.name, right.server))
           || left.name.localeCompare(right.name);
       }),
     [serverOrigins, serverStatuses, servers],
   );
-  const selectedExistingServer = useMemo(
-    () => (typeof editorKey === "string" ? servers.find((entry) => entry.name === editorKey) ?? null : null),
-    [editorKey, servers],
+  const selectedExistingServerConfig = useMemo(
+    () => (typeof editorKey === "string" ? config?.mcpServers?.[editorKey] ?? null : null),
+    [config, editorKey],
   );
   const isRestartRequired = dirtyHostIds.includes(selectedHostId);
   const initialDraft = useMemo(() => {
@@ -224,16 +224,18 @@ export function McpSettings({
     if (editorKey === null) {
       return createBlankMcpServerDraft();
     }
-    return normalizeMcpServerDraft(config?.mcpServers?.[editorKey] ?? null, editorKey);
+    return createMcpServerEditorDraft(config?.mcpServers?.[editorKey] ?? null, editorKey);
   }, [config, editorKey]);
   const editorTitle =
     editorKey === undefined
       ? null
       : editorKey === null
         ? t("settings.mcp.detail.titleNew")
-        : t("settings.mcp.detail.titleExisting", {
-            name: formatMcpServerLabel(selectedExistingServer?.name ?? editorKey, selectedExistingServer?.server ?? null),
-          });
+        : getMcpServerConfigName(selectedExistingServerConfig).trim().length > 0
+          ? t("settings.mcp.detail.titleExisting", {
+              name: formatMcpServerTitleName(getMcpServerConfigName(selectedExistingServerConfig)),
+            })
+          : t("settings.mcp.detail.titleNew");
 
   const openEditorForNewServer = () => {
     setEditorKey(null);
@@ -247,7 +249,7 @@ export function McpSettings({
 
     const server = config?.mcpServers?.[name];
     setEditorKey(name);
-    setDraft(normalizeMcpServerDraft(server ?? null, name));
+    setDraft(createMcpServerEditorDraft(server ?? null, name));
   };
 
   const closeEditor = () => {
@@ -472,7 +474,7 @@ function McpServerRow({
     <SettingsRow
       label={
         <span className="font-medium text-token-text-primary">
-          {formatMcpServerLabel(server.name, server.server)}
+          {getMcpServerDisplayName(server.name, server.server)}
         </span>
       }
       control={
@@ -739,15 +741,17 @@ function EditorTransportField({
   onChange: (value: McpServerDraft["transportType"]) => void;
 }) {
   return (
-    <div className="bg-token-surface-secondary border-token-border flex items-center rounded-lg border">
+    <div className="bg-token-surface-secondary border-token-border flex items-center rounded-lg border" role="tablist">
       {options.map((option, index) => (
         <div key={option.id} className="flex min-w-0 flex-1 items-center">
           <button
             type="button"
+            role="tab"
+            aria-selected={value === option.id}
             aria-pressed={value === option.id}
             onClick={() => onChange(option.id)}
             className={[
-              "relative flex-1 px-4 py-1.5 text-sm font-medium",
+              "text-token-text-secondary cursor-interaction relative flex-1 items-center rounded-none px-4 py-1.5 text-sm font-medium",
               index === 0 ? "rounded-l-md" : "",
               index === options.length - 1 ? "rounded-r-md" : "",
               value === option.id
@@ -781,7 +785,7 @@ function EditorListField({
   const displayValues = values.length > 0 ? values : [""];
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg bg-token-input-background px-3 py-2">
+    <div className="flex flex-col gap-3 rounded-lg bg-token-input-background px-3 py-2">
       <p className="text-base font-medium text-token-text-primary">{label}</p>
       <div className="flex flex-col gap-2">
         {displayValues.map((value, index) => {
@@ -810,7 +814,12 @@ function EditorListField({
             </div>
           );
         })}
-        <Button color="secondary" size="toolbar" onClick={() => onChange([...values, ""])}>
+        <Button
+          className="text-token-text-secondary/90 justify-center rounded-md border border-dashed text-base"
+          color="secondary"
+          size="toolbar"
+          onClick={() => onChange(values.length > 0 ? [...values, ""] : [""])}
+        >
           <PlusIcon className="icon-2xs" />
           {addLabel}
         </Button>
@@ -834,7 +843,7 @@ function EditorRecordField({
   const displayValues = values.length > 0 ? values : [{ key: "", value: "" }];
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg bg-token-input-background px-3 py-2">
+    <div className="flex flex-col gap-3 rounded-lg bg-token-input-background px-3 py-2">
       <p className="text-base font-medium text-token-text-primary">{label}</p>
       <div className="flex flex-col gap-2">
         {displayValues.map((entry, index) => {
@@ -844,7 +853,7 @@ function EditorRecordField({
           return (
             <div key={`${label}-${index}`} className="grid grid-cols-[1fr_1fr_auto] items-center gap-2">
               <input
-                className={EDITOR_INPUT_CLASS}
+                className={EDITOR_RECORD_INPUT_CLASS}
                 placeholder={t("settings.editRow.headerPlaceholder")}
                 value={entry.key}
                 onChange={(event) => {
@@ -854,7 +863,7 @@ function EditorRecordField({
                 }}
               />
               <input
-                className={EDITOR_INPUT_CLASS}
+                className={EDITOR_RECORD_INPUT_CLASS}
                 placeholder={t("settings.editRow.valuePlaceholder")}
                 value={entry.value}
                 onChange={(event) => {
@@ -876,7 +885,12 @@ function EditorRecordField({
             </div>
           );
         })}
-        <Button color="secondary" size="toolbar" onClick={() => onChange([...values, { key: "", value: "" }])}>
+        <Button
+          className="text-token-text-secondary/90 justify-center rounded-md border border-dashed text-base"
+          color="secondary"
+          size="toolbar"
+          onClick={() => onChange([...displayValues, { key: "", value: "" }])}
+        >
           <PlusIcon className="icon-2xs" />
           {addLabel}
         </Button>
@@ -918,17 +932,38 @@ function McpSectionSubtitle() {
   );
 }
 
-function formatMcpServerLabel(name: string, server: McpServerDraft | null) {
+function getMcpServerDisplayName(name: string, server: McpServerDraft | null) {
   const customLabel = server?.label.trim();
   if (customLabel) {
-    return customLabel === customLabel.toLowerCase()
-      ? `${customLabel[0]?.toUpperCase() ?? ""}${customLabel.slice(1)}`
-      : customLabel;
+    return customLabel;
   }
 
+  if (name.trim().length === 0) {
+    return "";
+  }
+
+  return name;
+}
+
+function getMcpServerConfigName(server: unknown) {
+  if (typeof server !== "object" || server === null || !("name" in server)) {
+    return "";
+  }
+  return typeof server.name === "string" ? server.name : "";
+}
+
+function createMcpServerEditorDraft(server: unknown, initialKey: string | null) {
+  const normalized = normalizeMcpServerDraft(server, "");
+  return {
+    ...normalized,
+    label: initialKey ?? getMcpServerConfigName(server),
+  };
+}
+
+function formatMcpServerTitleName(name: string) {
   const trimmedName = name.trim();
   if (trimmedName.length === 0) {
-    return "";
+    return trimmedName;
   }
 
   return trimmedName === trimmedName.toLowerCase()
@@ -968,3 +1003,6 @@ function isMcpDraftValid(draft: McpServerDraft) {
 
 const EDITOR_INPUT_CLASS =
   "w-full rounded-md border border-token-input-border bg-token-input-background px-2.5 py-1.5 text-base text-token-input-foreground outline-none placeholder:text-token-input-placeholder-foreground focus:border-token-focus-border";
+
+const EDITOR_RECORD_INPUT_CLASS =
+  "w-full rounded-md border border-token-input-border bg-token-input-background px-2.5 py-1.5 text-sm text-token-input-foreground outline-none placeholder:text-token-input-placeholder-foreground focus:border-token-focus-border";

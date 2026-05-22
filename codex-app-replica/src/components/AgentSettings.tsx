@@ -1,5 +1,6 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
-import { ArrowTopRightIcon, WarningIcon } from "./AppShellIcons";
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from "react";
+import { AlertWarningIcon, ArrowTopRightIcon, LinkExternalIcon, WarningIcon } from "./AppShellIcons";
+import { Alert } from "./Alert";
 import type { AppToast } from "./AppToastRegion";
 import { AgentExperimentalFeaturesSettings } from "./AgentExperimentalFeaturesSettings";
 import { Button } from "./Button";
@@ -14,11 +15,12 @@ import { ToggleSwitch } from "./ToggleSwitch";
 import { WorkspaceDependenciesSettings } from "./WorkspaceDependenciesSettings";
 import { useReplicaStatsigDefaultFeatures, useReplicaStatsigGateValue } from "../features/statsig/replicaStatsig";
 import { useI18n } from "../i18n/i18n";
-import type { MessageKey, MessageValues } from "../i18n/messages";
+import type { LocaleCode, MessageKey, MessageValues } from "../i18n/messages";
 import { renderInlineLinkMessage } from "../i18n/renderInlineLinkMessage";
-import { getCodexHomePath } from "../services/codexHome";
+import { MESSAGES, getMessageLocale } from "../i18n/messages";
 import { openFile } from "../services/hostFiles";
 import { readOpenInTargets } from "../services/openTargets";
+import { writeProjectConfigValue } from "../services/agentSettingsConfig";
 import {
   buildConfigScopeOptions,
   chooseDefaultConfigScopeKey,
@@ -36,9 +38,10 @@ import {
   type ConfigScopeOption,
   type ConfigSnapshot,
   type ConfigWriteForHostParams,
+  type ConfigWriteTarget,
   writeConfigValueForHost,
 } from "../services/settings";
-import { LOCAL_SETTINGS_HOST_ID } from "../services/settingsHosts";
+import { LOCAL_SETTINGS_HOST_ID, readAppServerConnectionState } from "../services/settingsHosts";
 
 const AGENT_SETTINGS_DOCS_URL = "https://developers.openai.com/codex/config-basic";
 const CONFIG_TOML_DOCS_URL = "https://developers.openai.com/codex/config-basic";
@@ -90,19 +93,21 @@ type AgentConfigControlErrors = Partial<Record<AgentConfigControlErrorKey, strin
 type Translate = (key: MessageKey, values?: MessageValues) => string;
 
 export function AgentSettings({
+  codexHome: initialCodexHome = null,
   hostId,
   onNavigateToOpenSourceLicenses,
   onShowToast,
   settingsCwd = null,
   settingsWorkspaceRoot = null,
 }: {
+  codexHome?: string | null;
   hostId: string;
   onNavigateToOpenSourceLicenses: () => void;
   onShowToast?: (toast: AppToast) => void;
   settingsCwd?: string | null;
   settingsWorkspaceRoot?: string | null;
 }) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const defaultFeatures = useReplicaStatsigDefaultFeatures();
   const showExperimentalFeatures = useReplicaStatsigGateValue("2106641128");
   const isLocalHost = hostId === LOCAL_SETTINGS_HOST_ID;
@@ -116,7 +121,7 @@ export function AgentSettings({
   const [configRequirements, setConfigRequirements] = useState<ConfigRequirements | null>(null);
   const [isConfigLoading, setIsConfigLoading] = useState(false);
   const [pendingControlKey, setPendingControlKey] = useState<AgentConfigControlErrorKey | null>(null);
-  const [codexHome, setCodexHome] = useState<string | null>(null);
+  const [codexHome, setCodexHome] = useState<string | null>(initialCodexHome);
   const [hasWsl, setHasWsl] = useState(false);
   const [runCodexInWsl, setRunCodexInWsl] = useState(false);
   const lastLoadRequestIdRef = useRef(0);
@@ -127,15 +132,8 @@ export function AgentSettings({
 
   const loadLocalConfigTomlState = useEffectEvent(async () => {
     const requestId = ++lastLocalConfigTomlRequestIdRef.current;
-    if (!isLocalHost) {
-      setCodexHome(null);
-      setHasWsl(false);
-      setRunCodexInWsl(false);
-      return;
-    }
-
-    const [nextCodexHome, configuration, wslAvailability] = await Promise.all([
-      getCodexHomePath().catch(() => null),
+    const [connectionState, configuration, wslAvailability] = await Promise.all([
+      isLocalHost ? Promise.resolve(null) : readAppServerConnectionState(hostId).catch(() => null),
       getConfigurationValue(RUN_CODEX_IN_WSL_KEY).catch(() => ({ value: null })),
       readWslBashAvailability().catch(() => ({ available: false, distro: null })),
     ]);
@@ -144,9 +142,9 @@ export function AgentSettings({
       return;
     }
 
-    setCodexHome(nextCodexHome);
-    setHasWsl(wslAvailability.available || wslAvailability.distro != null);
-    setRunCodexInWsl(configuration.value === true);
+    setCodexHome(isLocalHost ? initialCodexHome : connectionState?.codexHome ?? null);
+    setHasWsl(isLocalHost && (wslAvailability.available || wslAvailability.distro != null));
+    setRunCodexInWsl(isLocalHost && configuration.value === true);
   });
 
   const loadConfigState = useEffectEvent(async () => {
@@ -334,7 +332,7 @@ export function AgentSettings({
   const showWorkspaceDependencies =
     isLocalHost &&
     defaultFeatures.workspace_dependencies === true;
-  const configTomlPath = codexHome == null ? null : `${codexHome.replace(/[\\/]+$/, "")}\\config.toml`;
+  const configTomlPath = buildConfigTomlPath(codexHome);
   const configTomlButtonLabel =
     runCodexInWsl && isWindows && hasWsl
       ? t("settings.agent.openConfigTomlWsl")
@@ -363,7 +361,7 @@ export function AgentSettings({
   };
 
   const handleOpenConfigToml = async () => {
-    if (!isLocalHost || configTomlPath == null) {
+    if (configTomlPath == null) {
       return;
     }
 
@@ -403,15 +401,14 @@ export function AgentSettings({
     });
 
     try {
-      const params: ConfigWriteForHostParams = {
+      await writeAgentConfigValue({
         expectedVersion: selectedScope.expectedVersion ?? null,
         filePath: selectedScope.filePath,
         hostId,
         keyPath,
-        mergeStrategy: "upsert",
+        kind: selectedScope.kind,
         value,
-      };
-      await writeConfigValueForHost(params);
+      });
       await loadConfigState();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -441,6 +438,7 @@ export function AgentSettings({
             <AgentSettingsNoticeCard
               key={`${index}:${notice.kind}:${notice.summary}:${notice.path ?? ""}`}
               hostId={hostId}
+              locale={locale}
               notice={notice}
               total={notices.length}
               index={index}
@@ -496,7 +494,7 @@ export function AgentSettings({
                     color="secondary"
                     size="toolbar"
                     className="inline-flex w-fit"
-                    disabled={!isLocalHost || configTomlPath == null}
+                    disabled={configTomlPath == null}
                     onClick={() => void handleOpenConfigToml()}
                   >
                     {configTomlButtonLabel}
@@ -677,11 +675,13 @@ function ConfigSettingsSection({
 function AgentSettingsNoticeCard({
   hostId,
   index,
+  locale,
   notice,
   total,
 }: {
   hostId: string;
   index: number;
+  locale: LocaleCode;
   notice: AgentSettingsNotice;
   total: number;
 }) {
@@ -710,48 +710,42 @@ function AgentSettingsNoticeCard({
   };
 
   return (
-    <div className={index === total - 1 ? "mb-3" : "mb-2"}>
-      <div className="rounded-xl border border-token-status-warning-foreground/30 bg-token-status-warning-background/30 px-3 py-3">
-        <div className="flex min-w-0 flex-col gap-2">
-          <div className="flex min-w-0 items-start justify-between gap-2">
-            <div className="flex min-w-0 flex-col gap-1">
-              <div className="min-w-0 text-sm text-token-text-primary">
-                <MarkdownPreview className="[&>p]:my-0" cwd={null} hostId={hostId} text={notice.summary} />
-              </div>
-              {notice.details ? (
-                <div className="min-w-0 text-sm text-token-text-secondary">
-                  <MarkdownPreview className="[&>p]:my-0" cwd={null} hostId={hostId} text={notice.details} />
-                </div>
-              ) : null}
-              {notice.path ? (
-                <div className="min-w-0 text-sm text-token-text-secondary">
-                  {t("settings.agent.configuration.notice.fileContext", {
-                    location:
-                      notice.range == null
-                        ? ""
-                        : t("settings.agent.configuration.notice.fileLocationSuffix", {
-                            column: notice.range.start.column,
-                            line: notice.range.start.line,
-                          }),
-                    path: notice.path,
-                  })}
-                </div>
-              ) : null}
+    <Alert
+      className={index === total - 1 ? "mb-3" : "mb-2"}
+      fullWidth
+      icon={AlertWarningIcon}
+      level={notice.level}
+    >
+      <div className="flex min-w-0 flex-col gap-2">
+        <div className="flex min-w-0 items-start justify-between gap-2">
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="min-w-0 text-sm text-token-text-primary">
+              <MarkdownPreview className="[&>p]:my-0" cwd={null} hostId={hostId} text={notice.summary} />
             </div>
+            {notice.details ? (
+              <div className="min-w-0 text-sm text-token-text-secondary">
+                <MarkdownPreview className="[&>p]:my-0" cwd={null} hostId={hostId} text={notice.details} />
+              </div>
+            ) : null}
             {notice.path ? (
-              <Button
-                className="inline-flex w-fit shrink-0"
-                color="secondary"
-                size="toolbar"
-                onClick={() => void handleOpenNoticeFile()}
-              >
-                {t("settings.agent.configuration.notice.openFile")}
-              </Button>
+              <div className="min-w-0 text-sm text-token-text-secondary">
+                {renderNoticeFileContext(locale, t, notice)}
+              </div>
             ) : null}
           </div>
+          {notice.path ? (
+            <Button
+              className="inline-flex w-fit shrink-0"
+              color="secondary"
+              size="toolbar"
+              onClick={() => void handleOpenNoticeFile()}
+            >
+              {t("settings.agent.configuration.notice.openFile")}
+            </Button>
+          ) : null}
         </div>
       </div>
-    </div>
+    </Alert>
   );
 }
 
@@ -839,7 +833,7 @@ function SettingsRowDescription({
   error,
   lockReason,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   error: string | null;
   lockReason: string | null;
 }) {
@@ -857,7 +851,7 @@ function SettingsRowDescription({
   );
 }
 
-function DesktopOnlySection({ children }: { children: React.ReactNode }) {
+function DesktopOnlySection({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
@@ -937,8 +931,108 @@ function renderConfigTomlDescription(t: Translate) {
         target="_blank"
       >
         {t("settings.agent.configuration.configToml.docs")}
-        <ArrowTopRightIcon className="icon-xxs" />
+        <LinkExternalIcon className="icon-xxs" />
       </a>
     </>
   );
+}
+
+function renderNoticeFileContext(
+  locale: LocaleCode,
+  t: Translate,
+  notice: AgentSettingsNotice,
+) {
+  if (notice.path == null) {
+    return null;
+  }
+
+  const location =
+    notice.range == null
+      ? ""
+      : t("settings.agent.configuration.notice.fileLocationSuffix", {
+          column: notice.range.start.column,
+          line: notice.range.start.line,
+        });
+  const template = MESSAGES[getMessageLocale(locale)]["settings.agent.configuration.notice.fileContext"];
+  return renderMessageWithCodePlaceholder(template, {
+    location,
+    path: <code>{notice.path}</code>,
+  });
+}
+
+function renderMessageWithCodePlaceholder(
+  template: string,
+  values: { location: string; path: ReactNode },
+) {
+  const pathToken = "{path}";
+  const locationToken = "{location}";
+  const pathIndex = template.indexOf(pathToken);
+  if (pathIndex === -1) {
+    return template.replaceAll(locationToken, values.location);
+  }
+
+  const prefix = template.slice(0, pathIndex);
+  const suffixTemplate = template.slice(pathIndex + pathToken.length);
+  const locationIndex = suffixTemplate.indexOf(locationToken);
+  if (locationIndex === -1) {
+    return (
+      <>
+        {prefix}
+        {values.path}
+        {suffixTemplate}
+      </>
+    );
+  }
+
+  const between = suffixTemplate.slice(0, locationIndex);
+  const suffix = suffixTemplate.slice(locationIndex + locationToken.length);
+  return (
+    <>
+      {prefix}
+      {values.path}
+      {between}
+      {values.location}
+      {suffix}
+    </>
+  );
+}
+
+async function writeAgentConfigValue(params: {
+  expectedVersion: string | null;
+  filePath: string;
+  hostId: string;
+  keyPath: string;
+  kind: ConfigWriteTargetKind;
+  value: string | boolean;
+}) {
+  if (params.kind === "project") {
+    await writeProjectConfigValue({
+      filePath: params.filePath,
+      hostId: params.hostId,
+      keyPath: params.keyPath,
+      value: params.value,
+    });
+    return;
+  }
+
+  const writeParams: ConfigWriteForHostParams = {
+    expectedVersion: params.expectedVersion,
+    filePath: params.filePath,
+    hostId: params.hostId,
+    keyPath: params.keyPath,
+    mergeStrategy: "upsert",
+    value: params.value,
+  };
+  await writeConfigValueForHost(writeParams);
+}
+
+type ConfigWriteTargetKind = ConfigScopeOption["kind"];
+
+function buildConfigTomlPath(codexHome: string | null) {
+  if (codexHome == null || codexHome.trim().length === 0) {
+    return null;
+  }
+  const trimmed = codexHome.replace(/[\\/]+$/, "");
+  const separator = trimmed.includes("\\") ? "\\" : "/";
+  return `${trimmed}${separator}config.toml`;
 }

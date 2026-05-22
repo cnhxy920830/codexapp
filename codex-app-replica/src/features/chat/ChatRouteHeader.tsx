@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode, type RefObject } from "react";
 import type { MessageKey } from "../../i18n/messages";
 import type { ThreadConversation } from "../../services/history";
+import { readGitBranches } from "../../services/gitBranches";
 import type { CommandKeymapState } from "../../services/keyboardShortcuts";
 import { readGitOrigins } from "../../services/gitOrigins";
 import { listenGitStateChanged } from "../../services/gitStateEvents";
@@ -103,10 +104,13 @@ export function ChatRouteHeader({
   const canPinLocalConversationThread = localConversationHeaderSource?.parentThreadId == null;
   const canCopyWorkingDirectory = (threadConversation?.cwd ?? "").trim().length > 0;
   const latestReasoningEffort = getLatestHeaderReasoningEffort(threadConversation);
+  const [isTitleHoverCardOpen, setIsTitleHoverCardOpen] = useState(false);
+  const [threadBranchLabel, setThreadBranchLabel] = useState<string | null>(null);
   const [threadGitRoot, setThreadGitRoot] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLocalConversationHeader) {
+      setThreadBranchLabel(null);
       setThreadGitRoot(null);
       return;
     }
@@ -114,6 +118,7 @@ export function ChatRouteHeader({
     const workspaceForGitRoot = threadConversation?.cwd ?? workspaceRoot ?? null;
     const hostId = threadConversation?.hostId ?? null;
     if (workspaceForGitRoot == null) {
+      setThreadBranchLabel(null);
       setThreadGitRoot(null);
       return;
     }
@@ -128,10 +133,14 @@ export function ChatRouteHeader({
         });
         const gitRoot = origins.origins.at(0)?.root?.trim() ?? null;
         if (!cancelled) {
+          if (gitRoot == null) {
+            setThreadBranchLabel(null);
+          }
           setThreadGitRoot(gitRoot);
         }
       } catch {
         if (!cancelled) {
+          setThreadBranchLabel(null);
           setThreadGitRoot(null);
         }
       }
@@ -151,6 +160,46 @@ export function ChatRouteHeader({
     threadConversation?.cwd,
     threadConversation?.hostId,
     workspaceRoot,
+  ]);
+
+  useEffect(() => {
+    if (!isLocalConversationHeader || !isTitleHoverCardOpen || threadGitRoot == null) {
+      setThreadBranchLabel(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const refreshThreadBranchLabel = async () => {
+      try {
+        const branches = await readGitBranches({
+          gitRoot: threadGitRoot,
+          hostId: threadConversation?.hostId ?? null,
+        });
+        if (!cancelled) {
+          setThreadBranchLabel(branches.currentBranch ?? branches.defaultBranch ?? null);
+        }
+      } catch {
+        if (!cancelled) {
+          setThreadBranchLabel(null);
+        }
+      }
+    };
+
+    void refreshThreadBranchLabel();
+    const unsubscribe = listenGitStateChanged(() => {
+      void refreshThreadBranchLabel();
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [
+    isLocalConversationHeader,
+    isTitleHoverCardOpen,
+    threadConversation?.hostId,
+    threadGitRoot,
   ]);
 
   const threadHeaderTrailing = threadHeaderTrailingActions ? (
@@ -247,9 +296,11 @@ export function ChatRouteHeader({
         heartbeatSummary={hasAttachedHeartbeatAutomation ? heartbeatAutomationButtonTooltip : null}
         latestCollaborationMode={threadConversation?.latestCollaborationMode ?? null}
         latestReasoningEffort={latestReasoningEffort}
+        onTitleHoverCardOpenChange={setIsTitleHoverCardOpen}
         projectLabel={threadProjectLabel}
         source={localConversationHeaderSource}
         t={t}
+        threadBranchLabel={threadBranchLabel}
         threadGitRoot={threadGitRoot}
         title={threadTitle}
         heartbeatAction={localConversationHeaderHeartbeat}

@@ -927,6 +927,15 @@ fn normalize_workspace_roots_host_id(
     }
 }
 
+fn ensure_supported_host_id(host_id: Option<&str>, command_name: &str) -> Result<(), String> {
+    match host_id.map(str::trim).filter(|value| !value.is_empty()) {
+        None | Some(LOCAL_HOST_ID) => Ok(()),
+        Some(host_id) => Err(format!(
+            "{command_name} does not support host id: {host_id}"
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::active_workspace_roots_response_from_remote_projects;

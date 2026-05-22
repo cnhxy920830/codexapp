@@ -181,6 +181,7 @@ pub struct RemoteAppServerConnectStateResponse {
     pub error: Option<String>,
     pub app_server_version: Option<String>,
     pub installed_codex_version: Option<String>,
+    pub codex_home: Option<String>,
 }
 
 /// Page-owned `app-server-connection-state` query, registry-backed.
@@ -200,6 +201,7 @@ pub fn registry_connection_state(
         error: snapshot.error,
         app_server_version: snapshot.app_server_version,
         installed_codex_version: snapshot.installed_codex_version,
+        codex_home: snapshot.codex_home,
     }
 }
 
@@ -295,6 +297,9 @@ mod tests {
         let response = RemoteAppServerConnectStateResponse {
             state: RemoteAppServerConnectionState::Connected,
             error: None,
+            app_server_version: None,
+            installed_codex_version: None,
+            codex_home: None,
         };
         let value = serde_json::to_value(&response).expect("serialize");
         assert_eq!(value["state"], "connected");

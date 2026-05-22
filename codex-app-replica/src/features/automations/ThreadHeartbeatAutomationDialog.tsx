@@ -185,9 +185,8 @@ export function ThreadHeartbeatAutomationDialog({
     setIsRunningNow(true);
     setFeedback(null);
     try {
-      const result = await runAutomationNow(activeDraft.id);
+      await runAutomationNow(activeDraft.id);
       setFeedback({ message: t("inbox.automations.runNowSuccess"), tone: "success" });
-      await onOpenThread(result.threadId);
     } catch (error) {
       setFeedback({
         message: formatErrorMessage(t("inbox.automations.runNowError"), error),

@@ -2238,6 +2238,7 @@ export type MessageKey =
   | "settings.remoteConnections.deviceConnections.loading"
   | "settings.remoteConnections.deviceConnections.empty"
   | "settings.remoteConnections.deviceConnections.sshSubtitle"
+  | "settings.remoteConnections.deviceConnections.signedInDeviceSubtitle"
   | "settings.remoteConnections.table.actions.ariaLabel"
   | "settings.remoteConnections.table.autoConnect.ariaLabel"
   | "settings.remoteConnections.connectToggle.error"
@@ -5052,6 +5053,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.remoteConnections.deviceConnections.loading": "Loading connections…",
     "settings.remoteConnections.deviceConnections.empty": "No device connections found. Add a new connection to get started",
     "settings.remoteConnections.deviceConnections.sshSubtitle": "SSH",
+    "settings.remoteConnections.deviceConnections.signedInDeviceSubtitle": "Signed in device",
     "settings.remoteConnections.table.actions.ariaLabel": "Actions",
     "settings.remoteConnections.table.autoConnect.ariaLabel": "Auto-connect",
     "settings.remoteConnections.connectToggle.error": "Unable to update auto-connect",
@@ -7780,6 +7782,7 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "settings.remoteConnections.deviceConnections.loading": "正在加载连接…",
     "settings.remoteConnections.deviceConnections.empty": "未找到设备连接。添加新连接即可开始使用",
     "settings.remoteConnections.deviceConnections.sshSubtitle": "SSH",
+    "settings.remoteConnections.deviceConnections.signedInDeviceSubtitle": "已登录设备",
     "settings.remoteConnections.table.actions.ariaLabel": "操作",
     "settings.remoteConnections.table.autoConnect.ariaLabel": "自动连接",
     "settings.remoteConnections.connectToggle.error": "无法更新自动连接设置",

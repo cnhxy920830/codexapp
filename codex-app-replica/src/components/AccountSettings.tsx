@@ -37,7 +37,11 @@ export function AccountSettings({
   const usesChatGptAuth = authMethod === "chatgpt" || authMethod === "chatgptAuthTokens";
 
   useEffect(() => {
-    if (localAuthMethod != null && authSnapshot.authState.authMethod != null) {
+    if (
+      localAuthMethod != null &&
+      authSnapshot.authState.authMethod != null &&
+      authSnapshot.authState.authMethod === localAuthMethod
+    ) {
       setLocalAuthMethod(null);
     }
   }, [localAuthMethod, authSnapshot.authState.authMethod]);

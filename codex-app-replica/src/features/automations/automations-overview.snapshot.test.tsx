@@ -174,6 +174,7 @@ function normalizeMarkup(markup: string) {
   return markup
     .replace(/\sd="[^"]*"/g, ' d="[path]"')
     .replace(/src="data:image\/svg\+xml,[^"]*"/g, 'src="[asset]"')
+    .replace(/animation-delay:[^;"]+;?/g, "animation-delay:[delay];")
     .replace(/>\s+</g, "><")
     .replace(/\s{2,}/g, " ")
     .trim();

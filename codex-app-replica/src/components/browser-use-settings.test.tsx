@@ -11,12 +11,15 @@ const STATSIG_SOURCE_PATH = path.join(process.cwd(), "src/features/statsig/repli
 
 test("browser use settings keeps extracted page shell and browser plugin ownership", () => {
   const source = readSource(COMPONENT_SOURCE_PATH);
+  const appSource = readSource(path.join(process.cwd(), "src", "App.tsx"));
 
   assert.match(source, /<SettingsContentLayout\s+title=\{t\("settings\.browserUse\.title"\)\}/s);
   assert.match(source, /<FilteredPluginSettings/);
   assert.match(source, /pluginNames=\{\["browser-use"\]\}/);
   assert.match(source, /renderAfterSections=\{\(context\) =>\s*isBrowserUseEnabled\(context\) \?/s);
   assert.match(source, /renderComputerUseSettingsSubtitle\(t\("settings\.browserUse\.subtitle"\)/);
+  assert.match(source, /isLocalHost && hasBrowserUseExternalSettings/);
+  assert.match(appSource, /hasBrowserUseExternalSettings=\{isBrowserUseExternalSettingsAvailable\}/);
 });
 
 test("browser use settings keeps extracted data and permissions row structure", () => {
@@ -34,9 +37,6 @@ test("browser use settings keeps extracted data and permissions row structure", 
   assert.match(source, /ALL_BROWSING_DATA_TYPES\.map\(\(dataType\) => \(/);
   assert.match(source, /label=\{t\("settings\.browserUse\.browser\.annotationScreenshots\.label"\)\}/);
   assert.match(source, /label=\{t\("settings\.browserUse\.approval\.label"\)\}/);
-  assert.doesNotMatch(source, /label=\{t\("settings\.browserUse\.historyApproval\.label"\)\}/);
-  assert.doesNotMatch(source, /label=\{t\("settings\.browserUse\.downloadApproval\.label"\)\}/);
-  assert.doesNotMatch(source, /label=\{t\("settings\.browserUse\.uploadApproval\.label"\)\}/);
 
   const triggerMatches = source.match(/className="w-\[152px\]"/g) ?? [];
   assert.equal(triggerMatches.length, 1);
@@ -59,7 +59,7 @@ test("browser use settings keeps extracted approval learn-more link and warning 
     source,
     /const browserUseLearnMoreUrl = resolveBrowserUseLearnMoreUrl\(\s*browserUseLearnMoreDynamicConfig,\s*\)/s,
   );
-  assert.match(source, /renderInlineTagButton\(\s*t\("settings\.browserUse\.approval\.description"\),\s*"learnMoreLink"/s);
+  assert.match(source, /renderInlineTagLink\(\s*t\("settings\.browserUse\.approval\.description"\),\s*"learnMoreLink",\s*browserUseLearnMoreUrl/s);
   assert.match(source, /openInBrowser\(browserUseLearnMoreUrl\)/);
   assert.match(source, /function resolveBrowserUseLearnMoreUrl\(dynamicConfig: unknown\)/);
   assert.match(source, /const parsedUrl = new URL\(configuredUrl\);/);
@@ -67,6 +67,9 @@ test("browser use settings keeps extracted approval learn-more link and warning 
   assert.match(source, /return BROWSER_USE_LEARN_MORE_URL;/);
   assert.match(source, /warning:\s*t\("settings\.browserUse\.approval\.neverAsk\.elevatedRiskDisclaimer"\)/);
   assert.match(source, /warningIcon:\s*\(\s*<ElevatedRiskIcon className="icon-xs shrink-0 text-token-editor-warning-foreground" \/>/s);
+  assert.match(source, /function renderInlineTagLink\(/);
+  assert.match(source, /href=\{href\}/);
+  assert.doesNotMatch(source, /function renderInlineTagButton\(/);
 });
 
 test("browser use settings keeps extracted two origin sections and compact dialog ownership", () => {

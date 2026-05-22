@@ -1,12 +1,42 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   ArchiveIcon,
   CheckCircleFilledIcon,
 } from "../../components/AppShellIcons";
 import { Tooltip } from "../../components/Tooltip";
+import { Spinner } from "../../components/Spinner";
 import type { AutomationInboxItem } from "../../services/automations";
 import { ContextMenu } from "../../components/ContextMenu";
 import type { TranslateFn } from "./automationsPageUtils";
+
+function useSelectableRow(onSelect: (() => void) | undefined, isDisabled = false) {
+  const isSelectionDisabled = isDisabled || onSelect == null;
+
+  return {
+    role: "button" as const,
+    tabIndex: isSelectionDisabled ? -1 : 0,
+    "aria-disabled": isSelectionDisabled,
+    onClick: (event: React.MouseEvent<HTMLDivElement>) => {
+      if (!isSelectionDisabled && !event.defaultPrevented) {
+        onSelect?.();
+      }
+    },
+    onKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (
+        isSelectionDisabled ||
+        event.defaultPrevented ||
+        event.currentTarget !== event.target
+      ) {
+        return;
+      }
+
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        onSelect?.();
+      }
+    },
+  };
+}
 
 type AutomationPreviousRunsListProps = {
   automationId: string;
@@ -40,7 +70,7 @@ export function AutomationPreviousRunsList({
   if (isLoading && items.length === 0) {
     return (
       <div className="flex h-full min-h-0 items-start px-1">
-        <span className="icon-sm animate-spin rounded-full border-2 border-current/30 border-t-current text-token-description-foreground" />
+        <Spinner className="icon-sm text-token-description-foreground" />
       </div>
     );
   }
@@ -60,6 +90,14 @@ export function AutomationPreviousRunsList({
         const unread = item.readAt == null;
         const inProgress = item.status === "IN_PROGRESS";
         const canOpenThread = item.threadId !== null && !archived;
+        const rowProps = useSelectableRow(
+          canOpenThread && item.threadId
+            ? () => {
+                void onOpenThread(item.threadId as string);
+              }
+            : undefined,
+          !canOpenThread,
+        );
         const conversationTitle =
           item.threadId ? threadTitleById.get(item.threadId)?.trim() ?? null : null;
         const title =
@@ -72,18 +110,18 @@ export function AutomationPreviousRunsList({
             ? formatRootLabel(item.sourceCwd)
             : null;
         const icon = inProgress ? (
-          <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current/30 border-t-current" />
+          <Spinner className="icon-xs shrink-0" />
         ) : unread ? (
           <span
             className={[
               "h-2 w-2 rounded-full",
-              archived ? "bg-[var(--app-shell-danger)]" : "bg-[var(--app-shell-link)]",
+              archived ? "bg-token-error-foreground" : "bg-token-text-link-foreground",
             ].join(" ")}
           />
         ) : archived ? (
-          <ArchiveIcon className="h-3.5 w-3.5 text-[var(--app-shell-subtle)]" />
+          <ArchiveIcon className="icon-xs shrink-0 text-token-disabled-foreground" />
         ) : (
-          <CheckCircleFilledIcon className="h-3.5 w-3.5 text-[var(--app-shell-subtle)]" />
+          <CheckCircleFilledIcon className="icon-xs shrink-0 text-token-disabled-foreground" />
         );
         const contextMenuItems = [
           {
@@ -97,40 +135,37 @@ export function AutomationPreviousRunsList({
           },
         ];
         const row = (
-          <div
-            className={[
-              "group flex items-center gap-2 rounded-md py-2 pr-3 pl-1 text-base [content-visibility:auto] [contain-intrinsic-size:auto_64px]",
-              canOpenThread
-                ? "cursor-pointer hover:bg-token-list-hover-background"
-                : "cursor-default opacity-50",
-            ].join(" ")}
-            onClick={() => {
-              if (!item.threadId || archived) {
-                return;
-              }
-              void onOpenThread(item.threadId);
-            }}
-          >
-            <div className="flex w-5 shrink-0 items-center justify-center text-[var(--app-shell-subtle)]">
-              {icon}
-            </div>
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <div className="flex min-w-0 flex-1 flex-col gap-0.5 leading-tight">
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="truncate font-normal text-token-foreground">
-                    {title}
-                  </span>
-                  {subtitle ? (
-                    <span className="truncate text-sm text-token-description-foreground">
-                      {subtitle}
-                    </span>
-                  ) : null}
-                </div>
+          <div role="listitem">
+            <div
+              className={[
+                "group flex items-center gap-2 rounded-md py-2 pr-3 pl-1 text-base [content-visibility:auto] [contain-intrinsic-size:auto_64px]",
+                canOpenThread
+                  ? "cursor-interaction hover:bg-token-list-hover-background"
+                  : "cursor-default opacity-50",
+              ].join(" ")}
+              {...rowProps}
+            >
+              <div className="flex w-5 shrink-0 items-center justify-center text-token-description-foreground">
+                {icon}
               </div>
-              <div className="flex min-w-[4.5rem] items-center justify-end self-center">
-                <span className="text-sm whitespace-nowrap text-token-description-foreground tabular-nums">
-                  <CompactRelativeDateTime timestampMs={item.createdAt} t={t} />
-                </span>
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5 leading-tight">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="truncate font-normal text-token-foreground">
+                      {title}
+                    </span>
+                    {subtitle ? (
+                      <span className="truncate text-sm text-token-description-foreground">
+                        {subtitle}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="flex min-w-[4.5rem] items-center justify-end self-center">
+                  <span className="text-sm whitespace-nowrap text-token-description-foreground tabular-nums">
+                    <CompactRelativeDateTime timestampMs={item.createdAt} t={t} />
+                  </span>
+                </div>
               </div>
             </div>
           </div>

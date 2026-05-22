@@ -758,6 +758,7 @@ function DisableAutoCleanupDialog({
           onConfirm={onConfirm}
         />
       }
+      hideCloseButton
       onOpenChange={onOpenChange}
       open={open}
       title={t("settings.worktrees.autoCleanup.confirm.title")}

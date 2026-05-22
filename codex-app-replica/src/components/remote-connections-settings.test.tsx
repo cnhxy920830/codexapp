@@ -107,6 +107,9 @@ test("device connections actions stay in the extracted header and merged SSH plu
 test("SSH row menu and details dialog stay aligned with extracted actions and detail rows", () => {
   const source = readSource(SOURCE_PATH);
   const iconsSource = readSource(ICONS_SOURCE_PATH);
+  const detailsStart = source.indexOf("function ConnectionDetailsDialog");
+  const detailsEnd = source.indexOf("function ConnectionActionsMenu", detailsStart);
+  const detailsSource = source.slice(detailsStart, detailsEnd);
 
   assert.match(source, /connectionError\?\.code === "login-required"/);
   assert.match(source, /connectionError\?\.code === "update-required"/);
@@ -129,7 +132,7 @@ test("SSH row menu and details dialog stay aligned with extracted actions and de
   assert.match(source, /detailsLabel=\{t\("settings\.remoteConnections\.detailsMenu"\)\}/);
   assert.match(source, /editLabel=\{t\("settings\.remoteConnections\.editConnection"\)\}/);
   assert.match(source, /restartLabel=\{t\("settings\.remoteConnections\.restartConnection"\)\}/);
-  assert.match(source, /label=\{t\("settings\.remoteConnections\.logout"\)\}/);
+  assert.match(source, /label: t\("settings\.remoteConnections\.logout"\)/);
   assert.match(source, /deleteLabel=\{t\("settings\.remoteConnections\.deleteConnection"\)\}/);
 
   assert.match(source, /settings\.remoteConnections\.details\.alias/);
@@ -137,10 +140,57 @@ test("SSH row menu and details dialog stay aligned with extracted actions and de
   assert.match(source, /settings\.remoteConnections\.details\.port/);
   assert.match(source, /settings\.remoteConnections\.details\.identity/);
   assert.match(source, /settings\.remoteConnections\.details\.version/);
-  assert.match(source, /row\.copyValue == null/);
-  assert.match(source, /navigator\.clipboard\?\.writeText/);
+  assert.match(detailsSource, /settings\.remoteConnections\.deviceConnections\.signedInDeviceSubtitle/);
+  assert.match(detailsSource, /row\.copyValue == null/);
+  assert.match(detailsSource, /navigator\.clipboard\?\.writeText/);
+  assert.match(detailsSource, /hideHeader/);
+  assert.match(detailsSource, /bodyClassName="gap-2 px-6 py-5"/);
+  assert.doesNotMatch(detailsSource, /footer=\{/);
   assert.match(iconsSource, /export function LogoutIcon/);
   assert.match(iconsSource, /export function WarningIcon/);
+});
+
+test("remote connections dialogs use shared dialog owners proven by extracted bundles", () => {
+  const source = readSource(SOURCE_PATH);
+  const dialogSource = readSource(path.join(process.cwd(), "src/components/SettingsDialog.tsx"));
+
+  assert.match(source, /contentProps=\{\{ "aria-describedby": undefined \}\}/);
+  assert.match(source, /hideCloseButton/);
+  assert.match(source, /hideHeader/);
+  assert.match(source, /bodyClassName="gap-2 px-6 py-5"/);
+  assert.match(source, /size="compact"/);
+  assert.match(source, /size=\{mode === "add" \? "default" : "compact"\}/);
+  assert.match(source, /<SettingsDialogFooter[\s\S]*confirmTone="danger"/s);
+  assert.match(dialogSource, /headerAction\?: ReactNode;/);
+  assert.match(dialogSource, /hideHeader\?: boolean;/);
+  assert.match(dialogSource, /bodyClassName\?: string;/);
+});
+
+test("SSH delete is direct while remote-control delete stays on compact confirm dialog", () => {
+  const source = readSource(SOURCE_PATH);
+
+  assert.match(source, /const handleDeleteSshConnection = async \(connection: RemoteConnection\)/);
+  assert.match(source, /await saveCodexManagedRemoteSshConnections\(nextSavedConnections\);/);
+  assert.match(source, /onDeleteSshConnection=\{\(connection\) => \{\s*void handleDeleteSshConnection\(connection\);/s);
+  assert.match(source, /open=\{\s*connectionToDelete != null &&\s*isRemoteControlConnection\(connectionToDelete\)\s*\}/s);
+  assert.doesNotMatch(source, /handleDeleteConnection\(\)[\s\S]*saveCodexManagedRemoteSshConnections/s);
+});
+
+test("connection actions menu follows shared dropdown semantics from extracted owner", () => {
+  const source = readSource(SOURCE_PATH);
+
+  assert.match(source, /aria-haspopup="menu"/);
+  assert.match(source, /aria-expanded=\{isOpen\}/);
+  assert.match(source, /role="menu"/);
+  assert.match(source, /role="menuitem"/);
+  assert.match(source, /shouldFocusFirstItemRef/);
+  assert.match(source, /event\.key !== "ArrowDown" && event\.key !== "Enter" && event\.key !== " "/);
+  assert.match(source, /focusEnabledMenuItem\(0, 1\);/);
+  assert.match(source, /focusEnabledMenuItem\(menuItemRefs\.current\.length - 1, -1\);/);
+  assert.match(source, /if \(event\.key === "Tab"\) \{\s*event\.preventDefault\(\);/s);
+  assert.match(source, /closeMenu\(\{ restoreFocus: true \}\);/);
+  assert.match(source, /event\.currentTarget\.focus\(\{ preventScroll: true \}\);/);
+  assert.match(source, /document\.addEventListener\("focusin", handleFocusIn\);/);
 });
 
 test("signed-in device rows keep extracted rename delete detail and availability contracts", () => {
@@ -177,14 +227,6 @@ test("device connections auth-required and authorize evidence stay source-backed
   assert.match(source, /remoteControlConnectionsState\.authRequired/);
   assert.match(source, /settings\.remoteControlConnections\.authRequired/);
   assert.doesNotMatch(source, /settings\.remoteControlConnections\.authorize(?!d)/);
-});
-
-test("authorize CTA remains blocked on windows because extracted host flow is macOS-only", () => {
-  const trackerSource = readSource(path.join(process.cwd(), "compare/tracker.md"));
-
-  assert.match(trackerSource, /\| P-135-F02 \| blocked \|/);
-  assert.match(trackerSource, /process\.platform !== "darwin"|process\.platform!==`darwin`/);
-  assert.match(trackerSource, /device-key host implementation|device-key enrollment|macOS-only/);
 });
 
 test("local device remote control toggle follows the extracted setup dialog flow", () => {

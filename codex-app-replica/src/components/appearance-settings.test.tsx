@@ -39,6 +39,12 @@ test("appearance settings uses extracted detail-mode and segmented toggle owners
   const source = readSource(APPEARANCE_SOURCE_PATH);
 
   assert.match(source, /const showCodeFont = state\.conversationDetailMode === "STEPS_COMMANDS";/);
+  assert.match(source, /const APPEARANCE_SETTINGS_GLOBAL_STATE_KEYS = new Set\(\[/);
+  assert.match(source, /"conversationDetailMode"/);
+  assert.match(source, /"appearanceLightChromeTheme"/);
+  assert.match(source, /"appearanceDarkCodeThemeId"/);
+  assert.match(source, /void onGlobalStateUpdated\(\(notification\) => \{/);
+  assert.match(source, /notification\.keys\.some\(\(key\) => APPEARANCE_SETTINGS_GLOBAL_STATE_KEYS\.has\(key\)\)/);
   assert.match(source, /<div className="inline-flex items-center gap-0\.5" role="group" aria-label=\{ariaLabel\}>/);
   assert.match(source, /color=\{selected \? "secondary" : "ghost"\}/);
   assert.match(source, /aria-pressed=\{selected\}/);
@@ -140,6 +146,9 @@ test("pets section keeps extracted shared shells, controls, and expanded contain
   assert.match(source, /import \{ Spinner \} from "\.\.\/Spinner";/);
   assert.match(source, /aria-controls=\{contentId\}/);
   assert.match(source, /id=\{contentId\} className="flex flex-col divide-y divide-token-border bg-token-bg-secondary\/20"/);
+  assert.match(source, /void onGlobalStateUpdated\(\(notification\) => \{/);
+  assert.match(source, /if \(!notification\.keys\.includes\("selected-avatar-id"\)\) \{/);
+  assert.match(source, /void syncSelectedAvatarId\(\);/);
   assert.match(source, /<Button[\s\S]*color="secondary"[\s\S]*loading=\{isCreatingCustomAvatar\}[\s\S]*size="toolbar"/s);
   assert.match(source, /<Button color="ghost" onClick=\{onOpenFolder\} size="toolbar">/);
   assert.match(source, /<SettingsRow[\s\S]*icon=\{<AvatarSprite avatar=\{avatar\} size="sm" \/>\}/s);

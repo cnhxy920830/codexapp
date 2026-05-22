@@ -326,7 +326,8 @@ export function ChatConversationMainPane({
   const hasUnmatchedBodyContent =
     groupedConversation.unmatchedApprovalItems.length > 0 ||
     currentThreadQueuedFollowUps.length > 0;
-  const showBlankConversationBody = !hasTurnContent && !hasUnmatchedBodyContent;
+  const showBlankConversationBody =
+    threadConversation === null && !hasTurnContent && !hasUnmatchedBodyContent;
   const showThreadGoalOwner =
     composerPlacement === "main" &&
     (threadConversation?.hostId ?? null) === null &&

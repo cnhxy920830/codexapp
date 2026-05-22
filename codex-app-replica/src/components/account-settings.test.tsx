@@ -43,6 +43,10 @@ test("account settings keeps extracted auth gate, local auth override, and non-l
   assert.match(source, /authMethod === "chatgpt" \|\|/);
   assert.match(source, /authMethod === "chatgptAuthTokens"/);
   assert.match(source, /setLocalAuthMethod\("chatgpt"\)/);
+  assert.match(
+    source,
+    /if \(\s*localAuthMethod != null &&\s*authSnapshot\.authState\.authMethod != null &&\s*authSnapshot\.authState\.authMethod === localAuthMethod\s*\)/s,
+  );
   assert.doesNotMatch(source, /loading=\{/);
   assert.match(source, /<Button\s+type="button"\s+color="outline"/);
   assert.match(source, /<Button type="submit" disabled=\{trimmedTokenDraft.length === 0\}>/);

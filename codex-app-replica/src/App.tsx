@@ -309,7 +309,6 @@ import {
   startRendererFrameIntervalSampler,
   type AppStateSnapshotFields,
 } from "./services/appStateSnapshot";
-import { readComputerUseApprovalsVisibility } from "./services/computerUseSettings";
 import { getCodexHomePath, isWithinCodexWorktrees } from "./services/codexHome";
 import {
   filterConnectedSettingsRemoteConnections,
@@ -1361,7 +1360,6 @@ function App() {
   const [selectedSettingsHostId, setSelectedSettingsHostId] = useState<string>(() => readInitialSettingsHostId());
   const [currentWindowHostId, setCurrentWindowHostId] = useState<string>(() => readInitialSettingsHostId());
   const [localActiveWorkspaceRoot, setLocalActiveWorkspaceRoot] = useState<string | null>(null);
-  const [hasComputerUseApprovalStore, setHasComputerUseApprovalStore] = useState(false);
   const [isRunCodexInWindowsSubsystemForLinuxLoading, setIsRunCodexInWindowsSubsystemForLinuxLoading] =
     useState(true);
   const [runCodexInWindowsSubsystemForLinux, setRunCodexInWindowsSubsystemForLinux] = useState(false);
@@ -2845,29 +2843,6 @@ function App() {
       workspaceFileTabsByThreadId: [...workspaceFileTabsByThreadIdRef.current.entries()],
     });
   }, [activeRightPanelTabId, openRightPanelTabs, selectedThreadId]);
-
-  useEffect(() => {
-    if (currentRoute !== "settings") {
-      return;
-    }
-
-    let cancelled = false;
-    void readComputerUseApprovalsVisibility()
-      .then((state) => {
-        if (!cancelled) {
-          setHasComputerUseApprovalStore(state.hasApprovalStore);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setHasComputerUseApprovalStore(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [currentRoute]);
 
   useEffect(() => {
     if (currentRoute !== "chat" && currentRoute !== "automations") {
@@ -6711,7 +6686,7 @@ function App() {
 
       return (
         <BrowserUseSettings
-          hasComputerUseApprovalStore={hasComputerUseApprovalStore}
+          hasBrowserUseExternalSettings={isBrowserUseExternalSettingsAvailable}
           selectedHostId={selectedSettingsHostId}
           workspaceRoot={settingsWorkspaceRoot}
           onShowToast={(toast) => setAppToast(toast)}
@@ -6726,6 +6701,7 @@ function App() {
 
       return (
         <ComputerUseSettings
+          isComputerUseAvailable={isComputerUseSettingsAvailable}
           selectedHostId={selectedSettingsHostId}
           workspaceRoot={settingsWorkspaceRoot}
           onShowToast={(toast) => setAppToast(toast)}
@@ -6925,13 +6901,14 @@ function App() {
       );
     }
 
-    if (settingsSection === "agent") {
-      return (
-        <AgentSettings
-          hostId={selectedSettingsHostId}
-          onNavigateToOpenSourceLicenses={() => {
-            void handleNavigateToRoute("/settings/open-source-licenses");
-          }}
+      if (settingsSection === "agent") {
+        return (
+          <AgentSettings
+            codexHome={codexHome}
+            hostId={selectedSettingsHostId}
+            onNavigateToOpenSourceLicenses={() => {
+              void handleNavigateToRoute("/settings/open-source-licenses");
+            }}
           onShowToast={(toast) => setAppToast(toast)}
           settingsCwd={settingsCwd}
           settingsWorkspaceRoot={settingsWorkspaceRoot}
@@ -8331,7 +8308,15 @@ function App() {
                   locationKey={
                     typeof window === "undefined"
                       ? "app-connect-oauth-callback"
-                      : String(window.history.state?.key ?? window.location.href)
+                      : String(
+                          (window.history.state &&
+                            typeof window.history.state === "object" &&
+                            typeof Reflect.get(window.history.state, "fullRedirectUrl") === "string"
+                              ? Reflect.get(window.history.state, "fullRedirectUrl")
+                              : null) ??
+                            window.history.state?.key ??
+                            window.location.href,
+                        )
                   }
                   onNavigate={(path, state) => {
                     void handleNavigateToRoute(path, (state as NavigateToRouteState | null) ?? null);

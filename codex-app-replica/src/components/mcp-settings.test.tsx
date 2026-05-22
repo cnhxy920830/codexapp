@@ -42,8 +42,8 @@ test("mcp settings keeps extracted shared button shell for row controls and deta
   assert.match(source, /<Button color="danger" disabled=\{isSaving\} size="toolbar" onClick=\{onDelete\}>/);
   assert.match(source, /<Button color="ghost" size="toolbar" onClick=\{onBack\}>/);
   assert.match(source, /<Button color="primary" disabled=\{isSaving \|\| !canSave\} size="toolbar" onClick=\{onSave\}>/);
-  assert.match(source, /<Button color="secondary" size="toolbar" onClick=\{\(\) => onChange\(\[\.\.\.values, ""\]\)\}>/);
-  assert.match(source, /<Button color="secondary" size="toolbar" onClick=\{\(\) => onChange\(\[\.\.\.values, \{ key: "", value: "" \}\]\)\}>/);
+  assert.match(source, /<Button[\s\S]*className="text-token-text-secondary\/90 justify-center rounded-md border border-dashed text-base"[\s\S]*color="secondary"[\s\S]*size="toolbar"[\s\S]*onClick=\{\(\) => onChange\(values\.length > 0 \? \[\.\.\.values, ""\] : \[""\]\)\}/s);
+  assert.match(source, /<Button[\s\S]*className="text-token-text-secondary\/90 justify-center rounded-md border border-dashed text-base"[\s\S]*color="secondary"[\s\S]*size="toolbar"[\s\S]*onClick=\{\(\) => onChange\(\[\.\.\.displayValues, \{ key: "", value: "" \}\]\)\}/s);
   assert.match(source, /<Button[\s\S]*aria-label=\{t\("settings\.editRow\.removeEntry"\)\}[\s\S]*size="icon"[\s\S]*uniform/s);
   assert.match(source, /import \{ ArrowLeftIcon, LinkExternalIcon, PlusIcon, RefreshIcon, SettingsCogIcon, TrashIcon \} from "\.\/AppShellIcons";/);
   assert.match(source, /import \{ LoadingPage \} from "\.\/LoadingPage";/);
@@ -51,7 +51,7 @@ test("mcp settings keeps extracted shared button shell for row controls and deta
   assert.match(source, /<LoadingPage overlay \/>/);
   assert.match(source, /<SettingsGroup>\s*<SettingsGroup\.Content>/s);
   assert.match(source, /className="relative"/);
-  assert.match(source, /className="bg-token-surface-secondary border-token-border flex items-center rounded-lg border"/);
+  assert.match(source, /<div className="bg-token-surface-secondary border-token-border flex items-center rounded-lg border" role="tablist">/);
   assert.doesNotMatch(source, /settings\.mcp\.detail\.transport\.label/);
 
   assert.doesNotMatch(source, /function SettingsContentLayout\(/);
@@ -101,17 +101,49 @@ test("mcp settings invalidates config queries after save and uninstall mutations
   );
 });
 
-test("mcp settings formats lowercase server names like upstream title helper", () => {
+test("mcp settings keeps list labels raw and only capitalizes existing-server title names", () => {
   const source = readSource(COMPONENT_SOURCE_PATH);
 
   assert.match(
     source,
-    /return customLabel === customLabel\.toLowerCase\(\)\s*\?\s*`\$\{customLabel\[0\]\?\.toUpperCase\(\) \?\? ""\}\$\{customLabel\.slice\(1\)\}`\s*:\s*customLabel;/s,
+    /function getMcpServerDisplayName\(name: string, server: McpServerDraft \| null\)/,
+  );
+  assert.match(
+    source,
+    /return customLabel;/,
+  );
+  assert.match(
+    source,
+    /return name;/,
+  );
+  assert.match(
+    source,
+    /function formatMcpServerTitleName\(name: string\)/,
   );
   assert.match(
     source,
     /return trimmedName === trimmedName\.toLowerCase\(\)\s*\?\s*`\$\{trimmedName\[0\]\?\.toUpperCase\(\) \?\? ""\}\$\{trimmedName\.slice\(1\)\}`\s*:\s*trimmedName;/s,
   );
+});
+
+test("mcp settings keeps existing-server editor key instead of config.name to avoid accidental rename", () => {
+  const source = readSource(COMPONENT_SOURCE_PATH);
+
+  assert.ok(source.includes("return createMcpServerEditorDraft(config?.mcpServers?.[editorKey] ?? null, editorKey);"));
+  assert.ok(source.includes("setDraft(createMcpServerEditorDraft(server ?? null, name));"));
+  assert.ok(source.includes("function createMcpServerEditorDraft(server: unknown, initialKey: string | null)"));
+  assert.ok(source.includes("label: initialKey ?? getMcpServerConfigName(server),"));
+});
+
+test("mcp settings editor keeps extracted list and record field shells", () => {
+  const source = readSource(COMPONENT_SOURCE_PATH);
+
+  assert.match(source, /className="flex flex-col gap-3 rounded-lg bg-token-input-background px-3 py-2"/);
+  assert.match(source, /className="text-token-text-secondary\/90 justify-center rounded-md border border-dashed text-base"/);
+  assert.match(source, /const EDITOR_RECORD_INPUT_CLASS =/);
+  assert.match(source, /className=\{EDITOR_RECORD_INPUT_CLASS\}/);
+  assert.match(source, /onClick=\{\(\) => onChange\(values\.length > 0 \? \[\.\.\.values, ""\] : \[""\]\)\}/);
+  assert.match(source, /onClick=\{\(\) => onChange\(\[\.\.\.displayValues, \{ key: "", value: "" \}\]\)\}/);
 });
 
 test("mcp settings route wiring uses local active workspace root instead of chat cwd", () => {

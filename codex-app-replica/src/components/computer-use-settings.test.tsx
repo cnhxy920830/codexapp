@@ -43,6 +43,10 @@ test("computer use settings keeps extracted control rows and chrome manage owner
   assert.match(source, /description: chromeDescription/);
   assert.match(source, /descriptionIndicator:\s*chromeDescriptionTone === "success"/);
   assert.match(source, /<Button color="secondary" size="toolbar" onClick=\{onOpenChromeSettings\}>/);
+  assert.match(source, /const chromePlugin = useMemo\(\(\) => \{\s*return selectChromePlugin\(selectPluginCandidatesByName\(pluginsSnapshot, \["chrome-internal", "chrome"\]\)\);/s);
+  assert.match(source, /const computerUsePlugin =\s*isComputerUseAvailable \? selectPluginCandidatesByName\(snapshot, \["computer-use"\]\)\[0\] \?\? null : null;/s);
+  assert.match(source, /const selectedChromePlugin =\s*isLocalHost\s*\?\s*selectChromePlugin\(selectPluginCandidatesByName\(snapshot, \["chrome-internal", "chrome"\]\)\)\s*:\s*null;/s);
+  assert.doesNotMatch(source, /chrome-dev/);
 });
 
 test("computer use settings keeps extracted allowed-app rows and compact remove dialog", () => {
@@ -53,9 +57,13 @@ test("computer use settings keeps extracted allowed-app rows and compact remove 
   assert.match(source, /className="justify-center"/);
   assert.match(source, /<TrashIcon className="icon-2xs" \/>/);
   assert.match(source, /approvedApps\.map\(\(approvedApp\) => \(\s*<SettingsRow/s);
-  assert.match(source, /className="items-start max-sm:flex-col max-sm:items-stretch"/);
+  assert.doesNotMatch(source, /className="items-start max-sm:flex-col max-sm:items-stretch"/);
+  assert.doesNotMatch(source, /title=\{t\("settings\.computerUse\.allowedApps\.removeAriaLabel"/);
   assert.doesNotMatch(source, /function ComputerUseSettingsRow\(/);
-  assert.match(source, /<BrowserUseDialog\s+confirmLabel=\{t\("settings\.computerUse\.allowedApps\.removeDialogConfirm"\)\}/s);
+  assert.match(source, /<SettingsDialog\s+footer=\{/s);
+  assert.match(source, /<SettingsDialogFooter\s+cancelLabel=\{t\("settings\.computerUse\.allowedApps\.removeDialogCancel"\)\}/s);
+  assert.match(source, /confirmLabel=\{t\("settings\.computerUse\.allowedApps\.removeDialogConfirm"\)\}/);
+  assert.match(source, /size="compact"/);
   assert.match(source, /title=\{t\("settings\.computerUse\.allowedApps\.removeDialogTitle"/);
   assert.match(source, /subtitle=\{t\("settings\.computerUse\.allowedApps\.removeDialogSubtitle"/);
 });
@@ -69,6 +77,15 @@ test("computer use settings keeps extracted chrome subpage shell, permissions, a
   assert.match(source, /<StatusBadge installed=\{chromeExtensionInstalled\} \/>/);
   assert.match(source, /<Button\s+color="secondary"\s+size="toolbar"[\s\S]*settings\.computerUse\.chrome\.reinstallExtension/);
   assert.match(source, /<Button\s+color="danger"\s+size="toolbar"[\s\S]*settings\.computerUse\.chrome\.removeExtension/);
+  assert.match(
+    source,
+    /if \(isLoading\) \{\s*return \(\s*<SettingsContentLayout\s+backSlot=\{<ComputerUseChromeBreadcrumb onBack=\{onBack\} \/>\}\s+title=\{t\("settings\.computerUse\.chrome\.title"\)\}\s*>\s*<div className="flex min-h-\[120px\] items-center justify-center text-token-text-secondary">\s*<Spinner className="icon-xs" \/>\s*<\/div>\s*<\/SettingsContentLayout>/s,
+  );
+  assert.doesNotMatch(
+    source,
+    /if \(isLoading\) \{\s*return \(\s*<SettingsContentLayout\s+action=\{headerAction\}/s,
+  );
+  assert.doesNotMatch(source, /<BrowserUseLoadingStateRow message=\{null\} \/>/);
   assert.match(source, /title=\{t\("settings\.computerUse\.chrome\.permissions\.title"\)\}/);
   assert.match(source, /label=\{t\("settings\.browserUse\.approval\.label"\)\}/);
   assert.match(source, /label=\{t\("settings\.browserUse\.historyApproval\.label"\)\}/);
@@ -123,6 +140,7 @@ test("computer use settings service and labels use extracted command, query inva
   assert.match(titleSource, /\| "computer-use"/);
   assert.match(titleSource, /"computer-use": "computerUse\.label"/);
   assert.match(appSource, /"computer-use": "computerUse\.label"/);
+  assert.match(appSource, /<ComputerUseSettings\s+isComputerUseAvailable=\{isComputerUseSettingsAvailable\}/s);
 
   assert.match(messagesSource, /"computerUse\.label": "Computer use"/);
   assert.match(messagesSource, /"computerUse\.label": "计算机使用"/);
@@ -145,6 +163,15 @@ test("computer use settings keeps extracted refetch-on-window-focus semantics fo
   assert.match(source, /void loadComputerUseSoundMode\(\);/);
   assert.match(source, /void loadChromeExtensionState\(\);/);
   assert.match(source, /const handleFocus = \(\) => \{\s*void loadSettings\(\);\s*\};/s);
+});
+
+test("computer use settings keeps extracted overview availability separate from plugin discovery", () => {
+  const source = readSource(COMPONENT_SOURCE_PATH);
+
+  assert.match(source, /export function ComputerUseSettings\(\{\s*isComputerUseAvailable,\s*onShowToast,\s*selectedHostId,\s*workspaceRoot,\s*\}:/s);
+  assert.match(source, /if \(!isComputerUseAvailable \|\| currentSubpage !== "overview"\) \{/);
+  assert.match(source, /\{isComputerUseAvailable \? \(\s*<>/s);
+  assert.doesNotMatch(source, /const isComputerUseAvailable = isLocalHost && \(anyAppPlugin != null \|\| chromePlugin != null\);/);
 });
 
 function readSource(filePath: string) {

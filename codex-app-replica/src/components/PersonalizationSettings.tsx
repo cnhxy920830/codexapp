@@ -12,6 +12,7 @@ import { Spinner } from "./Spinner";
 import { useHotkey } from "../hooks/useHotkey";
 import {
   REPLICA_STATSIG_GATES,
+  useReplicaStatsigDynamicConfigValue,
   useReplicaStatsigGateValue,
 } from "../features/statsig/replicaStatsig";
 import { useI18n } from "../i18n/i18n";
@@ -30,6 +31,7 @@ import {
 
 const AGENTS_MD_DOCS_URL =
   "https://developers.openai.com/codex/guides/agents-md/#create-global-guidance";
+const PERSONALITY_DEFAULT_DYNAMIC_CONFIG = "1867347216";
 
 const PERSONALITY_OPTIONS = [
   {
@@ -47,7 +49,7 @@ const PERSONALITY_OPTIONS = [
 type SelectablePersonality = Exclude<ConfigPersonality, "none">;
 
 type PersonalityState = {
-  value: SelectablePersonality;
+  value: SelectablePersonality | null;
   canWrite: boolean;
   hasLoaded: boolean;
   hasLegacyModelPersonality: boolean;
@@ -59,7 +61,7 @@ type PersonalityState = {
 };
 
 const INITIAL_PERSONALITY_STATE: PersonalityState = {
-  value: "friendly",
+  value: null,
   canWrite: false,
   hasLoaded: false,
   hasLegacyModelPersonality: false,
@@ -83,6 +85,13 @@ export function PersonalizationSettings({
   const { t } = useI18n();
   const personalityGateEnabled = useReplicaStatsigGateValue(
     REPLICA_STATSIG_GATES.personality,
+  );
+  const personalityDefaultDynamicConfig = useReplicaStatsigDynamicConfigValue(
+    PERSONALITY_DEFAULT_DYNAMIC_CONFIG,
+  );
+  const defaultPersonality = useMemo(
+    () => resolveDefaultPersonality(personalityDefaultDynamicConfig),
+    [personalityDefaultDynamicConfig],
   );
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [personalityState, setPersonalityState] = useState<PersonalityState>(
@@ -183,9 +192,12 @@ export function PersonalizationSettings({
 
     void setPersonalityForHost({
       hostId: selectedHostId,
-      personality: personalityGateEnabled ? personalityState.value : null,
+      personality: personalityGateEnabled
+        ? (personalityState.value ?? defaultPersonality)
+        : null,
     });
   }, [
+    defaultPersonality,
     personalityGateEnabled,
     personalityState.hasLoaded,
     personalityState.isLoading,
@@ -214,7 +226,7 @@ export function PersonalizationSettings({
     if (!personalityState.hasScopedPersonality) {
       edits.push({
         keyPath: "personality",
-        value: personalityState.value,
+        value: personalityState.value ?? defaultPersonality,
         mergeStrategy: "upsert",
       });
     }
@@ -239,6 +251,7 @@ export function PersonalizationSettings({
         personalityMigrationAttemptRef.current = null;
       });
   }, [
+    defaultPersonality,
     personalityState.hasLegacyModelPersonality,
     personalityState.hasLoaded,
     personalityState.hasScopedPersonality,
@@ -259,8 +272,9 @@ export function PersonalizationSettings({
       })),
     [t],
   );
+  const resolvedPersonality = personalityState.value ?? defaultPersonality;
   const selectedPersonalityOption =
-    personalityOptions.find((option) => option.value === personalityState.value) ??
+    personalityOptions.find((option) => option.value === resolvedPersonality) ??
     personalityOptions[0];
   const loadedContents = document?.contents ?? "";
   const editorValue = draft ?? loadedContents;
@@ -282,6 +296,7 @@ export function PersonalizationSettings({
     }
 
     const previousPersonality = personalityState.value;
+    const previousResolvedPersonality = previousPersonality ?? defaultPersonality;
     setPersonalityState((current) => ({
       ...current,
       value: nextPersonality,
@@ -310,7 +325,7 @@ export function PersonalizationSettings({
     } catch {
       void setPersonalityForHost({
         hostId: selectedHostId,
-        personality: previousPersonality,
+        personality: previousResolvedPersonality,
       });
       setPersonalityState((current) => ({
         ...current,
@@ -534,6 +549,29 @@ function renderInlineAgentsDescription(template: string) {
 
 function resolveSelectablePersonality(
   value: ConfigPersonality | null | undefined,
-): SelectablePersonality {
-  return value === "pragmatic" ? "pragmatic" : "friendly";
+): SelectablePersonality | null {
+  if (value === "friendly" || value === "pragmatic") {
+    return value;
+  }
+  return null;
+}
+
+function resolveDefaultPersonality(dynamicConfig: unknown): SelectablePersonality {
+  if (
+    dynamicConfig !== null &&
+    typeof dynamicConfig === "object" &&
+    !Array.isArray(dynamicConfig)
+  ) {
+    const configuredValue = resolveSelectablePersonality(
+      (dynamicConfig as { default_personality?: unknown }).default_personality as
+        | ConfigPersonality
+        | null
+        | undefined,
+    );
+    if (configuredValue !== null) {
+      return configuredValue;
+    }
+  }
+
+  return "friendly";
 }

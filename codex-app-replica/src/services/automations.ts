@@ -52,9 +52,8 @@ export type SaveAutomationParams = {
   automation: AutomationRecord;
 };
 
-export type AutomationThreadRunResult = {
-  threadId: string;
-  turnId: string;
+export type AutomationRunNowResult = {
+  success: boolean;
 };
 
 export type AutomationInboxItem = {
@@ -139,7 +138,9 @@ export async function deleteAutomationCompat(id: string) {
 }
 
 export async function runAutomationNow(id: string) {
-  return invoke<AutomationThreadRunResult>("run_automation_now", { params: { id } });
+  return invoke<AutomationRunNowResult>("automation-run-now", {
+    params: { id },
+  });
 }
 
 export async function listInboxItems(limit = 200) {

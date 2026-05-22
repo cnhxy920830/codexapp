@@ -363,25 +363,25 @@ function ChronicleConsentDialog({
   const { t } = useI18n();
 
   return (
-    <SettingsDialog
-      footer={
-        <SettingsDialogFooter
-          cancelLabel={t("settings.general.experimentalFeatures.chronicle.cancel")}
-          confirmLabel={t("settings.general.experimentalFeatures.chronicle.continue")}
+      <SettingsDialog
+        footer={
+          <SettingsDialogFooter
+            cancelLabel={t("settings.general.experimentalFeatures.chronicle.cancel")}
+            confirmLabel={t("settings.general.experimentalFeatures.chronicle.continue")}
           confirmLoading={isPending}
           onCancel={onCancel}
-          onConfirm={onContinue}
-        />
-      }
-      onOpenChange={(open) => {
-        if (!open) {
-          onCancel();
+            onConfirm={onContinue}
+          />
         }
-      }}
-      open
-      title={t("settings.general.experimentalFeatures.chronicle.consentTitle")}
-    >
-      <h2 className="sr-only">{chronicleDisplayName}</h2>
+        onOpenChange={(open) => {
+          if (!open) {
+            onCancel();
+          }
+        }}
+        open
+        title={t("settings.general.experimentalFeatures.chronicle.consentTitle")}
+      >
+        <h2 className="sr-only">{chronicleDisplayName}</h2>
       <div className="max-h-[calc(100vh-6rem)] min-h-0 flex-1 space-y-3 overflow-y-auto pr-1 text-token-foreground/70">
         <p>{t("settings.general.experimentalFeatures.chronicle.consentBodyIntro")}</p>
         <p>{t("settings.general.experimentalFeatures.chronicle.consentBodyConsiderations")}</p>
@@ -432,16 +432,28 @@ function ChronicleSetupDialog({
     setupState,
     t,
   });
+  const isDismissable =
+    setupState.kind === "screen-recording-permission-needed" ||
+    setupState.kind === "accessibility-permission-needed" ||
+    setupState.kind === "ready" ||
+    setupState.kind === "failed";
 
   return (
     <SettingsDialog
       footer={footer}
+      hideCloseButton={!isDismissable}
       onOpenChange={(isOpen) => {
         if (!isOpen) {
           onClose();
         }
       }}
+      onEscapeKeyDown={(event) => {
+        if (!isDismissable) {
+          event.preventDefault();
+        }
+      }}
       open={open}
+      shouldIgnoreClickOutside
       title={title}
       subtitle={subtitle || undefined}
     >

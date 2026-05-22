@@ -912,12 +912,11 @@ export function AutomationsRoutePage({
   const handleRunNow = async (automation: AutomationRecord) => {
     setIsRunningNowId(automation.id);
     try {
-      const result = await runAutomationNow(automation.id);
+      await runAutomationNow(automation.id);
       onShowToast({
         message: t("inbox.automations.runNowSuccess"),
         tone: "info",
       });
-      await onOpenThread(result.threadId);
     } catch (error) {
       onShowToast({
         message: formatErrorMessage(t("inbox.automations.runNowError"), error),

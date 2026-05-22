@@ -100,12 +100,12 @@ const BROWSER_USE_ORIGIN_SECTIONS: ReadonlyArray<OriginSectionConfig> = [
 ];
 
 export function BrowserUseSettings({
-  hasComputerUseApprovalStore,
+  hasBrowserUseExternalSettings,
   onShowToast,
   selectedHostId,
   workspaceRoot,
 }: {
-  hasComputerUseApprovalStore: boolean;
+  hasBrowserUseExternalSettings: boolean;
   onShowToast?: (toast: AppToast) => void;
   selectedHostId: string;
   workspaceRoot: string | null;
@@ -114,7 +114,7 @@ export function BrowserUseSettings({
   const isLocalHost = selectedHostId === LOCAL_SETTINGS_HOST_ID;
   const effectiveWorkspaceRoot = isLocalHost ? workspaceRoot : null;
   const subtitle =
-    isLocalHost && hasComputerUseApprovalStore
+    isLocalHost && hasBrowserUseExternalSettings
       ? renderComputerUseSettingsSubtitle(t("settings.browserUse.subtitle"), () => {
           void emit(NAVIGATE_TO_ROUTE_EVENT, {
             path: COMPUTER_USE_SETTINGS_PATH,
@@ -398,9 +398,10 @@ function BrowserUsePermissionsPanel({
           <SettingsSurface>
             <SettingsRow
               label={t("settings.browserUse.approval.label")}
-              description={renderInlineTagButton(
+              description={renderInlineTagLink(
                 t("settings.browserUse.approval.description"),
                 "learnMoreLink",
+                browserUseLearnMoreUrl,
                 () => {
                   void openInBrowser(browserUseLearnMoreUrl);
                 },
@@ -940,17 +941,19 @@ function renderComputerUseSettingsSubtitle(
   template: string,
   onNavigate: () => void,
 ) {
-  return renderInlineTagButton(
+  return renderInlineTagLink(
     template,
     "computerUseSettingsLink",
+    COMPUTER_USE_SETTINGS_PATH,
     onNavigate,
-    "inline p-0 text-[var(--app-shell-accent)] underline underline-offset-2",
+    "text-token-text-link-foreground hover:underline",
   );
 }
 
-function renderInlineTagButton(
+function renderInlineTagLink(
   template: string,
   tagName: string,
+  href: string,
   onClick: () => void,
   className: string,
 ) {
@@ -970,13 +973,13 @@ function renderInlineTagButton(
   return (
     <>
       {prefix}
-      <button
-        type="button"
+      <a
+        href={href}
         onClick={onClick}
         className={className}
       >
         {label}
-      </button>
+      </a>
       {suffix}
     </>
   );

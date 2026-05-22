@@ -5,6 +5,12 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
+import {
+  ClockIcon,
+  FolderIcon,
+  ForkedConversationIcon,
+  WorktreeIcon,
+} from "../../components/AppShellIcons";
 import type { MessageKey } from "../../i18n/messages";
 import type { ThreadHistoryEntrySource } from "../../services/history";
 
@@ -19,6 +25,19 @@ const SUBAGENT_TITLE_COLOR_TOKENS = [
 const subagentTitleColorByConversationId = new Map<string, string>();
 let nextSubagentTitleColorIndex = 0;
 
+type HoverCardRow = {
+  id: string;
+  icon: ReactNode;
+  label: string;
+  allowWrap?: boolean;
+  tone?: "default" | "danger";
+};
+
+type HoverCardSection = {
+  id: string;
+  rows: HoverCardRow[];
+};
+
 type LocalConversationPageHeaderProps = {
   conversationId: string | null;
   cwd: string | null;
@@ -28,9 +47,11 @@ type LocalConversationPageHeaderProps = {
   heartbeatSummary?: string | null;
   latestCollaborationMode?: string | null;
   latestReasoningEffort?: string | null;
+  onTitleHoverCardOpenChange?: (open: boolean) => void;
   projectLabel: string | null;
   source: ThreadHistoryEntrySource | null;
   t?: (key: MessageKey, values?: Record<string, number | string>) => string;
+  threadBranchLabel?: string | null;
   threadGitRoot: string | null;
   title: string;
   trailingActions?: ReactNode;
@@ -45,9 +66,11 @@ export function LocalConversationPageHeader({
   heartbeatSummary = null,
   latestCollaborationMode = null,
   latestReasoningEffort = null,
+  onTitleHoverCardOpenChange,
   projectLabel,
   source,
   t,
+  threadBranchLabel = null,
   threadGitRoot,
   title,
   trailingActions,
@@ -59,8 +82,10 @@ export function LocalConversationPageHeader({
     source,
     t,
   });
+  const trimmedTitle = title.trim();
   const trimmedProjectLabel = projectLabel?.trim() || null;
   const trimmedCwd = cwd?.trim() || null;
+  const trimmedThreadBranchLabel = threadBranchLabel?.trim() || null;
   const trimmedHeartbeatSummary = heartbeatSummary?.trim() || null;
   const trimmedThreadGitRoot = threadGitRoot?.trim() || null;
   const normalizedCwd = trimmedCwd?.replace(/[\\/]+$/u, "").toLowerCase() ?? "";
@@ -72,22 +97,23 @@ export function LocalConversationPageHeader({
     normalizedThreadGitRoot !== normalizedCwd
       ? trimmedThreadGitRoot
       : null;
-  const hasHoverCardDetails =
-    trimmedProjectLabel !== null ||
-    trimmedCwd !== null ||
-    gitRootLabel !== null ||
-    trimmedHeartbeatSummary !== null;
-  const titleHoverCardContent = hasHoverCardDetails ? (
-    <LocalConversationTitleHoverCardContent
-      cwd={trimmedCwd}
-      gitRootLabel={gitRootLabel}
-      heartbeatSummary={trimmedHeartbeatSummary}
-      projectLabel={trimmedProjectLabel}
-    />
-  ) : null;
+  const hoverCardSections = buildHoverCardSections({
+    cwd: trimmedCwd,
+    gitRootLabel,
+    heartbeatSummary: trimmedHeartbeatSummary,
+    threadBranchLabel: trimmedThreadBranchLabel,
+  });
+  const titleHoverCardContent =
+    trimmedTitle.length > 0 ? (
+      <LocalConversationTitleHoverCardContent
+        projectLabel={trimmedProjectLabel}
+        sections={hoverCardSections}
+        threadTitle={trimmedTitle}
+      />
+    ) : null;
   const titleContent = (
     <span className="no-drag pointer-events-auto max-w-[320px] min-w-[2ch] cursor-interaction truncate text-[15px] font-medium text-[var(--app-shell-text)]">
-      <span className="w-fit truncate">{title}</span>
+      <span className="w-fit truncate">{trimmedTitle.length > 0 ? trimmedTitle : title}</span>
       {titleSuffix}
     </span>
   );
@@ -100,6 +126,7 @@ export function LocalConversationPageHeader({
             align="start"
             defaultOpen={defaultTitleHoverCardOpen}
             hoverCardContent={titleHoverCardContent}
+            onOpenChange={onTitleHoverCardOpenChange}
             side="bottom"
             sideOffset={6}
           >
@@ -123,6 +150,7 @@ export function LocalConversationPageHeader({
               align="start"
               defaultOpen={defaultTitleHoverCardOpen}
               hoverCardContent={titleHoverCardContent}
+              onOpenChange={onTitleHoverCardOpenChange}
               side="bottom"
               sideOffset={6}
             >
@@ -212,54 +240,129 @@ function LocalConversationHoverCard({
 }
 
 function LocalConversationTitleHoverCardContent({
-  cwd,
-  gitRootLabel,
-  heartbeatSummary,
   projectLabel,
+  sections,
+  threadTitle,
 }: {
+  projectLabel: string | null;
+  sections: HoverCardSection[];
+  threadTitle: string;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1">
+        <div className="truncate text-[12px] font-medium text-[var(--app-shell-text)]">
+          {threadTitle}
+        </div>
+        {projectLabel ? (
+          <div className="truncate text-[12px] text-[var(--app-shell-subtle)]">
+            {projectLabel}
+          </div>
+        ) : null}
+      </div>
+      {sections.map((section, index) => (
+        <div
+          key={section.id}
+          className={index === 0 ? "flex flex-col gap-2" : "flex flex-col gap-2 border-t border-[var(--app-shell-border)] pt-3"}
+        >
+          {section.rows.map((row) => (
+            <LocalConversationHoverCardRow key={row.id} row={row} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LocalConversationHoverCardRow({
+  row,
+}: {
+  row: HoverCardRow;
+}) {
+  const iconClassName =
+    row.tone === "danger"
+      ? "h-4 w-4 shrink-0 text-[var(--app-shell-danger-text)]"
+      : "h-4 w-4 shrink-0 text-[var(--app-shell-subtle)]";
+  const labelClassName = row.allowWrap
+    ? row.tone === "danger"
+      ? "min-w-0 flex-1 break-all text-[11px] leading-5 text-[var(--app-shell-danger-text)]"
+      : "min-w-0 flex-1 break-all text-[11px] leading-5 text-[var(--app-shell-subtle)]"
+    : row.tone === "danger"
+      ? "min-w-0 flex-1 truncate text-[11px] leading-5 text-[var(--app-shell-danger-text)]"
+      : "min-w-0 flex-1 truncate text-[11px] leading-5 text-[var(--app-shell-subtle)]";
+
+  return (
+    <div className="flex items-start gap-2">
+      <div className={iconClassName}>{row.icon}</div>
+      <div className={labelClassName}>{row.label}</div>
+    </div>
+  );
+}
+
+function buildHoverCardSections(params: {
   cwd: string | null;
   gitRootLabel: string | null;
   heartbeatSummary: string | null;
-  projectLabel: string | null;
+  threadBranchLabel: string | null;
 }) {
-  const hasMetadataFooter = gitRootLabel !== null || heartbeatSummary !== null;
+  const environmentRows: HoverCardRow[] = [];
+  if (params.cwd !== null) {
+    environmentRows.push({
+      id: "cwd",
+      icon: <FolderIcon className="h-4 w-4 shrink-0" />,
+      label: params.cwd,
+      allowWrap: true,
+    });
+  }
+  const branchRows: HoverCardRow[] = [];
+  if (params.threadBranchLabel !== null) {
+    branchRows.push({
+      id: "branch",
+      icon: <ForkedConversationIcon className="h-4 w-4 shrink-0" />,
+      label: params.threadBranchLabel,
+    });
+  }
+  if (params.gitRootLabel !== null) {
+    branchRows.push({
+      id: "gitRoot",
+      icon: <WorktreeIcon className="h-4 w-4 shrink-0" />,
+      label: params.gitRootLabel,
+      allowWrap: true,
+    });
+  }
 
-  return (
-    <>
-      {projectLabel ? (
-        <div className="truncate text-[12px] font-medium text-[var(--app-shell-text)]">
-          {projectLabel}
-        </div>
-      ) : null}
-      {cwd ? (
-        <div className="mt-1 break-all font-mono text-[11px] leading-5 text-[var(--app-shell-subtle)]">
-          {cwd}
-        </div>
-      ) : null}
-      {hasMetadataFooter ? (
-        <div className="mt-2 border-t border-[var(--app-shell-border)] pt-2">
-          {gitRootLabel ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex max-w-full items-center rounded-full border border-[var(--app-shell-border)] px-2 py-0.5 font-mono text-[11px] text-[var(--app-shell-subtle)]">
-                <span className="truncate">{gitRootLabel}</span>
-              </span>
-            </div>
-          ) : null}
-          {heartbeatSummary ? (
-            <div
-              className={
-                gitRootLabel
-                  ? "mt-2 text-[11px] leading-5 text-[var(--app-shell-subtle)]"
-                  : "text-[11px] leading-5 text-[var(--app-shell-subtle)]"
-              }
-            >
-              {heartbeatSummary}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </>
-  );
+  const automationRows: HoverCardRow[] =
+    params.heartbeatSummary === null
+      ? []
+      : [
+          {
+            id: "heartbeat",
+            icon: <ClockIcon className="h-4 w-4 shrink-0" />,
+            label: params.heartbeatSummary,
+            allowWrap: true,
+          },
+        ];
+
+  return [
+    environmentRows.length > 0
+      ? {
+          id: "environment",
+          rows: environmentRows,
+        }
+      : null,
+    branchRows.length > 0
+      ? {
+          id: "branch",
+          rows: branchRows,
+        }
+      : null,
+    automationRows.length > 0
+      ? {
+          id: "automation",
+          rows: automationRows,
+        }
+      : null,
+  ].filter((section): section is HoverCardSection => section !== null);
 }
 
 function buildLocalConversationTitleSuffix(params: {
@@ -350,7 +453,6 @@ function formatReasoningEffortLabel(
     }
   }
 }
-
 
 function formatSubagentNickname(
   agentNickname: string | null,

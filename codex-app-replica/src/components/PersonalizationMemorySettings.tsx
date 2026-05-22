@@ -411,12 +411,6 @@ export function PersonalizationMemorySettings({
         </SettingsGroup.Content>
       </SettingsGroup>
 
-      {state.error ? (
-        <div className="rounded-md border border-token-charts-red/20 bg-token-charts-red/5 px-3 py-2 text-sm text-token-charts-red">
-          {state.error}
-        </div>
-      ) : null}
-
       {isResetDialogOpen ? (
         <MemoryResetDialog
           isResetting={isResetting}

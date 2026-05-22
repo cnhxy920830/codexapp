@@ -2,7 +2,11 @@ import { useEffect, useId, useMemo, useState } from "react";
 import type { AppToast } from "../AppToastRegion";
 import { useI18n } from "../../i18n/i18n";
 import { ChevronDownIcon } from "../AppShellIcons";
-import { readSelectedAvatarId, setSelectedAvatarId } from "../../services/settings";
+import {
+  onGlobalStateUpdated,
+  readSelectedAvatarId,
+  setSelectedAvatarId,
+} from "../../services/settings";
 import { getCodexHomePath } from "../../services/codexHome";
 import {
   ensureCustomAvatarsLoaded,
@@ -57,8 +61,9 @@ export function PetsSection({
 
   useEffect(() => {
     let cancelled = false;
+    let unlistenGlobalStateUpdated: (() => void) | null = null;
 
-    const loadSelectedAvatar = async () => {
+    const syncSelectedAvatarId = async () => {
       try {
         const value = await readSelectedAvatarId();
         if (!cancelled) {
@@ -71,10 +76,28 @@ export function PetsSection({
       }
     };
 
-    void loadSelectedAvatar();
+    void syncSelectedAvatarId();
+
+    void onGlobalStateUpdated((notification) => {
+      if (!notification.keys.includes("selected-avatar-id")) {
+        return;
+      }
+
+      void syncSelectedAvatarId();
+    }).then((dispose) => {
+      if (cancelled) {
+        void dispose();
+        return;
+      }
+
+      unlistenGlobalStateUpdated = () => {
+        void dispose();
+      };
+    });
 
     return () => {
       cancelled = true;
+      unlistenGlobalStateUpdated?.();
     };
   }, []);
 

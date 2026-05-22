@@ -5,10 +5,12 @@ import { Button } from "./Button";
 import { FilteredPluginSettings, type FilteredPluginSettingsItemPresentation } from "./FilteredPluginSettings";
 import { SettingsContentLayout } from "./SettingsContentLayout";
 import { SettingsChoiceMenu } from "./SettingsChoiceMenu";
+import { SettingsDialog, SettingsDialogFooter } from "./SettingsDialog";
 import { SettingsGroup } from "./SettingsGroup";
 import { SettingsRow } from "./SettingsRow";
 import { SettingsSectionTitle } from "./SettingsSectionTitle";
 import { SettingsSurface } from "./SettingsSurface";
+import { Spinner } from "./Spinner";
 import {
   BrowserUseDialog,
   BrowserUseLoadingStateRow,
@@ -178,10 +180,12 @@ const CHROME_ORIGIN_SECTION_CONFIGS: BrowserUseOriginSectionConfig[] = [
 ];
 
 export function ComputerUseSettings({
+  isComputerUseAvailable,
   onShowToast,
   selectedHostId,
   workspaceRoot,
 }: {
+  isComputerUseAvailable: boolean;
   onShowToast?: (toast: AppToast) => void;
   selectedHostId: string;
   workspaceRoot: string | null;
@@ -275,9 +279,8 @@ export function ComputerUseSettings({
     return selectPluginCandidatesByName(pluginsSnapshot, ["computer-use"])[0] ?? null;
   }, [pluginsSnapshot]);
   const chromePlugin = useMemo(() => {
-    return selectPluginCandidatesByName(pluginsSnapshot, ["chrome-internal", "chrome-dev", "chrome"])[0] ?? null;
+    return selectChromePlugin(selectPluginCandidatesByName(pluginsSnapshot, ["chrome-internal", "chrome"]));
   }, [pluginsSnapshot]);
-  const isComputerUseAvailable = isLocalHost && (anyAppPlugin != null || chromePlugin != null);
   const isChromePluginReady = chromePlugin?.plugin.installed === true && chromePlugin.plugin.enabled === true;
 
   const loadComputerUseSoundMode = useEffectEvent(async (canCommit: () => boolean = () => true) => {
@@ -586,10 +589,10 @@ export function ComputerUseSettings({
             selectPlugins={(snapshot) => {
               const plugins = [];
               const computerUsePlugin =
-                isLocalHost ? selectPluginCandidatesByName(snapshot, ["computer-use"])[0] ?? null : null;
+                isComputerUseAvailable ? selectPluginCandidatesByName(snapshot, ["computer-use"])[0] ?? null : null;
               const selectedChromePlugin =
                 isLocalHost
-                  ? selectChromePlugin(selectPluginCandidatesByName(snapshot, ["chrome-internal", "chrome-dev", "chrome"]))
+                  ? selectChromePlugin(selectPluginCandidatesByName(snapshot, ["chrome-internal", "chrome"]))
                   : null;
 
               if (computerUsePlugin != null) {
@@ -945,12 +948,11 @@ function GoogleChromeComputerUseSettingsPage({
   if (isLoading) {
     return (
       <SettingsContentLayout
-        action={headerAction}
         backSlot={<ComputerUseChromeBreadcrumb onBack={onBack} />}
         title={t("settings.computerUse.chrome.title")}
       >
         <div className="flex min-h-[120px] items-center justify-center text-token-text-secondary">
-          <BrowserUseLoadingStateRow message={null} />
+          <Spinner className="icon-xs" />
         </div>
       </SettingsContentLayout>
     );
@@ -1249,7 +1251,6 @@ function ComputerUseAllowedAppsList({
         approvedApps.map((approvedApp) => (
           <SettingsRow
             key={approvedApp.bundleIdentifier}
-            className="items-start max-sm:flex-col max-sm:items-stretch"
             control={
               <Button
                 aria-label={t("settings.computerUse.allowedApps.removeAriaLabel", {
@@ -1258,9 +1259,6 @@ function ComputerUseAllowedAppsList({
                 color="ghost"
                 disabled={pendingBundleIdentifier != null}
                 size="icon"
-                title={t("settings.computerUse.allowedApps.removeAriaLabel", {
-                  displayName: approvedApp.displayName,
-                })}
                 uniform
                 onClick={() => setRemoveDialogApp(approvedApp)}
               >
@@ -1274,41 +1272,33 @@ function ComputerUseAllowedAppsList({
       )}
 
       {removeDialogApp ? (
-        <BrowserUseDialog
-          confirmLabel={t("settings.computerUse.allowedApps.removeDialogConfirm")}
-          confirmTone="danger"
-          disableConfirm={pendingBundleIdentifier != null}
-          onClose={() => setRemoveDialogApp(null)}
-          onConfirm={() => void handleRemoveApproval()}
+        <SettingsDialog
+          footer={
+            <SettingsDialogFooter
+              cancelLabel={t("settings.computerUse.allowedApps.removeDialogCancel")}
+              confirmLabel={t("settings.computerUse.allowedApps.removeDialogConfirm")}
+              confirmLoading={pendingBundleIdentifier != null}
+              confirmTone="danger"
+              onCancel={() => setRemoveDialogApp(null)}
+              onConfirm={() => void handleRemoveApproval()}
+            />
+          }
+          onOpenChange={(open) => {
+            if (!open) {
+              setRemoveDialogApp(null);
+            }
+          }}
+          open
+          size="compact"
           subtitle={t("settings.computerUse.allowedApps.removeDialogSubtitle", {
             displayName: removeDialogApp.displayName,
           })}
           title={t("settings.computerUse.allowedApps.removeDialogTitle", {
             displayName: removeDialogApp.displayName,
           })}
-          footer={
-            <>
-              <Button
-                color="ghost"
-                disabled={pendingBundleIdentifier != null}
-                type="button"
-                onClick={() => setRemoveDialogApp(null)}
-              >
-                {t("settings.computerUse.allowedApps.removeDialogCancel")}
-              </Button>
-              <Button
-                color="danger"
-                loading={pendingBundleIdentifier != null}
-                type="button"
-                onClick={() => void handleRemoveApproval()}
-              >
-                {t("settings.computerUse.allowedApps.removeDialogConfirm")}
-              </Button>
-            </>
-          }
         >
           {null}
-        </BrowserUseDialog>
+        </SettingsDialog>
       ) : null}
     </>
   );
@@ -1529,7 +1519,7 @@ async function readChromeExtensionSetup(
   if (candidate.plugin.source.type !== "local") {
     return null;
   }
-  if (!["chrome", "chrome-dev", "chrome-internal"].includes(candidate.plugin.name)) {
+  if (!["chrome", "chrome-internal"].includes(candidate.plugin.name)) {
     return null;
   }
 

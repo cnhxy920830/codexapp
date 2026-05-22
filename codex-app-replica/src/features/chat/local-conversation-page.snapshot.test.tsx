@@ -49,6 +49,7 @@ test("local conversation page snapshots", async (t) => {
     import("./rightPanelTabs"),
   ]);
   const threadConversation = buildLocalConversationFixture();
+  const emptyThreadConversation = buildEmptyLocalConversationFixture();
   const annotationOnlyThreadConversation = buildAnnotationOnlyLocalConversationFixture();
   const editingThreadConversation = buildEditingLocalConversationFixture();
   const sideChatConversation = buildSideChatConversationFixture();
@@ -222,6 +223,65 @@ test("local conversation page snapshots", async (t) => {
               isThreadGoalEditorOpen={false}
               pendingThreadGoalObjective={null}
               threadConversation={annotationOnlyThreadConversation}
+              turnError={null}
+              workspaceRoot="D:\\workspace\\project"
+              conversationHostId={null}
+              authMethod="chatgpt"
+            />
+          </div>
+        </I18N_CONTEXT.Provider>,
+      ),
+    ),
+    emptyThread: normalizeMarkup(
+      renderToStaticMarkup(
+        <I18N_CONTEXT.Provider value={{ locale: "en-US", setLocale: () => undefined, t: translate }}>
+          <div className="h-[1080px] w-[1440px]">
+            <ChatConversationMainPane
+              composerDraft=""
+              composerEnterBehavior="enter"
+              composerPermissionConfig={null}
+              composerPermissionMode="auto"
+              composerPermissionsState={permissionsState}
+              followUpQueueMode="queue"
+              isWorktreeThread={false}
+              currentThreadApprovals={[]}
+              currentThreadImplementPlanRequests={[]}
+              currentThreadMcpServerElicitationRequest={[]}
+              currentThreadPermissionsRequestApproval={[]}
+              currentThreadToolRequestUserInput={[]}
+              currentThreadQueuedFollowUps={[]}
+              currentThreadPendingPdfCommentCount={0}
+              onApprovalDecision={() => undefined}
+              onDismissImplementPlanRequest={() => undefined}
+              onImplementPlanRequestSubmit={() => undefined}
+              onMcpServerElicitationRequestSubmit={() => undefined}
+              onPermissionsRequestApprovalSubmit={() => undefined}
+              onToolRequestUserInputSubmit={() => undefined}
+              onComposerDraftChange={() => undefined}
+              onComposerPermissionModeChange={() => undefined}
+              onOpenRemoteTask={() => undefined}
+              onSelectRemoteTaskAssistantTurn={() => undefined}
+              onOpenSideChat={() => true}
+              onOpenWorkspaceFileSearch={() => undefined}
+              onFocusComposerRequest={() => undefined}
+              onSelectThread={() => undefined}
+              onThreadGoalEditorOpenChange={() => undefined}
+              onPendingThreadGoalObjectiveChange={() => undefined}
+              onEditUserMessage={() => undefined}
+              onRemoveQueuedFollowUp={() => undefined}
+              onStopTurn={() => undefined}
+              onSubmitTurn={() => undefined}
+              approvalActionErrors={{}}
+              reviewDelivery="inline"
+              respondingApprovalKeys={[]}
+              submitButtonMode="send"
+              t={translate}
+              remoteAttemptTabsByTurnId={{}}
+              remoteConversationOverridesByTurnId={{}}
+              composerPlacement="main"
+              isThreadGoalEditorOpen={false}
+              pendingThreadGoalObjective={null}
+              threadConversation={emptyThreadConversation}
               turnError={null}
               workspaceRoot="D:\\workspace\\project"
               conversationHostId={null}
@@ -422,7 +482,8 @@ test("local conversation page snapshots", async (t) => {
             latestReasoningEffort="high"
             projectLabel="project"
             source={threadConversation.source ?? null}
-            threadGitRoot={null}
+            threadBranchLabel="feature/local-header-parity"
+            threadGitRoot="D:\\workspace\\project-main"
             title={threadConversation.title}
           />
         </div>,
@@ -455,6 +516,7 @@ type SnapshotMap = {
   mainThread: string;
   mainThreadMenuOpen: string;
   annotationOnlyThread: string;
+  emptyThread: string;
   editingUserMessage: string;
   sideChat: string;
   fullWidthCompactComposerOverlay: string;
@@ -801,6 +863,19 @@ function buildAnnotationOnlyLocalConversationFixture(): ThreadConversation {
             ),
           },
     ),
+  };
+}
+
+function buildEmptyLocalConversationFixture(): ThreadConversation {
+  const threadConversation = buildLocalConversationFixture();
+
+  return {
+    ...threadConversation,
+    turns: [],
+    turnTimings: [],
+    items: [],
+    latestTokenUsageInfo: null,
+    threadGoal: null,
   };
 }
 

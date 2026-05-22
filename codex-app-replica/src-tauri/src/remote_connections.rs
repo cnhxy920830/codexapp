@@ -94,6 +94,7 @@ pub struct AppServerConnectionStateResponse {
     pub error: Option<AppServerConnectionError>,
     pub app_server_version: Option<String>,
     pub installed_codex_version: Option<String>,
+    pub codex_home: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -469,6 +470,7 @@ fn app_server_connection_state_for_registry(
         error,
         app_server_version: snapshot.app_server_version,
         installed_codex_version: snapshot.installed_codex_version,
+        codex_home: snapshot.codex_home,
     }
 }
 
@@ -2100,6 +2102,7 @@ mod tests {
             error: None,
             app_server_version: None,
             installed_codex_version: None,
+            codex_home: None,
         };
 
         assert_eq!(
@@ -2108,7 +2111,8 @@ mod tests {
                 "state": "disconnected",
                 "error": null,
                 "appServerVersion": null,
-                "installedCodexVersion": null
+                "installedCodexVersion": null,
+                "codexHome": null
             })
         );
     }
@@ -2185,6 +2189,7 @@ mod tests {
                 error: None,
                 app_server_version: None,
                 installed_codex_version: None,
+                codex_home: None,
             }
         );
     }

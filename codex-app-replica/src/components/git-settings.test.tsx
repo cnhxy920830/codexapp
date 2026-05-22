@@ -88,6 +88,7 @@ test("git settings keeps extracted instruction header actions and auto-cleanup c
   assert.match(source, /import \{ SettingsDialog, SettingsDialogFooter \} from "\.\/SettingsDialog";/);
   assert.match(source, /<SettingsDialog\s+footer=\{/s);
   assert.match(source, /<SettingsDialogFooter[\s\S]*confirmTone="danger"/s);
+  assert.match(source, /hideCloseButton/);
   assert.match(source, /onOpenChange=\{onOpenChange\}/);
   assert.match(source, /open=\{open\}/);
   assert.match(source, /title=\{t\("settings\.worktrees\.autoCleanup\.confirm\.title"\)\}/);

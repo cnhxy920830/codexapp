@@ -58,6 +58,27 @@ test("personalization settings keeps extracted shared shell and section order", 
 test("personalization settings uses extracted host-aware services and hotkey save flow", () => {
   const source = readSource(COMPONENT_SOURCE_PATH);
 
+  assert.match(
+    source,
+    /const PERSONALITY_DEFAULT_DYNAMIC_CONFIG = "1867347216";/,
+  );
+  assert.match(
+    source,
+    /const personalityDefaultDynamicConfig = useReplicaStatsigDynamicConfigValue\(\s*PERSONALITY_DEFAULT_DYNAMIC_CONFIG,\s*\)/s,
+  );
+  assert.match(
+    source,
+    /const defaultPersonality = useMemo\(\s*\(\) => resolveDefaultPersonality\(personalityDefaultDynamicConfig\),/s,
+  );
+  assert.match(
+    source,
+    /personality: personalityGateEnabled\s*\?\s*\(personalityState\.value \?\? defaultPersonality\)\s*:\s*null/s,
+  );
+  assert.match(
+    source,
+    /function resolveDefaultPersonality\(dynamicConfig: unknown\)/,
+  );
+  assert.match(source, /default_personality/);
   assert.match(source, /readConfigForHost\(\{\s*hostId: selectedHostId,/s);
   assert.match(source, /setPersonalityForHost\(\{\s*hostId: selectedHostId,/s);
   assert.match(source, /readCodexAgentsMd\(selectedHostId\)/);
@@ -82,6 +103,8 @@ test("personalization memory settings keeps extracted host-aware memory and chro
   assert.match(source, /import \{ SettingsDialog, SettingsDialogFooter \} from "\.\/SettingsDialog";/);
   assert.match(source, /<SettingsDialog[\s\S]*size="compact"[\s\S]*title=\{t\("settings\.memory\.resetDialogTitle"\)\}/s);
   assert.match(source, /<SettingsDialogFooter[\s\S]*confirmTone="danger"/s);
+  assert.doesNotMatch(source, /border-token-charts-red\/20/);
+  assert.doesNotMatch(source, /bg-token-charts-red\/5/);
 });
 
 test("chronicle settings renders as extracted shared settings row", () => {
@@ -100,6 +123,10 @@ test("chronicle settings renders as extracted shared settings row", () => {
   assert.match(source, /<SettingsDialogFooter[\s\S]*confirmLabel=\{t\("settings\.general\.experimentalFeatures\.chronicle\.continue"\)\}/s);
   assert.match(source, /<SettingsDialog[\s\S]*title=\{t\("settings\.general\.experimentalFeatures\.chronicle\.consentTitle"\)\}/s);
   assert.match(source, /<h2 className="sr-only">\{chronicleDisplayName\}<\/h2>/);
+  assert.match(source, /hideCloseButton/);
+  assert.match(source, /shouldIgnoreClickOutside/);
+  assert.match(source, /onEscapeKeyDown=\{\(event\) => \{/);
+  assert.match(source, /const isDismissable =/);
   assert.doesNotMatch(source, /<div className="space-y-2">/);
 });
 
@@ -142,12 +169,19 @@ test("shared settings dialog and toggle primitives support extracted personaliza
   assert.match(dialogSource, /role="dialog"/);
   assert.match(dialogSource, /aria-modal="true"/);
   assert.match(dialogSource, /aria-labelledby=\{titleId\}/);
-  assert.match(dialogSource, /aria-describedby=\{subtitle \|\| children \? descriptionId : undefined\}/);
+  assert.match(
+    dialogSource,
+    /aria-describedby=\{\s*contentProps\?\.\["aria-describedby"\] \?\? \(subtitle \|\| children \? descriptionId : undefined\)\s*\}/s,
+  );
+  assert.match(dialogSource, /onEscapeKeyDown\?: \(\(event: SettingsDialogEscapeKeyDownEvent\) => void\) \| undefined;/);
+  assert.match(dialogSource, /window\.addEventListener\("keydown", handleKeyDown\)/);
+  assert.match(dialogSource, /if \(event\.key !== "Escape"\)/);
+  assert.match(dialogSource, /onEscapeKeyDown\?\.\(escapeEvent\)/);
   assert.match(dialogSource, /size = "default"/);
   assert.match(dialogSource, /w-full max-w-\[92vw\] rounded-3xl border border-token-border bg-token-dropdown-background\/90 text-token-foreground shadow-lg backdrop-blur-xl outline-none/);
   assert.match(dialogSource, /size === "compact" \? "max-w-\[420px\]" : "max-w-\[520px\]"/);
-  assert.match(dialogSource, /className="flex flex-col gap-0 px-5 py-5 text-base leading-normal tracking-normal"/);
-  assert.match(dialogSource, /className="codex-dialog-overlay fixed inset-0 z-50 flex items-center justify-center bg-\[rgba\(0,0,0,0\.24\)\] px-4"/);
+  assert.match(dialogSource, /"flex flex-col gap-0 px-5 py-5 text-base leading-normal tracking-normal"/);
+  assert.match(dialogSource, /"codex-dialog-overlay fixed inset-0 z-50 flex items-center justify-center bg-\[rgba\(0,0,0,0\.24\)\] px-4"/);
   assert.match(dialogSource, /export function SettingsDialogFooter\(/);
   assert.match(dialogSource, /<Button color="ghost" disabled=\{confirmLoading\} onClick=\{onCancel\} size="toolbar">/);
   assert.match(dialogSource, /size="toolbar"/);

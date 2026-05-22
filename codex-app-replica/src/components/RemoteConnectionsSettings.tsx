@@ -1,7 +1,18 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from "react";
 import type { AppToast } from "./AppToastRegion";
 import {
   CheckIcon,
+  CloseIcon,
   CloseTabIcon,
   InfoIcon,
   LogoutIcon,
@@ -14,6 +25,7 @@ import {
 } from "./AppShellIcons";
 import { Button } from "./Button";
 import { SettingsContentLayout } from "./SettingsContentLayout";
+import { SettingsDialog, SettingsDialogFooter } from "./SettingsDialog";
 import { SettingsGroup } from "./SettingsGroup";
 import { SettingsSurface } from "./SettingsSurface";
 import { Spinner } from "./Spinner";
@@ -415,6 +427,25 @@ export function RemoteConnectionsSettings({
     }
   };
 
+  const handleDeleteSshConnection = async (connection: RemoteConnection) => {
+    try {
+      const nextSavedConnections = toSavedConnections(sortedSshConnections).filter(
+        (savedConnection) => savedConnection.hostId !== connection.hostId,
+      );
+      await saveCodexManagedRemoteSshConnections(nextSavedConnections);
+      onShowToast?.({
+        tone: "success",
+        message: t("settings.remoteConnections.save.success"),
+      });
+    } catch (error) {
+      onShowToast?.({
+        tone: "error",
+        message: t("settings.remoteConnections.delete.error"),
+        description: getErrorMessage(error),
+      });
+    }
+  };
+
   const handleDeleteConnection = async () => {
     if (connectionToDelete == null) {
       return;
@@ -428,11 +459,6 @@ export function RemoteConnectionsSettings({
           tone: "success",
           message: t("settings.remoteControlConnections.delete.success"),
         });
-      } else {
-        const nextSavedConnections = toSavedConnections(sortedSshConnections).filter(
-          (connection) => connection.hostId !== connectionToDelete.hostId,
-        );
-        await saveCodexManagedRemoteSshConnections(nextSavedConnections);
       }
       setConnectionToDelete(null);
     } catch (error) {
@@ -480,6 +506,9 @@ export function RemoteConnectionsSettings({
           remoteControlConnectionsState={remoteControlConnectionsState}
           isLoading={isLoadingConnections}
           onDeleteConnection={setConnectionToDelete}
+          onDeleteSshConnection={(connection) => {
+            void handleDeleteSshConnection(connection);
+          }}
           onEditConnection={(hostId) => {
             setEditingConnectionHostId(hostId);
             setSshDialogMode("edit");
@@ -545,7 +574,10 @@ export function RemoteConnectionsSettings({
       <DeleteConnectionDialog
         connection={connectionToDelete}
         isDeleting={isDeletingConnection}
-        open={connectionToDelete != null}
+        open={
+          connectionToDelete != null &&
+          isRemoteControlConnection(connectionToDelete)
+        }
         onConfirm={() => void handleDeleteConnection()}
         onOpenChange={(open) => {
           if (!open && !isDeletingConnection) {
@@ -859,6 +891,7 @@ function DeviceConnectionsSection({
   isLoading,
   onAddConnection,
   onDeleteConnection,
+  onDeleteSshConnection,
   onEditConnection,
   onOpenDetails,
   onLoginRequired,
@@ -877,6 +910,7 @@ function DeviceConnectionsSection({
   isLoading: boolean;
   onAddConnection: () => void;
   onDeleteConnection: (connection: DeviceConnection) => void;
+  onDeleteSshConnection: (connection: RemoteConnection) => void;
   onEditConnection: (hostId: string) => void;
   onOpenDetails: (connection: DeviceConnection) => void;
   onLoginRequired: (hostId: string) => void;
@@ -1021,7 +1055,7 @@ function DeviceConnectionsSection({
                 connection={connection}
                 pendingAutoConnectHostId={pendingAutoConnectHostId}
                 response={connectionStates[connection.hostId] ?? null}
-                onDeleteConnection={onDeleteConnection}
+                onDeleteConnection={onDeleteSshConnection}
                 onEditConnection={onEditConnection}
                 onLoginRequired={onLoginRequired}
                 onLogoutConnection={onLogoutConnection}
@@ -1057,7 +1091,7 @@ function SshConnectionRow({
   connection: RemoteConnection;
   pendingAutoConnectHostId: string | null;
   response: AppServerConnectionStateResponse | null;
-  onDeleteConnection: (connection: DeviceConnection) => void;
+  onDeleteConnection: (connection: RemoteConnection) => void;
   onEditConnection: (hostId: string) => void;
   onLoginRequired: (hostId: string) => void;
   onLogoutConnection: (hostId: string) => Promise<void> | void;
@@ -1505,53 +1539,65 @@ function RemoteConnectionAuthDialog({
   }
 
   return (
-    <DialogOverlay>
-      <div
-        aria-modal="true"
-        role="dialog"
-        aria-label={t("settings.remoteConnections.auth.title")}
-        className="app-card w-full max-w-[460px] rounded-[18px] px-5 py-5 shadow-[0_16px_40px_rgba(0,0,0,0.22)]"
-      >
+    <SettingsDialog
+      contentProps={{ "aria-describedby": undefined }}
+      hideCloseButton
+      hideHeader
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          close(true);
+          return;
+        }
+        onOpenChange(true);
+      }}
+      open={open}
+      size="compact"
+      title={t("settings.remoteConnections.auth.title")}
+      bodyClassName="gap-2 px-6 py-5"
+    >
+      <>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <div className="text-[18px] font-medium text-token-text-primary">
+            <h2 className="heading-dialog min-w-0 font-semibold">
               {t("settings.remoteConnections.auth.title")}
-            </div>
-            <div className="mt-1 text-[13px] leading-6 text-token-text-secondary">
+            </h2>
+            <div className="text-token-description-foreground">
               {t("settings.remoteConnections.auth.description")}
             </div>
           </div>
           <Button
             aria-label={t("settings.remoteConnections.auth.closeIcon")}
+            className="-mt-1 -mr-1 shrink-0"
             color="ghost"
             size="icon"
             onClick={() => close(true)}
           >
-            ×
+            <CloseIcon className="icon-xs" />
           </Button>
         </div>
-
         {!isApiKeyEntryVisible ? (
-          <div className="mt-5 flex flex-col gap-3">
-            <Button
-              size="large"
-              className="justify-center"
-              loading={isChatGptSignInPending}
-              onClick={() => void handleChatGptSignIn()}
-            >
-              {t("auth.signInWithChatGpt")}
-            </Button>
-            <Button
-              color="secondary"
-              size="large"
-              className="justify-center"
-              onClick={() => setIsApiKeyEntryVisible(true)}
-            >
-              {t("auth.useApiKey")}
-            </Button>
+          <div className="flex justify-center pt-2">
+            <div className="flex w-full flex-col gap-3">
+              <Button
+                size="large"
+                className="justify-center"
+                loading={isChatGptSignInPending}
+                onClick={() => void handleChatGptSignIn()}
+              >
+                {t("auth.signInWithChatGpt")}
+              </Button>
+              <Button
+                color="secondary"
+                size="large"
+                className="justify-center"
+                onClick={() => setIsApiKeyEntryVisible(true)}
+              >
+                {t("auth.useApiKey")}
+              </Button>
+            </div>
           </div>
         ) : (
-          <div className="mt-5 flex flex-col gap-3">
+          <div className="flex flex-col gap-3 pt-2">
             <label className="flex flex-col gap-2">
               <span className="text-xs font-medium text-token-text-primary">
                 {t("auth.openAiApiKey")}
@@ -1566,6 +1612,7 @@ function RemoteConnectionAuthDialog({
             <div className="flex items-center justify-end gap-2">
               <Button
                 color="ghost"
+                type="button"
                 onClick={() => {
                   setApiKeyValue("");
                   setIsApiKeyEntryVisible(false);
@@ -1576,6 +1623,7 @@ function RemoteConnectionAuthDialog({
               <Button
                 loading={isApiKeySignInPending}
                 disabled={apiKeyValue.trim().length === 0}
+                type="button"
                 onClick={() => void handleApiKeySubmit()}
               >
                 {t("auth.apiKeyConfirm")}
@@ -1583,17 +1631,17 @@ function RemoteConnectionAuthDialog({
             </div>
           </div>
         )}
-
-        <div className="mt-5 flex justify-end">
+        <div className="flex w-full items-center justify-end gap-3">
           <Button
             color="ghost"
+            type="button"
             onClick={() => close(true)}
           >
             {t("settings.remoteConnections.auth.close")}
           </Button>
         </div>
-      </div>
-    </DialogOverlay>
+      </>
+    </SettingsDialog>
   );
 }
 
@@ -1632,32 +1680,59 @@ function SshConnectionDialog({
   }
 
   const isAliasTarget = mode === "edit" && draft.targetKind === "alias";
-  const dialogWidthClassName =
-    mode === "add" ? "max-w-[520px]" : "max-w-[460px]";
+  const dialogWidthClassName = mode === "add" ? "max-w-[520px]" : "max-w-[460px]";
+
+  const handleSubmit = async (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
+    if (isSaving) {
+      return;
+    }
+    const nextErrors = validateSshDraft({
+      draft,
+      existingConnections,
+      editingHostId: connection?.hostId ?? null,
+    });
+    setValidationErrors(nextErrors);
+    if (nextErrors.length === 0) {
+      await onSave(draft);
+    }
+  };
 
   return (
-    <DialogOverlay>
-      <div
-        aria-modal="true"
-        role="dialog"
-        aria-label={mode === "add" ? t("settings.remoteConnections.dialog.addTitle") : t("settings.remoteConnections.dialog.editTitle")}
-        className={`app-card w-full ${dialogWidthClassName} rounded-[18px] px-5 py-5 shadow-[0_16px_40px_rgba(0,0,0,0.22)]`}
-      >
-        <div className="text-[18px] font-medium text-token-text-primary">
-          {mode === "add"
-            ? t("settings.remoteConnections.dialog.addTitle")
-            : t("settings.remoteConnections.dialog.editTitle")}
-        </div>
-
+    <SettingsDialog
+      contentClassName={dialogWidthClassName}
+      footer={(
+        <SettingsDialogFooter
+          cancelLabel={t("settings.remoteConnections.dialog.cancel")}
+          confirmLabel={t("settings.remoteConnections.dialog.apply")}
+          confirmLoading={isSaving}
+          onCancel={onClose}
+          onConfirm={() => void handleSubmit()}
+        />
+      )}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          onClose();
+        }
+      }}
+      open={isOpen}
+      size={mode === "add" ? "default" : "compact"}
+      title={
+        mode === "add"
+          ? t("settings.remoteConnections.dialog.addTitle")
+          : t("settings.remoteConnections.dialog.editTitle")
+      }
+    >
+      <form onSubmit={(event) => void handleSubmit(event)}>
         {validationErrors.length > 0 ? (
-          <div className="mt-4 rounded-md border border-token-border-error p-2 text-sm text-token-error-foreground">
+          <div className="rounded-md border border-token-border-error p-2 text-sm text-token-error-foreground">
             {validationErrors.map((error) => (
               <div key={error}>{t(getSshValidationMessageKey(error))}</div>
             ))}
           </div>
         ) : null}
 
-        <div className="mt-4 grid grid-cols-1 gap-4">
+        <div className={validationErrors.length > 0 ? "mt-4 grid grid-cols-1 gap-4" : "grid grid-cols-1 gap-4"}>
           <DialogField
             label={t("settings.remoteConnections.dialog.field.displayName")}
             value={draft.displayName}
@@ -1713,34 +1788,8 @@ function SshConnectionDialog({
             </>
           ) : null}
         </div>
-
-        <div className="mt-5 flex justify-end gap-2">
-          <Button
-            color="ghost"
-            disabled={isSaving}
-            onClick={onClose}
-          >
-            {t("settings.remoteConnections.dialog.cancel")}
-          </Button>
-          <Button
-            loading={isSaving}
-            onClick={async () => {
-              const nextErrors = validateSshDraft({
-                draft,
-                existingConnections,
-                editingHostId: connection?.hostId ?? null,
-              });
-              setValidationErrors(nextErrors);
-              if (nextErrors.length === 0) {
-                await onSave(draft);
-              }
-            }}
-          >
-            {t("settings.remoteConnections.dialog.apply")}
-          </Button>
-        </div>
-      </div>
-    </DialogOverlay>
+      </form>
+    </SettingsDialog>
   );
 }
 
@@ -1764,54 +1813,25 @@ function DeleteConnectionDialog({
   }
 
   return (
-    <DialogOverlay>
-      <div
-        aria-modal="true"
-        role="dialog"
-        aria-label={
-          isRemoteControlConnection(connection)
-            ? t("settings.remoteControlConnections.deleteDialog.title", {
-                connectionName: connection.displayName,
-              })
-            : t("settings.remoteConnections.deleteConnection")
-        }
-        className="app-card w-full max-w-[460px] rounded-[18px] px-5 py-5 shadow-[0_16px_40px_rgba(0,0,0,0.22)]"
-      >
-        <div className="text-[18px] font-medium text-token-text-primary">
-          {isRemoteControlConnection(connection)
-            ? t("settings.remoteControlConnections.deleteDialog.title", {
-                connectionName: connection.displayName,
-              })
-            : t("settings.remoteConnections.deleteConnection")}
-        </div>
-        <div className="mt-2 text-[13px] leading-6 text-token-text-secondary">
-          {isRemoteControlConnection(connection)
-            ? t("settings.remoteControlConnections.deleteDialog.subtitle")
-            : connection.displayName}
-        </div>
-
-        <div className="mt-5 flex justify-end gap-2">
-          <Button
-            color="ghost"
-            disabled={isDeleting}
-            onClick={() => onOpenChange(false)}
-          >
-            {isRemoteControlConnection(connection)
-              ? t("settings.remoteControlConnections.deleteDialog.cancel")
-              : t("settings.remoteConnections.dialog.cancel")}
-          </Button>
-          <Button
-            color="danger"
-            loading={isDeleting}
-            onClick={onConfirm}
-          >
-            {isRemoteControlConnection(connection)
-              ? t("settings.remoteControlConnections.deleteDialog.confirm")
-              : t("settings.remoteConnections.deleteConnection")}
-          </Button>
-        </div>
-      </div>
-    </DialogOverlay>
+    <SettingsDialog
+      footer={(
+        <SettingsDialogFooter
+          cancelLabel={t("settings.remoteControlConnections.deleteDialog.cancel")}
+          confirmLabel={t("settings.remoteControlConnections.deleteDialog.confirm")}
+          confirmLoading={isDeleting}
+          confirmTone="danger"
+          onCancel={() => onOpenChange(false)}
+          onConfirm={onConfirm}
+        />
+      )}
+      onOpenChange={onOpenChange}
+      open={open}
+      size="compact"
+      title={t("settings.remoteControlConnections.deleteDialog.title", {
+        connectionName: connection.displayName,
+      })}
+      subtitle={t("settings.remoteControlConnections.deleteDialog.subtitle")}
+    />
   );
 }
 
@@ -1850,7 +1870,7 @@ function ConnectionDetailsDialog({
 
   const handleCopy = async (
     value: string,
-    event: React.MouseEvent<HTMLButtonElement>,
+    event: ReactMouseEvent<HTMLButtonElement>,
   ) => {
     event.preventDefault();
     event.stopPropagation();
@@ -1877,33 +1897,47 @@ function ConnectionDetailsDialog({
   };
 
   return (
-    <DialogOverlay>
-      <div
-        aria-modal="true"
-        role="dialog"
-        aria-label={t("settings.remoteConnections.detailsMenu")}
-        className="app-card w-full max-w-[460px] rounded-[18px] px-5 py-5 shadow-[0_16px_40px_rgba(0,0,0,0.22)]"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="inline-flex rounded-full border border-token-border px-2 py-1 text-xs text-token-text-secondary">
-              {badgeLabel}
-            </div>
-            <div className="mt-3 text-[18px] font-medium text-token-text-primary">
-              {connection.displayName}
-            </div>
-          </div>
-          <Button
-            aria-label={t("settings.remoteConnections.auth.closeIcon")}
-            color="ghost"
-            size="icon"
-            onClick={() => onOpenChange(false)}
-          >
-            ×
-          </Button>
+    <SettingsDialog
+      contentClassName="bg-token-bg-primary"
+      dialogCloseClassName="[&>svg]:icon-sm"
+      hideHeader
+      bodyClassName="gap-2 px-6 py-5"
+      onOpenChange={onOpenChange}
+      open={open}
+      title={connection.displayName}
+    >
+      <div className="flex flex-col gap-2">
+        <div className="heading-dialog break-words pr-8 text-lg leading-snug font-semibold">
+          {connection.displayName}
         </div>
-
-        <div className="mt-5 flex flex-col gap-3">
+        <div className="text-token-description-foreground">
+          <span className="inline-flex items-center gap-0.5 rounded-full bg-token-foreground/10 py-0.5 pr-2 pl-1 text-xs font-medium text-token-text-primary">
+            {isRemoteControlConnection(connection) ? (
+              <RemoteControlConnectionStatus
+                connection={connection}
+                state={response?.state ?? "disconnected"}
+              />
+            ) : (
+              <ConnectionStatusDot
+                label={badgeLabel}
+                message={buildConnectionMeta(
+                  t,
+                  response?.state ?? "disconnected",
+                  connectionError,
+                ).message}
+                state={response?.state ?? "disconnected"}
+              />
+            )}
+            <span>
+              {isRemoteControlConnection(connection)
+                ? t("settings.remoteConnections.deviceConnections.signedInDeviceSubtitle")
+                : t("settings.remoteConnections.deviceConnections.sshSubtitle")}
+            </span>
+          </span>
+        </div>
+      </div>
+      <div className="pt-0">
+        <div className="overflow-hidden rounded-xl border border-token-border">
           {detailRows.map((row) => (
             <div
               key={row.id}
@@ -1940,17 +1974,8 @@ function ConnectionDetailsDialog({
             </div>
           ))}
         </div>
-
-        <div className="mt-5 flex justify-end">
-          <Button
-            color="ghost"
-            onClick={() => onOpenChange(false)}
-          >
-            {t("settings.remoteConnections.auth.close")}
-          </Button>
-        </div>
       </div>
-    </DialogOverlay>
+    </SettingsDialog>
   );
 }
 
@@ -1988,6 +2013,32 @@ function ConnectionActionsMenu({
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const shouldFocusFirstItemRef = useRef(false);
+
+  const closeMenu = (options?: { restoreFocus?: boolean }) => {
+    shouldFocusFirstItemRef.current = false;
+    setIsOpen(false);
+    if (options?.restoreFocus) {
+      triggerRef.current?.focus();
+    }
+  };
+
+  const focusEnabledMenuItem = (startIndex: number, direction: 1 | -1) => {
+    for (
+      let index = startIndex;
+      index >= 0 && index < menuItemRefs.current.length;
+      index += direction
+    ) {
+      const nextItem = menuItemRefs.current[index];
+      if (nextItem == null || nextItem.disabled) {
+        continue;
+      }
+      nextItem.focus();
+      return;
+    }
+  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -2000,108 +2051,232 @@ function ConnectionActionsMenu({
       }
       setIsOpen(false);
     };
+    const handleFocusIn = (event: FocusEvent) => {
+      if (containerRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setIsOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      setIsOpen(false);
+      triggerRef.current?.focus();
+    };
 
     document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !shouldFocusFirstItemRef.current) {
+      return;
+    }
+    shouldFocusFirstItemRef.current = false;
+    focusEnabledMenuItem(0, 1);
+  }, [isOpen]);
+
+  const handleMenuItemKeyDown = (
+    index: number,
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+  ) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      focusEnabledMenuItem(index + 1, 1);
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      focusEnabledMenuItem(index - 1, -1);
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      focusEnabledMenuItem(0, 1);
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      focusEnabledMenuItem(menuItemRefs.current.length - 1, -1);
+      return;
+    }
+    if (event.key === "Tab") {
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenu({ restoreFocus: true });
+    }
+  };
+
+  const menuItems = [
+    {
+      icon: <InfoIcon className="h-3.5 w-3.5" />,
+      label: detailsLabel,
+      disabled: false,
+      tooltip: undefined,
+      danger: false,
+      onSelect: onDetails,
+    },
+    {
+      icon: <PencilIcon className="h-3.5 w-3.5" />,
+      label: editLabel,
+      disabled: editDisabled,
+      tooltip: editDisabled ? editTooltip : undefined,
+      danger: false,
+      onSelect: onEdit,
+    },
+    ...(onRestart != null && restartLabel != null
+      ? [{
+          icon: <RefreshIcon className="h-3.5 w-3.5" />,
+          label: restartLabel,
+          disabled: false,
+          tooltip: undefined,
+          danger: false,
+          onSelect: onRestart,
+        }]
+      : []),
+    ...(onLogout != null
+      ? [{
+          icon: <LogoutIcon className="h-3.5 w-3.5" />,
+          label: t("settings.remoteConnections.logout"),
+          disabled: false,
+          tooltip: undefined,
+          danger: false,
+          onSelect: onLogout,
+        }]
+      : []),
+    {
+      icon: <TrashIcon className="h-3.5 w-3.5" />,
+      label: deleteLabel,
+      disabled: deleteDisabled,
+      tooltip: deleteDisabled ? deleteTooltip : undefined,
+      danger: true,
+      onSelect: onDelete,
+    },
+  ];
+
+  menuItemRefs.current = [];
 
   return (
     <div className="relative" ref={containerRef}>
       <Button
+        ref={triggerRef}
         aria-label={actionsLabel}
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
         title={t("settings.remoteConnections.detailsMenu")}
         color="ghost"
         size="toolbar"
         uniform
-        onClick={() => setIsOpen((current) => !current)}
+        onClick={(event) => {
+          triggerRef.current = event.currentTarget;
+          shouldFocusFirstItemRef.current = false;
+          setIsOpen((current) => !current);
+        }}
+        onKeyDown={(event) => {
+          triggerRef.current = event.currentTarget;
+          if (event.key !== "ArrowDown" && event.key !== "Enter" && event.key !== " ") {
+            return;
+          }
+          event.preventDefault();
+          shouldFocusFirstItemRef.current = true;
+          setIsOpen(true);
+        }}
       >
         <MoreActionsIcon className="h-3.5 w-3.5" />
       </Button>
 
       {isOpen ? (
         <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 min-w-[220px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
-          <MenuButton
-            icon={<InfoIcon className="h-3.5 w-3.5" />}
-            label={detailsLabel}
-            onSelect={() => {
-              setIsOpen(false);
-              onDetails();
+          <div
+            aria-orientation="vertical"
+            className="max-h-80 overflow-y-auto"
+            role="menu"
+            onKeyDown={(event) => {
+              if (event.key === "Tab") {
+                event.preventDefault();
+              }
             }}
-          />
-          <MenuButton
-            icon={<PencilIcon className="h-3.5 w-3.5" />}
-            disabled={editDisabled}
-            label={editLabel}
-            tooltip={editDisabled ? editTooltip : undefined}
-            onSelect={() => {
-              setIsOpen(false);
-              onEdit();
-            }}
-          />
-          {onRestart != null && restartLabel != null ? (
-            <MenuButton
-              icon={<RefreshIcon className="h-3.5 w-3.5" />}
-              label={restartLabel}
-              onSelect={() => {
-                setIsOpen(false);
-                onRestart();
-              }}
-            />
-          ) : null}
-          {onLogout != null ? (
-            <MenuButton
-              icon={<LogoutIcon className="h-3.5 w-3.5" />}
-              label={t("settings.remoteConnections.logout")}
-              onSelect={() => {
-                setIsOpen(false);
-                onLogout();
-              }}
-            />
-          ) : null}
-          <MenuButton
-            danger
-            disabled={deleteDisabled}
-            icon={<TrashIcon className="h-3.5 w-3.5" />}
-            label={deleteLabel}
-            tooltip={deleteDisabled ? deleteTooltip : undefined}
-            onSelect={() => {
-              setIsOpen(false);
-              onDelete();
-            }}
-          />
+          >
+            {menuItems.map((item, index) => (
+              <MenuButton
+                key={`${item.label}-${index}`}
+                ref={(node) => {
+                  menuItemRefs.current[index] = node;
+                }}
+                danger={item.danger}
+                disabled={item.disabled}
+                icon={item.icon}
+                label={item.label}
+                onKeyDown={(event) => handleMenuItemKeyDown(index, event)}
+                onMouseMove={(event) => {
+                  event.currentTarget.focus({ preventScroll: true });
+                }}
+                onSelect={() => {
+                  closeMenu({ restoreFocus: true });
+                  item.onSelect();
+                }}
+                role="menuitem"
+                tabIndex={-1}
+                tooltip={item.tooltip}
+              />
+            ))}
+          </div>
         </div>
       ) : null}
     </div>
   );
 }
 
-function MenuButton({
-  danger = false,
-  disabled = false,
-  icon,
-  label,
-  onSelect,
-  tooltip,
-}: {
+type MenuButtonProps = {
   danger?: boolean;
   disabled?: boolean;
   icon: ReactNode;
   label: string;
+  onKeyDown?: (event: ReactKeyboardEvent<HTMLButtonElement>) => void;
+  onMouseMove?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
   onSelect: () => void;
+  role?: "menuitem";
+  tabIndex?: number;
   tooltip?: string;
-}) {
+};
+
+const MenuButton = forwardRef<HTMLButtonElement, MenuButtonProps>(function MenuButton({
+  danger = false,
+  disabled = false,
+  icon,
+  label,
+  onKeyDown,
+  onMouseMove,
+  onSelect,
+  role,
+  tabIndex,
+  tooltip,
+}, ref) {
   return (
     <button
+      ref={ref}
       type="button"
       disabled={disabled}
+      role={role}
+      tabIndex={tabIndex}
       title={tooltip}
       onClick={() => {
         if (!disabled) {
           onSelect();
         }
       }}
+      onKeyDown={onKeyDown}
+      onMouseMove={onMouseMove}
       className={[
         "flex w-full items-center gap-3 rounded-[10px] px-3 py-2 text-left text-[13px] disabled:cursor-not-allowed disabled:opacity-60",
         disabled ? "" : "app-nav-item-idle",
@@ -2112,7 +2287,7 @@ function MenuButton({
       <span>{label}</span>
     </button>
   );
-}
+});
 
 function SettingsRow({
   banner = null,
@@ -2617,6 +2792,7 @@ async function readConnectionStateResponses(
           error: null,
           appServerVersion: null,
           installedCodexVersion: null,
+          codexHome: null,
         },
       ] as const;
     }),
