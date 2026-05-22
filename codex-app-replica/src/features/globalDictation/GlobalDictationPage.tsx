@@ -29,6 +29,7 @@ import { useGlobalDictationWaveform } from "./useGlobalDictationWaveform";
 const MINIMUM_RECORDING_DURATION_MS = 250;
 
 type ActiveRecordingSession = {
+  cleanupEnabled: boolean;
   chunks: Blob[];
   isStopping: boolean;
   recorder: MediaRecorder;
@@ -107,7 +108,15 @@ export function GlobalDictationPage() {
     }).catch(() => undefined);
   });
 
-  const runTranscription = useEffectEvent(async (sessionId: string, audio: Blob) => {
+  const runTranscription = useEffectEvent(async ({
+    audio,
+    cleanupEnabled,
+    sessionId,
+  }: {
+    audio: Blob;
+    cleanupEnabled: boolean;
+    sessionId: string;
+  }) => {
     const audioBytes = new Uint8Array(await audio.arrayBuffer());
     const response = await transcribeGlobalDictationAudio({
       audioBytes,
@@ -151,7 +160,11 @@ export function GlobalDictationPage() {
         sessionId: recording.sessionId,
       };
       retryRecordingRef.current = retrySession;
-      await runTranscription(recording.sessionId, retrySession.audio);
+      await runTranscription({
+        audio: retrySession.audio,
+        cleanupEnabled: recording.cleanupEnabled,
+        sessionId: recording.sessionId,
+      });
     } catch (error) {
       if (retrySession !== null) {
         retryRecordingRef.current = retrySession;
@@ -200,6 +213,7 @@ export function GlobalDictationPage() {
 
       const recorder = new MediaRecorder(stream);
       const activeRecording: ActiveRecordingSession = {
+        cleanupEnabled,
         chunks: [],
         isStopping: false,
         recorder,
@@ -278,7 +292,11 @@ export function GlobalDictationPage() {
     setCanRetry(false);
     showCompactLayout(currentSessionId);
     try {
-      await runTranscription(currentSessionId, retryRecording.audio);
+      await runTranscription({
+        audio: retryRecording.audio,
+        cleanupEnabled,
+        sessionId: currentSessionId,
+      });
     } catch (error) {
       handleTranscriptionFailure(currentSessionId, error);
     } finally {

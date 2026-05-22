@@ -80,10 +80,12 @@ test("browser use settings keeps extracted two origin sections and compact dialo
 
   assert.match(source, /<SettingsGroup\.Header\s+actions=\{\s*<Button color="secondary" disabled=\{isDisabled\} size="toolbar" onClick=\{onRequestAdd\}>/s);
   assert.match(source, /className="justify-center"/);
-  assert.match(source, /<BrowserUseDialog\s+confirmLabel=\{t\("settings\.browserUse\.domains\.addDialogConfirm"\)\}/s);
-  assert.match(source, /<BrowserUseDialog\s+confirmLabel=\{t\("settings\.browserUse\.origins\.removeDialogConfirm"\)\}/s);
-  assert.match(source, /role="dialog"/);
-  assert.match(source, /aria-modal="true"/);
+  assert.match(source, /<SettingsDialog\s+footer=\{/s);
+  assert.match(source, /<SettingsDialogFooter\s+cancelLabel=\{t\("settings\.browserUse\.origins\.removeDialogCancel"\)\}/s);
+  assert.match(source, /size="compact"/);
+  assert.doesNotMatch(source, /function BrowserUseDialog\(/);
+  assert.doesNotMatch(source, /function DialogOverlay\(/);
+  assert.doesNotMatch(source, /function SettingsValueRow\(/);
 });
 
 test("browser use settings subscribes to extracted query invalidation and global state owners", () => {
@@ -99,6 +101,23 @@ test("browser use settings subscribes to extracted query invalidation and global
   assert.match(source, /void onGlobalStateUpdated\(\(notification\) => \{/);
   assert.match(source, /notification\.keys\.includes\("browser-annotation-screenshots-mode"\)/);
   assert.match(source, /void syncAnnotationScreenshotsMode\(\);/);
+});
+
+test("settings choice menu keeps shared menu keyboard and focus contract", () => {
+  const source = readSource(path.join(process.cwd(), "src/components/SettingsChoiceMenu.tsx"));
+
+  assert.match(source, /aria-haspopup="menu"/);
+  assert.match(source, /role="menu"/);
+  assert.match(source, /role="menuitem"/);
+  assert.match(source, /onKeyDown=\{\(event\) => \{/);
+  assert.match(source, /if \(event\.key === "ArrowDown"\)/);
+  assert.match(source, /if \(event\.key === "ArrowUp"\)/);
+  assert.match(source, /if \(event\.key === "Home"\)/);
+  assert.match(source, /if \(event\.key === "End"\)/);
+  assert.match(source, /if \(event\.key === "Tab"\)/);
+  assert.match(source, /if \(event\.key === "Escape"\)/);
+  assert.match(source, /onMouseMove=\{\(event\) => \{/);
+  assert.match(source, /triggerRef\.current\?\.focus\(\)/);
 });
 
 test("browser use settings service uses extracted browser-use command contract", () => {

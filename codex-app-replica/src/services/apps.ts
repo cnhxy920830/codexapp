@@ -23,6 +23,7 @@ export type AppInfo = {
   isAccessible: boolean;
   isEnabled: boolean;
   pluginDisplayNames: string[];
+  labels: Record<string, string> | null;
 };
 
 export type AppsListResponse = {

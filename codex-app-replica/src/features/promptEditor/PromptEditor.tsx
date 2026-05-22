@@ -20,7 +20,12 @@ import {
   serializePromptEditorValue,
 } from "./dom";
 import { buildAppMentionCandidates, buildSkillMentionCandidates } from "./mentionCandidates";
-import { getMentionOverlayLayout, isSameMentionOverlayLayout, renderMentionOverlay } from "./MentionOverlay";
+import {
+  getMentionOverlayLayout,
+  getMentionOverlayPlacement,
+  isSameMentionOverlayLayout,
+  renderMentionOverlay,
+} from "./MentionOverlay";
 import type {
   PromptEditorMentionCandidate,
   PromptEditorMentionState,
@@ -234,7 +239,8 @@ export function PromptEditor({
     }
 
     const updateMentionOverlayLayout = () => {
-      const nextLayout = getMentionOverlayLayout(editorRef.current);
+      const placement = getMentionOverlayPlacement(editorRef.current);
+      const nextLayout = getMentionOverlayLayout(editorRef.current, placement);
       setMentionOverlayLayout((current) =>
         isSameMentionOverlayLayout(current, nextLayout) ? current : nextLayout,
       );

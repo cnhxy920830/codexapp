@@ -1,4 +1,12 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import { Button } from "./Button";
 import { CheckIcon, ChevronDownIcon, MoreActionsIcon, RefreshIcon } from "./AppShellIcons";
 import type { AppToast } from "./AppToastRegion";
@@ -703,64 +711,66 @@ function HookRowActionsMenu({
   onOpenSourceFile: () => void;
 }) {
   const { t } = useI18n();
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (containerRef.current?.contains(event.target as Node)) {
-        return;
-      }
-      setIsOpen(false);
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-    };
-  }, [isOpen]);
+  const menuId = useId();
+  const dropdown = useHooksDropdownMenu();
 
   return (
-    <div className="relative" ref={containerRef}>
+    <div className="relative" ref={dropdown.containerRef}>
       <Button
+        aria-controls={dropdown.isOpen ? menuId : undefined}
+        aria-expanded={dropdown.isOpen}
+        aria-haspopup="menu"
         aria-label={t("settings.hooks.event.moreActions")}
         color="ghost"
-        data-state={isOpen ? "open" : "closed"}
+        data-state={dropdown.isOpen ? "open" : "closed"}
         size="toolbar"
         uniform
-        onClick={(event) => {
+        onClick={dropdown.createTriggerClickHandler((event) => {
           event.stopPropagation();
-          setIsOpen((current) => !current);
-        }}
+        })}
+        onKeyDown={dropdown.createTriggerKeyDownHandler((event) => {
+          event.stopPropagation();
+        })}
       >
         <MoreActionsIcon className="icon-xs" />
       </Button>
-      {isOpen ? (
+      {dropdown.isOpen ? (
         <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 min-w-[180px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
-          <button
-            type="button"
-            disabled={disabledOpenSourceFile}
-            onClick={(event) => {
-              event.stopPropagation();
-              if (disabledOpenSourceFile) {
-                return;
-              }
-              setIsOpen(false);
-              onOpenSourceFile();
-            }}
-            className={joinClasses(
-              "flex w-full items-center rounded-[10px] px-3 py-2 text-left text-[13px]",
-              disabledOpenSourceFile
-                ? "cursor-not-allowed opacity-60"
-                : "app-nav-item-idle",
-            )}
+          <div
+            aria-orientation="vertical"
+            className="no-drag m-px flex min-w-[220px] select-none flex-col overflow-y-auto rounded-xl bg-token-dropdown-background/90 px-1 py-1 text-token-foreground ring-token-border shadow-xl-spread ring-[0.5px] backdrop-blur-sm"
+            id={menuId}
+            onKeyDown={dropdown.handleMenuKeyDown}
+            role="menu"
           >
-            {t("settings.hooks.event.openSourceFile")}
-          </button>
+            <button
+              type="button"
+              ref={dropdown.createMenuItemRefHandler(0)}
+              role="menuitem"
+              tabIndex={-1}
+              disabled={disabledOpenSourceFile}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (disabledOpenSourceFile) {
+                  return;
+                }
+                dropdown.closeMenu({ restoreFocus: true });
+                onOpenSourceFile();
+              }}
+              onKeyDown={(event) => dropdown.handleMenuItemKeyDown(0, event)}
+              onMouseMove={(event) => {
+                event.currentTarget.focus({ preventScroll: true });
+              }}
+              className={joinClasses(
+                "no-drag flex w-full items-center rounded-lg px-[var(--padding-row-x)] py-[var(--padding-row-y)] text-left text-sm text-token-foreground outline-hidden",
+                disabledOpenSourceFile
+                  ? "cursor-not-allowed opacity-60"
+                  : "cursor-interaction hover:bg-token-list-hover-background focus:bg-token-list-hover-background",
+              )}
+            >
+              {t("settings.hooks.event.openSourceFile")}
+            </button>
+          </div>
         </div>
       ) : null}
     </div>
@@ -779,36 +789,22 @@ function HookProjectSelector({
   onSelectProjectRoot: (projectRoot: string) => void;
 }) {
   const { t } = useI18n();
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const menuId = useId();
+  const dropdown = useHooksDropdownMenu();
   const triggerLabel = selectedProjectRoot === null
     ? t("settings.hooks.project.loading")
     : getProjectRootLabel(selectedProjectRoot, projectRootLabels);
 
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (containerRef.current?.contains(event.target as Node)) {
-        return;
-      }
-      setIsOpen(false);
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-    };
-  }, [isOpen]);
-
   return (
-    <div className="relative w-[240px] max-w-full" ref={containerRef}>
+    <div className="relative w-[240px] max-w-full" ref={dropdown.containerRef}>
       <Button
+        aria-controls={dropdown.isOpen ? menuId : undefined}
+        aria-expanded={dropdown.isOpen}
+        aria-haspopup="menu"
         disabled={projectRoots.length === 0}
         color="secondary"
-        onClick={() => setIsOpen((current) => !current)}
+        onClick={dropdown.createTriggerClickHandler()}
+        onKeyDown={dropdown.createTriggerKeyDownHandler()}
         size="toolbar"
         className="w-[240px] justify-between"
       >
@@ -817,8 +813,14 @@ function HookProjectSelector({
         </span>
         <ChevronDownIcon className="icon-2xs shrink-0 text-token-input-placeholder-foreground" />
       </Button>
-      {isOpen ? (
-        <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-[240px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+      {dropdown.isOpen ? (
+        <div
+          aria-orientation="vertical"
+          className="no-drag absolute right-0 top-[calc(100%+1px)] z-50 m-px flex w-[240px] select-none flex-col overflow-y-auto rounded-xl bg-token-dropdown-background/90 px-1 py-1 text-token-foreground ring-token-border shadow-xl-spread ring-[0.5px] backdrop-blur-sm"
+          id={menuId}
+          onKeyDown={dropdown.handleMenuKeyDown}
+          role="menu"
+        >
           <div className="px-3 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--app-shell-subtle)]">
             {t("settings.hooks.project.group")}
           </div>
@@ -829,13 +831,22 @@ function HookProjectSelector({
                 <button
                   key={projectRoot}
                   type="button"
+                  ref={dropdown.createMenuItemRefHandler(projectRoots.indexOf(projectRoot))}
+                  role="menuitem"
+                  tabIndex={-1}
                   title={projectRoot}
                   onClick={() => {
-                    setIsOpen(false);
+                    dropdown.closeMenu({ restoreFocus: true });
                     onSelectProjectRoot(projectRoot);
                   }}
+                  onKeyDown={(event) =>
+                    dropdown.handleMenuItemKeyDown(projectRoots.indexOf(projectRoot), event)
+                  }
+                  onMouseMove={(event) => {
+                    event.currentTarget.focus({ preventScroll: true });
+                  }}
                   className={joinClasses(
-                    "flex w-full items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-left text-[13px]",
+                    "no-drag flex w-full items-center justify-between rounded-lg px-[var(--padding-row-x)] py-[var(--padding-row-y)] text-left text-sm text-token-foreground outline-hidden hover:bg-token-list-hover-background focus:bg-token-list-hover-background",
                     isSelected ? "app-nav-item-active" : "app-nav-item-idle",
                   )}
                 >
@@ -849,6 +860,146 @@ function HookProjectSelector({
       ) : null}
     </div>
   );
+}
+
+function useHooksDropdownMenu() {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const shouldFocusFirstItemRef = useRef(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (containerRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setIsOpen(false);
+    };
+    const handleFocusIn = (event: FocusEvent) => {
+      if (containerRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setIsOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      setIsOpen(false);
+      triggerRef.current?.focus();
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !shouldFocusFirstItemRef.current) {
+      return;
+    }
+
+    shouldFocusFirstItemRef.current = false;
+    const firstFocusableItem =
+      menuItemRefs.current.find((item) => item !== null && item.disabled !== true) ?? null;
+    firstFocusableItem?.focus();
+  }, [isOpen]);
+
+  const closeMenu = (options?: { restoreFocus?: boolean }) => {
+    shouldFocusFirstItemRef.current = false;
+    setIsOpen(false);
+    if (options?.restoreFocus) {
+      triggerRef.current?.focus();
+    }
+  };
+
+  const focusMenuItem = (index: number) => {
+    const nextItem = menuItemRefs.current[index];
+    if (nextItem == null || nextItem.disabled) {
+      return;
+    }
+    nextItem.focus();
+  };
+
+  const handleMenuItemKeyDown = (
+    index: number,
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+  ) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      focusMenuItem(Math.min(index + 1, menuItemRefs.current.length - 1));
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      focusMenuItem(Math.max(index - 1, 0));
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      focusMenuItem(0);
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      focusMenuItem(menuItemRefs.current.length - 1);
+      return;
+    }
+    if (event.key === "Tab") {
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenu({ restoreFocus: true });
+    }
+  };
+
+  return {
+    closeMenu,
+    containerRef,
+    createMenuItemRefHandler: (index: number) => (node: HTMLButtonElement | null) => {
+      menuItemRefs.current[index] = node;
+    },
+    createTriggerClickHandler:
+      (beforeToggle?: (event: React.MouseEvent<HTMLButtonElement>) => void) =>
+      (event: React.MouseEvent<HTMLButtonElement>) => {
+        triggerRef.current = event.currentTarget;
+        shouldFocusFirstItemRef.current = false;
+        beforeToggle?.(event);
+        setIsOpen((current) => !current);
+      },
+    createTriggerKeyDownHandler:
+      (beforeOpen?: (event: ReactKeyboardEvent<HTMLButtonElement>) => void) =>
+      (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+        triggerRef.current = event.currentTarget;
+        if (event.key !== "ArrowDown" && event.key !== "Enter" && event.key !== " ") {
+          return;
+        }
+
+        event.preventDefault();
+        beforeOpen?.(event);
+        shouldFocusFirstItemRef.current = true;
+        setIsOpen(true);
+      },
+    handleMenuItemKeyDown,
+    handleMenuKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (event.key === "Tab") {
+        event.preventDefault();
+      }
+    },
+    isOpen,
+  };
 }
 
 function HookIssuesSummary({

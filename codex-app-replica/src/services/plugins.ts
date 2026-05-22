@@ -67,10 +67,13 @@ export type PluginShareContext = {
 export type PluginSharePrincipal = {
   principalType: PluginSharePrincipalType;
   principalId: string;
+  role: PluginSharePrincipalRole | null;
   name: string;
 };
 
 export type PluginSharePrincipalType = "user" | "group" | "workspace";
+
+export type PluginSharePrincipalRole = "reader" | "editor" | "owner";
 
 export type PluginInstallPolicy = "NOT_AVAILABLE" | "AVAILABLE" | "INSTALLED_BY_DEFAULT";
 
@@ -171,6 +174,74 @@ export type PluginSetEnabledParams = {
   expectedVersion?: string | null;
 };
 
+export type PluginShareListParams = {
+  hostId?: string | null;
+};
+
+export type PluginShareListItem = {
+  plugin: PluginSummary;
+  shareUrl: string;
+  localPluginPath: string | null;
+};
+
+export type PluginShareListResponse = {
+  data: PluginShareListItem[];
+};
+
+export type PluginShareSaveParams = {
+  hostId?: string | null;
+  pluginPath: string;
+  remotePluginId?: string | null;
+};
+
+export type PluginShareSaveResponse = {
+  remotePluginId: string;
+  shareUrl: string;
+};
+
+export type PluginShareDeleteParams = {
+  hostId?: string | null;
+  remotePluginId: string;
+};
+
+export type PluginShareDeleteResponse = Record<string, never>;
+
+export type ReadPluginSharePrincipalsParams = {
+  remotePluginId: string;
+};
+
+export type PluginSharePrincipalsResponse = {
+  principals: PluginSharePrincipal[];
+};
+
+export type PluginShareTarget = {
+  principalType: PluginSharePrincipalType;
+  principalId: string;
+  role: PluginSharePrincipalRole;
+};
+
+export type UpdatePluginShareTargetsParams = {
+  remotePluginId: string;
+  targets: PluginShareTarget[];
+};
+
+export type SearchWorkspaceUsersParams = {
+  accountId: string;
+  query: string;
+  limit?: number | null;
+  offset?: number | null;
+};
+
+export type WorkspaceUserSummary = {
+  accountUserId: string;
+  email: string | null;
+  name: string | null;
+};
+
+export type SearchWorkspaceUsersResponse = {
+  items: WorkspaceUserSummary[];
+};
+
 export type MarketplaceAddParams = {
   hostId?: string | null;
   source: string;
@@ -253,6 +324,42 @@ export async function setPluginEnabled(params: PluginSetEnabledParams): Promise<
     reloadUserConfig: true,
   });
   await emitQueryCacheInvalidated([...PLUGIN_QUERY_KEY, hostId ?? null]);
+}
+
+export async function listPluginShares(params: PluginShareListParams = {}) {
+  return invoke<PluginShareListResponse>("list-plugin-shares", {
+    params,
+  });
+}
+
+export async function savePluginShare(params: PluginShareSaveParams) {
+  return invoke<PluginShareSaveResponse>("save-plugin-share", {
+    params,
+  });
+}
+
+export async function deletePluginShare(params: PluginShareDeleteParams) {
+  return invoke<PluginShareDeleteResponse>("delete-plugin-share", {
+    params,
+  });
+}
+
+export async function readPluginSharePrincipals(params: ReadPluginSharePrincipalsParams) {
+  return invoke<PluginSharePrincipalsResponse>("read-plugin-share-principals", {
+    params,
+  });
+}
+
+export async function updatePluginShareTargets(params: UpdatePluginShareTargetsParams) {
+  return invoke<PluginSharePrincipalsResponse>("update-plugin-share-targets", {
+    params,
+  });
+}
+
+export async function searchWorkspaceUsers(params: SearchWorkspaceUsersParams) {
+  return invoke<SearchWorkspaceUsersResponse>("search-workspace-users", {
+    params,
+  });
 }
 
 export async function addMarketplace(params: MarketplaceAddParams): Promise<MarketplaceAddResponse> {

@@ -87,12 +87,33 @@ test("resolve open source licenses back path", () => {
   );
 });
 
+test("open source licenses page keeps stale notices visible while refreshing in the background", () => {
+  const pageSource = readFileSync(
+    path.join(process.cwd(), "src/components/OpenSourceLicensesPage.tsx"),
+    "utf8",
+  );
+
+  assert.match(
+    pageSource,
+    /const initialNotices = peekThirdPartyNotices\(\{ includeStale: true \}\);/,
+  );
+  assert.match(
+    pageSource,
+    /const cachedNotices = peekThirdPartyNotices\(\{ includeStale: true \}\);/,
+  );
+  assert.match(pageSource, /setIsLoading\(cachedNotices == null\);/);
+  assert.match(
+    pageSource,
+    /if \(cachedNotices == null\) \{\s*setText\(null\);\s*\}/s,
+  );
+});
+
 test("open source licenses routing follows extracted settings route behavior", () => {
   const appSource = readFileSync(APP_SOURCE_PATH, "utf8");
 
   assert.match(
     appSource,
-    /const handleNavigateToRoute = useEffectEvent\(async \(path: string, state\?: NavigateToRouteState \| null\) => \{\s*if \(typeof window !== "undefined" && window\.location\.pathname !== path\) \{\s*window\.history\.replaceState\(state \?\? window\.history\.state, "", path\);\s*\}/s,
+    /const handleNavigateToRoute = useEffectEvent\(async \(path: string, state\?: NavigateToRouteState \| null\) => \{\s*const normalizedPath = stripRouteSearchAndHash\(path\);\s*if \(typeof window !== "undefined"\) \{\s*const currentLocationPath = `\$\{window\.location\.pathname\}\$\{window\.location\.search\}\$\{window\.location\.hash\}`;\s*if \(currentLocationPath !== path\) \{\s*const nextState = state \?\? window\.history\.state;[\s\S]*window\.history\.replaceState\(nextState, "", path\);\s*\}\s*\}/s,
   );
   assert.match(
     appSource,

@@ -60,6 +60,7 @@ test("scratchpad app prompt links follow the extracted dollar-prefixed app markd
     isAccessible: true,
     isEnabled: true,
     pluginDisplayNames: [],
+    labels: null,
   });
 
   assert.equal(link, "[$browser-use](app://browser-use)");

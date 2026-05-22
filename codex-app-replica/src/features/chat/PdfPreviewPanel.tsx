@@ -7,9 +7,10 @@ import type {
   ThreadConversationUserInputComment,
 } from "../../services/history";
 import type { WorkspaceFileDocument } from "../../services/workspaceFiles";
-import { ChevronDownIcon, CloseTabIcon, FolderIcon } from "../../components/AppShellIcons";
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon, CloseTabIcon } from "../../components/AppShellIcons";
 import { Button } from "../../components/Button";
 import { Spinner } from "../../components/Spinner";
+import { Tooltip } from "../../components/Tooltip";
 import {
   filterPendingPdfCommentsForPath,
   getNextPdfCommentNumber,
@@ -565,46 +566,63 @@ export function PdfPreviewPanel({
   }
 
   if (testMode?.kind === "ready") {
+    const annotateButton = (
+      <PdfAnnotateToggleButton
+        active={isCommentMode}
+        onClick={() => setIsCommentMode((current) => !current)}
+        t={t}
+      />
+    );
+
     return (
       <section className="flex h-full min-h-0 flex-col bg-token-side-bar-background">
-        <header className="grid h-toolbar-pane shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(max-content,1fr)] items-center gap-2 overflow-hidden border-b border-token-border-light bg-token-main-surface-primary pr-2 pl-4">
+        <header className="@container grid h-toolbar-pane shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(max-content,1fr)] items-center gap-2 overflow-hidden border-b border-token-border-light bg-token-main-surface-primary pr-2 pl-4 [@container_(max-width:260px)]:grid-cols-[0_auto_auto] [@container_(max-width:260px)]:gap-1 [@container_(max-width:260px)]:pl-2">
           <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
-            <h2 className="truncate text-sm leading-5 font-medium tracking-[-0.18px] text-token-text-primary">{resolvedTitle}</h2>
-            <span className="shrink-0 text-sm leading-5 text-token-text-tertiary">PDF</span>
+            <h2 className="truncate text-sm leading-5 font-medium tracking-[-0.18px] text-token-text-primary [@container_(max-width:260px)]:hidden">{resolvedTitle}</h2>
+            <span className="shrink-0 text-sm leading-5 text-token-text-tertiary [@container_(max-width:360px)]:hidden">PDF</span>
           </div>
           <div className="min-w-0 justify-self-center">
             <div className="flex items-center gap-0.5">
-              <Button
-                aria-label={t("artifactTab.preview.previousPage")}
-                color="ghost"
-                disabled={effectiveCurrentPage <= 1}
-                size="toolbar"
-                uniform
-              >
-                <ChevronDownIcon className="icon-2xs rotate-90" />
-              </Button>
-              <span className="min-w-12 px-1 text-center text-sm text-token-text-primary tabular-nums">
+              <Tooltip tooltipContent={t("artifactTab.preview.previousPage")}>
+                <Button
+                  aria-label={t("artifactTab.preview.previousPage")}
+                  className="[@container_(max-width:240px)]:hidden"
+                  color="ghost"
+                  disabled={effectiveCurrentPage <= 1}
+                  size="toolbar"
+                  uniform
+                >
+                  <ChevronRightIcon className="icon-2xs rotate-180" />
+                </Button>
+              </Tooltip>
+              <span className="min-w-12 px-1 text-center text-sm text-token-text-primary tabular-nums [@container_(max-width:300px)]:min-w-9 [@container_(max-width:300px)]:px-0.5">
                 {t("artifactTab.preview.pageIndicator", { current: effectiveCurrentPage, total: effectiveNumPages })}
               </span>
-              <Button
-                aria-label={t("artifactTab.preview.nextPage")}
-                color="ghost"
-                disabled={effectiveCurrentPage >= effectiveNumPages}
-                size="toolbar"
-                uniform
-              >
-                <ChevronDownIcon className="icon-2xs -rotate-90" />
-              </Button>
+              <Tooltip tooltipContent={t("artifactTab.preview.nextPage")}>
+                <Button
+                  aria-label={t("artifactTab.preview.nextPage")}
+                  className="[@container_(max-width:240px)]:hidden"
+                  color="ghost"
+                  disabled={effectiveCurrentPage >= effectiveNumPages}
+                  size="toolbar"
+                  uniform
+                >
+                  <ChevronRightIcon className="icon-2xs" />
+                </Button>
+              </Tooltip>
             </div>
           </div>
           <div className="flex min-w-0 justify-end overflow-hidden">
-            <div className="flex min-w-0 items-center gap-1 overflow-hidden">
-              <PdfAnnotateToggleButton
-                active={isCommentMode}
-                onClick={() => setIsCommentMode((current) => !current)}
-                t={t}
-              />
-              <Button color="ghost" size="toolbar" className="shrink-0 gap-1 rounded-md px-1.5 text-sm">
+            <div className="flex min-w-0 items-center gap-1 overflow-hidden [@container_(max-width:300px)]:gap-0.5">
+              {isCommentMode ? annotateButton : <Tooltip tooltipContent={t("artifactPdfPreview.annotate")}>{annotateButton}</Tooltip>}
+              <Button
+                aria-expanded={false}
+                aria-haspopup="menu"
+                color="ghost"
+                data-testid="pdf-preview-zoom-trigger"
+                size="toolbar"
+                className="shrink-0 gap-1 rounded-md px-1.5 text-sm"
+              >
                 <span className="tabular-nums">{t("artifactTab.preview.zoomPercent", { zoomPercent: 100 })}</span>
                 <ChevronDownIcon className="icon-2xs" />
               </Button>
@@ -612,7 +630,7 @@ export function PdfPreviewPanel({
                 aria-label={t("artifactTab.preview.open")}
                 color="outline"
                 size="toolbar"
-                className="shrink-0 rounded-md !border-token-border-default bg-token-main-surface-primary px-2 text-sm text-token-text-primary hover:text-token-text-primary"
+                className="shrink-0 rounded-md !border-token-border-default bg-token-main-surface-primary text-sm text-token-text-primary hover:text-token-text-primary"
                 onClick={() => {
                   void openFile({
                     hostId: previewHostId,
@@ -621,7 +639,6 @@ export function PdfPreviewPanel({
                   });
                 }}
               >
-                <FolderIcon className="icon-2xs" />
                 <span>{t("artifactTab.preview.open")}</span>
               </Button>
               {headerRightContent}
@@ -683,49 +700,68 @@ export function PdfPreviewPanel({
         />
       ) : loadState === "ready" && pdfDocument != null ? (
         <>
-          <header className="grid h-toolbar-pane shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(max-content,1fr)] items-center gap-2 overflow-hidden border-b border-token-border-light bg-token-main-surface-primary pr-2 pl-4">
+          <header className="@container grid h-toolbar-pane shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(max-content,1fr)] items-center gap-2 overflow-hidden border-b border-token-border-light bg-token-main-surface-primary pr-2 pl-4 [@container_(max-width:260px)]:grid-cols-[0_auto_auto] [@container_(max-width:260px)]:gap-1 [@container_(max-width:260px)]:pl-2">
             <div className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
-              <h2 className="truncate text-sm leading-5 font-medium tracking-[-0.18px] text-token-text-primary">{resolvedTitle}</h2>
-              <span className="shrink-0 text-sm leading-5 text-token-text-tertiary">PDF</span>
+              <h2 className="truncate text-sm leading-5 font-medium tracking-[-0.18px] text-token-text-primary [@container_(max-width:260px)]:hidden">{resolvedTitle}</h2>
+              <span className="shrink-0 text-sm leading-5 text-token-text-tertiary [@container_(max-width:360px)]:hidden">PDF</span>
             </div>
             <div className="min-w-0 justify-self-center">
               <div className="flex items-center gap-0.5">
-                <Button
-                  aria-label={t("artifactTab.preview.previousPage")}
-                  color="ghost"
-                  disabled={currentPage <= 1}
-                  size="toolbar"
-                  uniform
-                  onClick={() => scrollToPage(currentPage - 1)}
-                >
-                  <ChevronDownIcon className="icon-2xs rotate-90" />
-                </Button>
-                <span className="min-w-12 px-1 text-center text-sm text-token-text-primary tabular-nums">
+                <Tooltip tooltipContent={t("artifactTab.preview.previousPage")}>
+                  <Button
+                    aria-label={t("artifactTab.preview.previousPage")}
+                    className="[@container_(max-width:240px)]:hidden"
+                    color="ghost"
+                    disabled={currentPage <= 1}
+                    size="toolbar"
+                    uniform
+                    onClick={() => scrollToPage(currentPage - 1)}
+                  >
+                    <ChevronRightIcon className="icon-2xs rotate-180" />
+                  </Button>
+                </Tooltip>
+                <span className="min-w-12 px-1 text-center text-sm text-token-text-primary tabular-nums [@container_(max-width:300px)]:min-w-9 [@container_(max-width:300px)]:px-0.5">
                   {t("artifactTab.preview.pageIndicator", { current: currentPage, total: numPages })}
                 </span>
-                <Button
-                  aria-label={t("artifactTab.preview.nextPage")}
-                  color="ghost"
-                  disabled={currentPage >= numPages}
-                  size="toolbar"
-                  uniform
-                  onClick={() => scrollToPage(currentPage + 1)}
-                >
-                  <ChevronDownIcon className="icon-2xs -rotate-90" />
-                </Button>
+                <Tooltip tooltipContent={t("artifactTab.preview.nextPage")}>
+                  <Button
+                    aria-label={t("artifactTab.preview.nextPage")}
+                    className="[@container_(max-width:240px)]:hidden"
+                    color="ghost"
+                    disabled={currentPage >= numPages}
+                    size="toolbar"
+                    uniform
+                    onClick={() => scrollToPage(currentPage + 1)}
+                  >
+                    <ChevronRightIcon className="icon-2xs" />
+                  </Button>
+                </Tooltip>
               </div>
             </div>
             <div className="flex min-w-0 justify-end overflow-hidden">
-              <div className="flex min-w-0 items-center gap-1 overflow-hidden" ref={zoomMenuRef}>
-                <PdfAnnotateToggleButton
-                  active={isCommentMode}
-                  onClick={() => setIsCommentMode((current) => !current)}
-                  t={t}
-                />
+              <div className="flex min-w-0 items-center gap-1 overflow-hidden [@container_(max-width:300px)]:gap-0.5" ref={zoomMenuRef}>
+                {isCommentMode ? (
+                  <PdfAnnotateToggleButton
+                    active={isCommentMode}
+                    onClick={() => setIsCommentMode((current) => !current)}
+                    t={t}
+                  />
+                ) : (
+                  <Tooltip tooltipContent={t("artifactPdfPreview.annotate")}>
+                    <PdfAnnotateToggleButton
+                      active={isCommentMode}
+                      onClick={() => setIsCommentMode((current) => !current)}
+                      t={t}
+                    />
+                  </Tooltip>
+                )}
                 <div className="relative">
                   <Button
+                    aria-expanded={isZoomMenuOpen}
+                    aria-haspopup="menu"
                     color="ghost"
                     data-state={isZoomMenuOpen ? "open" : "closed"}
+                    data-testid="pdf-preview-zoom-trigger"
                     size="toolbar"
                     className="shrink-0 gap-1 rounded-md px-1.5 text-sm"
                     onClick={() => setIsZoomMenuOpen((open) => !open)}
@@ -734,7 +770,10 @@ export function PdfPreviewPanel({
                     <ChevronDownIcon className="icon-2xs" />
                   </Button>
                   {isZoomMenuOpen ? (
-                    <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-[168px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+                    <div
+                      role="menu"
+                      className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-[168px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]"
+                    >
                       <div className="space-y-1">
                         {PDF_ZOOM_OPTIONS.map((option) => {
                           const isSelected = zoomMode.kind === "percent" && clampZoom(zoomMode.value) === option;
@@ -752,6 +791,7 @@ export function PdfPreviewPanel({
                               ].join(" ")}
                             >
                               <span>{t("artifactTab.preview.zoomPercent", { zoomPercent: option })}</span>
+                              {isSelected ? <CheckIcon className="icon-2xs" /> : null}
                             </button>
                           );
                         })}
@@ -768,6 +808,7 @@ export function PdfPreviewPanel({
                           ].join(" ")}
                         >
                           <span>{t("artifactTab.preview.zoomToFit")}</span>
+                          {zoomMode.kind === "fit" ? <CheckIcon className="icon-2xs" /> : null}
                         </button>
                       </div>
                     </div>
@@ -777,7 +818,7 @@ export function PdfPreviewPanel({
                   aria-label={t("artifactTab.preview.open")}
                   color="outline"
                   size="toolbar"
-                  className="shrink-0 rounded-md !border-token-border-default bg-token-main-surface-primary px-2 text-sm text-token-text-primary hover:text-token-text-primary"
+                  className="shrink-0 rounded-md !border-token-border-default bg-token-main-surface-primary text-sm text-token-text-primary hover:text-token-text-primary"
                   onClick={() => {
                     void openFile({
                       hostId: previewHostId,
@@ -786,7 +827,6 @@ export function PdfPreviewPanel({
                     });
                   }}
                 >
-                  <FolderIcon className="icon-2xs" />
                   <span>{t("artifactTab.preview.open")}</span>
                 </Button>
                 {headerRightContent}

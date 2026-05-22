@@ -101,19 +101,27 @@ export async function notifyDebugWindowOriginConversationChanged(conversationId:
   await invoke("debug-window-origin-conversation-changed", { conversationId });
 }
 
-export function onDebugWindowOriginConversationChanged(
+export async function onDebugWindowOriginConversationChanged(
   handler: (conversationId: string) => void,
 ) {
+  const seenConversationIds = new Set<string>();
+
+  const emitConversationId = (value: string | null | undefined) => {
+    const conversationId = typeof value === "string" ? value.trim() : "";
+    if (conversationId.length === 0 || seenConversationIds.has(conversationId)) {
+      return;
+    }
+
+    seenConversationIds.add(conversationId);
+    handler(conversationId);
+  };
+
+  emitConversationId(await takePendingDebugWindowOriginConversation().catch(() => null));
+
   return listen<DebugWindowOriginConversationChangedNotification>(
     DEBUG_WINDOW_ORIGIN_CONVERSATION_CHANGED_EVENT,
     (event) => {
-      const conversationId =
-        typeof event.payload?.conversationId === "string" ? event.payload.conversationId.trim() : "";
-      if (conversationId.length === 0) {
-        return;
-      }
-
-      handler(conversationId);
+      emitConversationId(event.payload?.conversationId);
     },
   );
 }
@@ -122,7 +130,7 @@ export async function setPrimaryWindowMode(params: SetPrimaryWindowModeParams) {
   await invoke("electron-set-window-mode", { params });
 }
 
-export async function takePendingDebugWindowOriginConversation() {
+async function takePendingDebugWindowOriginConversation() {
   return invoke<string | null>("take_pending_debug_window_origin_conversation");
 }
 

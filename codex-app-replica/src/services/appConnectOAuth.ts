@@ -5,9 +5,6 @@ import {
 import { readAppsSnapshot } from "./apps";
 import { refreshAmbientSuggestions } from "./debug";
 
-const APP_CONNECT_OAUTH_PENDING_STORAGE_KEY =
-  "codex-app-replica.app-connect-oauth-pending.v1";
-
 export type AppConnectResumeTarget =
   | {
       kind: "apps-tab";
@@ -49,6 +46,8 @@ type FinishAppConnectOAuthCallbackResponse = {
 };
 
 type StoredPendingAppConnectOAuth = Record<string, PendingAppConnectOAuth>;
+
+let pendingAppConnectOAuthState: StoredPendingAppConnectOAuth = {};
 
 type AppConnectOAuthCallbackUrlResponse = {
   callbackUrl: string;
@@ -280,106 +279,11 @@ function normalizeHostId(hostId: string | null | undefined) {
 }
 
 function readPendingAppConnectOAuthState(): StoredPendingAppConnectOAuth {
-  if (typeof window === "undefined") {
-    return {};
-  }
-
-  const rawValue = window.sessionStorage.getItem(APP_CONNECT_OAUTH_PENDING_STORAGE_KEY);
-  if (!rawValue) {
-    return {};
-  }
-
-  try {
-    const parsed = JSON.parse(rawValue) as Record<string, unknown>;
-    const nextState: StoredPendingAppConnectOAuth = {};
-    for (const [key, value] of Object.entries(parsed)) {
-      const pending = normalizePendingAppConnectOAuth(value);
-      if (pending != null) {
-        nextState[key] = pending;
-      }
-    }
-    return nextState;
-  } catch {
-    return {};
-  }
-}
-
-function writePendingAppConnectOAuthState(value: StoredPendingAppConnectOAuth) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  if (Object.keys(value).length === 0) {
-    window.sessionStorage.removeItem(APP_CONNECT_OAUTH_PENDING_STORAGE_KEY);
-    return;
-  }
-
-  window.sessionStorage.setItem(
-    APP_CONNECT_OAUTH_PENDING_STORAGE_KEY,
-    JSON.stringify(value),
-  );
-}
-
-function normalizePendingAppConnectOAuth(
-  value: unknown,
-): PendingAppConnectOAuth | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  const appId = normalizeNonEmptyString(Reflect.get(value, "appId"));
-  const appName = normalizeNonEmptyString(Reflect.get(value, "appName"));
-  const hostId = normalizeNonEmptyString(Reflect.get(value, "hostId"));
-  const oauthState = normalizeNonEmptyString(Reflect.get(value, "oauthState"));
-  const claimed = Reflect.get(value, "claimed") === true;
-  const returnTo = normalizeOptionalString(Reflect.get(value, "returnTo"));
-  const resumeTarget = normalizeResumeTarget(Reflect.get(value, "resumeTarget"));
-  if (
-    appId == null ||
-    appName == null ||
-    hostId == null ||
-    oauthState == null ||
-    resumeTarget == null
-  ) {
-    return null;
-  }
-
   return {
-    appId,
-    appName,
-    claimed,
-    hostId,
-    oauthState,
-    returnTo: returnTo ?? undefined,
-    resumeTarget,
+    ...pendingAppConnectOAuthState,
   };
 }
 
-function normalizeResumeTarget(value: unknown): AppConnectResumeTarget | null {
-  if (!value || typeof value !== "object") {
-    return {
-      kind: "apps-tab",
-    };
-  }
-
-  const kind = Reflect.get(value, "kind");
-  if (kind === "plugin-install") {
-    return {
-      kind: "plugin-install",
-    };
-  }
-  if (kind === "apps-tab" || kind == null) {
-    return {
-      kind: "apps-tab",
-    };
-  }
-  return null;
-}
-
-function normalizeNonEmptyString(value: unknown) {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
-
-function normalizeOptionalString(value: unknown) {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+function writePendingAppConnectOAuthState(value: StoredPendingAppConnectOAuth) {
+  pendingAppConnectOAuthState = value;
 }

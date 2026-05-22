@@ -380,11 +380,12 @@ function ThemeImportDialog({
           onChange={(event) => onValueChange(event.target.value)}
         />
         <div className="mt-5 flex items-center justify-end gap-2">
-          <Button color="ghost" onClick={() => onOpenChange(false)}>
+          <Button color="ghost" size="toolbar" onClick={() => onOpenChange(false)}>
             {t("settings.general.appearance.chromeTheme.import.dialog.cancel")}
           </Button>
           <Button
             disabled={isDisabled || !isSubmitEnabled}
+            size="toolbar"
             onClick={() => void onSubmit()}
           >
             {t("settings.general.appearance.chromeTheme.import.dialog.submit")}

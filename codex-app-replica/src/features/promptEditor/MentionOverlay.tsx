@@ -4,6 +4,11 @@ import type {
   PromptEditorOverlayLayout,
 } from "./types";
 
+const OVERLAY_MAX_WIDTH = 360;
+const OVERLAY_HORIZONTAL_PADDING = 12;
+const OVERLAY_OFFSET = 8;
+const OVERLAY_TOP_THRESHOLD = 240;
+
 export function renderMentionOverlay<TCandidate extends PromptEditorMentionCandidate>({
   candidates,
   mentionOverlayLayout,
@@ -25,7 +30,13 @@ export function renderMentionOverlay<TCandidate extends PromptEditorMentionCandi
 
   return createPortal(
     <div
-      className="fixed z-50"
+      className={[
+        "z-[60]",
+        mentionOverlayLayout.positionClassName,
+        mentionOverlayLayout.renderAbove ? "-translate-y-full" : null,
+      ]
+        .filter(Boolean)
+        .join(" ")}
       style={{
         left: mentionOverlayLayout.left,
         top: mentionOverlayLayout.top,
@@ -71,21 +82,54 @@ export function renderMentionOverlay<TCandidate extends PromptEditorMentionCandi
         </div>
       </div>
     </div>,
-    document.body,
+    mentionOverlayLayout.portalContainer,
   );
 }
 
-export function getMentionOverlayLayout(editor: HTMLDivElement | null): PromptEditorOverlayLayout | null {
+export function getMentionOverlayPlacement(editor: HTMLDivElement | null) {
   if (!editor || typeof window === "undefined") {
+    return "bottom" as const;
+  }
+
+  const anchorRect = editor.getBoundingClientRect();
+  const spaceAbove = anchorRect.top;
+  const spaceBelow = window.innerHeight - anchorRect.bottom;
+
+  return spaceBelow < OVERLAY_TOP_THRESHOLD && spaceAbove > spaceBelow ? "top" : "bottom";
+}
+
+export function getMentionOverlayLayout(
+  editor: HTMLDivElement | null,
+  placement: "top" | "bottom",
+): PromptEditorOverlayLayout | null {
+  if (!editor || typeof document === "undefined" || typeof window === "undefined") {
     return null;
   }
 
+  const portalContainer = getOverlayPortalContainer(editor);
+  const containerRect =
+    portalContainer === document.body
+      ? { left: 0, top: 0, width: window.innerWidth }
+      : portalContainer.getBoundingClientRect();
   const anchorRect = getMentionAnchorRect(editor) ?? editor.getBoundingClientRect();
-  const width = Math.min(360, Math.max(window.innerWidth - 24, 0));
+  const width = Math.min(
+    OVERLAY_MAX_WIDTH,
+    Math.max(containerRect.width - OVERLAY_HORIZONTAL_PADDING * 2, 0),
+  );
 
   return {
-    left: clampOverlayPosition(anchorRect.left, 12, window.innerWidth - width - 12),
-    top: anchorRect.bottom + 8,
+    left: clampOverlayPosition(
+      anchorRect.left - containerRect.left,
+      OVERLAY_HORIZONTAL_PADDING,
+      containerRect.width - width - OVERLAY_HORIZONTAL_PADDING,
+    ),
+    portalContainer,
+    positionClassName: portalContainer === document.body ? "fixed" : "absolute",
+    renderAbove: placement === "top",
+    top:
+      (placement === "top"
+        ? anchorRect.top - OVERLAY_OFFSET
+        : anchorRect.bottom + OVERLAY_OFFSET) - containerRect.top,
     width,
   };
 }
@@ -102,7 +146,14 @@ export function isSameMentionOverlayLayout(
     return false;
   }
 
-  return left.left === right.left && left.top === right.top && left.width === right.width;
+  return (
+    left.left === right.left &&
+    left.portalContainer === right.portalContainer &&
+    left.positionClassName === right.positionClassName &&
+    left.renderAbove === right.renderAbove &&
+    left.top === right.top &&
+    left.width === right.width
+  );
 }
 
 function renderMentionCandidateIcon(candidate: PromptEditorMentionCandidate) {
@@ -152,7 +203,8 @@ function getMentionAnchorRect(editor: HTMLDivElement) {
 
   const collapsedRange = range.cloneRange();
   collapsedRange.collapse(false);
-  const lastClientRect = collapsedRange.getClientRects().item(collapsedRange.getClientRects().length - 1);
+  const clientRects = collapsedRange.getClientRects();
+  const lastClientRect = clientRects.item(clientRects.length - 1);
   if (lastClientRect) {
     return lastClientRect;
   }
@@ -170,6 +222,11 @@ function getMentionAnchorRect(editor: HTMLDivElement) {
   return null;
 }
 
+function getOverlayPortalContainer(editor: HTMLDivElement) {
+  const dialogContainer = editor.closest(".codex-dialog");
+  return (dialogContainer as HTMLElement | null) ?? document.body;
+}
+
 function clampOverlayPosition(value: number, minimum: number, maximum: number) {
   if (maximum < minimum) {
     return minimum;
@@ -177,3 +234,7 @@ function clampOverlayPosition(value: number, minimum: number, maximum: number) {
 
   return Math.max(minimum, Math.min(value, maximum));
 }
+
+export const __testOnly = {
+  clampOverlayPosition,
+};

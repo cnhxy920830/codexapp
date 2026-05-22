@@ -155,6 +155,39 @@ test("workspace file preview panel snapshots", async (t) => {
             proto: {},
           }}
           ownerShellContext={ownerShellContext}
+          presentationTestMode={{
+            kind: "ready",
+            currentPage: 2,
+            notesText: "Focus the demo on the presentation header, stage, and speaker notes shell.",
+            totalSlides: 4,
+            zoomPercent: 75,
+          }}
+          selectedFileTarget={buildTarget(workspaceRoot, "slides/deck.pptx")}
+          t={translate}
+        />,
+      ),
+      pptxShellFullscreen: renderSnapshot(
+        <WorkspaceFilePreviewContent
+          file={buildFile(
+            "slides/deck.pptx",
+            "D:\\workspace\\slides\\deck.pptx",
+            null,
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            true,
+          )}
+          hidePresentationSpeakerNotes
+          parsedArtifact={{
+            kind: "presentation",
+            proto: {},
+          }}
+          ownerShellContext={ownerShellContext}
+          presentationTestMode={{
+            kind: "ready",
+            currentPage: 2,
+            notesText: "This note should be hidden in fullscreen mode.",
+            totalSlides: 4,
+            zoomPercent: 75,
+          }}
           selectedFileTarget={buildTarget(workspaceRoot, "slides/deck.pptx")}
           t={translate}
         />,
@@ -230,6 +263,12 @@ test("workspace file preview panel snapshots", async (t) => {
           selectedFileTarget={buildTarget(workspaceRoot, "docs/report.docx")}
           t={translate}
           binaryContents={new Uint8Array([80, 75, 3, 4])}
+          docxTestMode={{
+            kind: "ready",
+            currentPage: 2,
+            totalPages: 4,
+            zoomPercent: 75,
+          }}
         />,
       ),
       docxDocumentShell: renderSnapshot(
@@ -351,6 +390,7 @@ type SnapshotMap = {
   plainText: string;
   pdbLoadingOverlay: string;
   pptxShell: string;
+  pptxShellFullscreen: string;
   texShell: string;
   tooLargeState: string;
   tooLargeStateOwner: string;

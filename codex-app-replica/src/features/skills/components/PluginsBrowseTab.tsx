@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import { ToggleSwitch } from "../../../components/ToggleSwitch";
 import { useI18n } from "../../../i18n/i18n";
 import type { MessageKey } from "../../../i18n/messages";
@@ -246,18 +246,25 @@ function PluginCard({
   const { t } = useI18n();
   const isInstalling = pendingPluginId === candidate.plugin.id;
   const isToggling = pendingTogglePluginId === candidate.plugin.id;
+  const handleOpenDetails = () => {
+    if ("importedApp" in candidate) {
+      return;
+    }
+    onOpenPluginDetails(candidate);
+  };
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      handleOpenDetails();
+    }
+  };
 
   return (
     <article
-      onClick={() => onOpenPluginDetails(candidate)}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onOpenPluginDetails(candidate);
-        }
-      }}
+      onClick={handleOpenDetails}
+      onKeyDown={handleKeyDown}
       role="button"
-      tabIndex={0}
+      tabIndex={"importedApp" in candidate ? -1 : 0}
       className="rounded-[18px] border border-[var(--app-shell-border)] bg-[var(--app-shell-main-surface)] px-4 py-4 text-left transition hover:bg-[var(--app-shell-hover-surface)]"
     >
       <div className="flex h-full flex-col gap-4">

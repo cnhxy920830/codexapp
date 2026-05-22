@@ -63,6 +63,56 @@ const DEFAULT_KEYBOARD_SHORTCUT_GATE_STATE: KeyboardShortcutGateState = {
   globalDictationEnabled: false,
   hotkeyWindowEnabled: false,
 };
+const COMMAND_TITLE_ZH_CN_OVERRIDES: Readonly<Record<string, string>> = {
+  newThread: "新对话",
+  quickChat: "新建快速对话",
+  openThreadInNewWindow: "在新窗口中打开",
+  archiveThread: "归档聊天",
+  toggleThreadPin: "切换置顶状态",
+  copyConversationMarkdown: "复制为 Markdown",
+  openSideChat: "打开侧边聊天",
+  openControlWindow: "打开控制窗口",
+  "composer.openModelPicker": "打开模型选择器",
+  "composer.startVoiceMode": "切换语音模式",
+  "composer.startDictation": "开始听写",
+  openAvatarOverlay: "唤醒宠物",
+  previousThread: "上一个对话",
+  previousRecentThread: "上一个最近查看的聊天",
+  nextThread: "下一个对话",
+  nextRecentThread: "下一个最近查看的聊天",
+  settings: "设置",
+  mcpSettings: "MCP",
+  personalitySettings: "个性",
+  keyboardShortcuts: "键盘快捷方式",
+  manageTasks: "管理自动化功能",
+  forceReloadSkills: "强制重新加载技能",
+  installPrimaryRuntime: "安装 Codex 工作空间",
+  openSkills: "前往技能",
+  openFolder: "打开文件夹",
+  toggleSidebar: "切换边栏",
+  toggleTerminal: "切换终端",
+  openBrowserTab: "打开浏览器标签页",
+  toggleBrowserPanel: "显示/隐藏浏览器面板",
+  toggleDiffPanel: "切换差异面板",
+  findInThread: "查找",
+  focusBrowserAddressBar: "聚焦浏览器地址栏",
+  navigateBack: "返回",
+  navigateForward: "前进",
+  logOut: "注销",
+  feedback: "反馈",
+  thread1: "转到聊天 1",
+  thread2: "转到聊天 2",
+  thread3: "转到聊天 3",
+  thread4: "转到聊天 4",
+  thread5: "转到聊天 5",
+  thread6: "转到聊天 6",
+  thread7: "转到聊天 7",
+  thread8: "转到聊天 8",
+  thread9: "转到聊天 9",
+  hotkeyWindow: "弹出窗口快捷键",
+  globalDictationHold: "按住听写快捷键",
+  globalDictationToggle: "切换听写快捷键",
+};
 const COMMAND_KEYMAP_STATE_STALE_MS = 60_000;
 const MODIFIER_KEYS = new Set(["Meta", "Control", "Alt", "AltGraph", "Shift"]);
 const KEY_LABEL_BY_EVENT_KEY = new Map<string, string>([
@@ -152,7 +202,11 @@ export function onCommandKeymapStateInvalidated(
 }
 
 export function getKeyboardShortcutCommandTitle(command: KeyboardShortcutCommand, locale: string) {
-  return normalizeLocaleCode(locale).startsWith("zh") ? command.titleZhCn ?? command.titleEn : command.titleEn;
+  if (normalizeLocaleCode(locale).startsWith("zh")) {
+    return COMMAND_TITLE_ZH_CN_OVERRIDES[command.id] ?? command.titleZhCn ?? command.titleEn;
+  }
+
+  return command.titleEn;
 }
 
 export function getKeyboardShortcutCommandDescription(command: KeyboardShortcutCommand, locale: string) {

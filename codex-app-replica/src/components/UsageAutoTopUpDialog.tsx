@@ -14,6 +14,7 @@ import {
 } from "../services/usage";
 import type { AppToast } from "./AppToastRegion";
 import { Button } from "./Button";
+import { SettingsDialog } from "./SettingsDialog";
 import { Spinner } from "./Spinner";
 
 const CREDIT_PURCHASE_URL = "https://chatgpt.com/codex/settings/usage?credit_modal=true";
@@ -58,8 +59,6 @@ export function UsageAutoTopUpDialog({
   serverState: UsageAutoTopUpSettings;
 }) {
   const { locale, t } = useI18n();
-  const dialogTitleId = useId();
-  const dialogDescriptionId = useId();
   const thresholdInputId = useId();
   const targetInputId = useId();
 
@@ -125,23 +124,6 @@ export function UsageAutoTopUpDialog({
     };
   }, [open]);
 
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !isSavingEnableOrUpdate && !isSavingDisable) {
-        onClose();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isSavingDisable, isSavingEnableOrUpdate, onClose, open]);
-
   const validation = useMemo(
     () =>
       validateAutoTopUpInputs({
@@ -167,48 +149,39 @@ export function UsageAutoTopUpDialog({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-30 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4"
-      onClick={() => {
-        if (!isSaving) {
+    <SettingsDialog
+      contentClassName="w-[536px] max-w-[calc(100vw-2rem)]"
+      onOpenAutoFocus={(event) => event.preventDefault()}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && !isSaving) {
           onClose();
         }
       }}
+      open={open}
+      shouldIgnoreClickOutside={isSaving}
+      title={t("settings.usage.autoTopUp.dialog.title")}
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={dialogTitleId}
-        aria-describedby={dialogDescriptionId}
-        className="w-full max-w-[536px] rounded-[18px] border border-token-border bg-token-main-surface-primary px-6 py-6 shadow-[0_16px_40px_rgba(0,0,0,0.22)]"
-        onClick={(event) => event.stopPropagation()}
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void handleSave({
+            draftState,
+            immediateTopUpEstimate,
+            onClose,
+            onSaved,
+            onShowToast,
+            saveIntent,
+            setHasImmediateTopUpFailure,
+            setImmediateTopUpFailureAmount,
+            setIsSavingEnableOrUpdate,
+            setSubmissionAttempts,
+            t,
+          });
+        }}
       >
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void handleSave({
-              draftState,
-              immediateTopUpEstimate,
-              onClose,
-              onSaved,
-              onShowToast,
-              saveIntent,
-              setHasImmediateTopUpFailure,
-              setImmediateTopUpFailureAmount,
-              setIsSavingEnableOrUpdate,
-              setSubmissionAttempts,
-              t,
-            });
-          }}
-        >
-          <h2 id={dialogTitleId} className="text-[20px] font-medium leading-7 text-token-text-primary">
-            {t("settings.usage.autoTopUp.dialog.title")}
-          </h2>
-          <p id={dialogDescriptionId} className="sr-only">
-            {t("settings.usage.autoTopUp.dialog.description")}
-          </p>
+        <p className="sr-only">{t("settings.usage.autoTopUp.dialog.description")}</p>
 
-          <div className="mt-5 flex flex-col gap-5">
+        <div className="flex flex-col gap-5">
             <AutoTopUpInputField
               ariaLabel={t("settings.usage.autoTopUp.threshold.ariaLabel")}
               disabled={isSaving}
@@ -285,56 +258,51 @@ export function UsageAutoTopUpDialog({
                 })}
               </DialogBanner>
             ) : null}
-          </div>
+        </div>
 
-          <div className="mt-7 flex items-center justify-end gap-2">
-            {serverState.isEnabled ? (
-              <Button
-                type="button"
-                color="outline"
-                className="min-w-[88px] justify-center"
-                loading={isSavingDisable}
-                disabled={isSaving}
-                onClick={() =>
-                  void handleDisable({
-                    onClose,
-                    onSaved,
-                    onShowToast,
-                    setIsSavingDisable,
-                    t,
-                  })
-                }
-              >
-                {t("settings.usage.autoTopUp.disable")}
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                color="outline"
-                className="min-w-[88px] justify-center"
-                disabled={isSaving}
-                onClick={onClose}
-              >
-                {t("settings.usage.autoTopUp.cancel")}
-              </Button>
-            )}
+        <div className="flex w-full items-center justify-end gap-2 pt-7">
+          {serverState.isEnabled ? (
             <Button
-              type="submit"
-              color="primary"
+              type="button"
+              color="outline"
               className="min-w-[88px] justify-center"
-              disabled={!isSaveEnabled}
-              loading={isSavingEnableOrUpdate}
+              loading={isSavingDisable}
+              disabled={isSaving}
+              onClick={() =>
+                void handleDisable({
+                  onClose,
+                  onSaved,
+                  onShowToast,
+                  setIsSavingDisable,
+                  t,
+                })
+              }
             >
-              {serverState.isEnabled ? (
-                t("settings.usage.autoTopUp.save")
-              ) : (
-                t("settings.usage.autoTopUp.enable")
-              )}
+              {t("settings.usage.autoTopUp.disable")}
             </Button>
-          </div>
-        </form>
-      </div>
-    </div>
+          ) : (
+            <Button
+              type="button"
+              color="outline"
+              className="min-w-[88px] justify-center"
+              disabled={isSaving}
+              onClick={onClose}
+            >
+              {t("settings.usage.autoTopUp.cancel")}
+            </Button>
+          )}
+          <Button
+            type="submit"
+            color="primary"
+            className="min-w-[88px] justify-center"
+            disabled={!isSaveEnabled}
+            loading={isSavingEnableOrUpdate}
+          >
+            {serverState.isEnabled ? t("settings.usage.autoTopUp.save") : t("settings.usage.autoTopUp.enable")}
+          </Button>
+        </div>
+      </form>
+    </SettingsDialog>
   );
 }
 

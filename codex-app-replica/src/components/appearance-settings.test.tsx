@@ -72,6 +72,8 @@ test("theme editor keeps extracted shared button shell and nested settings rows"
   assert.match(source, /aria-modal="true"/);
   assert.match(source, /const handleKeyDown = \(event: KeyboardEvent\) => \{/);
   assert.match(source, /if \(event\.key === "Escape"\)/);
+  assert.match(source, /<Button color="ghost" size="toolbar" onClick=\{\(\) => onOpenChange\(false\)\}>/);
+  assert.match(source, /<Button[\s\S]*size="toolbar"[\s\S]*settings\.general\.appearance\.chromeTheme\.import\.dialog\.submit/s);
   assert.doesNotMatch(source, /function EditorRow\(/);
 });
 
@@ -79,12 +81,39 @@ test("theme color input replaces native color control with extracted popover pic
   const source = readSource(COLOR_INPUT_SOURCE_PATH);
 
   assert.match(source, /aria-haspopup="dialog"/);
+  assert.match(source, /className="h-3\.5 w-3\.5 shrink-0 rounded-full disabled:cursor-default"/);
+  assert.match(source, /className="min-w-0 flex-1 bg-transparent text-xs uppercase tabular-nums outline-hidden disabled:cursor-default"/);
+  assert.match(source, /className="h-34 w-34"/);
+  assert.match(source, /setDraftValue\(null\);/);
+  assert.match(source, /if \(event\.key !== "Escape"\)/);
   assert.match(source, /className="react-colorful__saturation/);
   assert.match(source, /className="react-colorful__hue react-colorful__last-control/);
   assert.match(source, /className="react-colorful__interactive absolute inset-0/);
   assert.match(source, /function hsvaToHex/);
   assert.match(source, /function hexToHsva/);
+  assert.doesNotMatch(source, /className="app-control h-9 w-full rounded-\[10px\] px-3 font-mono text-\[13px\] uppercase"/);
   assert.doesNotMatch(source, /type="color"/);
+});
+
+test("code theme picker follows extracted shared dropdown semantics", () => {
+  const source = readSource(path.join(process.cwd(), "src/components/appearance/CodeThemePicker.tsx"));
+
+  assert.match(source, /const menuId = `code-theme-picker-menu-\$\{variant\}`;/);
+  assert.match(source, /aria-controls=\{isOpen \? menuId : undefined\}/);
+  assert.match(source, /aria-haspopup="menu"/);
+  assert.match(source, /if \(event\.key !== "ArrowDown" && event\.key !== "Enter" && event\.key !== " "\)/);
+  assert.match(source, /shouldFocusFirstItemRef\.current = true;[\s\S]*setIsOpen\(true\);/s);
+  assert.match(source, /role="menu"/);
+  assert.match(source, /aria-orientation="vertical"/);
+  assert.match(source, /role="menuitem"/);
+  assert.match(source, /tabIndex=\{-1\}/);
+  assert.match(source, /event\.currentTarget\.focus\(\{ preventScroll: true \}\);/);
+  assert.match(source, /if \(event\.key === "Home"\)/);
+  assert.match(source, /if \(event\.key === "End"\)/);
+  assert.match(source, /if \(event\.key === "ArrowUp"\)/);
+  assert.match(source, /if \(event\.key === "ArrowDown"\)/);
+  assert.match(source, /if \(event\.key === "Escape"\)/);
+  assert.match(source, /if \(event\.key === "Tab"\)/);
 });
 
 test("theme preview uses split diff-style preview rows instead of hand-built before-after panes", () => {

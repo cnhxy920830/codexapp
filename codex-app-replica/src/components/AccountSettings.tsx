@@ -60,6 +60,17 @@ export function AccountSettings({
   }, [usesChatGptAuth, authSnapshot.activeLoginId, authSnapshot.authState.authMethod]);
 
   useEffect(() => {
+    const handleFocus = () => {
+      void loadAccountInfo();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [loadAccountInfo]);
+
+  useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
 

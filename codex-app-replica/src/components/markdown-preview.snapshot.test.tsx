@@ -175,6 +175,7 @@ function buildSnapshots(): SnapshotMap {
               isAccessible: true,
               isEnabled: true,
               pluginDisplayNames: [],
+              labels: null,
             },
           ]}
           plugins={[

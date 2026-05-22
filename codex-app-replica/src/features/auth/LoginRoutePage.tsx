@@ -33,8 +33,8 @@ import {
 
 type LoginMode = "signin" | "signup" | "google" | "microsoft";
 
-const GATE_LOGIN_PROVIDER_VISIBILITY = "3446609779";
-const GATE_STREAMLINED_LOGIN = "1561420571";
+const GATE_STREAMLINED_LOGIN = "3446609779";
+const GATE_LOGIN_PROVIDER_VISIBILITY = "1561420571";
 const GATE_STREAMLINED_LOGIN_COPY = "2523619087";
 const CHATGPT_STREAMLINED_AUTH_URL = "https://chatgpt.com/codex/desktop-auth";
 

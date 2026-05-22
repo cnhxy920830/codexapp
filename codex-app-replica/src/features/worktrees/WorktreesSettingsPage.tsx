@@ -16,7 +16,6 @@ import {
   LOCAL_SETTINGS_HOST_ID,
   REMOTE_PROJECTS_SHARED_OBJECT_KEY,
   onSharedObjectUpdated,
-  readSettingsRemoteProjectsSnapshot,
 } from "../../services/settingsHosts";
 import { onWorkspaceRootOptionsUpdated, readWorkspaceRootOptions } from "../../services/workspaceRoots";
 import { deleteWorktree, readCodexWorktrees, type CodexWorktreeEntry } from "../../services/worktrees";
@@ -109,13 +108,7 @@ export function WorktreesSettingsPage({
             hostId: selectedHostId,
             operationSource: "worktrees_settings_page",
           }),
-          selectedHostId === LOCAL_SETTINGS_HOST_ID
-            ? readWorkspaceRootOptions(selectedHostId).then((response) => response.roots)
-            : readSettingsRemoteProjectsSnapshot().then((remoteProjects) => {
-                return remoteProjects
-                  .filter((remoteProject) => remoteProject.hostId === selectedHostId)
-                  .map((remoteProject) => remoteProject.remotePath);
-              }),
+          readWorkspaceRootOptions(selectedHostId).then((response) => response.roots),
         ]);
         if (cancelled) {
           return;

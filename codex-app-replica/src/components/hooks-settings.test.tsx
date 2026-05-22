@@ -60,12 +60,37 @@ test("hooks settings keeps extracted hook-row visibility affordance and app cont
   const appSource = readSource(APP_SOURCE_PATH);
 
   assert.match(componentSource, /has-\[\[data-state=open\]\]:visible has-\[\[data-state=open\]\]:opacity-100/);
-  assert.match(componentSource, /data-state=\{isOpen \? "open" : "closed"\}/);
+  assert.match(componentSource, /data-state=\{dropdown\.isOpen \? "open" : "closed"\}/);
   assert.match(componentSource, /<Tooltip delayDuration=\{0\} tooltipContent=\{t\("settings\.hooks\.event\.managedTooltip"\)\}>/);
   assert.match(componentSource, /className="w-\[240px\] justify-between"/);
   assert.match(componentSource, /<ChevronDownIcon className="icon-2xs shrink-0 text-token-input-placeholder-foreground" \/>/);
   assert.match(componentSource, /<MoreActionsIcon className="icon-xs" \/>/);
   assert.match(appSource, /<HooksSettings[\s\S]*settingsCwd=\{settingsCwd\}[\s\S]*selectedHostId=\{selectedSettingsHostId\}/);
+});
+
+test("hooks settings project selector and row actions follow extracted shared dropdown semantics", () => {
+  const source = readSource(COMPONENT_SOURCE_PATH);
+
+  assert.match(source, /function useHooksDropdownMenu\(\)/);
+  assert.match(source, /aria-controls=\{dropdown\.isOpen \? menuId : undefined\}/);
+  assert.match(source, /aria-expanded=\{dropdown\.isOpen\}/);
+  assert.match(source, /aria-haspopup="menu"/);
+  assert.match(source, /if \(event\.key !== "ArrowDown" && event\.key !== "Enter" && event\.key !== " "\)/);
+  assert.match(source, /shouldFocusFirstItemRef\.current = true;[\s\S]*setIsOpen\(true\);/s);
+  assert.match(source, /role="menu"/);
+  assert.match(source, /aria-orientation="vertical"/);
+  assert.match(source, /role="menuitem"/);
+  assert.match(source, /tabIndex=\{-1\}/);
+  assert.match(source, /event\.currentTarget\.focus\(\{ preventScroll: true \}\);/);
+  assert.match(source, /if \(event\.key === "Home"\)/);
+  assert.match(source, /if \(event\.key === "End"\)/);
+  assert.match(source, /if \(event\.key === "ArrowUp"\)/);
+  assert.match(source, /if \(event\.key === "ArrowDown"\)/);
+  assert.match(source, /if \(event\.key === "Escape"\)/);
+  assert.match(source, /if \(event\.key === "Tab"\)/);
+  assert.match(source, /const closeMenu = \(options\?: \{ restoreFocus\?: boolean \}\) => \{/);
+  assert.match(source, /if \(options\?\.restoreFocus\) \{\s*triggerRef\.current\?\.focus\(\);\s*\}/s);
+  assert.match(source, /dropdown\.closeMenu\(\{ restoreFocus: true \}\);/);
 });
 
 function readSource(filePath: string) {

@@ -141,9 +141,16 @@ test("shared settings dialog and toggle primitives support extracted personaliza
   assert.match(dialogSource, /export function SettingsDialog\(/);
   assert.match(dialogSource, /role="dialog"/);
   assert.match(dialogSource, /aria-modal="true"/);
+  assert.match(dialogSource, /aria-labelledby=\{titleId\}/);
+  assert.match(dialogSource, /aria-describedby=\{subtitle \|\| children \? descriptionId : undefined\}/);
   assert.match(dialogSource, /size = "default"/);
-  assert.match(dialogSource, /size === "compact" \? "max-w-\[420px\] px-5 py-5" : "max-w-\[560px\] px-5 py-4"/);
+  assert.match(dialogSource, /w-full max-w-\[92vw\] rounded-3xl border border-token-border bg-token-dropdown-background\/90 text-token-foreground shadow-lg backdrop-blur-xl outline-none/);
+  assert.match(dialogSource, /size === "compact" \? "max-w-\[420px\]" : "max-w-\[520px\]"/);
+  assert.match(dialogSource, /className="flex flex-col gap-0 px-5 py-5 text-base leading-normal tracking-normal"/);
+  assert.match(dialogSource, /className="codex-dialog-overlay fixed inset-0 z-50 flex items-center justify-center bg-\[rgba\(0,0,0,0\.24\)\] px-4"/);
   assert.match(dialogSource, /export function SettingsDialogFooter\(/);
+  assert.match(dialogSource, /<Button color="ghost" disabled=\{confirmLoading\} onClick=\{onCancel\} size="toolbar">/);
+  assert.match(dialogSource, /size="toolbar"/);
   assert.match(toggleSource, /className\?: string;/);
   assert.match(toggleSource, /className=\{joinClasses\("app-toggle", className\)\}/);
 });

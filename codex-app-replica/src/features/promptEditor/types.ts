@@ -39,6 +39,9 @@ export type PromptEditorMentionState = {
 
 export type PromptEditorOverlayLayout = {
   left: number;
+  portalContainer: HTMLElement;
+  positionClassName: "absolute" | "fixed";
+  renderAbove: boolean;
   top: number;
   width: number;
 };

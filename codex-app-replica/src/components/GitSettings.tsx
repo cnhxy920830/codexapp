@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useId, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useState, type ReactNode } from "react";
 import { useI18n } from "../i18n/i18n";
 import {
   DEFAULT_GIT_SETTINGS,
@@ -25,6 +25,7 @@ import { useHotkey } from "../hooks/useHotkey";
 import { SegmentedControl } from "./SegmentedControl";
 import { SettingsContentLayout } from "./SettingsContentLayout";
 import { SettingsGroup } from "./SettingsGroup";
+import { SettingsDialog, SettingsDialogFooter } from "./SettingsDialog";
 import { SettingsRow } from "./SettingsRow";
 import { SettingsSectionTitle } from "./SettingsSectionTitle";
 import { SettingsSurface } from "./SettingsSurface";
@@ -741,64 +742,27 @@ function DisableAutoCleanupDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { t } = useI18n();
-  const titleId = useId();
-  const descriptionId = useId();
 
   if (!open) {
     return null;
   }
 
   return (
-    <DialogOverlay onDismiss={() => onOpenChange(false)}>
-      <div
-        aria-modal="true"
-        role="dialog"
-        aria-labelledby={titleId}
-        aria-describedby={descriptionId}
-        className="w-[520px] max-w-[92vw] rounded-3xl border border-token-border bg-token-dropdown-background/90 text-token-foreground shadow-lg backdrop-blur-xl outline-none"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex flex-col gap-0 px-5 py-5 text-base leading-normal tracking-normal">
-          <div className="flex flex-col items-start gap-3">
-            <div className="flex min-w-0 flex-1 flex-col gap-1 self-stretch">
-              <h2 id={titleId} className="heading-dialog min-w-0 font-semibold">
-                {t("settings.worktrees.autoCleanup.confirm.title")}
-              </h2>
-            </div>
-          </div>
-
-          <div id={descriptionId} className="flex w-full flex-col pt-3 first:pt-0">
-            <p>{t("settings.worktrees.autoCleanup.confirm.body")}</p>
-          </div>
-
-          <div className="flex w-full items-center justify-end gap-3 pt-3">
-            <Button color="ghost" size="toolbar" onClick={() => onOpenChange(false)}>
-              {t("settings.worktrees.autoCleanup.confirm.cancel")}
-            </Button>
-            <Button color="danger" size="toolbar" onClick={onConfirm}>
-              {t("settings.worktrees.autoCleanup.confirm.confirm")}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </DialogOverlay>
-  );
-}
-
-function DialogOverlay({
-  children,
-  onDismiss,
-}: {
-  children: ReactNode;
-  onDismiss: () => void;
-}) {
-  return (
-    <div
-      className="codex-dialog-overlay fixed inset-0 z-50 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4"
-      onClick={onDismiss}
-    >
-      {children}
-    </div>
+    <SettingsDialog
+      footer={
+        <SettingsDialogFooter
+          cancelLabel={t("settings.worktrees.autoCleanup.confirm.cancel")}
+          confirmLabel={t("settings.worktrees.autoCleanup.confirm.confirm")}
+          confirmTone="danger"
+          onCancel={() => onOpenChange(false)}
+          onConfirm={onConfirm}
+        />
+      }
+      onOpenChange={onOpenChange}
+      open={open}
+      title={t("settings.worktrees.autoCleanup.confirm.title")}
+      subtitle={t("settings.worktrees.autoCleanup.confirm.body")}
+    />
   );
 }
 

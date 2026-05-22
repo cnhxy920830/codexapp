@@ -38,12 +38,9 @@ import {
 } from "../../services/externalAgentImport";
 import {
   installPlugin,
-  readPlugin,
   readPluginsSnapshot,
   setPluginEnabled,
-  type PluginDetail,
   type PluginListSnapshot,
-  type PluginReadParams,
 } from "../../services/plugins";
 import {
   readConfigForHost,
@@ -68,9 +65,9 @@ import {
 import { readSkillsSnapshot, type SkillSummary } from "../../services/skills";
 import { buildCreatorPrefillPrompt, readStoredBoolean, writeStoredBoolean } from "./creatorPrefill";
 import { InstalledSkillCard } from "./components/InstalledSkillCard";
-import { PluginDetailDialog } from "./components/PluginDetailDialog";
 import { PluginsBrowseTab } from "./components/PluginsBrowseTab";
 import { PluginsPage, type ManageTab } from "./PluginsPage";
+import { buildPluginDetailRoutePath } from "./pluginDetailRoute";
 import { ThreadPageHeader } from "../chat/ThreadPageHeader";
 import type { SkillsChatRequest } from "./types";
 
@@ -115,6 +112,7 @@ type SkillsRoutePageProps = {
   isPluginsRouteEnabled?: boolean;
   onConsumeInitialState?: () => void;
   onOpenChatWithPrompt: (request: SkillsChatRequest) => void;
+  onOpenPluginDetail: (path: string) => void;
   onSelectHost: (hostId: string) => void;
   onShowToast: (toast: AppToast) => void;
   pluginDeepLinkAuthBlocked?: boolean;
@@ -133,6 +131,7 @@ export function SkillsRoutePage({
   isPluginsRouteEnabled = false,
   onConsumeInitialState = noop,
   onOpenChatWithPrompt,
+  onOpenPluginDetail,
   onSelectHost,
   onShowToast,
   pluginDeepLinkAuthBlocked,
@@ -163,10 +162,6 @@ export function SkillsRoutePage({
   const [pluginsLoadError, setPluginsLoadError] = useState<string | null>(null);
   const [isPluginsLoading, setIsPluginsLoading] = useState(true);
   const [configWriteTarget, setConfigWriteTarget] = useState<ConfigWriteTarget | null>(null);
-  const [activePlugin, setActivePlugin] = useState<PluginCandidate | null>(null);
-  const [pluginDetail, setPluginDetail] = useState<PluginDetail | null>(null);
-  const [detailLoadError, setDetailLoadError] = useState<string | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
   const [installingPluginId, setInstallingPluginId] = useState<string | null>(null);
   const [pendingTogglePluginId, setPendingTogglePluginId] = useState<string | null>(null);
   const skillsRequestIdRef = useRef(0);
@@ -238,7 +233,6 @@ export function SkillsRoutePage({
       setPluginsLoadError(null);
       setIsPluginsLoading(false);
       setConfigWriteTarget(null);
-      setActivePlugin(null);
       return;
     }
 
@@ -254,54 +248,6 @@ export function SkillsRoutePage({
       workspaceRoot,
     });
   }, [canShowUnifiedPluginsPage, resolvedSelectedHostId, workspaceRoot]);
-
-  useEffect(() => {
-    if (activePlugin == null || !canShowUnifiedPluginsPage) {
-      setPluginDetail(null);
-      setDetailLoadError(null);
-      setDetailLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    setPluginDetail(null);
-    setDetailLoadError(null);
-    setDetailLoading(true);
-
-    void readPlugin(buildPluginParams(activePlugin, resolvedSelectedHostId))
-      .then((response) => {
-        if (!cancelled) {
-          setPluginDetail(response.plugin);
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setDetailLoadError(error instanceof Error ? error.message : String(error));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setDetailLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activePlugin, canShowUnifiedPluginsPage, resolvedSelectedHostId]);
-
-  useEffect(() => {
-    if (activePlugin == null) {
-      return;
-    }
-
-    const nextActivePlugin = findPluginCandidateById(pluginsSnapshot, activePlugin.plugin.id);
-    if (nextActivePlugin === activePlugin) {
-      return;
-    }
-
-    setActivePlugin(nextActivePlugin);
-  }, [activePlugin, pluginsSnapshot]);
 
   const installedSkills = useMemo(() => dedupeSkills(skills), [skills]);
   const workspaceRoots = useMemo(() => collectWorkspaceRoots(installedSkills), [installedSkills]);
@@ -504,21 +450,13 @@ export function SkillsRoutePage({
     };
   }, []);
 
-  const updateActivePluginFromSnapshot = (snapshot: PluginListSnapshot | null, pluginId: string) => {
-    const nextCandidate = findPluginCandidateById(snapshot, pluginId);
-    if (nextCandidate != null) {
-      setActivePlugin((current) => (current?.plugin.id === pluginId ? nextCandidate : current));
-    }
-    return nextCandidate;
-  };
-
   const installPluginCandidate = async (candidate: PluginCandidate) => {
     setInstallingPluginId(candidate.plugin.id);
     try {
-      await installPlugin(buildPluginParams(candidate, resolvedSelectedHostId));
-      const nextSnapshot = await refreshBrowseData();
+      await installPlugin(buildPluginInstallParams(candidate, resolvedSelectedHostId));
+      await refreshBrowseData();
       await refreshSkills(true);
-      return updateActivePluginFromSnapshot(nextSnapshot, candidate.plugin.id) ?? candidate;
+      return candidate;
     } finally {
       setInstallingPluginId(null);
     }
@@ -534,9 +472,9 @@ export function SkillsRoutePage({
         hostId: resolvedSelectedHostId,
         pluginId: candidate.plugin.id,
       });
-      const nextSnapshot = await refreshBrowseData();
+      await refreshBrowseData();
       await refreshSkills(true);
-      return updateActivePluginFromSnapshot(nextSnapshot, candidate.plugin.id) ?? candidate;
+      return candidate;
     } finally {
       setPendingTogglePluginId(null);
     }
@@ -548,17 +486,11 @@ export function SkillsRoutePage({
     }
 
     setPluginsLoadError(null);
-    setDetailLoadError(null);
 
     try {
       await installPluginCandidate(candidate);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (activePlugin?.plugin.id === candidate.plugin.id) {
-        setDetailLoadError(message);
-      } else {
-        setPluginsLoadError(message);
-      }
+      setPluginsLoadError(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -568,17 +500,11 @@ export function SkillsRoutePage({
     }
 
     setPluginsLoadError(null);
-    setDetailLoadError(null);
 
     try {
       await togglePluginCandidate(candidate, enabled);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (activePlugin?.plugin.id === candidate.plugin.id) {
-        setDetailLoadError(message);
-      } else {
-        setPluginsLoadError(message);
-      }
+      setPluginsLoadError(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -588,7 +514,6 @@ export function SkillsRoutePage({
     }
 
     setPluginsLoadError(null);
-    setDetailLoadError(null);
 
     try {
       let nextCandidate = candidate;
@@ -602,13 +527,16 @@ export function SkillsRoutePage({
         prompt: buildPluginTryInChatPrompt(nextCandidate),
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (activePlugin?.plugin.id === candidate.plugin.id) {
-        setDetailLoadError(message);
-      } else {
-        setPluginsLoadError(message);
-      }
+      setPluginsLoadError(error instanceof Error ? error.message : String(error));
     }
+  };
+
+  const handleOpenPluginDetails = (candidate: PluginCandidate) => {
+    onOpenPluginDetail(
+      buildPluginDetailRoutePath(candidate, {
+        hostId: resolvedSelectedHostId,
+      }),
+    );
   };
 
   const handleCreateSkill = () => {
@@ -737,7 +665,7 @@ export function SkillsRoutePage({
                 importedPlugins={showHeroAndImportedSections ? filteredImportedPlugins : []}
                 isLoading={isPluginsLoading}
                 onInstallPlugin={(candidate) => handleInstallPlugin(candidate)}
-                onOpenPluginDetails={setActivePlugin}
+                onOpenPluginDetails={handleOpenPluginDetails}
                 onToggleInstalledPluginEnabled={(candidate, enabled) =>
                   handleTogglePluginEnabled(candidate, enabled)
                 }
@@ -878,25 +806,6 @@ export function SkillsRoutePage({
           </div>
         )}
 
-      {activePlugin != null ? (
-        <PluginDetailDialog
-          candidate={activePlugin}
-          detail={pluginDetail}
-          error={detailLoadError}
-          isLoading={detailLoading}
-          onClose={() => setActivePlugin(null)}
-          onInstall={() => void handleInstallPlugin(activePlugin)}
-          onRetry={() => {
-            setActivePlugin({ ...activePlugin, plugin: { ...activePlugin.plugin } });
-          }}
-          onToggleInstalledPluginEnabled={(enabled) =>
-            void handleTogglePluginEnabled(activePlugin, enabled)
-          }
-          onTryInChat={() => void handleTryInChat(activePlugin)}
-          pendingPluginId={installingPluginId}
-          pendingTogglePluginId={pendingTogglePluginId}
-        />
-      ) : null}
     </div>
   );
 }
@@ -1453,7 +1362,7 @@ function matchesInstalledSkill(installedSkillMatchKeys: Set<string>, skill: Reco
   return installedSkillMatchKeys.has(normalizeText(skill.id)) || installedSkillMatchKeys.has(normalizeText(skill.name));
 }
 
-function buildPluginParams(candidate: PluginCandidate, hostId: string): PluginReadParams {
+function buildPluginInstallParams(candidate: PluginCandidate, hostId: string) {
   return candidate.marketplacePath == null
     ? {
         hostId,
@@ -1465,10 +1374,6 @@ function buildPluginParams(candidate: PluginCandidate, hostId: string): PluginRe
         marketplacePath: candidate.marketplacePath,
         pluginName: candidate.plugin.name,
       };
-}
-
-function findPluginCandidateById(snapshot: PluginListSnapshot | null, pluginId: string) {
-  return listPluginCandidates(snapshot).find((candidate) => candidate.plugin.id === pluginId) ?? null;
 }
 
 function getSkillDisplayName(skill: SkillSummary) {

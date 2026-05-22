@@ -2084,6 +2084,7 @@ mod tests {
                 is_accessible: true,
                 is_enabled: true,
                 plugin_display_names: Vec::new(),
+                labels: HashMap::new(),
             },
             AppInfo {
                 id: "github".to_string(),
@@ -2095,6 +2096,7 @@ mod tests {
                 is_accessible: true,
                 is_enabled: true,
                 plugin_display_names: Vec::new(),
+                labels: HashMap::new(),
             },
         ];
         let app_refs = apps.iter().collect::<Vec<_>>();
@@ -2132,6 +2134,7 @@ mod tests {
                 is_accessible: true,
                 is_enabled: true,
                 plugin_display_names: Vec::new(),
+                labels: HashMap::new(),
             },
             AppInfo {
                 id: "github".to_string(),
@@ -2143,6 +2146,7 @@ mod tests {
                 is_accessible: true,
                 is_enabled: true,
                 plugin_display_names: Vec::new(),
+                labels: HashMap::new(),
             },
         ];
         let context = ambient_connected_apps_context_from_apps(
@@ -2186,6 +2190,7 @@ mod tests {
                 is_accessible: true,
                 is_enabled: true,
                 plugin_display_names: Vec::new(),
+                labels: HashMap::new(),
             },
             AppInfo {
                 id: "connector_slack".to_string(),
@@ -2197,6 +2202,7 @@ mod tests {
                 is_accessible: true,
                 is_enabled: true,
                 plugin_display_names: Vec::new(),
+                labels: HashMap::new(),
             },
             AppInfo {
                 id: "github".to_string(),
@@ -2208,6 +2214,7 @@ mod tests {
                 is_accessible: true,
                 is_enabled: true,
                 plugin_display_names: Vec::new(),
+                labels: HashMap::new(),
             },
         ];
         let context = ambient_connected_apps_context_from_disabled_app_ids(

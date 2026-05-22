@@ -88,7 +88,7 @@ test("scratchpad row state icons come from shared app-shell owners instead of pa
   assert.doesNotMatch(scratchpadSource, /function ErrorIcon/);
 });
 
-test("scratchpad prompt input reuses the shared prompt-editor owner and body portal autocomplete overlay", async () => {
+test("scratchpad prompt input reuses the shared prompt-editor owner and anchored autocomplete overlay", async () => {
   const promptInputSource = await readFile(SCRATCHPAD_PROMPT_INPUT_PATH, "utf8");
   const sharedPromptEditorOverlaySource = await readFile(SHARED_PROMPT_EDITOR_OVERLAY_PATH, "utf8");
 
@@ -96,7 +96,12 @@ test("scratchpad prompt input reuses the shared prompt-editor owner and body por
   assert.match(sharedPromptEditorOverlaySource, /import\s+\{\s*createPortal\s*\}\s+from\s+"react-dom"/);
   assert.match(sharedPromptEditorOverlaySource, /createPortal\(/);
   assert.match(sharedPromptEditorOverlaySource, /document\.body/);
-  assert.match(sharedPromptEditorOverlaySource, /className="fixed z-50"/);
+  assert.match(sharedPromptEditorOverlaySource, /const dialogContainer = editor\.closest\("\.codex-dialog"\);/);
+  assert.match(sharedPromptEditorOverlaySource, /return \(dialogContainer as HTMLElement \| null\) \?\? document\.body;/);
+  assert.match(sharedPromptEditorOverlaySource, /positionClassName: portalContainer === document\.body \? "fixed" : "absolute"/);
+  assert.match(sharedPromptEditorOverlaySource, /renderAbove: placement === "top"/);
+  assert.match(sharedPromptEditorOverlaySource, /"z-\[60\]"/);
+  assert.match(sharedPromptEditorOverlaySource, /"-translate-y-full"/);
   assert.doesNotMatch(sharedPromptEditorOverlaySource, /className="absolute top-full left-0 z-50/);
 });
 
@@ -350,6 +355,10 @@ test("scratchpad at-mention autocomplete uses app-only candidates and shared row
   assert.match(promptInputSource, /const appMentionOverlay = renderMentionOverlay\(/);
   assert.match(promptInputSource, /const skillMentionOverlay = renderMentionOverlay\(/);
   assert.match(overlaySource, /function renderMentionOverlay<.*>\(/s);
+  assert.match(promptInputSource, /const placement = getMentionOverlayPlacement\(editorRef\.current\);/);
+  assert.match(promptInputSource, /const nextLayout = getMentionOverlayLayout\(editorRef\.current, placement\);/);
+  assert.match(overlaySource, /export function getMentionOverlayPlacement\(editor: HTMLDivElement \| null\)/);
+  assert.match(overlaySource, /spaceBelow < OVERLAY_TOP_THRESHOLD && spaceAbove > spaceBelow \? "top" : "bottom"/);
   assert.match(promptInputSource, /if \(appMentionCandidates\.length > 0\) \{/);
   assert.match(promptInputSource, /if \(skillMentionCandidates\.length > 0\) \{/);
   assert.match(overlaySource, /function renderMentionCandidateIcon\(candidate: PromptEditorMentionCandidate\)/);

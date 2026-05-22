@@ -18,6 +18,8 @@ const APP_SOURCE_PATH = path.join(process.cwd(), "src/App.tsx");
 test("login route page waits for browser completion before the welcome handoff", () => {
   const source = readSource(LOGIN_ROUTE_PAGE_SOURCE_PATH);
 
+  assert.match(source, /const GATE_STREAMLINED_LOGIN = "3446609779";/);
+  assert.match(source, /const GATE_LOGIN_PROVIDER_VISIBILITY = "1561420571";/);
   assert.match(source, /loginChatGptWithCompletion/);
   assert.match(source, /const completion = await result\.completion;/);
   assert.match(

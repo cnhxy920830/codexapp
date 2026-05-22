@@ -121,7 +121,15 @@ pub fn workspace_root_options(
     app: AppHandle,
     host_id: Option<String>,
 ) -> Result<WorkspaceRootOptionsResponse, String> {
-    ensure_supported_host_id(host_id.as_deref(), "workspace-root-options")?;
+    let normalized_host_id =
+        normalize_workspace_roots_host_id(host_id.as_deref(), "workspace-root-options")?;
+    if normalized_host_id != LOCAL_HOST_ID {
+        return Ok(read_remote_workspace_root_options(
+            &app,
+            &normalized_host_id,
+        )?);
+    }
+
     let settings = read_global_settings(&app)?;
     Ok(WorkspaceRootOptionsResponse {
         roots: read_workspace_root_options(&settings),
@@ -134,7 +142,15 @@ pub fn active_workspace_roots(
     app: AppHandle,
     host_id: Option<String>,
 ) -> Result<ActiveWorkspaceRootsResponse, String> {
-    ensure_supported_host_id(host_id.as_deref(), "active-workspace-roots")?;
+    let normalized_host_id =
+        normalize_workspace_roots_host_id(host_id.as_deref(), "active-workspace-roots")?;
+    if normalized_host_id != LOCAL_HOST_ID {
+        return Ok(read_remote_active_workspace_roots(
+            &app,
+            &normalized_host_id,
+        )?);
+    }
+
     let settings = read_global_settings(&app)?;
     Ok(ActiveWorkspaceRootsResponse {
         roots: read_active_workspace_roots(&settings),
@@ -831,6 +847,63 @@ fn workspace_root_basename(root: &str) -> String {
     trimmed_path_basename(root).unwrap_or(root).to_string()
 }
 
+fn read_remote_workspace_root_options(
+    app: &AppHandle,
+    host_id: &str,
+) -> Result<WorkspaceRootOptionsResponse, String> {
+    let remote_projects = crate::remote_connections::read_remote_projects_for_host(app, host_id)?;
+    Ok(workspace_root_options_response_from_remote_projects(
+        remote_projects,
+    ))
+}
+
+fn read_remote_active_workspace_roots(
+    app: &AppHandle,
+    host_id: &str,
+) -> Result<ActiveWorkspaceRootsResponse, String> {
+    let settings = read_global_settings(app)?;
+    let active_remote_project_id = read_string_value(&settings, "active-remote-project-id")
+        .and_then(|value| normalize_optional_root(&value));
+    let remote_projects = crate::remote_connections::read_remote_projects_for_host(app, host_id)?;
+
+    Ok(active_workspace_roots_response_from_remote_projects(
+        &remote_projects,
+        active_remote_project_id.as_deref(),
+    ))
+}
+
+fn workspace_root_options_response_from_remote_projects(
+    remote_projects: Vec<crate::remote_connections::RemoteProject>,
+) -> WorkspaceRootOptionsResponse {
+    let roots = remote_projects
+        .iter()
+        .map(|project| project.remote_path.clone())
+        .collect::<Vec<_>>();
+    let labels = remote_projects
+        .into_iter()
+        .map(|project| (project.remote_path, project.label))
+        .collect::<BTreeMap<_, _>>();
+
+    WorkspaceRootOptionsResponse { roots, labels }
+}
+
+fn active_workspace_roots_response_from_remote_projects(
+    remote_projects: &[crate::remote_connections::RemoteProject],
+    active_remote_project_id: Option<&str>,
+) -> ActiveWorkspaceRootsResponse {
+    let active_remote_project = active_remote_project_id.and_then(|project_id| {
+        remote_projects
+            .iter()
+            .find(|project| project.id == project_id)
+    });
+
+    ActiveWorkspaceRootsResponse {
+        roots: active_remote_project
+            .map(|project| vec![project.remote_path.clone()])
+            .unwrap_or_default(),
+    }
+}
+
 fn trimmed_path_basename(path: &str) -> Option<&str> {
     let trimmed = path.trim().trim_end_matches(['\\', '/']);
     if trimmed.is_empty() {
@@ -844,17 +917,19 @@ fn trimmed_path_basename(path: &str) -> Option<&str> {
         .map(str::trim)
 }
 
-fn ensure_supported_host_id(host_id: Option<&str>, command_name: &str) -> Result<(), String> {
+fn normalize_workspace_roots_host_id(
+    host_id: Option<&str>,
+    _command_name: &str,
+) -> Result<String, String> {
     match host_id.map(str::trim).filter(|value| !value.is_empty()) {
-        None | Some(LOCAL_HOST_ID) => Ok(()),
-        Some(host_id) => Err(format!(
-            "{command_name} does not support host id: {host_id}"
-        )),
+        None | Some(LOCAL_HOST_ID) => Ok(LOCAL_HOST_ID.to_string()),
+        Some(host_id) => Ok(host_id.to_string()),
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::active_workspace_roots_response_from_remote_projects;
     use super::apply_add_workspace_root_option;
     use super::apply_onboarding_workspace;
     use super::apply_rename_workspace_root_option;
@@ -863,6 +938,7 @@ mod tests {
     use super::normalize_optional_root;
     use super::sanitize_default_project_name;
     use super::workspace_root_basename;
+    use super::workspace_root_options_response_from_remote_projects;
     use super::ActiveWorkspaceRootsResponse;
     use super::AddWorkspaceRootOptionOutcome;
     use super::OnboardingPickWorkspaceOrCreateDefaultResultNotification;
@@ -883,6 +959,20 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn remote_project(
+        id: &str,
+        host_id: &str,
+        remote_path: &str,
+        label: &str,
+    ) -> crate::remote_connections::RemoteProject {
+        crate::remote_connections::RemoteProject {
+            id: id.to_string(),
+            host_id: host_id.to_string(),
+            remote_path: remote_path.to_string(),
+            label: label.to_string(),
+        }
+    }
 
     #[test]
     fn normalize_selected_root_rejects_empty_selection() {
@@ -942,6 +1032,53 @@ mod tests {
         .expect("response should serialize");
 
         assert_eq!(value, json!({ "roots": ["C:\\workspace"] }));
+    }
+
+    #[test]
+    fn remote_workspace_root_options_response_uses_project_paths_and_labels() {
+        let response = workspace_root_options_response_from_remote_projects(vec![
+            remote_project("project-1", "host-a", "/srv/demo", "Demo"),
+            remote_project("project-2", "host-a", "/srv/ops", "Ops"),
+        ]);
+
+        assert_eq!(
+            response,
+            WorkspaceRootOptionsResponse {
+                roots: vec!["/srv/demo".to_string(), "/srv/ops".to_string()],
+                labels: BTreeMap::from([
+                    ("/srv/demo".to_string(), "Demo".to_string()),
+                    ("/srv/ops".to_string(), "Ops".to_string()),
+                ]),
+            }
+        );
+    }
+
+    #[test]
+    fn remote_active_workspace_roots_response_uses_active_remote_project_id() {
+        let response = active_workspace_roots_response_from_remote_projects(
+            &[
+                remote_project("project-1", "host-a", "/srv/demo", "Demo"),
+                remote_project("project-2", "host-a", "/srv/ops", "Ops"),
+            ],
+            Some("project-2"),
+        );
+
+        assert_eq!(
+            response,
+            ActiveWorkspaceRootsResponse {
+                roots: vec!["/srv/ops".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn remote_active_workspace_roots_response_is_empty_without_matching_project() {
+        let response = active_workspace_roots_response_from_remote_projects(
+            &[remote_project("project-1", "host-a", "/srv/demo", "Demo")],
+            Some("project-missing"),
+        );
+
+        assert_eq!(response, ActiveWorkspaceRootsResponse { roots: vec![] });
     }
 
     #[test]

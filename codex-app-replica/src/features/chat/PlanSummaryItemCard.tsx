@@ -47,7 +47,7 @@ export function PlanSummaryItemCard({
   const summaryText = "text" in item ? item.text : item.content;
   const completed = "completed" in item ? item.completed : true;
   const isWritingPlan = isWriting || !completed;
-  const text = summaryText.trim();
+  const hasVisibleSummaryText = summaryText.trim().length > 0;
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed ?? false);
   const [copied, setCopied] = useState(false);
 
@@ -68,10 +68,6 @@ export function PlanSummaryItemCard({
       window.clearTimeout(timeoutId);
     };
   }, [copied]);
-
-  if (text.length === 0) {
-    return null;
-  }
 
   const showCompletedActions = !isWritingPlan;
   const collapseButtonTooltip = isCollapsed
@@ -122,7 +118,7 @@ export function PlanSummaryItemCard({
           {isWritingPlan ? t("localConversation.planSummary.titleWriting") : t("localConversation.planSummary.title")}
         </div>
         <div className="flex items-center gap-1">
-          {showCompletedActions ? (
+          {showCompletedActions && hasVisibleSummaryText ? (
             <PlanSummaryActionTooltip content={t("localConversation.planSummary.download")}>
               <Button
                 aria-label={t("localConversation.planSummary.download")}
@@ -134,7 +130,7 @@ export function PlanSummaryItemCard({
               </Button>
             </PlanSummaryActionTooltip>
           ) : null}
-          {showCompletedActions ? (
+          {showCompletedActions && hasVisibleSummaryText ? (
             <PlanSummaryActionTooltip
               content={copied ? t("copyButton.copied") : t("copyButton.copyAriaLabel")}
               disabled={copied}

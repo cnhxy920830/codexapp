@@ -9,6 +9,7 @@ export function SkillsSettings({
   codexHome,
   connectedRemoteConnections,
   onOpenChatWithPrompt,
+  onOpenPluginDetail,
   onSelectHost,
   onShowToast,
   remoteConnectionHostIds,
@@ -19,6 +20,7 @@ export function SkillsSettings({
   codexHome: string | null;
   connectedRemoteConnections: RemoteConnection[];
   onOpenChatWithPrompt: (request: SkillsChatRequest) => void;
+  onOpenPluginDetail: (path: string) => void;
   onSelectHost: (hostId: string) => void;
   onShowToast: (toast: AppToast) => void;
   remoteConnectionHostIds: string[];
@@ -32,6 +34,7 @@ export function SkillsSettings({
         codexHome={codexHome}
         connectedRemoteConnections={connectedRemoteConnections}
         onOpenChatWithPrompt={onOpenChatWithPrompt}
+        onOpenPluginDetail={onOpenPluginDetail}
         onSelectHost={onSelectHost}
         onShowToast={onShowToast}
         remoteConnectionHostIds={remoteConnectionHostIds}

@@ -21,6 +21,7 @@ import {
   setExternalAgentImportGroupSelection,
 } from "./importModel";
 import { CODING_ROLE_IDS, DEFAULT_WELCOME_ROLE_ID, WELCOME_ROLE_IDS } from "./constants";
+import { runExternalAgentOnboardingImportStatus } from "./externalAgentOnboardingImportStatus";
 import {
   ExternalAgentImportCustomizeDialog,
   ExternalAgentImportItemsStep,
@@ -82,8 +83,6 @@ export function WelcomeFlow({
   const [selectedImportItemIds, setSelectedImportItemIds] = useState<WelcomeImportSelection>({});
   const [isCustomizeDialogOpen, setIsCustomizeDialogOpen] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const lastViewedStepRef = useRef<string | null>(null);
 
   const { detectedItems, isDetectingImports, providerIds, selectedProviders, setSelectedProviders } =
@@ -98,8 +97,6 @@ export function WelcomeFlow({
     setSelectedImportItemIds({});
     setIsCustomizeDialogOpen(false);
     setIsCompleting(false);
-    setIsImporting(false);
-    setErrorMessage(null);
   }, [mode]);
 
   useEffect(() => {
@@ -237,8 +234,8 @@ export function WelcomeFlow({
       ) : null}
       {stage === "externalAgentImport" && selectedImportSummary != null ? (
         <ExternalAgentImportItemsStep
-          errorMessage={errorMessage}
-          isPending={isImporting || isCompleting}
+          errorMessage={null}
+          isPending={isCompleting}
           isContinueDisabled={!hasExternalAgentImportSelection(selectedImportSummary, selectedImportItemIds)}
           onContinue={() => void handleImportContinue()}
           onOpenCustomize={() => setIsCustomizeDialogOpen(true)}
@@ -492,35 +489,29 @@ export function WelcomeFlow({
   async function handleImportContinue() {
     if (
       selectedImportSummary == null ||
-      isImporting ||
       isCompleting ||
       !hasExternalAgentImportSelection(selectedImportSummary, selectedImportItemIds)
     ) {
       return;
     }
 
-    setErrorMessage(null);
-    setIsImporting(true);
-    try {
-      logReplicaStatsigProductEvent({
-        eventName: "codex_onboarding_step_continue_clicked",
-        metadata: {
-          step: "agent_migration",
-        },
-      });
-      logExternalAgentImportEvent(
-        "continue",
-        selectedImportSummary,
-        selectedImportItemIds,
-      );
-      await importExternalAgentItems({
+    logReplicaStatsigProductEvent({
+      eventName: "codex_onboarding_step_continue_clicked",
+      metadata: {
+        step: "agent_migration",
+      },
+    });
+    logExternalAgentImportEvent(
+      "continue",
+      selectedImportSummary,
+      selectedImportItemIds,
+    );
+    void runExternalAgentOnboardingImportStatus(() =>
+      importExternalAgentItems({
         items: selectedImportItems,
-      });
-      await completeWelcomeFlow(selection);
-    } catch {
-      setErrorMessage(t("onboarding.welcomeV2.externalAgentImport.error"));
-      setIsImporting(false);
-    }
+      }),
+    );
+    await completeWelcomeFlow(selection);
   }
 
   async function completeWelcomeFlow(nextSelection: WelcomeSelectionState) {
@@ -528,7 +519,6 @@ export function WelcomeFlow({
       return;
     }
 
-    setErrorMessage(null);
     setIsCompleting(true);
     try {
       const workMode = nextSelection.workMode ?? deriveWorkMode(nextSelection);
@@ -614,10 +604,8 @@ export function WelcomeFlow({
 
       await Promise.all(updates);
       onCompleteToHome();
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } catch {
       setIsCompleting(false);
-      setIsImporting(false);
     }
   }
 }

@@ -85,17 +85,18 @@ test("git settings keeps extracted instruction header actions and auto-cleanup c
   assert.match(source, /loading=\{saving\.commitInstructions\}/);
   assert.match(source, /loading=\{saving\.pullRequestInstructions\}/);
 
-  assert.match(source, /role="dialog"/);
-  assert.match(source, /aria-modal="true"/);
+  assert.match(source, /import \{ SettingsDialog, SettingsDialogFooter \} from "\.\/SettingsDialog";/);
+  assert.match(source, /<SettingsDialog\s+footer=\{/s);
+  assert.match(source, /<SettingsDialogFooter[\s\S]*confirmTone="danger"/s);
+  assert.match(source, /onOpenChange=\{onOpenChange\}/);
+  assert.match(source, /open=\{open\}/);
+  assert.match(source, /title=\{t\("settings\.worktrees\.autoCleanup\.confirm\.title"\)\}/);
+  assert.match(source, /subtitle=\{t\("settings\.worktrees\.autoCleanup\.confirm\.body"\)\}/);
   assert.match(source, /settings\.worktrees\.autoCleanup\.confirm\.title/);
   assert.match(source, /settings\.worktrees\.autoCleanup\.confirm\.body/);
   assert.match(source, /settings\.worktrees\.autoCleanup\.confirm\.cancel/);
   assert.match(source, /settings\.worktrees\.autoCleanup\.confirm\.confirm/);
-  assert.match(source, /aria-labelledby=\{titleId\}/);
-  assert.match(source, /aria-describedby=\{descriptionId\}/);
-  assert.match(source, /rounded-3xl border border-token-border bg-token-dropdown-background\/90/);
-  assert.match(source, /<Button color="ghost" size="toolbar" onClick=\{\(\) => onOpenChange\(false\)\}>/);
-  assert.match(source, /<Button color="danger" size="toolbar" onClick=\{onConfirm\}>/);
+  assert.doesNotMatch(source, /function DialogOverlay\(/);
 });
 
 function readSource(filePath: string) {

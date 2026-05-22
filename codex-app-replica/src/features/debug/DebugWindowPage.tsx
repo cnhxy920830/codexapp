@@ -72,10 +72,7 @@ import {
   loadDebugWindowParityState,
   shouldRefreshDebugWindowParityState,
 } from "./debugWindowPageParityState";
-import {
-  onDebugWindowOriginConversationChanged,
-  takePendingDebugWindowOriginConversation,
-} from "../../services/windowNavigation";
+import { onDebugWindowOriginConversationChanged } from "../../services/windowNavigation";
 
 const DEFAULT_APP_ACTION_JSON = `{
   "type": "app.get_summary"
@@ -89,7 +86,6 @@ const RELATIVE_TIME_FORMAT = new Intl.RelativeTimeFormat(undefined, { numeric: "
 
 type DebugWindowPageProps = {
   conversationId: string | null;
-  onConversationChange?: (conversationId: string) => void;
   onNavigateHome: () => void;
   onOpenConversation?: (threadId: string, hostId: string) => void;
   threadConversation: ThreadConversation | null;
@@ -168,7 +164,6 @@ export function DebugWindowShell({ children }: { children: ReactNode }) {
 
 export function DebugWindowPage({
   conversationId,
-  onConversationChange,
   onNavigateHome,
   onOpenConversation,
   threadConversation,
@@ -199,35 +194,8 @@ export function DebugWindowPage({
   const showAmbientSuggestionsSection = appFlavor === "dev" || appFlavor === "nightly";
 
   useEffect(() => {
-    setConversationIdOverride(conversationId);
-  }, [conversationId]);
-
-  useEffect(() => {
-    if (conversationIdOverride == null || conversationIdOverride === conversationId) {
-      return;
-    }
-
-    onConversationChange?.(conversationIdOverride);
-  }, [conversationId, conversationIdOverride, onConversationChange]);
-
-  useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | null = null;
-
-    void takePendingDebugWindowOriginConversation()
-      .then((pendingConversationId) => {
-        if (disposed || pendingConversationId == null) {
-          return;
-        }
-
-        const normalizedConversationId = pendingConversationId.trim();
-        if (normalizedConversationId.length === 0) {
-          return;
-        }
-
-        setConversationIdOverride(normalizedConversationId);
-      })
-      .catch(() => undefined);
 
     void onDebugWindowOriginConversationChanged((nextConversationId) => {
       setConversationIdOverride(nextConversationId);

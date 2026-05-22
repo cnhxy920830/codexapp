@@ -129,7 +129,7 @@ function parseFilePreviewRouteState(value: unknown): FilePreviewRouteState | nul
   }
 
   const { filePath, contents, line, column } = value;
-  if (typeof filePath !== "string" || filePath.trim().length === 0) {
+  if (typeof filePath !== "string") {
     return null;
   }
   if (typeof contents !== "string") {

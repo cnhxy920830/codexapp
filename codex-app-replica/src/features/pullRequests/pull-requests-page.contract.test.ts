@@ -46,10 +46,36 @@ test("pull requests board rows and empty states follow extracted shared-owner se
   assert.match(pageViewSource, /<SectionedPageSection id=\{sectionId\} showDivider title=\{title\}>/);
   assert.match(pageViewSource, /bg-token-list-active-selection-background/);
   assert.match(pageViewSource, /text-token-description-foreground/);
+  assert.match(pageViewSource, /function PullRequestDiffStat\(/);
+  assert.match(pageViewSource, /text-token-git-decoration-added-resource-foreground/);
+  assert.match(pageViewSource, /text-token-git-decoration-deleted-resource-foreground/);
+  assert.match(pageViewSource, /<PullRequestDiffStat linesAdded=\{item\.additions\} linesRemoved=\{item\.deletions\} \/>/);
   assert.match(pageViewSource, /<Button[\s\S]*color="secondary"[\s\S]*>\s*\{t\("pullRequestsPage\.card\.merge"\)\}/s);
   assert.match(pageViewSource, /export function PullRequestsBoardLoadingState\(\)/);
   assert.match(pageViewSource, /export function PullRequestsCenteredEmptyState\(/);
   assert.doesNotMatch(pageViewSource, /draggable flex w-full min-w-0 items-center justify-between gap-3 border-b/);
+});
+
+test("pull requests repo dropdown follows extracted shared dropdown semantics", async () => {
+  const pageViewSource = await readFile(PAGE_VIEW_PATH, "utf8");
+
+  assert.match(pageViewSource, /const menuId = "pull-requests-repo-menu";/);
+  assert.match(pageViewSource, /aria-controls=\{isOpen \? menuId : undefined\}/);
+  assert.match(pageViewSource, /aria-haspopup="menu"/);
+  assert.match(pageViewSource, /if \(event\.key !== "ArrowDown" && event\.key !== "Enter" && event\.key !== " "\)/);
+  assert.match(pageViewSource, /shouldFocusFirstItemRef\.current = true;[\s\S]*setIsOpen\(true\);/s);
+  assert.match(pageViewSource, /role="menu"/);
+  assert.match(pageViewSource, /aria-orientation="vertical"/);
+  assert.match(pageViewSource, /role="menuitem"/);
+  assert.match(pageViewSource, /tabIndex=\{-1\}/);
+  assert.match(pageViewSource, /event\.currentTarget\.focus\(\{ preventScroll: true \}\);/);
+  assert.match(pageViewSource, /if \(event\.key === "Home"\)/);
+  assert.match(pageViewSource, /if \(event\.key === "End"\)/);
+  assert.match(pageViewSource, /if \(event\.key === "ArrowUp"\)/);
+  assert.match(pageViewSource, /if \(event\.key === "ArrowDown"\)/);
+  assert.match(pageViewSource, /if \(event\.key === "Escape"\)/);
+  assert.match(pageViewSource, /if \(event\.key === "Tab"\)/);
+  assert.doesNotMatch(pageViewSource, /CheckIcon/);
 });
 
 test("pull requests detail owner and code review toolbar follow extracted right-panel behavior", async () => {

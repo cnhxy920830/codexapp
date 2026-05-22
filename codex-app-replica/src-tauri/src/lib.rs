@@ -40,6 +40,7 @@ mod local_environments;
 mod local_environments_remote;
 mod open_targets;
 mod pending_worktrees;
+mod plugin_share_backend;
 mod power_save_blocker;
 mod primary_runtime;
 mod primary_runtime_post_install;
@@ -72,7 +73,9 @@ use ambient_suggestions_background_refresh::handle_window_event as handle_ambien
 use ambient_suggestions_background_refresh::sync_initial_focus_state as sync_ambient_suggestions_background_refresh_state;
 use ambient_suggestions_background_refresh::AmbientSuggestionsBackgroundRefreshState;
 use app_connect_oauth::app_connect_oauth_callback_url;
+use app_connect_oauth::connect_app_connector;
 use app_connect_oauth::finish_app_connect_oauth_callback;
+use app_connect_oauth::read_app_connector_disclosure;
 use app_shell_signals::electron_window_focus_request;
 use app_shell_signals::view_focused;
 use app_state_snapshot::electron_app_state_snapshot_response;
@@ -329,6 +332,9 @@ use pending_worktrees::pending_worktree_dismiss;
 use pending_worktrees::pending_worktree_retry;
 use pending_worktrees::pending_worktree_update_metadata;
 use pending_worktrees::PendingWorktreesState;
+use plugin_share_backend::read_plugin_share_principals;
+use plugin_share_backend::search_workspace_users;
+use plugin_share_backend::update_plugin_share_targets;
 use power_save_blocker::power_save_blocker_set;
 use power_save_blocker::PowerSaveBlockerState;
 use primary_runtime::cancel_primary_runtime_install;
@@ -539,6 +545,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_launch_context,
             app_connect_oauth_callback_url,
+            read_app_connector_disclosure,
+            connect_app_connector,
             get_auth_state,
             agent_settings_notices,
             read_account_info,
@@ -649,6 +657,9 @@ pub fn run() {
             save_plugin_share_command,
             delete_plugin_share,
             delete_plugin_share_command,
+            read_plugin_share_principals,
+            update_plugin_share_targets,
+            search_workspace_users,
             read_browser_use_settings,
             browser_use_origin_state_read,
             write_browser_use_approval_mode,

@@ -17,6 +17,7 @@ test("classifyPromptLink resolves app and skill mentions from local snapshots", 
         isAccessible: true,
         isEnabled: true,
         pluginDisplayNames: [],
+        labels: null,
       },
     ],
   });

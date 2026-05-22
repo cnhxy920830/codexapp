@@ -14,23 +14,19 @@ export function OpenSourceLicensesPage({
   licensesBackPath?: string | null;
   onNavigateBack: (backPath: string) => void;
 }) {
-  const initialNotices = peekThirdPartyNotices();
+  const initialNotices = peekThirdPartyNotices({ includeStale: true });
   const [text, setText] = useState<string | null>(initialNotices?.text ?? null);
   const [isLoading, setIsLoading] = useState(initialNotices == null);
 
   useEffect(() => {
     let cancelled = false;
-    const cachedNotices = peekThirdPartyNotices();
+    const cachedNotices = peekThirdPartyNotices({ includeStale: true });
 
     if (cachedNotices != null) {
       setText(cachedNotices.text);
-      setIsLoading(false);
-      return () => {
-        cancelled = true;
-      };
     }
 
-    setIsLoading(true);
+    setIsLoading(cachedNotices == null);
 
     void readThirdPartyNotices()
       .then((response) => {
@@ -43,7 +39,9 @@ export function OpenSourceLicensesPage({
         if (cancelled) {
           return;
         }
-        setText(null);
+        if (cachedNotices == null) {
+          setText(null);
+        }
         void error;
       })
       .finally(() => {

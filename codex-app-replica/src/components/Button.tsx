@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { Spinner } from "./Spinner";
 
 const BUTTON_RADII = {
@@ -48,21 +48,25 @@ type SharedButtonProps = {
   uniform?: boolean;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "color">;
 
-export function Button({
-  children,
-  className,
-  color = "primary",
-  disabled = false,
-  loading = false,
-  size = "default",
-  type = "button",
-  uniform = false,
-  ...rest
-}: SharedButtonProps) {
+export const Button = forwardRef<HTMLButtonElement, SharedButtonProps>(function Button(
+  {
+    children,
+    className,
+    color = "primary",
+    disabled = false,
+    loading = false,
+    size = "default",
+    type = "button",
+    uniform = false,
+    ...rest
+  },
+  ref,
+) {
   const isDisabled = disabled || loading;
 
   return (
     <button
+      ref={ref}
       type={type}
       className={joinClasses(
         "border-token-border user-select-none no-drag cursor-interaction flex items-center gap-1 border whitespace-nowrap focus:outline-none disabled:cursor-not-allowed disabled:opacity-40",
@@ -79,7 +83,7 @@ export function Button({
       {children}
     </button>
   );
-}
+});
 
 function joinClasses(...values: Array<string | false | null | undefined>) {
   return values.filter((value): value is string => Boolean(value)).join(" ");

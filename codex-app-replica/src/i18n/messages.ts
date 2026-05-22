@@ -1435,11 +1435,14 @@ export type MessageKey =
   | "plugins.installModal.developedBy"
   | "plugins.installModal.includes"
   | "plugins.installModal.includes.apps"
+  | "plugins.installModal.includes.browserExtensions"
   | "plugins.installModal.includes.skills"
   | "plugins.installModal.includes.mcpServers"
   | "plugins.installModal.install"
   | "plugins.installModal.installing"
   | "plugins.installModal.metadata.category"
+  | "plugins.installModal.metadata.developer"
+  | "plugins.installModal.personalizationToggle"
   | "plugins.installModal.title"
   | "plugins.installModal.finishSetup.title"
   | "plugins.installModal.finishSetup.description"
@@ -1447,13 +1450,82 @@ export type MessageKey =
   | "plugins.installModal.requiredApps.connected"
   | "plugins.installModal.requiredApps.connecting"
   | "plugins.installModal.requiredApps.connect"
+  | "plugins.installModal.requiredBrowserExtensions"
   | "plugins.installModal.browserExtensions"
   | "plugins.installModal.browserExtension.description"
+  | "plugins.installModal.openBrowserExtension"
   | "plugins.installModal.done"
+  | "plugins.install.connectorUnavailable"
+  | "plugins.install.disabledByAdmin"
   | "plugins.install.ready"
   | "plugins.install.success"
   | "plugins.install.error"
   | "plugins.install.refreshError"
+  | "plugins.detail.pageTitleFallback"
+  | "plugins.detail.breadcrumb.root"
+  | "plugins.detail.breadcrumb.manage"
+  | "plugins.detail.addToCodex"
+  | "plugins.detail.addingToCodex"
+  | "plugins.detail.disabledByAdminButton"
+  | "plugins.detail.uninstall"
+  | "plugins.detail.enableInCodex"
+  | "plugins.detail.tryInCodex"
+  | "plugins.detail.copyLink"
+  | "plugins.detail.copiedLink"
+  | "plugins.detail.share"
+  | "plugins.detail.moreActions"
+  | "plugins.detail.stopSharing"
+  | "plugins.detail.stopSharingError"
+  | "plugins.detail.updateSharingError"
+  | "plugins.detail.shareDialog.title"
+  | "plugins.detail.shareDialog.access.invited"
+  | "plugins.detail.shareDialog.access.workspace"
+  | "plugins.detail.shareDialog.access.link"
+  | "plugins.detail.shareDialog.workspaceUserSearch"
+  | "plugins.detail.shareDialog.workspaceUserPlaceholder"
+  | "plugins.detail.shareDialog.pendingPermission"
+  | "plugins.detail.shareDialog.noWorkspaceUsers"
+  | "plugins.detail.shareDialog.whoHasAccess"
+  | "plugins.detail.shareDialog.noInvitedPeople"
+  | "plugins.detail.shareDialog.copyFailed"
+  | "plugins.detail.shareDialog.copyLink"
+  | "plugins.detail.shareDialog.copied"
+  | "plugins.detail.shareDialog.invite"
+  | "plugins.detail.shareDialog.cancelInvite"
+  | "plugins.detail.shareDialog.permission.viewer"
+  | "plugins.detail.shareDialog.permission.chat"
+  | "plugins.detail.shareDialog.permission.owner"
+  | "plugins.detail.shareDialog.permission.remove"
+  | "plugins.detail.shareDialog.removeSelectedUser"
+  | "plugins.detail.description"
+  | "plugins.detail.setup"
+  | "plugins.detail.includes"
+  | "plugins.detail.information"
+  | "plugins.detail.includes.appBadge"
+  | "plugins.detail.includes.skillBadge"
+  | "plugins.detail.includes.mcpServerBadge"
+  | "plugins.detail.includes.disabledByAdminBadge"
+  | "plugins.detail.setup.openBrowserExtension"
+  | "plugins.detail.mcp.enable"
+  | "plugins.detail.mcp.disable"
+  | "plugins.detail.mcp.settings"
+  | "plugins.detail.mcp.setup"
+  | "plugins.detail.mcp.toggleAria"
+  | "plugins.detail.errorTitle"
+  | "plugins.detail.missing"
+  | "plugins.detail.missingDescription"
+  | "plugins.detail.sectionsNav"
+  | "plugins.detail.information.capabilities"
+  | "plugins.detail.information.category"
+  | "plugins.detail.information.developer"
+  | "plugins.detail.information.website"
+  | "plugins.detail.information.privacyPolicy"
+  | "plugins.detail.information.termsOfService"
+  | "plugins.detail.missingFromCurrentMarketplaces"
+  | "plugins.detail.removeDialog.title"
+  | "plugins.detail.removeDialog.description"
+  | "plugins.detail.removeDialog.cancel"
+  | "plugins.detail.removeDialog.confirm"
   | "codexMobile.homeBanner.title"
   | "codexMobile.homeBanner.body"
   | "codexMobile.homeBanner.primary"
@@ -2809,11 +2881,15 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "plugins.installModal.developedBy": "Developed by {developerName}",
     "plugins.installModal.includes": "Includes",
     "plugins.installModal.includes.apps": "Apps",
+    "plugins.installModal.includes.browserExtensions": "Browser extensions",
     "plugins.installModal.includes.skills": "Skills",
     "plugins.installModal.includes.mcpServers": "MCP servers",
     "plugins.installModal.install": "Install {pluginName}",
     "plugins.installModal.installing": "Installing {pluginName}",
     "plugins.installModal.metadata.category": "Category: {category}",
+    "plugins.installModal.metadata.developer": "By {developerName}",
+    "plugins.installModal.personalizationToggle":
+      "Allow ChatGPT to use reference memories and chats for {appName}",
     "plugins.installModal.title": "Install {pluginName}",
     "plugins.installModal.finishSetup.title": "Finish setting up {pluginName}",
     "plugins.installModal.finishSetup.description":
@@ -2822,15 +2898,86 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "plugins.installModal.requiredApps.connected": "Connected",
     "plugins.installModal.requiredApps.connecting": "Connecting…",
     "plugins.installModal.requiredApps.connect": "Connect",
+    "plugins.installModal.requiredBrowserExtensions": "Required browser extensions",
     "plugins.installModal.browserExtensions": "Browser extensions",
     "plugins.installModal.browserExtension.description":
       "Install this extension in Chrome to let Codex connect to your browser",
+    "plugins.installModal.openBrowserExtension": "Open",
     "plugins.installModal.done": "Done",
+    "plugins.install.connectorUnavailable": "App unavailable",
+    "plugins.install.disabledByAdmin": "Disabled by admin",
     "plugins.install.ready": "{pluginName} is ready to use",
     "plugins.install.success": "{pluginName} installed",
     "plugins.install.error": "Failed to install plugin",
     "plugins.install.refreshError":
       "Installed {pluginName}, but failed to refresh plugin state",
+    "plugins.detail.pageTitleFallback": "Plugin",
+    "plugins.detail.breadcrumb.root": "Plugins",
+    "plugins.detail.breadcrumb.manage": "Manage",
+    "plugins.detail.addToCodex": "Add to Codex",
+    "plugins.detail.addingToCodex": "Adding to Codex",
+    "plugins.detail.disabledByAdminButton": "Disabled by admin",
+    "plugins.detail.uninstall": "Remove from Codex",
+    "plugins.detail.enableInCodex": "Enable in Codex",
+    "plugins.detail.tryInCodex": "Try in chat",
+    "plugins.detail.copyLink": "Copy link",
+    "plugins.detail.copiedLink": "Copied",
+    "plugins.detail.share": "Share",
+    "plugins.detail.moreActions": "More actions",
+    "plugins.detail.stopSharing": "Stop sharing",
+    "plugins.detail.stopSharingError": "Couldn't stop sharing plugin",
+    "plugins.detail.updateSharingError": "Couldn't update plugin sharing",
+    "plugins.detail.shareDialog.title": "Share {name}",
+    "plugins.detail.shareDialog.access.invited": "Only those invited",
+    "plugins.detail.shareDialog.access.workspace": "Anyone at workspace",
+    "plugins.detail.shareDialog.access.link": "Anyone with the link",
+    "plugins.detail.shareDialog.workspaceUserSearch": "Add people",
+    "plugins.detail.shareDialog.workspaceUserPlaceholder": "Add people",
+    "plugins.detail.shareDialog.pendingPermission": "Can view",
+    "plugins.detail.shareDialog.noWorkspaceUsers": "No matching people",
+    "plugins.detail.shareDialog.whoHasAccess": "Who has access",
+    "plugins.detail.shareDialog.noInvitedPeople": "No people invited yet",
+    "plugins.detail.shareDialog.copyFailed": "Couldn't copy share link",
+    "plugins.detail.shareDialog.copyLink": "Copy link",
+    "plugins.detail.shareDialog.copied": "Copied",
+    "plugins.detail.shareDialog.invite": "Invite",
+    "plugins.detail.shareDialog.cancelInvite": "Cancel",
+    "plugins.detail.shareDialog.permission.viewer": "Can view",
+    "plugins.detail.shareDialog.permission.chat": "Can chat",
+    "plugins.detail.shareDialog.permission.owner": "Owner",
+    "plugins.detail.shareDialog.permission.remove": "Remove access",
+    "plugins.detail.shareDialog.removeSelectedUser": "Remove {name}",
+    "plugins.detail.description": "Description",
+    "plugins.detail.setup": "Setup",
+    "plugins.detail.includes": "Includes",
+    "plugins.detail.information": "Information",
+    "plugins.detail.includes.appBadge": "App",
+    "plugins.detail.includes.skillBadge": "Skill",
+    "plugins.detail.includes.mcpServerBadge": "MCP server",
+    "plugins.detail.includes.disabledByAdminBadge": "Disabled by admin",
+    "plugins.detail.setup.openBrowserExtension": "Open",
+    "plugins.detail.mcp.enable": "Enable MCP server",
+    "plugins.detail.mcp.disable": "Disable MCP server",
+    "plugins.detail.mcp.settings": "Open MCP settings",
+    "plugins.detail.mcp.setup": "Set up in MCP settings",
+    "plugins.detail.mcp.toggleAria": "Toggle MCP server enabled state",
+    "plugins.detail.errorTitle": "Failed to load plugin",
+    "plugins.detail.missing": "Plugin not found",
+    "plugins.detail.missingDescription": "This plugin could not be loaded from its marketplace entry.",
+    "plugins.detail.sectionsNav": "Plugin sections",
+    "plugins.detail.information.capabilities": "Capabilities",
+    "plugins.detail.information.category": "Category",
+    "plugins.detail.information.developer": "Developer",
+    "plugins.detail.information.website": "Website",
+    "plugins.detail.information.privacyPolicy": "Privacy Policy",
+    "plugins.detail.information.termsOfService": "Terms of service",
+    "plugins.detail.missingFromCurrentMarketplaces":
+      "This plugin is not available in your current plugin marketplaces",
+    "plugins.detail.removeDialog.title": "Remove {name} plugin from Codex",
+    "plugins.detail.removeDialog.description":
+      "This removes the plugin from Codex. Bundled apps will remain installed.",
+    "plugins.detail.removeDialog.cancel": "Cancel",
+    "plugins.detail.removeDialog.confirm": "Remove from Codex",
     "codexMobile.homeBanner.title": "Introducing Codex mobile",
     "codexMobile.homeBanner.body":
       "The power of Codex on your desktop computer from your phone",
@@ -5527,11 +5674,15 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "plugins.installModal.developedBy": "由 {developerName} 开发",
     "plugins.installModal.includes": "包含",
     "plugins.installModal.includes.apps": "应用",
+    "plugins.installModal.includes.browserExtensions": "浏览器扩展",
     "plugins.installModal.includes.skills": "技能",
     "plugins.installModal.includes.mcpServers": "MCP 服务器",
     "plugins.installModal.install": "安装 {pluginName}",
     "plugins.installModal.installing": "正在安装 {pluginName}",
     "plugins.installModal.metadata.category": "分类：{category}",
+    "plugins.installModal.metadata.developer": "来自 {developerName}",
+    "plugins.installModal.personalizationToggle":
+      "允许 ChatGPT 使用与你的 {appName} 相关的参考记忆和聊天",
     "plugins.installModal.title": "安装 {pluginName}",
     "plugins.installModal.finishSetup.title": "完成 {pluginName} 设置",
     "plugins.installModal.finishSetup.description":
@@ -5540,15 +5691,86 @@ export const MESSAGES: Record<MessageLocaleCode, MessageDictionary> = {
     "plugins.installModal.requiredApps.connected": "已连接",
     "plugins.installModal.requiredApps.connecting": "连接中…",
     "plugins.installModal.requiredApps.connect": "连接",
+    "plugins.installModal.requiredBrowserExtensions": "必需浏览器扩展",
     "plugins.installModal.browserExtensions": "浏览器扩展",
     "plugins.installModal.browserExtension.description":
       "在 Chrome 中安装此扩展，让 Codex 能连接到你的浏览器",
+    "plugins.installModal.openBrowserExtension": "打开",
     "plugins.installModal.done": "完成",
+    "plugins.install.connectorUnavailable": "应用不可用",
+    "plugins.install.disabledByAdmin": "已被管理员禁用",
     "plugins.install.ready": "{pluginName} 已可使用",
     "plugins.install.success": "{pluginName} 已安装",
     "plugins.install.error": "安装插件失败",
     "plugins.install.refreshError":
       "已安装 {pluginName}，但刷新插件状态失败",
+    "plugins.detail.pageTitleFallback": "插件",
+    "plugins.detail.breadcrumb.root": "插件",
+    "plugins.detail.breadcrumb.manage": "管理",
+    "plugins.detail.addToCodex": "添加到 Codex",
+    "plugins.detail.addingToCodex": "正在添加到 Codex",
+    "plugins.detail.disabledByAdminButton": "已被管理员禁用",
+    "plugins.detail.uninstall": "从 Codex 移除",
+    "plugins.detail.enableInCodex": "在 Codex 中启用",
+    "plugins.detail.tryInCodex": "在聊天中试用",
+    "plugins.detail.copyLink": "复制链接",
+    "plugins.detail.copiedLink": "已复制",
+    "plugins.detail.share": "分享",
+    "plugins.detail.moreActions": "更多操作",
+    "plugins.detail.stopSharing": "停止分享",
+    "plugins.detail.stopSharingError": "无法停止分享插件",
+    "plugins.detail.updateSharingError": "无法更新插件分享",
+    "plugins.detail.shareDialog.title": "分享 {name}",
+    "plugins.detail.shareDialog.access.invited": "仅受邀人员",
+    "plugins.detail.shareDialog.access.workspace": "工作区中的任何人",
+    "plugins.detail.shareDialog.access.link": "任何拥有该链接的人",
+    "plugins.detail.shareDialog.workspaceUserSearch": "添加人员",
+    "plugins.detail.shareDialog.workspaceUserPlaceholder": "添加人员",
+    "plugins.detail.shareDialog.pendingPermission": "可查看",
+    "plugins.detail.shareDialog.noWorkspaceUsers": "没有匹配的人员",
+    "plugins.detail.shareDialog.whoHasAccess": "哪些人有访问权限",
+    "plugins.detail.shareDialog.noInvitedPeople": "尚未邀请任何人",
+    "plugins.detail.shareDialog.copyFailed": "无法复制分享链接",
+    "plugins.detail.shareDialog.copyLink": "复制链接",
+    "plugins.detail.shareDialog.copied": "已复制",
+    "plugins.detail.shareDialog.invite": "邀请",
+    "plugins.detail.shareDialog.cancelInvite": "取消",
+    "plugins.detail.shareDialog.permission.viewer": "可查看",
+    "plugins.detail.shareDialog.permission.chat": "可聊天",
+    "plugins.detail.shareDialog.permission.owner": "所有者",
+    "plugins.detail.shareDialog.permission.remove": "移除访问权限",
+    "plugins.detail.shareDialog.removeSelectedUser": "移除 {name}",
+    "plugins.detail.description": "描述",
+    "plugins.detail.setup": "设置",
+    "plugins.detail.includes": "包含内容",
+    "plugins.detail.information": "信息",
+    "plugins.detail.includes.appBadge": "应用",
+    "plugins.detail.includes.skillBadge": "技能",
+    "plugins.detail.includes.mcpServerBadge": "MCP 服务器",
+    "plugins.detail.includes.disabledByAdminBadge": "管理员已禁用",
+    "plugins.detail.setup.openBrowserExtension": "打开",
+    "plugins.detail.mcp.enable": "启用 MCP 服务器",
+    "plugins.detail.mcp.disable": "禁用 MCP 服务器",
+    "plugins.detail.mcp.settings": "打开 MCP 设置",
+    "plugins.detail.mcp.setup": "在 MCP 设置中配置",
+    "plugins.detail.mcp.toggleAria": "切换 MCP 服务器的启用状态",
+    "plugins.detail.errorTitle": "无法加载插件",
+    "plugins.detail.missing": "未找到插件",
+    "plugins.detail.missingDescription": "无法从插件市场详情页加载此插件。",
+    "plugins.detail.sectionsNav": "插件概览板块",
+    "plugins.detail.information.capabilities": "功能",
+    "plugins.detail.information.category": "类别",
+    "plugins.detail.information.developer": "开发者",
+    "plugins.detail.information.website": "网站",
+    "plugins.detail.information.privacyPolicy": "隐私政策",
+    "plugins.detail.information.termsOfService": "服务条款",
+    "plugins.detail.missingFromCurrentMarketplaces":
+      "当前插件市场中没有这个插件",
+    "plugins.detail.removeDialog.title": "从 Codex 移除 {name} 插件",
+    "plugins.detail.removeDialog.description":
+      "这会将该插件从 Codex 中移除。随附应用将保留安装状态。",
+    "plugins.detail.removeDialog.cancel": "取消",
+    "plugins.detail.removeDialog.confirm": "从 Codex 移除",
     "codexMobile.homeBanner.title": "介绍 Codex mobile",
     "codexMobile.homeBanner.body": "在手机上使用桌面电脑上的 Codex 能力",
     "codexMobile.homeBanner.primary": "开始设置",

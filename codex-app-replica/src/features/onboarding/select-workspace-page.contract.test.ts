@@ -248,11 +248,28 @@ test("select workspace page routes remote add-project through the extracted choo
     source,
     /setSelectedRoots\(\(current\) => \(\{\s*\.\.\.current,\s*\[params\.remotePath\]: true,\s*\}\)\);/,
   );
-  assert.match(source, /onContinueToHome: \(state: \{ focusComposerNonce: number; hostId: string \}\) => void;/);
-  assert.match(source, /await setGlobalState\("active-remote-project-id", null\);/);
+  assert.match(source, /onContinueToHome: \(state: \{ focusComposerNonce: number; hostId: string; cwd: string \| null \}\) => void;/);
+  assert.match(source, /const primarySelectedRoot = selectedRootList\[0\];/);
+  assert.match(source, /let activeRemoteProjectIdValue: string \| null = null;/);
   assert.match(source, /if \(!isRemoteHost\) {\s*await updateWorkspaceRootOptions\(nextWorkspaceRoots\);\s*}/);
-  assert.match(source, /if \(!isRemoteHost\) {\s*await setActiveWorkspaceRoot\(selectedRootList\[0\]\);\s*}/);
-  assert.match(source, /onContinueToHome\(\{\s*focusComposerNonce: continueNonceRef\.current,\s*hostId: currentHostId,\s*}\);/);
+  assert.match(source, /if \(isRemoteHost\) \{/);
+  assert.match(source, /const response = await saveRemoteProject\(\{\s*hostId: currentHostId,\s*remotePath: root,\s*}\);/s);
+  assert.match(source, /await setGlobalState\("active-remote-project-id", activeRemoteProjectIdValue\);/);
+  assert.match(source, /if \(!isRemoteHost\) {\s*await setActiveWorkspaceRoot\(primarySelectedRoot\);\s*}/);
+  assert.match(source, /onContinueToHome\(\{\s*focusComposerNonce: continueNonceRef\.current,\s*hostId: currentHostId,\s*cwd: primarySelectedRoot,\s*}\);/s);
+});
+
+test("select workspace view keeps extracted add-project menu keyboard and focus affordances", () => {
+  const source = readSource(path.join(process.cwd(), "src/features/onboarding/SelectWorkspacePageView.tsx"));
+
+  assert.match(source, /const shouldFocusFirstItemRef = useRef\(false\);/);
+  assert.match(source, /if \(event\.key !== "ArrowDown" && event\.key !== "Enter" && event\.key !== " "\) \{/);
+  assert.match(source, /menuItemRefs\.current\[0\]\?\.focus\(\);/);
+  assert.match(source, /if \(event\.key === "Home"\) \{/);
+  assert.match(source, /if \(event\.key === "End"\) \{/);
+  assert.match(source, /if \(event\.key === "Tab"\) \{/);
+  assert.match(source, /event\.currentTarget\.focus\(\{ preventScroll: true \}\);/);
+  assert.match(source, /aria-orientation="vertical"/);
 });
 
 test("remote project setup dialog keeps extracted pick-mode semantics separate from standalone setup conflicts", () => {
@@ -268,7 +285,7 @@ test("app handoff creates new threads with host-aware thread and turn flows", ()
   const source = readSource(APP_SOURCE_PATH);
 
   assert.match(source, /const \[currentWindowHostId, setCurrentWindowHostId\] = useState<string>\(\(\) => readInitialSettingsHostId\(\)\);/);
-  assert.match(source, /openNewConversation\(\{ focusComposerNonce, initialHostId: hostId }\);/);
+  assert.match(source, /openNewConversation\(\{\s*focusComposerNonce,\s*initialHostId: hostId,\s*prefillCwd: cwd,\s*}\);/s);
   assert.match(source, /await startThreadForHost\(\{\s*cwd,\s*hostId,\s*collaborationMode: buildCollaborationModePayload\("default"\),\s*}\)/);
   assert.match(source, /hostId === LOCAL_SETTINGS_HOST_ID\s*\?\s*await getRecentThreads\(\)\s*:\s*await getRecentThreadsForHost\(hostId\)/);
   assert.match(source, /return loadThreadConversation\(threadId, hostId\);/);

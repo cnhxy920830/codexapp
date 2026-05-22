@@ -30,7 +30,10 @@ import {
 } from "../../services/workspaceFiles";
 import { PdbPreview } from "./PdbPreview";
 import { DocumentPreviewPanel } from "./DocumentPreviewPanel";
-import { PresentationPreviewPanel } from "./PresentationPreviewPanel";
+import {
+  PresentationPreviewPanel,
+  type PresentationPreviewPanelTestMode,
+} from "./PresentationPreviewPanel";
 import { PdfPreviewPanel } from "./PdfPreviewPanel";
 import { WorkbookPreviewPanel } from "./WorkbookPreviewPanel";
 import { NotebookPreviewPanel } from "./NotebookPreviewPanel";
@@ -52,11 +55,12 @@ import {
   type WorkspaceFileUnsupportedPreviewKind,
   getBreadcrumbSegments,
 } from "./workspaceFilePreviewUtils";
-import { DocxPreviewPanel } from "./DocxPreviewPanel";
+import { DocxPreviewPanel, type DocxPreviewPanelTestMode } from "./DocxPreviewPanel";
 import { WorkspaceFileTreePanel } from "./WorkspaceFileTreePanel";
 import type { PendingPdfCommentAttachment } from "./pdfCommentAttachments";
 
 type WorkspaceFilePreviewPanelProps = {
+  hidePresentationSpeakerNotes?: boolean;
   onOpenBrowserTarget?: ((target: BrowserSidebarTarget) => void) | null;
   onPendingPdfCommentsChange?: ((
     update: (current: PendingPdfCommentAttachment[]) => PendingPdfCommentAttachment[],
@@ -97,6 +101,7 @@ type ArtifactPreviewHeaderZoomControlProps = {
 };
 
 export function WorkspaceFilePreviewPanel({
+  hidePresentationSpeakerNotes = false,
   onOpenBrowserTarget = null,
   onPendingPdfCommentsChange = null,
   onSelectWorkspaceFile = null,
@@ -205,6 +210,7 @@ export function WorkspaceFilePreviewPanel({
       previewTitle={previewTitle}
       selectedFileTarget={selectedFileTarget}
       showFileTree={isFileTreeOpen}
+      hidePresentationSpeakerNotes={hidePresentationSpeakerNotes}
       tabId={tabId}
       threadConversation={threadConversation}
       artifactRichPreviewEnabled={artifactRichPreviewEnabled}
@@ -222,18 +228,24 @@ export function WorkspaceFilePreviewContent({
   artifactPreviewGateEnabled = null,
   binaryContents = null,
   compiledPdfDataUrl = null,
+  docxTestMode = null,
   file,
+  hidePresentationSpeakerNotes = false,
   ownerShellContext = null,
   parsedArtifact = null,
+  presentationTestMode = null,
   selectedFileTarget = null,
   t,
 }: {
   artifactPreviewGateEnabled?: boolean | null;
   binaryContents?: Uint8Array | null;
   compiledPdfDataUrl?: string | null;
+  docxTestMode?: DocxPreviewPanelTestMode | null;
   file: WorkspaceFileDocument;
+  hidePresentationSpeakerNotes?: boolean;
   ownerShellContext?: WorkspaceFilePreviewOwnerShellContext | null;
   parsedArtifact?: ParsedArtifactPreview | null;
+  presentationTestMode?: PresentationPreviewPanelTestMode | null;
   selectedFileTarget?: WorkspaceFilePreviewTarget | null;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
 }) {
@@ -257,9 +269,12 @@ export function WorkspaceFilePreviewContent({
       previewTitle={previewTitle}
       selectedFileTarget={selectedFileTarget}
       showFileTree={ownerShellContext?.showFileTree ?? false}
+      hidePresentationSpeakerNotes={hidePresentationSpeakerNotes}
       tabId={ownerShellContext?.tabId ?? null}
       threadConversation={ownerShellContext?.threadConversation ?? null}
       artifactRichPreviewEnabled={ownerShellContext?.artifactRichPreviewEnabled ?? true}
+      docxTestMode={docxTestMode}
+      presentationTestMode={presentationTestMode}
       setArtifactRichPreviewEnabled={ownerShellContext?.setArtifactRichPreviewEnabled ?? null}
       toggleFileTree={ownerShellContext?.toggleFileTree ?? null}
       t={t}
@@ -334,9 +349,12 @@ function WorkspaceFilePreviewSurface({
   previewTitle,
   selectedFileTarget,
   showFileTree,
+  hidePresentationSpeakerNotes = false,
   tabId,
   threadConversation,
   artifactRichPreviewEnabled = true,
+  docxTestMode = null,
+  presentationTestMode = null,
   setArtifactRichPreviewEnabled = null,
   toggleFileTree,
   t,
@@ -354,16 +372,18 @@ function WorkspaceFilePreviewSurface({
   previewTitle: string;
   selectedFileTarget: WorkspaceFilePreviewTarget | null;
   showFileTree: boolean;
+  hidePresentationSpeakerNotes?: boolean;
   tabId: string | null;
   threadConversation: ThreadConversation | null;
   artifactRichPreviewEnabled?: boolean;
+  docxTestMode?: DocxPreviewPanelTestMode | null;
+  presentationTestMode?: PresentationPreviewPanelTestMode | null;
   setArtifactRichPreviewEnabled?: ((enabled: boolean) => void) | null;
   toggleFileTree: (() => void) | null;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
 }) {
   const resolvedArtifactPreviewGateEnabled =
     artifactPreviewGateEnabled ?? useReplicaStatsigGateValue(ARTIFACT_PREVIEW_POPCORN_GATE);
-  const hidePresentationSpeakerNotes = resolvedArtifactPreviewGateEnabled;
   const fallbackPreviewPath = previewState.kind === "ready" ? previewState.file.relativePath || previewState.file.path : previewTitle;
   const previewPath =
     selectedFileTarget == null
@@ -603,6 +623,7 @@ function WorkspaceFilePreviewSurface({
           hideSpeakerNotes={hidePresentationSpeakerNotes}
           presentationProto={parsedArtifact.proto}
           renderHeaderZoomControl={renderHeaderZoomControl}
+          testMode={presentationTestMode ?? undefined}
           title={previewTitle}
           t={t}
         />
@@ -619,6 +640,7 @@ function WorkspaceFilePreviewSurface({
           bytes={binaryContents}
           hostId={file.hostId ?? null}
           path={file.path}
+          testMode={docxTestMode ?? undefined}
           title={previewTitle}
           t={t}
         />

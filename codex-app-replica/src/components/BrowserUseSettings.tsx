@@ -1,12 +1,14 @@
 import { emit } from "@tauri-apps/api/event";
-import { useEffect, useEffectEvent, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useId, useMemo, useState } from "react";
 import { ChevronDownIcon, NewChatIcon, TrashIcon } from "./AppShellIcons";
 import type { AppToast } from "./AppToastRegion";
 import { Button } from "./Button";
 import { SettingsContentLayout } from "./SettingsContentLayout";
+import { SettingsDialog, SettingsDialogFooter } from "./SettingsDialog";
 import { FilteredPluginSettings, type FilteredPluginSettingsRenderContext } from "./FilteredPluginSettings";
 import { SettingsChoiceMenu } from "./SettingsChoiceMenu";
 import { SettingsGroup } from "./SettingsGroup";
+import { SettingsRow } from "./SettingsRow";
 import { SettingsSurface } from "./SettingsSurface";
 import { Spinner } from "./Spinner";
 import { useReplicaStatsigDynamicConfigValue } from "../features/statsig/replicaStatsig";
@@ -170,6 +172,7 @@ function BrowserUsePermissionsPanel({
   const [addDialogState, setAddDialogState] = useState<OriginSectionConfig | null>(null);
   const [originDraft, setOriginDraft] = useState("");
   const [removeOriginState, setRemoveOriginState] = useState<RemoveOriginState | null>(null);
+  const addDialogFormId = useId();
   const browserUseLearnMoreDynamicConfig = useReplicaStatsigDynamicConfigValue(
     BROWSER_USE_APPROVAL_LINK_DYNAMIC_CONFIG,
   );
@@ -305,7 +308,7 @@ function BrowserUsePermissionsPanel({
         <SettingsGroup.Header title={t("settings.browserUse.browser.title")} />
         <SettingsGroup.Content>
           <SettingsSurface>
-            <SettingsValueRow
+            <SettingsRow
               label={t("settings.browserUse.browser.clearBrowsingData.label")}
               description={t("settings.browserUse.browser.clearBrowsingData.description")}
               control={
@@ -370,7 +373,7 @@ function BrowserUsePermissionsPanel({
               </div>
             ) : null}
 
-            <SettingsValueRow
+            <SettingsRow
               label={t("settings.browserUse.browser.annotationScreenshots.label")}
               description={t("settings.browserUse.browser.annotationScreenshots.description")}
               control={
@@ -393,7 +396,7 @@ function BrowserUsePermissionsPanel({
         <SettingsGroup.Header title={t("settings.browserUse.permissions.title")} />
         <SettingsGroup.Content>
           <SettingsSurface>
-            <SettingsValueRow
+            <SettingsRow
               label={t("settings.browserUse.approval.label")}
               description={renderInlineTagButton(
                 t("settings.browserUse.approval.description"),
@@ -447,21 +450,13 @@ function BrowserUsePermissionsPanel({
       ))}
 
       {addDialogState ? (
-        <BrowserUseDialog
-          confirmLabel={t("settings.browserUse.domains.addDialogConfirm")}
-          disableConfirm={originDraft.trim().length === 0 || pendingAction !== null}
-          onClose={() => {
-            setOriginDraft("");
-            setAddDialogState(null);
-          }}
-          onConfirm={() => void handleAddOrigin(addDialogState)}
-          title={t(getOriginSectionCopy(addDialogState.kind).addDialogTitleKey)}
-          subtitle={t(getOriginSectionCopy(addDialogState.kind).addDialogSubtitleKey)}
+        <SettingsDialog
           footer={
             <>
               <Button
                 color="outline"
                 disabled={pendingAction !== null}
+                size="toolbar"
                 type="button"
                 onClick={() => {
                   setOriginDraft("");
@@ -471,16 +466,38 @@ function BrowserUsePermissionsPanel({
                 {t("settings.browserUse.domains.addDialogCancel")}
               </Button>
               <Button
+                color="primary"
                 disabled={originDraft.trim().length === 0 || pendingAction !== null}
+                form={addDialogFormId}
                 loading={pendingAction !== null}
+                size="toolbar"
                 type="submit"
               >
                 {t("settings.browserUse.domains.addDialogConfirm")}
               </Button>
             </>
           }
+          onOpenChange={(open) => {
+            if (open) {
+              return;
+            }
+
+            setOriginDraft("");
+            setAddDialogState(null);
+          }}
+          open
+          size="compact"
+          title={t(getOriginSectionCopy(addDialogState.kind).addDialogTitleKey)}
+          subtitle={t(getOriginSectionCopy(addDialogState.kind).addDialogSubtitleKey)}
         >
-          <div className="flex flex-col gap-2">
+          <form
+            id={addDialogFormId}
+            className="flex flex-col gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleAddOrigin(addDialogState);
+            }}
+          >
             <input
               autoFocus
               aria-label={t("settings.browserUse.domains.addDialogAriaLabel")}
@@ -489,42 +506,35 @@ function BrowserUsePermissionsPanel({
               placeholder={t("settings.browserUse.domains.addDialogPlaceholder")}
               value={originDraft}
             />
-          </div>
-        </BrowserUseDialog>
+          </form>
+        </SettingsDialog>
       ) : null}
 
       {removeOriginState ? (
-        <BrowserUseDialog
-          confirmLabel={t("settings.browserUse.origins.removeDialogConfirm")}
-          confirmTone="danger"
-          disableConfirm={pendingAction !== null}
-          onClose={() => setRemoveOriginState(null)}
-          onConfirm={() => void handleRemoveOrigin(removeOriginState)}
+        <SettingsDialog
+          footer={
+            <SettingsDialogFooter
+              cancelLabel={t("settings.browserUse.origins.removeDialogCancel")}
+              confirmDisabled={pendingAction !== null}
+              confirmLabel={t("settings.browserUse.origins.removeDialogConfirm")}
+              confirmLoading={pendingAction !== null}
+              confirmTone="danger"
+              onCancel={() => setRemoveOriginState(null)}
+              onConfirm={() => void handleRemoveOrigin(removeOriginState)}
+            />
+          }
+          onOpenChange={(open) => {
+            if (!open) {
+              setRemoveOriginState(null);
+            }
+          }}
+          open
+          size="compact"
           title={t(
             getOriginSectionCopy(removeOriginState.kind).removeDialogTitleKey,
             { origin: removeOriginState.origin },
           )}
           subtitle={t(getOriginSectionCopy(removeOriginState.kind).removeDialogSubtitleKey)}
-          footer={
-            <>
-              <Button
-                color="ghost"
-                disabled={pendingAction !== null}
-                type="button"
-                onClick={() => setRemoveOriginState(null)}
-              >
-                {t("settings.browserUse.origins.removeDialogCancel")}
-              </Button>
-              <Button
-                color="danger"
-                loading={pendingAction !== null}
-                type="button"
-                onClick={() => void handleRemoveOrigin(removeOriginState)}
-              >
-                {t("settings.browserUse.origins.removeDialogConfirm")}
-              </Button>
-            </>
-          }
         />
       ) : null}
     </>
@@ -749,7 +759,7 @@ function OriginSection({
           {isLoading ? (
             <LoadingStateRow />
           ) : origins.length === 0 ? (
-            <SettingsValueRow
+            <SettingsRow
               className="justify-center"
               label={
                 <span className="text-token-text-secondary">
@@ -760,7 +770,7 @@ function OriginSection({
             />
           ) : (
             origins.map((origin) => (
-              <SettingsValueRow
+              <SettingsRow
                 key={`${config.kind}:${origin}`}
                 label={<span className="font-medium">{origin}</span>}
                 control={
@@ -786,102 +796,6 @@ function OriginSection({
   );
 }
 
-function BrowserUseDialog({
-  children,
-  confirmLabel,
-  confirmTone,
-  disableConfirm,
-  footer,
-  onClose,
-  onConfirm,
-  subtitle,
-  title,
-}: {
-  children?: ReactNode;
-  confirmLabel?: string;
-  confirmTone?: "danger";
-  disableConfirm?: boolean;
-  footer?: ReactNode;
-  onClose: () => void;
-  onConfirm?: () => void;
-  subtitle: ReactNode;
-  title: ReactNode;
-}) {
-  return (
-    <DialogOverlay onDismiss={onClose}>
-      <div
-        aria-modal="true"
-        role="dialog"
-        className="w-full max-w-[420px] rounded-[18px] border border-token-border bg-token-main-surface-primary px-5 py-5 shadow-[0_16px_40px_rgba(0,0,0,0.22)]"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <form
-          className="flex flex-col gap-5"
-          onSubmit={(event) => {
-            event.preventDefault();
-            onConfirm?.();
-          }}
-        >
-          <div className="flex flex-col gap-2">
-            <div className="text-[15px] font-medium text-token-text-primary">{title}</div>
-            <div className="text-sm text-token-text-secondary">{subtitle}</div>
-          </div>
-          {children}
-          <div className="flex items-center justify-end gap-2">
-            {footer ?? (
-              <>
-                <Button color="ghost" type="button" onClick={onClose}>
-                  Cancel
-                </Button>
-                <Button
-                  color={confirmTone === "danger" ? "danger" : "primary"}
-                  disabled={disableConfirm}
-                  type="submit"
-                >
-                  {confirmLabel}
-                </Button>
-              </>
-            )}
-          </div>
-        </form>
-      </div>
-    </DialogOverlay>
-  );
-}
-
-function SettingsValueRow({
-  className,
-  control,
-  description,
-  label,
-}: {
-  className?: string;
-  control?: ReactNode | null;
-  description?: ReactNode;
-  label: ReactNode;
-}) {
-  return (
-    <div
-      className={joinClasses(
-        "flex items-start justify-between gap-4 p-3 max-sm:flex-col max-sm:items-stretch",
-        className,
-      )}
-    >
-      <div className="min-w-0 flex-1">
-        <div className="text-sm text-token-text-primary">{label}</div>
-        {description ? (
-          <div className="mt-1 text-sm leading-6 text-token-text-secondary">
-            {description}
-          </div>
-        ) : null}
-      </div>
-      {control !== null && control !== undefined ? (
-        <div className="shrink-0">{control}</div>
-      ) : null}
-    </div>
-  );
-}
-
 function LoadingStateRow() {
   const { t } = useI18n();
 
@@ -889,23 +803,6 @@ function LoadingStateRow() {
     <div className="flex items-center gap-2 p-4 text-sm text-token-text-secondary">
       <Spinner className="icon-xs" />
       {t("settings.browserUse.origins.loading")}
-    </div>
-  );
-}
-
-function DialogOverlay({
-  children,
-  onDismiss,
-}: {
-  children: ReactNode;
-  onDismiss: () => void;
-}) {
-  return (
-    <div
-      className="fixed inset-0 z-30 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4"
-      onClick={onDismiss}
-    >
-      {children}
     </div>
   );
 }

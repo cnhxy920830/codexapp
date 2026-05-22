@@ -20,6 +20,10 @@ test("debug window page owns the extracted standalone shell and delegates only t
   assert.match(source, /return \(\s*<DebugWindowShell>\s*<DebugModal/s);
   assert.match(source, /showHeader=\{false\}/);
   assert.match(source, /showPopOutButton=\{false\}/);
+  assert.match(source, /const \[conversationIdOverride, setConversationIdOverride\] = useState<string \| null>\(conversationId\);/);
+  assert.match(source, /void onDebugWindowOriginConversationChanged\(\(nextConversationId\) => \{\s*setConversationIdOverride\(nextConversationId\);/s);
+  assert.doesNotMatch(source, /takePendingDebugWindowOriginConversation/);
+  assert.doesNotMatch(source, /onConversationChange\?\.\(conversationIdOverride\)/);
   assert.match(source, /function closeDebugWindow\(\) \{\s*if \(typeof window !== "undefined" && typeof window\.close === "function"\) \{\s*window\.close\(\);/s);
   assert.match(source, /export function DebugModal\(/);
   assert.match(source, /return \(\s*<div className="flex h-full min-h-0 w-full flex-col text-sm">/s);
@@ -35,9 +39,13 @@ test("debug window route and origin-conversation host bridge stay aligned with t
   assert.match(appSource, /currentRoute === "debug"/);
   assert.match(appSource, /<DebugWindowPage/);
   assert.match(appSource, /notifyDebugWindowOriginConversationChanged\(selectedThreadId\)/);
+  assert.match(appSource, /void onDebugWindowOriginConversationChanged\(\(conversationId\) => \{/);
+  assert.doesNotMatch(appSource, /handleDebugWindowConversationSelected/);
+  assert.doesNotMatch(appSource, /onConversationChange=\{\(nextConversationId\) => \{/);
   assert.match(windowNavigationSource, /export const DEBUG_WINDOW_ORIGIN_CONVERSATION_CHANGED_EVENT = "debug-window-origin-conversation-changed";/);
   assert.match(windowNavigationSource, /export const DEBUG_WINDOW_ROUTE_PATH = "\/debug";/);
-  assert.match(windowNavigationSource, /takePendingDebugWindowOriginConversation/);
+  assert.match(windowNavigationSource, /emitConversationId\(await takePendingDebugWindowOriginConversation\(\)\.catch\(\(\) => null\)\);/);
+  assert.match(windowNavigationSource, /async function takePendingDebugWindowOriginConversation\(\)/);
   assert.match(rustSource, /const DEBUG_WINDOW_ROUTE_PATH: &str = "\/debug";/);
   assert.match(rustSource, /const DEBUG_WINDOW_ORIGIN_CONVERSATION_CHANGED_EVENT: &str =\s*"debug-window-origin-conversation-changed";/s);
   assert.match(rustSource, /#\[tauri::command\(rename = "debug-window-origin-conversation-changed"\)\]/);

@@ -17,17 +17,18 @@ export function ChromeThemeColorInput({
   value: string;
   onChange: (value: string) => void;
 }) {
-  const [draftValue, setDraftValue] = useState(value);
+  const [draftValue, setDraftValue] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const triggerId = useIdValue(ariaLabel);
   const popoverId = `${triggerId}-popover`;
-  const inputColor = normalizeHexValue(draftValue) ?? value;
+  const inputValue = draftValue ?? value;
+  const inputColor = normalizeHexValue(inputValue) ?? value;
   const textColor = getReadableTextColor(inputColor);
   const hsva = useMemo(() => hexToHsva(inputColor), [inputColor]);
 
   useEffect(() => {
-    setDraftValue(value);
+    setDraftValue(null);
   }, [value]);
 
   useEffect(() => {
@@ -40,56 +41,115 @@ export function ChromeThemeColorInput({
         return;
       }
       setIsOpen(false);
-      setDraftValue(value);
+      setDraftValue(null);
     };
 
     document.addEventListener("pointerdown", handlePointerDown);
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
     };
-  }, [isOpen, value]);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      event.preventDefault();
+      setIsOpen(false);
+      setDraftValue(null);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
 
   const commitColor = (nextValue: string) => {
-    setDraftValue(nextValue);
+    setDraftValue(null);
     onChange(nextValue);
   };
 
   return (
-    <div className="relative w-full max-w-[8.5rem]" ref={containerRef}>
-      <button
-        id={triggerId}
-        type="button"
-        aria-label={ariaLabel}
-        aria-controls={isOpen ? popoverId : undefined}
-        aria-expanded={isOpen}
-        aria-haspopup="dialog"
-        disabled={disabled}
-        onClick={() => setIsOpen((open) => !open)}
-        className="flex h-7 w-full items-center gap-2 rounded-[10px] border border-transparent px-2 shadow-sm"
+    <div className="relative w-full max-w-[8.5rem] max-sm:max-w-none" ref={containerRef}>
+      <div
+        className="relative flex h-7 w-full items-center gap-2 rounded-lg border border-transparent px-2 shadow-sm"
         style={{
           backgroundColor: value,
           color: textColor,
         }}
       >
-        <span
-          aria-hidden="true"
-          className="h-3.5 w-3.5 shrink-0 rounded-full border"
+        <button
+          id={triggerId}
+          type="button"
+          aria-label={ariaLabel}
+          aria-controls={isOpen ? popoverId : undefined}
+          aria-expanded={isOpen}
+          aria-haspopup="dialog"
+          disabled={disabled}
+          onClick={() => {
+            setIsOpen((open) => {
+              if (open) {
+                setDraftValue(null);
+              }
+              return !open;
+            });
+          }}
+          className="h-3.5 w-3.5 shrink-0 rounded-full disabled:cursor-default"
           style={{
             backgroundColor: value,
             border: `1px solid color-mix(in srgb, ${textColor} 18%, ${value})`,
           }}
+        >
+          <span aria-hidden="true" className="sr-only" />
+        </button>
+        <input
+          aria-label={ariaLabel}
+          type="text"
+          spellCheck={false}
+          disabled={disabled}
+          value={inputValue.toUpperCase()}
+          onBlur={() => {
+            setDraftValue(null);
+          }}
+          onChange={(event) => {
+            const nextValue = sanitizeHexDraft(event.target.value);
+            const normalized = normalizeHexValue(nextValue);
+            if (normalized == null) {
+              setDraftValue(nextValue);
+              return;
+            }
+            setDraftValue(null);
+            onChange(normalized);
+          }}
+          onClick={(event) => {
+            event.stopPropagation();
+          }}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+          }}
+          className="min-w-0 flex-1 bg-transparent text-xs uppercase tabular-nums outline-hidden disabled:cursor-default"
         />
-        <span className="min-w-0 flex-1 truncate text-left text-[12px] uppercase tabular-nums">{value.toUpperCase()}</span>
-      </button>
+      </div>
       {isOpen ? (
         <div
           id={popoverId}
           role="dialog"
           aria-modal="false"
           aria-label={ariaLabel}
-          className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-[220px] rounded-[14px] p-3 shadow-[0_12px_30px_rgba(0,0,0,0.18)]"
+          className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-auto rounded-xl p-3 shadow-[0_12px_30px_rgba(0,0,0,0.18)]"
         >
-          <div className="space-y-3">
+          <div
+            className="h-34 w-34"
+            onPointerDown={(event) => {
+              event.preventDefault();
+            }}
+          >
             <SaturationPicker
               color={hsva}
               disabled={disabled}
@@ -99,22 +159,6 @@ export function ChromeThemeColorInput({
               color={hsva}
               disabled={disabled}
               onChange={(patch) => commitColor(hsvaToHex({ ...hsva, ...patch }))}
-            />
-            <input
-              aria-label={ariaLabel}
-              type="text"
-              spellCheck={false}
-              disabled={disabled}
-              value={draftValue.toUpperCase()}
-              onChange={(event) => {
-                const nextValue = sanitizeHexDraft(event.target.value);
-                setDraftValue(nextValue);
-                const normalized = normalizeHexValue(nextValue);
-                if (normalized) {
-                  onChange(normalized);
-                }
-              }}
-              className="app-control h-9 w-full rounded-[10px] px-3 font-mono text-[13px] uppercase"
             />
           </div>
         </div>

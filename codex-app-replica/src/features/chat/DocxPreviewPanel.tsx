@@ -1,13 +1,23 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type MutableRefObject } from "react";
-import { CheckIcon, ChevronDownIcon } from "../../components/AppShellIcons";
+import { CheckIcon, ChevronDownIcon, ChevronRightIcon } from "../../components/AppShellIcons";
 import { Button } from "../../components/Button";
+import { Tooltip } from "../../components/Tooltip";
 import type { MessageKey } from "../../i18n/messages";
 import { openFile } from "../../services/hostFiles";
+
+export type DocxPreviewPanelTestMode = {
+  kind: "ready";
+  currentPage?: number;
+  totalPages?: number;
+  zoomPercent?: number;
+  zoomToFit?: boolean;
+};
 
 type DocxPreviewPanelProps = {
   bytes: Uint8Array;
   hostId?: string | null;
   path: string;
+  testMode?: DocxPreviewPanelTestMode;
   title: string;
   t: (key: MessageKey, values?: Record<string, number | string>) => string;
 };
@@ -66,7 +76,7 @@ const DOCX_WRAPPER_STYLE = `
 
 let docxRenderAsyncPromise: Promise<DocxRenderAsync | null> | null = null;
 
-export function DocxPreviewPanel({ bytes, hostId = null, path, title, t }: DocxPreviewPanelProps) {
+export function DocxPreviewPanel({ bytes, hostId = null, path, testMode, title, t }: DocxPreviewPanelProps) {
   const bodyContainerRef = useRef<HTMLDivElement | null>(null);
   const styleContainerRef = useRef<HTMLDivElement | null>(null);
   const renderGenerationRef = useRef(0);
@@ -74,16 +84,28 @@ export function DocxPreviewPanel({ bytes, hostId = null, path, title, t }: DocxP
   const clearProgrammaticScrollRef = useRef<(() => void) | null>(null);
   const touchZoomStateRef = useRef<{ distance: number; zoomPercent: number } | null>(null);
   const zoomMenuRef = useRef<HTMLDivElement | null>(null);
+  const isTestReady = testMode?.kind === "ready";
+  const initialTotalPages = isTestReady ? Math.max(testMode.totalPages ?? 3, 1) : 0;
   const [renderAsync, setRenderAsync] = useState<DocxRenderAsync | null>(null);
-  const [loadState, setLoadState] = useState<LoadState>("loading");
-  const [totalPages, setTotalPages] = useState(0);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [loadState, setLoadState] = useState<LoadState>(isTestReady ? "ready" : "loading");
+  const [totalPages, setTotalPages] = useState(initialTotalPages);
+  const [currentPage, setCurrentPage] = useState(isTestReady ? clampDocxPage(testMode.currentPage ?? 1, initialTotalPages) : 1);
   const [bodyContainerWidth, setBodyContainerWidth] = useState<number | null>(null);
-  const [zoomMode, setZoomMode] = useState<ZoomMode>({ kind: "percentage", zoomPercent: 75 });
+  const [zoomMode, setZoomMode] = useState<ZoomMode>(
+    isTestReady
+      ? testMode.zoomToFit
+        ? { kind: "fit-width" }
+        : { kind: "percentage", zoomPercent: clampZoomPercent(testMode.zoomPercent ?? 75) }
+      : { kind: "percentage", zoomPercent: 75 },
+  );
   const [isZoomMenuOpen, setIsZoomMenuOpen] = useState(false);
   const titleWithoutDocxExtension = useMemo(() => title.replace(/\.docx$/i, ""), [title]);
 
   useEffect(() => {
+    if (testMode != null) {
+      return;
+    }
+
     let disposed = false;
 
     void loadDocxRenderAsync()
@@ -107,9 +129,13 @@ export function DocxPreviewPanel({ bytes, hostId = null, path, title, t }: DocxP
     return () => {
       disposed = true;
     };
-  }, []);
+  }, [testMode]);
 
   useEffect(() => {
+    if (!isZoomMenuOpen) {
+      return;
+    }
+
     const handlePointerDown = (event: PointerEvent) => {
       if (zoomMenuRef.current?.contains(event.target as Node)) {
         return;
@@ -117,13 +143,41 @@ export function DocxPreviewPanel({ bytes, hostId = null, path, title, t }: DocxP
       setIsZoomMenuOpen(false);
     };
 
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsZoomMenuOpen(false);
+      }
+    };
+
     document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
     };
-  }, []);
+  }, [isZoomMenuOpen]);
 
   useEffect(() => {
+    if (!isTestReady) {
+      return;
+    }
+
+    const nextTotalPages = Math.max(testMode.totalPages ?? 3, 1);
+    setLoadState("ready");
+    setTotalPages(nextTotalPages);
+    setCurrentPage(clampDocxPage(testMode.currentPage ?? 1, nextTotalPages));
+    setZoomMode(
+      testMode.zoomToFit
+        ? { kind: "fit-width" }
+        : { kind: "percentage", zoomPercent: clampZoomPercent(testMode.zoomPercent ?? 75) },
+    );
+  }, [isTestReady, testMode]);
+
+  useEffect(() => {
+    if (testMode != null) {
+      return;
+    }
+
     const bodyContainer = bodyContainerRef.current;
     if (bodyContainer == null || typeof ResizeObserver === "undefined") {
       return;
@@ -143,10 +197,10 @@ export function DocxPreviewPanel({ bytes, hostId = null, path, title, t }: DocxP
     return () => {
       observer.disconnect();
     };
-  }, [loadState]);
+  }, [loadState, testMode]);
 
   useEffect(() => {
-    if (loadState !== "ready") {
+    if (testMode != null || loadState !== "ready") {
       return;
     }
 
@@ -217,9 +271,13 @@ export function DocxPreviewPanel({ bytes, hostId = null, path, title, t }: DocxP
       clearProgrammaticScrollRef.current?.();
       clearProgrammaticScrollRef.current = null;
     };
-  }, [loadState, totalPages, bodyContainerWidth, zoomMode]);
+  }, [loadState, totalPages, bodyContainerWidth, zoomMode, testMode]);
 
   useEffect(() => {
+    if (testMode != null) {
+      return;
+    }
+
     if (bodyContainerRef.current == null || styleContainerRef.current == null || renderAsync == null) {
       return;
     }
@@ -268,7 +326,7 @@ export function DocxPreviewPanel({ bytes, hostId = null, path, title, t }: DocxP
       bodyContainer.replaceChildren();
       styleContainer.replaceChildren();
     };
-  }, [bytes, renderAsync]);
+  }, [bytes, renderAsync, testMode]);
 
   const effectiveZoomPercent = useMemo(() => {
     if (zoomMode.kind === "fit-width") {
@@ -310,53 +368,59 @@ export function DocxPreviewPanel({ bytes, hostId = null, path, title, t }: DocxP
           </div>
           <div className="min-w-0 justify-self-center">
             <div className="flex items-center gap-0.5">
-              <Button
-                aria-label={t("artifactTab.preview.previousPage")}
-                className="[@container_(max-width:240px)]:hidden"
-                color="ghost"
-                disabled={effectiveCurrentPage <= 1}
-                size="toolbar"
-                uniform
-                onClick={() => {
-                  scrollToDocxPage({
-                    clearProgrammaticScrollRef,
-                    container: bodyContainerRef.current,
-                    onCurrentPageChange: setCurrentPage,
-                    pageNumber: effectiveCurrentPage - 1,
-                    pendingProgrammaticPageRef,
-                  });
-                }}
-              >
-                <ChevronDownIcon className="icon-2xs rotate-90" />
-              </Button>
+              <Tooltip tooltipContent={t("artifactTab.preview.previousPage")}>
+                <Button
+                  aria-label={t("artifactTab.preview.previousPage")}
+                  className="[@container_(max-width:240px)]:hidden"
+                  color="ghost"
+                  disabled={effectiveCurrentPage <= 1}
+                  size="toolbar"
+                  uniform
+                  onClick={() => {
+                    scrollToDocxPage({
+                      clearProgrammaticScrollRef,
+                      container: bodyContainerRef.current,
+                      onCurrentPageChange: setCurrentPage,
+                      pageNumber: effectiveCurrentPage - 1,
+                      pendingProgrammaticPageRef,
+                    });
+                  }}
+                >
+                  <ChevronRightIcon className="icon-2xs rotate-180" />
+                </Button>
+              </Tooltip>
               <span className="min-w-12 px-1 text-center text-sm text-token-text-primary tabular-nums [@container_(max-width:300px)]:min-w-9 [@container_(max-width:300px)]:px-0.5">
                 {currentPageLabel}
               </span>
-              <Button
-                aria-label={t("artifactTab.preview.nextPage")}
-                className="[@container_(max-width:240px)]:hidden"
-                color="ghost"
-                disabled={effectiveCurrentPage >= totalPages}
-                size="toolbar"
-                uniform
-                onClick={() => {
-                  scrollToDocxPage({
-                    clearProgrammaticScrollRef,
-                    container: bodyContainerRef.current,
-                    onCurrentPageChange: setCurrentPage,
-                    pageNumber: effectiveCurrentPage + 1,
-                    pendingProgrammaticPageRef,
-                  });
-                }}
-              >
-                <ChevronDownIcon className="icon-2xs -rotate-90" />
-              </Button>
+              <Tooltip tooltipContent={t("artifactTab.preview.nextPage")}>
+                <Button
+                  aria-label={t("artifactTab.preview.nextPage")}
+                  className="[@container_(max-width:240px)]:hidden"
+                  color="ghost"
+                  disabled={effectiveCurrentPage >= totalPages}
+                  size="toolbar"
+                  uniform
+                  onClick={() => {
+                    scrollToDocxPage({
+                      clearProgrammaticScrollRef,
+                      container: bodyContainerRef.current,
+                      onCurrentPageChange: setCurrentPage,
+                      pageNumber: effectiveCurrentPage + 1,
+                      pendingProgrammaticPageRef,
+                    });
+                  }}
+                >
+                  <ChevronRightIcon className="icon-2xs" />
+                </Button>
+              </Tooltip>
             </div>
           </div>
           <div className="flex min-w-0 justify-end overflow-hidden">
             <div ref={zoomMenuRef} className="flex items-center gap-1">
               <div className="relative">
                 <Button
+                  aria-expanded={isZoomMenuOpen}
+                  aria-haspopup="menu"
                   className="shrink-0 gap-1 rounded-md px-1.5 text-sm"
                   color="ghost"
                   data-testid="docx-preview-zoom-trigger"
@@ -369,7 +433,10 @@ export function DocxPreviewPanel({ bytes, hostId = null, path, title, t }: DocxP
                   <ChevronDownIcon className="icon-2xs" />
                 </Button>
                 {isZoomMenuOpen ? (
-                  <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-[168px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+                  <div
+                    role="menu"
+                    className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-[168px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]"
+                  >
                     <div className="space-y-1">
                       {DOCX_ZOOM_OPTIONS.map((zoomPercent) => {
                         const isSelected = !isZoomToFitSelected && zoomPercent === effectiveZoomPercent;

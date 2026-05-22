@@ -130,6 +130,59 @@ test("keyboard shortcuts page keeps extracted frontend query and Tauri persisten
   assert.match(rustSource, /fs::write\(&path, payload\)/);
 });
 
+test("keyboard shortcuts command rows resolve visible copy from upstream locale keys", async () => {
+  const {
+    KEYBOARD_SHORTCUT_COMMANDS,
+    getKeyboardShortcutCommandDescription,
+    getKeyboardShortcutCommandTitle,
+  } = await import("../services/keyboardShortcuts");
+
+  const newThreadCommand = KEYBOARD_SHORTCUT_COMMANDS.find(
+    (command) => command.id === "newThread",
+  );
+  const hotkeyWindowCommand = KEYBOARD_SHORTCUT_COMMANDS.find(
+    (command) => command.id === "hotkeyWindow",
+  );
+  const openAvatarOverlayCommand = KEYBOARD_SHORTCUT_COMMANDS.find(
+    (command) => command.id === "openAvatarOverlay",
+  );
+  const threadOneCommand = KEYBOARD_SHORTCUT_COMMANDS.find(
+    (command) => command.id === "thread1",
+  );
+
+  assert.ok(newThreadCommand);
+  assert.ok(hotkeyWindowCommand);
+  assert.ok(openAvatarOverlayCommand);
+  assert.ok(threadOneCommand);
+
+  assert.equal(getKeyboardShortcutCommandTitle(newThreadCommand, "zh-CN"), "新对话");
+  assert.equal(
+    getKeyboardShortcutCommandTitle(hotkeyWindowCommand, "zh-CN"),
+    "弹出窗口快捷键",
+  );
+  assert.equal(
+    getKeyboardShortcutCommandTitle(openAvatarOverlayCommand, "zh-CN"),
+    "唤醒宠物",
+  );
+  assert.equal(
+    getKeyboardShortcutCommandTitle(threadOneCommand, "zh-CN"),
+    "转到聊天 1",
+  );
+
+  assert.equal(
+    getKeyboardShortcutCommandDescription(newThreadCommand, "zh-CN"),
+    "Start a new chat",
+  );
+  assert.equal(
+    getKeyboardShortcutCommandDescription(openAvatarOverlayCommand, "zh-CN"),
+    "Open the pet overlay",
+  );
+  assert.equal(
+    getKeyboardShortcutCommandDescription(threadOneCommand, "zh-CN"),
+    "Open the visible chat in this shortcut slot",
+  );
+});
+
 test("keyboard shortcuts page reuses shared tooltip and keycap owners instead of page-local copies", () => {
   const pageSource = readSource(PAGE_SOURCE_PATH);
   const tooltipSource = readSource(TOOLTIP_SOURCE_PATH);

@@ -140,13 +140,18 @@ test("preview scripts keep extracted shared code-snippet owner instead of page-l
 test("editor keeps extracted segmented controls, action platform checkbox, and save affordance", () => {
   const source = readSource(SOURCE_PATH);
 
+  assert.match(source, /import \{ SegmentedControl \} from "\.\/SegmentedControl";/);
   assert.match(source, /<SegmentedControl/);
   assert.match(source, /buildScriptPlatformOptions\(t\)/);
   assert.match(source, /buildPlatformOptions\(t\)/);
   assert.match(source, /type="checkbox"/);
+  assert.match(source, /className="peer sr-only"/);
+  assert.match(source, /<CheckIcon className="h-3 w-3" \/>/);
   assert.match(source, /settings\.localEnvironments\.actions\.item\.platforms\.specific/);
-  assert.match(source, /title=\{saveDisabledReason \?\? undefined\}/);
-  assert.match(source, /loading=\{isSaving\}/);
+  assert.match(source, /<Tooltip disabled=\{saveDisabledReason == null\} tooltipContent=\{saveDisabledReason \?\? ""\}>/);
+  assert.match(source, /<Tooltip tooltipContent=\{t\("settings\.localEnvironments\.actions\.item\.tooltip\.delete"\)\}>/);
+  assert.doesNotMatch(source, /function SegmentedControl\(/);
+  assert.doesNotMatch(source, /loading=\{isSaving\}/);
 });
 
 function readSource(filePath: string) {

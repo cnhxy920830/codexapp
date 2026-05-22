@@ -562,9 +562,13 @@ export async function setPersonality(personality: ConfigPersonality | null) {
   });
 }
 
-export function peekThirdPartyNotices() {
+export function peekThirdPartyNotices(options?: { includeStale?: boolean }) {
+  if (thirdPartyNoticesCache == null) {
+    return null;
+  }
+
   if (
-    thirdPartyNoticesCache == null ||
+    !options?.includeStale &&
     Date.now() - thirdPartyNoticesCache.loadedAt >= THIRD_PARTY_NOTICES_STALE_MS
   ) {
     return null;

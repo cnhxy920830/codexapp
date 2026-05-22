@@ -694,7 +694,7 @@ fn normalized_conversation_id(conversation_id: &str) -> Result<String, String> {
 }
 
 fn normalized_plan_content(plan_content: &str) -> Result<String, String> {
-    if plan_content.trim().is_empty() {
+    if plan_content.is_empty() {
         return Err("planContent must not be empty".to_string());
     }
 
@@ -994,9 +994,10 @@ mod tests {
             Err("conversationId must not be empty".to_string())
         );
         assert_eq!(
-            normalized_plan_content("   "),
+            normalized_plan_content(""),
             Err("planContent must not be empty".to_string())
         );
+        assert_eq!(normalized_plan_content("   "), Ok("   ".to_string()));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { Button } from "../../components/Button";
-import { CheckIcon, FolderIcon, PlusIcon } from "../../components/AppShellIcons";
+import { CheckIcon, FolderIcon, NewChatIcon, PlusIcon } from "../../components/AppShellIcons";
 import { Spinner } from "../../components/Spinner";
 import { useI18n } from "../../i18n/i18n";
 import { stripWorkspaceRootExtendedPrefix } from "./selectWorkspaceModel";
@@ -281,6 +281,42 @@ function AddProjectButton({
     setIsOpen(false);
   };
 
+  const focusMenuItem = (index: number) => {
+    menuItemRefs.current[index]?.focus();
+  };
+
+  const handleMenuItemKeyDown = (index: number, event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      focusMenuItem(Math.min(index + 1, menuItemRefs.current.length - 1));
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      focusMenuItem(Math.max(index - 1, 0));
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      focusMenuItem(0);
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      focusMenuItem(menuItemRefs.current.length - 1);
+      return;
+    }
+    if (event.key === "Tab") {
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenu();
+      triggerRef.current?.focus();
+    }
+  };
+
   if (isRemoteHost) {
     return (
       <Button
@@ -324,12 +360,18 @@ function AddProjectButton({
       </Button>
       {open ? (
         <div
-          className="absolute left-0 top-[calc(100%+1px)] z-50 m-px flex min-w-[220px] select-none flex-col overflow-y-auto rounded-xl bg-token-dropdown-background/90 px-1 py-1 text-token-foreground ring-token-border shadow-xl-spread ring-[0.5px] backdrop-blur-sm"
+          aria-orientation="vertical"
+          className="no-drag absolute left-0 top-[calc(100%+1px)] z-50 m-px flex min-w-[220px] select-none flex-col overflow-y-auto rounded-xl bg-token-dropdown-background/90 px-1 py-1 text-token-foreground ring-token-border shadow-xl-spread ring-[0.5px] backdrop-blur-sm"
           id={menuId}
+          onKeyDown={(event) => {
+            if (event.key === "Tab") {
+              event.preventDefault();
+            }
+          }}
           role="menu"
         >
           <MenuItem
-            icon={<AddIcon className="icon-xs" />}
+            icon={<NewChatIcon className="icon-xs" />}
             itemRef={(node) => {
               menuItemRefs.current[0] = node;
             }}
@@ -338,18 +380,7 @@ function AddProjectButton({
               closeMenu();
               onStartFromScratch();
             }}
-            onKeyDown={(event) => {
-              if (event.key === "ArrowDown") {
-                event.preventDefault();
-                menuItemRefs.current[1]?.focus();
-                return;
-              }
-              if (event.key === "Escape") {
-                event.preventDefault();
-                closeMenu();
-                triggerRef.current?.focus();
-              }
-            }}
+            onKeyDown={(event) => handleMenuItemKeyDown(0, event)}
           />
           <MenuItem
             icon={<FolderIcon className="icon-xs" />}
@@ -361,18 +392,7 @@ function AddProjectButton({
               closeMenu();
               onUseExistingFolder();
             }}
-            onKeyDown={(event) => {
-              if (event.key === "ArrowUp") {
-                event.preventDefault();
-                menuItemRefs.current[0]?.focus();
-                return;
-              }
-              if (event.key === "Escape") {
-                event.preventDefault();
-                closeMenu();
-                triggerRef.current?.focus();
-              }
-            }}
+            onKeyDown={(event) => handleMenuItemKeyDown(1, event)}
           />
         </div>
       ) : null}
@@ -397,9 +417,13 @@ function MenuItem({
     <button
       className="no-drag group flex w-full cursor-interaction items-center gap-1.5 rounded-lg px-[var(--padding-row-x)] py-[var(--padding-row-y)] text-left text-sm text-token-foreground outline-hidden hover:bg-token-list-hover-background focus:bg-token-list-hover-background"
       onClick={onClick}
+      onMouseMove={(event) => {
+        event.currentTarget.focus({ preventScroll: true });
+      }}
       onKeyDown={onKeyDown}
       ref={itemRef}
       role="menuitem"
+      tabIndex={-1}
       type="button"
     >
       <span className="shrink-0 opacity-75 group-focus:opacity-100 group-hover:opacity-100">{icon}</span>
@@ -492,23 +516,6 @@ function WorkspaceCheckboxRow({
         </div>
       </label>
     </div>
-  );
-}
-
-function AddIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      aria-hidden="true"
-      className={className}
-      fill="none"
-      viewBox="0 0 20 20"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path
-        d="M9.33496 16.5V10.665H3.5C3.13273 10.665 2.83496 10.3673 2.83496 10C2.83496 9.63273 3.13273 9.33496 3.5 9.33496H9.33496V3.5C9.33496 3.13273 9.63273 2.83496 10 2.83496C10.3673 2.83496 10.665 3.13273 10.665 3.5V9.33496H16.5L16.6338 9.34863C16.9369 9.41057 17.165 9.67857 17.165 10C17.165 10.3214 16.9369 10.5894 16.6338 10.6514L16.5 10.665H10.665V16.5C10.665 16.8673 10.3673 17.165 10 17.165C9.63273 17.165 9.33496 16.8673 9.33496 16.5Z"
-        fill="currentColor"
-      />
-    </svg>
   );
 }
 

@@ -95,6 +95,21 @@ export function DataControlsSettings({
     });
   }, [selectedHostId]);
 
+  useEffect(() => {
+    const handleFocus = () => {
+      void loadArchivedThreads({
+        hostId: selectedHostIdRef.current,
+        showLoading: false,
+        clearOnError: false,
+      });
+    };
+
+    window.addEventListener("focus", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, []);
+
   const openUnarchivedConversation = (threadId: string) => {
     onDismissToast?.();
     void onViewThread?.(threadId, selectedHostId);
@@ -145,7 +160,7 @@ export function DataControlsSettings({
 
   return (
     <SettingsContentLayout title={<SettingsSectionTitle slug="data-controls" />}>
-      <SettingsGroup>
+      <SettingsGroup className="gap-2">
         <SettingsGroup.Content>
           {isLoading ? (
             <SettingsSurface>
@@ -164,7 +179,9 @@ export function DataControlsSettings({
               {archivedThreads.map((thread) => {
                 const isPending = pendingThreadIds.includes(thread.id);
                 const title =
-                  thread.name?.trim() || thread.preview.trim() || t("settings.dataControls.archivedChats.untitled");
+                  normalizeArchivedThreadTitle(thread.name) ??
+                  normalizeArchivedThreadTitle(thread.preview) ??
+                  t("settings.dataControls.archivedChats.untitled");
                 const summary = formatArchivedThreadSummary(thread, locale, t);
 
                 return (
@@ -249,5 +266,38 @@ function deriveProjectName(path: string | null | undefined) {
     return null;
   }
   const segments = path.split(/[/\\]+/).filter(Boolean);
-  return segments.at(-1) ?? null;
+  return normalizeProjectName(segments.at(-1));
+}
+
+function normalizeArchivedThreadTitle(value: string | null | undefined) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const firstLine = trimmed.split(/\r?\n/u, 1)[0] ?? trimmed;
+  const normalized = firstLine.replace(/\s+/gu, " ").trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeProjectName(value: string | null | undefined) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  const words = trimmed.split(/\s+/u).filter(Boolean);
+  if (words.length <= 3) {
+    return trimmed;
+  }
+
+  return words.slice(0, 3).join(" ");
 }

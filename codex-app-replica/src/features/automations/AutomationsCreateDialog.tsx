@@ -504,7 +504,7 @@ export function AutomationsCreateDialog({
   );
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
+    <div className="codex-dialog fixed inset-0 z-30 flex items-center justify-center bg-[rgba(0,0,0,0.24)] px-4">
       <div
         ref={dialogRef}
         className="app-card relative flex max-h-[95vh] w-full max-w-[800px] flex-col overflow-hidden rounded-[20px] shadow-[0_20px_48px_rgba(0,0,0,0.22)]"

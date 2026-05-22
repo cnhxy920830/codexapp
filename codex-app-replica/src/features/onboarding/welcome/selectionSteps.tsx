@@ -82,6 +82,7 @@ export function IntentSelectionStep({
         checked={personalizedSuggestionsEnabled}
         onChange={onPersonalizedSuggestionsChange}
         t={t}
+        tooltipVariant="intent"
       />
       <div className="mt-8 flex w-full max-w-xs flex-col items-center gap-3">
         <PrimaryButton className="w-full" onClick={onContinue}>
@@ -180,6 +181,7 @@ export function RoleSelectionStep({
         checked={personalizedSuggestionsEnabled}
         onChange={onPersonalizedSuggestionsChange}
         t={t}
+        tooltipVariant="role"
       />
       <div className="mt-8 flex w-full max-w-xs flex-col items-center gap-3">
         <PrimaryButton className="w-full" disabled={isContinueDisabled} onClick={onContinue}>
@@ -195,10 +197,12 @@ function PersonalizedSuggestionsRow({
   checked,
   onChange,
   t,
+  tooltipVariant,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   t: Translate;
+  tooltipVariant: "intent" | "role";
 }) {
   const title = t("onboarding.welcomeV2.personalizedSuggestions.title");
   const description = t("onboarding.welcomeV2.personalizedSuggestions.description");
@@ -215,12 +219,16 @@ function PersonalizedSuggestionsRow({
         <button
           type="button"
           aria-pressed={checked}
-          className="cursor-pointer text-sm leading-5 font-normal text-[var(--app-shell-text)]"
+          className="cursor-pointer text-sm leading-5 font-normal text-[var(--app-shell-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-shell-text)]"
           onClick={() => onChange(!checked)}
         >
           {title}
         </button>
-        <InlineTooltip label={t("onboarding.welcomeV2.personalizedSuggestions.info")} content={description} />
+        <InlineTooltip
+          label={t("onboarding.welcomeV2.personalizedSuggestions.info")}
+          content={description}
+          variant={tooltipVariant}
+        />
       </div>
     </div>
   );

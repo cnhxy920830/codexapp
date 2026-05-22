@@ -98,6 +98,8 @@ export function OptionChip({
   onClick: () => void;
   selected: boolean;
 }) {
+  const isDark = useDocumentIsDark();
+
   return (
     <button
       type="button"
@@ -105,8 +107,17 @@ export function OptionChip({
       className={[
         "flex h-10 min-w-0 items-center gap-2.5 overflow-hidden rounded-2xl border px-[13px] text-left",
         selected
-          ? "border-[var(--app-shell-border)] bg-[color-mix(in_srgb,var(--app-shell-text)_6%,transparent)]"
-          : "border-[var(--app-shell-border)] bg-[var(--app-shell-surface)] hover:bg-[var(--app-shell-hover)]",
+          ? [
+              "bg-[color-mix(in_srgb,var(--app-shell-text)_5%,transparent)]",
+              isDark
+                ? "border-[var(--app-shell-border)]"
+                : "border-transparent hover:border-[var(--app-shell-border)]",
+            ].join(" ")
+          : [
+              "border-[var(--app-shell-border)]",
+              "hover:bg-[color-mix(in_srgb,var(--app-shell-text)_3%,transparent)]",
+              isDark ? "bg-transparent" : "bg-[var(--app-shell-control-bg)]",
+            ].join(" "),
       ].join(" ")}
       onClick={onClick}
     >
@@ -215,28 +226,42 @@ export function ImportGroupRow({
         </div>
       ) : null}
       <div className="min-w-0 flex-1">
-        <div className="text-[14px] font-medium text-[var(--app-shell-text)]">{label}</div>
-        <div className="mt-1 text-[12px] leading-5 text-[var(--app-shell-subtle)]">{description}</div>
+        <div className="truncate text-[14px] leading-[17px] font-normal text-[var(--app-shell-text)]">{label}</div>
+        <div className="mt-1 truncate text-[12px] leading-[14px] text-[var(--app-shell-subtle)]">{description}</div>
       </div>
       <SelectionCheckbox
         checked={checked}
         disabled={disabled}
         indeterminate={state === "partial"}
         label={label}
+        className="ml-3"
         onChange={onCheckedChange}
       />
     </label>
   );
 }
 
-export function InlineTooltip({ content, label }: { content: string; label: string }) {
+export function InlineTooltip({
+  content,
+  label,
+  variant = "role",
+}: {
+  content: string;
+  label: string;
+  variant?: "intent" | "role";
+}) {
+  const tooltipClassName =
+    variant === "intent"
+      ? "!border-transparent !bg-black px-1.5 py-1.5 text-center !text-white text-sm leading-4 shadow-lg"
+      : "!border-transparent !bg-black px-1.5 py-1.5 text-center text-xs leading-4 font-medium !text-white shadow-lg";
+
   return (
     <Tooltip
       delayDuration={0}
       side="top"
       sideOffset={6}
       tooltipBodyClassName="!text-white"
-      tooltipClassName="!border-transparent !bg-black px-1.5 py-1.5 text-center text-xs leading-4 font-medium !text-white shadow-lg"
+      tooltipClassName={tooltipClassName}
       tooltipContent={<span className="block !text-white">{content}</span>}
       tooltipMaxWidth={272}
     >
@@ -245,7 +270,7 @@ export function InlineTooltip({ content, label }: { content: string; label: stri
         aria-label={label}
         className="inline-flex h-4 w-4 items-center justify-center rounded-full text-[var(--app-shell-subtle)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-shell-text)]"
       >
-        <InfoIcon className="h-3.5 w-3.5" />
+        <InfoIcon className="h-4 w-4" />
       </button>
     </Tooltip>
   );
@@ -277,7 +302,35 @@ export function PrimaryButton({
         "flex items-center justify-center rounded-full border border-transparent px-4 py-3 text-[14px] leading-5 font-medium text-[var(--app-shell-main-surface)]",
         disabled
           ? "cursor-not-allowed bg-[color-mix(in_srgb,var(--app-shell-text)_30%,transparent)]"
-          : "bg-[var(--app-shell-text)] hover:opacity-90",
+          : "bg-[var(--app-shell-text)] hover:bg-[color-mix(in_srgb,var(--app-shell-text)_80%,transparent)]",
+        className,
+      ].join(" ")}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function GhostButton({
+  children,
+  className = "",
+  disabled = false,
+  onClick,
+}: {
+  children: ReactNode;
+  className?: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={[
+        "flex items-center justify-center rounded-full border border-transparent px-4 py-3 text-[14px] leading-5 font-medium text-[var(--app-shell-text)]",
+        "bg-[color-mix(in_srgb,var(--app-shell-text)_5%,transparent)] hover:bg-[color-mix(in_srgb,var(--app-shell-text)_10%,transparent)]",
+        "disabled:cursor-default disabled:opacity-40",
         className,
       ].join(" ")}
       disabled={disabled}
@@ -362,7 +415,7 @@ export function SelectionBadge({
 }) {
   if (isSelected) {
     return (
-      <span className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] border border-[var(--app-shell-text)] bg-[var(--app-shell-text)] text-[var(--app-shell-main-surface)]">
+      <span className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] border border-[var(--app-shell-accent)] bg-[var(--app-shell-accent)] text-white">
         <CheckIcon className="h-3 w-3" />
       </span>
     );
@@ -370,13 +423,18 @@ export function SelectionBadge({
 
   if (isPartial) {
     return (
-      <span className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] border border-[var(--app-shell-text)] bg-[color-mix(in_srgb,var(--app-shell-text)_8%,transparent)]">
-        <span className="h-[2px] w-2 rounded-full bg-[var(--app-shell-text)]" />
+      <span className="inline-flex h-4 w-4 items-center justify-center rounded-[3px] border border-[var(--app-shell-accent)] bg-[var(--app-shell-accent)]">
+        <span className="h-[2px] w-2 rounded-full bg-white" />
       </span>
     );
   }
 
-  return <span className="inline-flex h-4 w-4 rounded-[3px] border border-[var(--app-shell-border)]" aria-hidden="true" />;
+  return (
+    <span
+      className="inline-flex h-4 w-4 rounded-[3px] border border-[var(--app-shell-border-heavy)]"
+      aria-hidden="true"
+    />
+  );
 }
 
 export function MiniBadge({
@@ -397,4 +455,62 @@ export function MiniBadge({
       {children}
     </span>
   );
+}
+
+function useDocumentIsDark() {
+  const [isDark, setIsDark] = useState(readDocumentIsDark);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const root = document.documentElement;
+    const observer = new MutationObserver(() => {
+      setIsDark(readDocumentIsDark());
+    });
+
+    observer.observe(root, {
+      attributeFilter: ["class"],
+      attributes: true,
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || window.matchMedia == null) {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = () => {
+      setIsDark(readDocumentIsDark());
+    };
+
+    mediaQuery.addEventListener("change", handleChange);
+    return () => {
+      mediaQuery.removeEventListener("change", handleChange);
+    };
+  }, []);
+
+  return isDark;
+}
+
+function readDocumentIsDark() {
+  if (typeof document === "undefined") {
+    return false;
+  }
+
+  const root = document.documentElement;
+  if (root.classList.contains("electron-dark")) {
+    return true;
+  }
+  if (root.classList.contains("electron-light")) {
+    return false;
+  }
+
+  return typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches === true;
 }

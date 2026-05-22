@@ -55,6 +55,22 @@ test("worktrees settings keeps extracted host-filtered recent threads and backgr
   assert.match(appSource, /cachedConversations=\{Array\.from\(loadedConversationsByIdRef\.current\.values\(\)\)\}/);
 });
 
+test("worktrees settings keeps extracted workspace-root-options data source for local and remote hosts", () => {
+  const source = readSource(COMPONENT_SOURCE_PATH);
+
+  assert.match(source, /REMOTE_PROJECTS_SHARED_OBJECT_KEY/);
+  assert.match(source, /onSharedObjectUpdated\(\(notification\) => \{/);
+  assert.match(
+    source,
+    /readWorkspaceRootOptions\(selectedHostId\)\.then\(\(response\) => response\.roots\)/,
+  );
+  assert.doesNotMatch(source, /readSettingsRemoteProjectsSnapshot/);
+  assert.doesNotMatch(
+    source,
+    /selectedHostId === LOCAL_SETTINGS_HOST_ID\s*\?\s*readWorkspaceRootOptions/,
+  );
+});
+
 test("worktrees settings keeps extracted worktree row interactions and app routing contract", () => {
   const source = readSource(COMPONENT_SOURCE_PATH);
   const appSource = readSource(APP_SOURCE_PATH);

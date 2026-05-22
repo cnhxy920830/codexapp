@@ -771,6 +771,8 @@ pub struct AppInfo {
     pub is_enabled: bool,
     #[serde(default)]
     pub plugin_display_names: Vec<String>,
+    #[serde(default)]
+    pub labels: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1056,6 +1058,8 @@ pub struct PluginShareContext {
 pub struct PluginSharePrincipal {
     pub principal_type: PluginSharePrincipalType,
     pub principal_id: String,
+    #[serde(default)]
+    pub role: Option<PluginSharePrincipalRole>,
     pub name: String,
 }
 
@@ -1067,6 +1071,16 @@ pub enum PluginSharePrincipalType {
     Group,
     #[serde(rename = "workspace")]
     Workspace,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PluginSharePrincipalRole {
+    #[serde(rename = "reader")]
+    Reader,
+    #[serde(rename = "editor")]
+    Editor,
+    #[serde(rename = "owner")]
+    Owner,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

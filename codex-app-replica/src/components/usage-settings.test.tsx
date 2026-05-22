@@ -39,7 +39,10 @@ test("usage settings and app share extracted usage-access gate", () => {
   const hookSource = readSource(HOOK_SOURCE_PATH);
 
   assert.match(settingsSource, /const \{ isUsageSettingsAccessLoading, isUsageSettingsVisible \} = useUsageSettingsAccess\(/);
-  assert.match(appSource, /const \{\s*isUsageSettingsVisible: showUsageSettings,\s*\} = useUsageSettingsAccess\(/s);
+  assert.match(
+    appSource,
+    /const \{[\s\S]*?isUsageSettingsVisible: showUsageSettings,[\s\S]*?\} = useUsageSettingsAccess\(/,
+  );
   assert.doesNotMatch(appSource, /isUsageSettingsPlanSupported/);
 
   assert.match(hookSource, /await readAccountInfo\(\)/);
@@ -69,6 +72,7 @@ test("usage settings keeps extracted credit row link and active badge owner", ()
   assert.match(source, /window\.open\(CREDIT_PURCHASE_URL, "_blank", "noopener,noreferrer"\)/);
   assert.match(source, /<LinkExternalIcon className="icon-xxs" \/>/);
   assert.match(source, /<CheckCircleFilledIcon className="icon-2xs shrink-0" \/>/);
+  assert.match(source, /const oneDayInSeconds = 24 \* 60 \* 60;/);
   assert.doesNotMatch(source, /<CheckIcon/);
   assert.doesNotMatch(source, /function LinkExternalIcon\(/);
 });
@@ -76,12 +80,13 @@ test("usage settings keeps extracted credit row link and active badge owner", ()
 test("usage auto top up dialog keeps extracted form submit shell and failure gating", () => {
   const source = readSource(DIALOG_SOURCE_PATH);
 
+  assert.match(source, /<SettingsDialog\s+contentClassName="w-\[536px\] max-w-\[calc\(100vw-2rem\)\]"/s);
+  assert.match(source, /onOpenAutoFocus=\{\(event\) => event\.preventDefault\(\)\}/);
+  assert.match(source, /shouldIgnoreClickOutside=\{isSaving\}/);
   assert.match(source, /<form\s+onSubmit=\{\(event\) => \{/s);
   assert.match(source, /event\.preventDefault\(\);/);
   assert.match(source, /<Button\s+type="submit"\s+color="primary"/s);
   assert.match(source, /<Button\s+type="button"\s+color="outline"/s);
-  assert.match(source, /role="dialog"/);
-  assert.match(source, /aria-modal="true"/);
   assert.match(source, /if \(response\.immediateTopUpStatus === "failed" \|\| response\.immediateTopUpStatus === "payment_declined"\) \{/);
 
   const onSavedIndex = source.indexOf("onSaved(response);");

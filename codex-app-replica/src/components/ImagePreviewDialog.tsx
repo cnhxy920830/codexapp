@@ -1,4 +1,4 @@
-import { cloneElement, isValidElement, useCallback, useEffect, useMemo, useRef, useState, type ImgHTMLAttributes, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode, type SyntheticEvent } from "react";
+import { cloneElement, isValidElement, useCallback, useEffect, useId, useMemo, useRef, useState, type ImgHTMLAttributes, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactElement, type ReactNode, type SyntheticEvent } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "../i18n/i18n";
 
@@ -64,7 +64,9 @@ export function ImagePreviewDialog({
   triggerContent,
 }: ImagePreviewDialogProps) {
   const { t } = useI18n();
+  const dialogContentId = useId();
   const dismissAreaRef = useRef<HTMLDivElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
   const restoreFocusTargetRef = useRef<HTMLElement | null>(null);
   const [containerSize, setContainerSize] = useState<Size | null>(null);
   const [naturalSize, setNaturalSize] = useState<Size | null>(null);
@@ -191,6 +193,37 @@ export function ImagePreviewDialog({
         event.stopPropagation();
         resetView();
         onNextImage();
+        return;
+      }
+
+      if (event.key === "Tab") {
+        const dialogElement = dialogRef.current;
+        if (dialogElement == null) {
+          return;
+        }
+
+        const focusableElements = getImagePreviewFocusableElements(dialogElement);
+        if (focusableElements.length === 0) {
+          event.preventDefault();
+          dialogElement.focus();
+          return;
+        }
+
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
+        const activeElement = document.activeElement;
+        if (event.shiftKey) {
+          if (activeElement === firstElement || activeElement === dialogElement) {
+            event.preventDefault();
+            lastElement?.focus();
+          }
+          return;
+        }
+
+        if (activeElement === lastElement) {
+          event.preventDefault();
+          firstElement?.focus();
+        }
       }
     };
 
@@ -199,6 +232,34 @@ export function ImagePreviewDialog({
       window.removeEventListener("keydown", handleKeyDown, { capture: true });
     };
   }, [handleOpenChange, onNextImage, onPreviousImage, open, resetView]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
+      restoreFocusTargetRef.current = document.activeElement;
+    }
+
+    const dialogElement = dialogRef.current;
+    if (dialogElement == null) {
+      return;
+    }
+
+    focusFirstImagePreviewElement(dialogElement);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || typeof document === "undefined") {
+      return;
+    }
+
+    lockImagePreviewBodyScroll(document.body);
+    return () => {
+      unlockImagePreviewBodyScroll(document.body);
+    };
+  }, [open]);
 
   const scaledImageStyle = useMemo(() => {
     if (containerSize == null || naturalSize == null) {
@@ -221,10 +282,16 @@ export function ImagePreviewDialog({
   const trigger = isValidElement(triggerContent)
     ? (() => {
         const typedTriggerContent = triggerContent as ReactElement<{
+          "aria-controls"?: string;
+          "aria-expanded"?: boolean;
+          "aria-haspopup"?: string;
           onClick?: (event: ReactMouseEvent<HTMLElement>) => void;
         }>;
 
         return cloneElement(typedTriggerContent, {
+          "aria-controls": dialogContentId,
+          "aria-expanded": open,
+          "aria-haspopup": "dialog",
           onClick: (event: ReactMouseEvent<HTMLElement>) => {
             typedTriggerContent.props.onClick?.(event);
             if (event.defaultPrevented) {
@@ -237,6 +304,9 @@ export function ImagePreviewDialog({
       })()
     : (
         <span
+          aria-controls={dialogContentId}
+          aria-expanded={open}
+          aria-haspopup="dialog"
           className="contents"
           onClick={(event) => {
             if (event.defaultPrevented) {
@@ -265,6 +335,9 @@ export function ImagePreviewDialog({
             role="dialog"
             aria-modal="true"
             aria-label={dialogLabel}
+            id={dialogContentId}
+            ref={dialogRef}
+            tabIndex={-1}
           >
             <div
               className="pointer-events-auto relative flex h-full w-full flex-col items-center justify-center px-14 pt-12 pb-8"
@@ -453,6 +526,61 @@ export function restoreImagePreviewFocusTarget(
   return true;
 }
 
+function focusFirstImagePreviewElement(root: HTMLElement) {
+  const firstFocusableElement = getImagePreviewFocusableElements(root)[0];
+  if (firstFocusableElement) {
+    firstFocusableElement.focus();
+    return;
+  }
+
+  root.focus();
+}
+
+function getImagePreviewFocusableElements(root: HTMLElement) {
+  const candidates = Array.from(
+    root.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  );
+
+  return candidates.filter((element) => {
+    if (element.getAttribute("aria-hidden") === "true") {
+      return false;
+    }
+    if (element.tabIndex < 0) {
+      return false;
+    }
+    if (element.hasAttribute("disabled")) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function lockImagePreviewBodyScroll(body: HTMLElement) {
+  const currentLockCount = Number.parseInt(body.dataset.imagePreviewScrollLockCount ?? "0", 10);
+  if (!Number.isFinite(currentLockCount) || currentLockCount <= 0) {
+    body.dataset.imagePreviewPreviousOverflow = body.style.overflow;
+    body.style.overflow = "hidden";
+    body.dataset.imagePreviewScrollLockCount = "1";
+    return;
+  }
+
+  body.dataset.imagePreviewScrollLockCount = String(currentLockCount + 1);
+}
+
+function unlockImagePreviewBodyScroll(body: HTMLElement) {
+  const currentLockCount = Number.parseInt(body.dataset.imagePreviewScrollLockCount ?? "0", 10);
+  if (!Number.isFinite(currentLockCount) || currentLockCount <= 1) {
+    body.style.overflow = body.dataset.imagePreviewPreviousOverflow ?? "";
+    delete body.dataset.imagePreviewPreviousOverflow;
+    delete body.dataset.imagePreviewScrollLockCount;
+    return;
+  }
+
+  body.dataset.imagePreviewScrollLockCount = String(currentLockCount - 1);
+}
+
 function createImagePreviewCloseAutoFocusEvent(): ImagePreviewDialogCloseAutoFocusEvent {
   let defaultPrevented = false;
   return {
@@ -489,6 +617,10 @@ function resolveImagePreviewDownloadFileName(src: string, alt: string) {
   } catch {
     return rawFileName;
   }
+}
+
+export function getImagePreviewDownloadFileName(src: string, alt: string) {
+  return resolveImagePreviewDownloadFileName(src, alt);
 }
 
 function createBlobFromDataUrl(dataUrl: string) {

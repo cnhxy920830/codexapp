@@ -559,6 +559,22 @@ pub(crate) fn read_remote_connection_by_host_id(
         .find(|connection| connection.host_id == host_id))
 }
 
+pub(crate) fn read_remote_projects_for_host(
+    app: &AppHandle,
+    host_id: &str,
+) -> Result<Vec<RemoteProject>, String> {
+    let host_id = host_id.trim();
+    if host_id.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    Ok(refresh_remote_connections_blocking(app)?
+        .remote_projects
+        .into_iter()
+        .filter(|project| project.host_id == host_id)
+        .collect())
+}
+
 #[tauri::command(rename = "get-shared-object-snapshot")]
 pub async fn get_shared_object_snapshot(
     app: AppHandle,

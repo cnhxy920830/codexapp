@@ -10,11 +10,10 @@ import {
   WelcomeImportSettingsIcon,
 } from "./icons";
 import {
-  InlineError,
+  GhostButton,
   ImportGroupRow,
   PrimaryButton,
   SecondaryTextButton,
-  SelectionBadge,
   SelectionCheckbox,
   WelcomeFrame,
   WelcomeImportHeader,
@@ -43,6 +42,8 @@ export function ExternalAgentImportProviderStep({
   selectedProviders: ExternalAgentProviderId[];
   t: Translate;
 }) {
+  const hasSelectedProviders = selectedProviders.length > 0;
+
   return (
     <WelcomeFrame panelClassName="max-w-lg">
       <WelcomeImportHeader
@@ -74,12 +75,12 @@ export function ExternalAgentImportProviderStep({
         </div>
       </div>
       <div className="mt-8 flex w-full max-w-xs flex-col items-center gap-3">
-        <PrimaryButton className="w-full" onClick={onContinue}>
+        <PrimaryButton className="w-full" onClick={hasSelectedProviders ? onContinue : onSkip}>
           {t("onboarding.welcome.continue")}
         </PrimaryButton>
-        <SecondaryTextButton className="h-12 w-full rounded-full px-4 py-3" onClick={onSkip}>
+        <GhostButton className="w-full" onClick={onSkip}>
           {t("onboarding.welcomeV2.skip")}
-        </SecondaryTextButton>
+        </GhostButton>
       </div>
     </WelcomeFrame>
   );
@@ -121,10 +122,11 @@ export function ExternalAgentImportItemsStep({
         title={t("onboarding.welcomeV2.externalAgentImport.items.title")}
       />
       <div className="mt-8 flex w-full max-w-sm flex-col">
-        <div className="mb-2 text-xs leading-4 font-medium text-[var(--app-shell-subtle)]">
-          {t("onboarding.welcomeV2.externalAgentImport.items.list")}
-        </div>
-        <div className="w-full overflow-hidden rounded-2xl border border-[var(--app-shell-border)] bg-[var(--app-shell-surface)]">
+        <div
+          aria-label={t("onboarding.welcomeV2.externalAgentImport.items.list")}
+          className="w-full overflow-hidden rounded-2xl border border-[var(--app-shell-border)] bg-[var(--app-shell-surface)]"
+          role="list"
+        >
           {summary.toolsAndSetupCount > 0 ? (
             <ImportGroupRow
               description={t("onboarding.welcomeV2.externalAgentImport.toolsAndSetup.description")}
@@ -165,18 +167,22 @@ export function ExternalAgentImportItemsStep({
         </div>
       ) : null}
       <div className="mt-8 flex w-full max-w-sm flex-col items-center gap-4">
-        {errorMessage ? <InlineError message={errorMessage} /> : null}
+        {errorMessage ? (
+          <div role="alert" className="text-center text-[13px] leading-5 text-[var(--color-text-danger)]">
+            {errorMessage}
+          </div>
+        ) : null}
         {summary.customizeItems.length > 0 ? (
           <button
             type="button"
-            className="flex h-8 w-full items-center justify-center rounded-full px-3 text-[14px] leading-5 font-medium text-[var(--app-shell-subtle)] transition hover:text-[var(--app-shell-text)] disabled:cursor-default disabled:opacity-40"
+            className="flex h-8 w-full cursor-pointer items-center justify-center rounded-full px-3 text-[14px] leading-5 font-medium text-[var(--app-shell-subtle)] transition hover:text-[var(--app-shell-text)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--app-shell-text)] disabled:cursor-default disabled:opacity-40"
             disabled={isPending}
             onClick={onOpenCustomize}
           >
             {t("onboarding.welcomeV2.externalAgentImport.customize")}
           </button>
         ) : null}
-        <PrimaryButton className="w-full max-w-xs" disabled={isPending || isContinueDisabled} onClick={onContinue}>
+        <PrimaryButton className="h-12 w-full max-w-xs" disabled={isPending || isContinueDisabled} onClick={onContinue}>
           {t("onboarding.welcome.continue")}
         </PrimaryButton>
         <SecondaryTextButton className="h-8 w-full px-3" disabled={isPending} onClick={onSkip}>

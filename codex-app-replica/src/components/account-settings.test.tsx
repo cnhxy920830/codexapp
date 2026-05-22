@@ -48,6 +48,14 @@ test("account settings keeps extracted auth gate, local auth override, and non-l
   assert.match(source, /<Button type="submit" disabled=\{trimmedTokenDraft.length === 0\}>/);
 });
 
+test("account settings refreshes account-info on window focus like the upstream query owner", () => {
+  const source = readSource(ACCOUNT_SETTINGS_SOURCE_PATH);
+
+  assert.match(source, /window\.addEventListener\("focus", handleFocus\)/);
+  assert.match(source, /window\.removeEventListener\("focus", handleFocus\)/);
+  assert.match(source, /void loadAccountInfo\(\)/);
+});
+
 test("account settings invalidates extracted account and environments query keys", () => {
   const source = readSource(ACCOUNT_SETTINGS_SOURCE_PATH);
 

@@ -1385,16 +1385,7 @@ function ConversationItemCard({
       return <UserConversationMessageCard conversationCwd={conversationCwd} conversationHostId={conversationHostId} item={item} onEditMessage={onEditUserMessage} onSelectThread={onSelectThread} parentContextItem={parentContextItem} t={t} userMessageSentAtMsByTurnId={userMessageSentAtMsByTurnId} />;
     }
 
-    return (
-      <div className="flex w-full justify-start pr-6">
-        <div className="app-assistant-message max-w-[min(780px,100%)] px-0.5 py-1.5">
-          {renderMessageContent(item.text, {
-            cwd: conversationCwd,
-            hostId: conversationHostId,
-          })}
-        </div>
-      </div>
-    );
+    return <AssistantConversationMessageCard conversationCwd={conversationCwd} conversationHostId={conversationHostId} item={item} t={t} />;
   }
 
   if (item.type === "explorationGroup") {
@@ -1726,6 +1717,72 @@ function ConversationItemCard({
   }
 
   return null;
+}
+
+function AssistantConversationMessageCard({
+  conversationCwd = null,
+  conversationHostId = null,
+  item,
+  t,
+}: {
+  conversationCwd?: string | null;
+  conversationHostId?: string | null;
+  item: ThreadConversationMessage;
+  t: (key: MessageKey, values?: Record<string, number | string>) => string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied || typeof window === "undefined") {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setCopied(false);
+    }, 2000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [copied]);
+
+  const handleCopy = async () => {
+    if (typeof navigator === "undefined" || navigator.clipboard?.writeText == null) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(item.text);
+      setCopied(true);
+    } catch {
+      // Ignore clipboard errors
+    }
+  };
+
+  return (
+    <div className="group flex w-full justify-start">
+      <div className="flex flex-col gap-2 max-w-[min(780px,100%)]">
+        <div className="app-assistant-message rounded-2xl bg-[var(--app-shell-card-bg)] px-4 py-3 shadow-[0_1px_2px_rgba(0,0,0,0.05)] border border-[var(--app-shell-border)]">
+          {renderMessageContent(item.text, {
+            cwd: conversationCwd,
+            hostId: conversationHostId,
+          })}
+        </div>
+        <div className="flex items-center gap-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            type="button"
+            aria-label={copied ? t("app.chat.userMessage.copyCopiedAriaLabel") : t("app.chat.userMessage.copyAriaLabel")}
+            disabled={copied}
+            onClick={() => void handleCopy()}
+            className="app-topbar-button inline-flex h-6 w-6 items-center justify-center rounded-full px-0 py-0 disabled:cursor-default text-[var(--app-shell-muted)] hover:text-[var(--app-shell-text)] hover:bg-[var(--app-shell-control-bg)]"
+            title={copied ? t("app.chat.userMessage.copyCopiedTooltip") : t("app.chat.userMessage.copyTooltip")}
+          >
+            {copied ? <CheckIcon className="h-[14px] w-[14px]" /> : <CopyPathIcon className="h-[14px] w-[14px]" />}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function UserConversationMessageCard({

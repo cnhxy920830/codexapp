@@ -130,6 +130,7 @@ import { SkillsSettings } from "./components/SkillsSettings";
 import { UsageSettings } from "./components/UsageSettings";
 import { ChatConversationMainPane } from "./features/chat/ChatConversationMainPane";
 import { ChatRouteHeader } from "./features/chat/ChatRouteHeader";
+import { ChatHeaderToolbarActions } from "./features/chat/ChatHeaderToolbarActions";
 import { ChatSidePanel } from "./features/chat/ChatSidePanel";
 import { FilePreviewPage } from "./features/chat/FilePreviewPage";
 import { AppConnectOAuthCallbackPage } from "./features/apps/AppConnectOAuthCallbackPage";
@@ -147,7 +148,9 @@ import {
 } from "./features/chat/WorkspaceFileCommandMenu";
 import { renderConversationMarkdown } from "./features/chat/conversationMarkdown";
 import { ScratchpadPage } from "./features/scratchpad/ScratchpadPage";
+import { PluginDetailPage } from "./features/skills/PluginDetailPage";
 import { SkillsRoutePage } from "./features/skills/SkillsRoutePage";
+import { isPluginDetailRoute } from "./features/skills/pluginDetailRoute";
 import { usePluginsRouteEnabled } from "./features/skills/usePluginsRouteEnabled";
 import { AutomationsRoutePage } from "./features/automations/AutomationsRoutePage";
 import { EditorDiffPage } from "./features/editorDiff/EditorDiffPage";
@@ -278,6 +281,7 @@ import {
   LOGIN_ROUTE_PATH,
   buildWorktreeInitV2RoutePath,
   notifyDebugWindowOriginConversationChanged,
+  onDebugWindowOriginConversationChanged,
   openInHotkeyWindow,
   openInNewWindow,
   PLAN_SUMMARY_ROUTE_PATH,
@@ -410,6 +414,7 @@ type AppRoute =
   | "hotkey-new-thread"
   | "settings"
   | "skills"
+  | "plugin-detail"
   | "scratchpad"
   | "automations"
   | "pull-requests"
@@ -753,7 +758,7 @@ function isDebugWindowRoute(path: string) {
 }
 
 function isPullRequestsRoute(path: string) {
-  return path === "/pull-requests";
+  return stripRouteSearchAndHash(path) === "/pull-requests";
 }
 
 function isAppConnectOAuthCallbackRoute(path: string) {
@@ -787,6 +792,10 @@ function readInitialAppRoute(): AppRoute {
 
   if (typeof window !== "undefined" && isSelectWorkspaceRoute(window.location.pathname)) {
     return "select-workspace";
+  }
+
+  if (typeof window !== "undefined" && isPluginDetailRoute(window.location.pathname)) {
+    return "plugin-detail";
   }
 
   if (typeof window !== "undefined" && isExtensionPanelNewRoute(window.location.pathname)) {
@@ -859,7 +868,8 @@ function shouldWindowManagePowerSaveBlocker() {
     isLoginRoute(pathname) ||
     isSelectWorkspaceRoute(pathname) ||
     isWelcomeRoute(pathname) ||
-    isAvatarOverlayRoute(pathname)
+    isAvatarOverlayRoute(pathname) ||
+    isPluginDetailRoute(pathname)
   ) {
     return false;
   }
@@ -3251,29 +3261,6 @@ function App() {
     };
   }, []);
 
-  const handleDebugWindowConversationSelected = useEffectEvent(async (conversationId: string) => {
-    const normalizedConversationId = conversationId.trim();
-    if (!normalizedConversationId) {
-      return;
-    }
-
-    if (
-      selectedThreadIdRef.current === normalizedConversationId &&
-      threadConversationRef.current?.id === normalizedConversationId
-    ) {
-      return;
-    }
-
-    setSelectedThreadId(normalizedConversationId);
-    setTurnError(null);
-    setCurrentRoute("debug");
-    try {
-      await loadThreadConversation(normalizedConversationId);
-    } catch {
-      setThreadConversation(null);
-    }
-  });
-
   const handleDebugRunAppActionRequest = useEffectEvent(async (notification: DebugRunAppActionRequestNotification) => {
     const actionType =
       notification.action !== null &&
@@ -3559,6 +3546,47 @@ function App() {
 
     return () => {
       cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+
+    void onDebugWindowOriginConversationChanged((conversationId) => {
+      if (disposed) {
+        return;
+      }
+
+      if (
+        selectedThreadIdRef.current === conversationId &&
+        threadConversationRef.current?.id === conversationId
+      ) {
+        return;
+      }
+
+      setSelectedThreadId(conversationId);
+      setTurnError(null);
+      setCurrentRoute("debug");
+      void loadThreadConversation(conversationId).catch(() => {
+        if (!disposed) {
+          setThreadConversation(null);
+        }
+      });
+    }).then((dispose) => {
+      if (disposed) {
+        void dispose();
+        return;
+      }
+
+      unlisten = dispose;
+    });
+
+    return () => {
+      disposed = true;
+      if (unlisten) {
+        void unlisten();
+      }
     };
   }, []);
 
@@ -4916,8 +4944,17 @@ function App() {
   };
 
   const handleNavigateToRoute = useEffectEvent(async (path: string, state?: NavigateToRouteState | null) => {
-    if (typeof window !== "undefined" && window.location.pathname !== path) {
-      window.history.replaceState(state ?? window.history.state, "", path);
+    const normalizedPath = stripRouteSearchAndHash(path);
+    if (typeof window !== "undefined") {
+      const currentLocationPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      if (currentLocationPath !== path) {
+        const nextState = state ?? window.history.state;
+        if (isPluginDetailRoute(path)) {
+          window.history.pushState(nextState, "", path);
+        } else {
+          window.history.replaceState(nextState, "", path);
+        }
+      }
     }
 
     if (path === "/" || path.length === 0) {
@@ -5045,7 +5082,7 @@ function App() {
       return;
     }
 
-    if (path === "/skills") {
+    if (normalizedPath === "/skills") {
       setThreadShellVariant("default");
       if (state?.initialHostId && state.initialHostId.trim().length > 0) {
         setSelectedSettingsHostId(state.initialHostId);
@@ -5057,6 +5094,16 @@ function App() {
         pluginDeepLinkAuthBlocked: state?.pluginDeepLinkAuthBlocked,
       });
       setCurrentRoute("skills");
+      return;
+    }
+
+    if (isPluginDetailRoute(path)) {
+      setThreadShellVariant("default");
+      setSkillsRouteState(null);
+      if (state?.initialHostId && state.initialHostId.trim().length > 0) {
+        setSelectedSettingsHostId(state.initialHostId);
+      }
+      setCurrentRoute("plugin-detail");
       return;
     }
 
@@ -5153,6 +5200,22 @@ function App() {
       unlisten?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handlePopState = () => {
+      const nextPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      void handleNavigateToRoute(nextPath, window.history.state ?? null);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [handleNavigateToRoute]);
 
   useEffect(() => {
     let disposed = false;
@@ -6714,6 +6777,11 @@ function App() {
               prefillPrompt: prompt,
             })
           }
+          onOpenPluginDetail={(path) => {
+            void handleNavigateToRoute(path, {
+              initialHostId: selectedSettingsHostId,
+            });
+          }}
           onSelectHost={setSelectedSettingsHostId}
           onShowToast={(toast) => setAppToast(toast)}
           remoteConnectionHostIds={settingsRemoteConnectionHostIds}
@@ -7272,9 +7340,6 @@ function App() {
     return (
       <DebugWindowPage
         conversationId={selectedThreadId}
-        onConversationChange={(nextConversationId) => {
-          void handleDebugWindowConversationSelected(nextConversationId);
-        }}
         onNavigateHome={() => {
           if (typeof window !== "undefined" && window.location.pathname !== "/") {
             window.history.replaceState(window.history.state, "", "/");
@@ -7306,6 +7371,29 @@ function App() {
 
   if (currentRoute === "file-preview") {
     return <FilePreviewPage routeState={typeof window === "undefined" ? null : window.history.state} t={t} />;
+  }
+
+  if (currentRoute === "plugin-detail") {
+    return (
+      <PluginDetailPage
+        accountId={authSnapshot.authState.accountId}
+        authMethod={authSnapshot.authState.authMethod}
+        connectedRemoteConnections={connectedSettingsRemoteConnections}
+        onNavigate={(path, nextState) => {
+          void handleNavigateToRoute(path, (nextState as NavigateToRouteState | null) ?? null);
+        }}
+        onOpenChatWithPrompt={({ cwd, prompt }) =>
+          openNewConversation({
+            cwd,
+            focusComposerNonce: Date.now(),
+            prefillPrompt: prompt,
+          })
+        }
+        onShowToast={(toast) => setAppToast(toast)}
+        selectedHostId={selectedSettingsHostId}
+        workspaceRoot={settingsWorkspaceRoot}
+      />
+    );
   }
 
   if (currentRoute === "global-dictation") {
@@ -7418,8 +7506,12 @@ function App() {
       <SelectWorkspacePage
         currentWindowHostId={currentWindowHostId}
         recentThreads={recentThreadEntries}
-        onContinueToHome={({ focusComposerNonce, hostId }) => {
-          openNewConversation({ focusComposerNonce, initialHostId: hostId });
+        onContinueToHome={({ focusComposerNonce, hostId, cwd }) => {
+          openNewConversation({
+            focusComposerNonce,
+            initialHostId: hostId,
+            prefillCwd: cwd,
+          });
         }}
       />
     );
@@ -7527,7 +7619,27 @@ function App() {
                         workspaceRoot={openProjectPath}
                       />
                     </div>
-                  ) : null
+                  ) : (
+                    <ChatHeaderToolbarActions
+                      onAttachFile={() => {
+                        // TODO: Implement attach file
+                        console.log("Attach file clicked");
+                      }}
+                      onPasteFromClipboard={() => {
+                        // TODO: Implement paste from clipboard
+                        console.log("Paste from clipboard clicked");
+                      }}
+                      onSearch={() => {
+                        // TODO: Implement search
+                        console.log("Search clicked");
+                      }}
+                      onShowMore={() => {
+                        // TODO: Implement more actions
+                        console.log("More actions clicked");
+                      }}
+                      t={t}
+                    />
+                  )
                 }
                 workspaceRoot={openProjectPath}
               />
@@ -7935,6 +8047,7 @@ function App() {
                                 composerPermissionMode={localComposerPermissionMode}
                                 composerPermissionsState={localComposerPermissionsState}
                                 followUpQueueMode={followUpQueueMode}
+                                hidePresentationSpeakerNotes={rightPanelWidthMode === "full"}
                                 reviewDelivery={reviewDelivery}
                                 sideChatIsResponseInProgress={isSideChatResponseInProgress}
                                 submitButtonMode={
@@ -8200,6 +8313,11 @@ function App() {
                         prefillPrompt: prompt,
                       })
                     }
+                    onOpenPluginDetail={(path) => {
+                      void handleNavigateToRoute(path, {
+                        initialHostId: selectedSettingsHostId,
+                      });
+                    }}
                     onSelectHost={setSelectedSettingsHostId}
                     onShowToast={(toast) => setAppToast(toast)}
                     pluginDeepLinkAuthBlocked={skillsRouteState?.pluginDeepLinkAuthBlocked}
@@ -8347,13 +8465,11 @@ function App() {
 
 function DebugWindowPage({
   conversationId,
-  onConversationChange,
   onNavigateHome,
   onOpenConversation,
   threadConversation,
 }: {
   conversationId: string | null;
-  onConversationChange?: (conversationId: string) => void;
   onNavigateHome: () => void;
   onOpenConversation?: (threadId: string, hostId: string) => void;
   threadConversation: ThreadConversation | null;
@@ -8361,7 +8477,6 @@ function DebugWindowPage({
   return (
     <DebugWindowPageContent
       conversationId={conversationId}
-      onConversationChange={onConversationChange}
       onNavigateHome={onNavigateHome}
       onOpenConversation={onOpenConversation}
       threadConversation={threadConversation}

@@ -46,6 +46,29 @@ test("agent settings keeps extracted page shell and section order", () => {
   assert.ok(workspaceDepsIndex > experimentalIndex);
 });
 
+test("agent settings reuses shared dropdown owner for config scope and config controls", () => {
+  const source = readSource(COMPONENT_SOURCE_PATH);
+  const sharedMenuSource = readSource(path.join(process.cwd(), "src/components/SettingsChoiceMenu.tsx"));
+
+  assert.match(source, /import \{ SettingsChoiceMenu \} from "\.\/SettingsChoiceMenu";/);
+  assert.match(source, /<SettingsChoiceMenu[\s\S]*className="w-\[240px\]"/);
+  assert.match(source, /menuClassName="w-\[240px\]"/);
+  assert.match(source, /sections=\{menuSections\}/);
+  assert.match(source, /triggerLabel=\{selectedScope\?\.label \?\? t\("settings\.agent\.configuration\.scope\.loading"\)\}/);
+  assert.match(source, /<SettingsChoiceMenu[\s\S]*options=\{options\}[\s\S]*value=\{value\}/s);
+  assert.doesNotMatch(source, /function ScopeMenuItem\(/);
+  assert.doesNotMatch(source, /const \[isOpen, setIsOpen\] = useState\(false\);[\s\S]*document\.addEventListener\("pointerdown", handlePointerDown\);/s);
+
+  assert.match(sharedMenuSource, /type SettingsChoiceMenuSection = \{/);
+  assert.match(sharedMenuSource, /sections\?: SettingsChoiceMenuSection\[];/);
+  assert.match(sharedMenuSource, /menuSections\.map\(\(section, sectionIndex\) => \{/);
+  assert.match(sharedMenuSource, /text-\[11px\] font-medium uppercase tracking-\[0\.08em\]/);
+  assert.match(sharedMenuSource, /className="my-2 h-px bg-token-border"/);
+  assert.match(sharedMenuSource, /aria-haspopup="menu"/);
+  assert.match(sharedMenuSource, /role="menu"/);
+  assert.match(sharedMenuSource, /role="menuitem"/);
+});
+
 test("agent settings keeps extracted notice markdown and config open behavior", () => {
   const source = readSource(COMPONENT_SOURCE_PATH);
 

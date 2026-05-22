@@ -8,7 +8,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { CheckIcon, ChevronDownIcon, CopyPathIcon } from "../../components/AppShellIcons";
+import { ChevronDownIcon, CopyPathIcon } from "../../components/AppShellIcons";
 import { Button } from "../../components/Button";
 import { Spinner } from "../../components/Spinner";
 import { useI18n } from "../../i18n/i18n";
@@ -332,7 +332,7 @@ function SelectablePullRequestRow({
               </span>
             </div>
             <div className="flex min-h-6 shrink-0 items-center text-base text-token-description-foreground">
-              +{item.additions} / -{item.deletions}
+              <PullRequestDiffStat linesAdded={item.additions} linesRemoved={item.deletions} />
             </div>
           </div>
 
@@ -441,6 +441,10 @@ function InternalHeaderRepoMenu({
   const { t } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const shouldFocusFirstItemRef = useRef(false);
+  const menuId = "pull-requests-repo-menu";
 
   useEffect(() => {
     if (!isOpen) {
@@ -453,29 +457,112 @@ function InternalHeaderRepoMenu({
       }
       setIsOpen(false);
     };
+    const handleFocusIn = (event: FocusEvent) => {
+      if (containerRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setIsOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      setIsOpen(false);
+      triggerRef.current?.focus();
+    };
 
     document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("keydown", handleKeyDown);
     };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !shouldFocusFirstItemRef.current) {
+      return;
+    }
+
+    shouldFocusFirstItemRef.current = false;
+    menuItemRefs.current[0]?.focus();
   }, [isOpen]);
 
   const menuOptions: RepoMenuOption[] = [
     { key: "all", label: t("pullRequestsPage.repo.allRepos") },
     ...options.map((option) => ({ key: option.key, label: option.label })),
   ];
+  const menuItemCount = menuOptions.length;
   const selectedKey = selectedRepoKey ?? menuOptions[0]?.key ?? "all";
   const selectedOption = menuOptions.find((option) => option.key === selectedKey) ?? menuOptions[0] ?? null;
+
+  const closeMenu = () => {
+    shouldFocusFirstItemRef.current = false;
+    setIsOpen(false);
+  };
+
+  const focusMenuItem = (index: number) => {
+    menuItemRefs.current[index]?.focus();
+  };
+
+  const handleMenuItemKeyDown = (index: number, event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      focusMenuItem(Math.min(index + 1, menuItemCount - 1));
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      focusMenuItem(Math.max(index - 1, 0));
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      focusMenuItem(0);
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      focusMenuItem(menuItemCount - 1);
+      return;
+    }
+    if (event.key === "Tab") {
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenu();
+      triggerRef.current?.focus();
+    }
+  };
 
   return (
     <div className="relative shrink-0" ref={containerRef}>
       <Button
+        aria-controls={isOpen ? menuId : undefined}
         aria-expanded={isOpen}
         aria-haspopup="menu"
         color="outline"
         disabled={disabled}
         size="toolbar"
-        onClick={() => setIsOpen((open) => !open)}
+        onClick={(event) => {
+          triggerRef.current = event.currentTarget;
+          shouldFocusFirstItemRef.current = false;
+          setIsOpen((open) => !open);
+        }}
+        onKeyDown={(event) => {
+          triggerRef.current = event.currentTarget;
+          if (event.key !== "ArrowDown" && event.key !== "Enter" && event.key !== " ") {
+            return;
+          }
+
+          event.preventDefault();
+          shouldFocusFirstItemRef.current = true;
+          setIsOpen(true);
+        }}
       >
         <GitHubMarkIcon className="icon-sm shrink-0" />
         <span className="max-w-[220px] truncate">{selectedOption?.label ?? selectedKey}</span>
@@ -487,25 +574,43 @@ function InternalHeaderRepoMenu({
         />
       </Button>
       {isOpen ? (
-        <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 min-w-[220px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+        <div
+          aria-orientation="vertical"
+          className="no-drag absolute right-0 top-[calc(100%+1px)] z-50 m-px flex min-w-[220px] select-none flex-col overflow-y-auto rounded-xl bg-token-dropdown-background/90 px-1 py-1 text-token-foreground ring-token-border shadow-xl-spread ring-[0.5px] backdrop-blur-sm"
+          id={menuId}
+          onKeyDown={(event) => {
+            if (event.key === "Tab") {
+              event.preventDefault();
+            }
+          }}
+          role="menu"
+        >
           <RepoMenuButton
+            itemRef={(node) => {
+              menuItemRefs.current[0] = node;
+            }}
             isSelected={selectedKey === "all"}
-            label={t("pullRequestsPage.repo.allRepos")}
+            label={menuOptions[0]?.label ?? t("pullRequestsPage.repo.allRepos")}
             onSelect={() => {
-              setIsOpen(false);
+              closeMenu();
               onChange("all");
             }}
+            onKeyDown={(event) => handleMenuItemKeyDown(0, event)}
           />
-          <div className="my-2 h-px bg-[var(--app-shell-border)]" />
-          {options.map((option) => (
+          {options.length > 0 ? <div className="my-1 h-px bg-token-border" /> : null}
+          {options.map((option, index) => (
             <RepoMenuButton
               key={option.key}
+              itemRef={(node) => {
+                menuItemRefs.current[index + 1] = node;
+              }}
               isSelected={option.key === selectedKey}
               label={option.label}
               onSelect={() => {
-                setIsOpen(false);
+                closeMenu();
                 onChange(option.key);
               }}
+              onKeyDown={(event) => handleMenuItemKeyDown(index + 1, event)}
             />
           ))}
         </div>
@@ -515,26 +620,60 @@ function InternalHeaderRepoMenu({
 }
 
 function RepoMenuButton({
+  itemRef,
   isSelected,
   label,
   onSelect,
+  onKeyDown,
 }: {
+  itemRef?: (node: HTMLButtonElement | null) => void;
   isSelected: boolean;
   label: string;
   onSelect: () => void;
+  onKeyDown?: (event: ReactKeyboardEvent<HTMLButtonElement>) => void;
 }) {
   return (
     <button
       type="button"
       onClick={onSelect}
+      onKeyDown={onKeyDown}
+      onMouseMove={(event) => {
+        event.currentTarget.focus({ preventScroll: true });
+      }}
+      ref={itemRef}
+      role="menuitem"
+      tabIndex={-1}
       className={[
-        "app-nav-item-idle flex w-full items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-left text-[13px]",
+        "no-drag flex w-full cursor-interaction items-center rounded-lg px-[var(--padding-row-x)] py-[var(--padding-row-y)] text-left text-sm text-token-foreground outline-hidden hover:bg-token-list-hover-background focus:bg-token-list-hover-background",
         isSelected ? "font-medium" : "",
       ].join(" ")}
     >
       <span className="min-w-0 truncate">{label}</span>
-      {isSelected ? <CheckIcon className="h-3.5 w-3.5 shrink-0 text-token-text-secondary" /> : null}
     </button>
+  );
+}
+
+function PullRequestDiffStat({
+  linesAdded,
+  linesRemoved,
+}: {
+  linesAdded: number;
+  linesRemoved: number;
+}) {
+  const { t } = useI18n();
+
+  return (
+    <span
+      data-thread-find-skip
+      className="inline-flex items-center gap-1 leading-none align-middle disambiguated-digits tabular-nums tracking-tight"
+    >
+      <span className="shrink-0 leading-none text-token-git-decoration-added-resource-foreground">
+        {t("codex.diffView.linesAdded", { linesAdded })}
+      </span>
+      <span className="shrink-0 leading-none text-token-git-decoration-deleted-resource-foreground">
+        {t("codex.diffView.linesDeleted", { linesDeleted: linesRemoved })}
+      </span>
+    </span>
   );
 }
 

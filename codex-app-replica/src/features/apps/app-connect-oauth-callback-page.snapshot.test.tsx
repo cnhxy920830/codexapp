@@ -56,6 +56,14 @@ test("app connect oauth callback route completion matches extracted navigation c
 
   assert.match(
     source,
+    /shouldShowPendingToast:\s*pending\?\.resumeTarget\.kind === "plugin-install"/,
+  );
+  assert.match(
+    source,
+    /if \(isLocalConversationRoute\(returnTo\)\) \{\s*onNavigate\(returnTo\);\s*return;\s*\}/s,
+  );
+  assert.match(
+    source,
     /if \(pending\?\.resumeTarget\.kind === "plugin-install"\) \{\s*onNavigate\(returnTo, \{\s*initialHostId: pending\.hostId,\s*initialTab: "plugins",\s*\}\);\s*return;\s*\}/s,
   );
   assert.match(
@@ -68,6 +76,16 @@ test("app connect oauth callback route completion matches extracted navigation c
 test("app connect oauth callback service matches extracted post-callback refresh contract", () => {
   const source = readFileSync(SERVICE_SOURCE_PATH, "utf8");
 
+  assert.match(source, /let pendingAppConnectOAuthState: StoredPendingAppConnectOAuth = \{\};/);
+  assert.match(
+    source,
+    /function readPendingAppConnectOAuthState\(\): StoredPendingAppConnectOAuth \{\s*return \{\s*\.\.\.pendingAppConnectOAuthState,\s*\};\s*\}/s,
+  );
+  assert.match(
+    source,
+    /function writePendingAppConnectOAuthState\(value: StoredPendingAppConnectOAuth\) \{\s*pendingAppConnectOAuthState = value;\s*\}/s,
+  );
+  assert.doesNotMatch(source, /sessionStorage/);
   assert.match(
     source,
     /const previousApps = await readAppsSnapshot\(\{\s*hostId,\s*forceRefetch: false,\s*\}\)\.catch\(\(\) => null\);/s,

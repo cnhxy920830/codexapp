@@ -289,6 +289,7 @@ function createAppsFixture(): AppInfo[] {
       isAccessible: true,
       isEnabled: true,
       pluginDisplayNames: [],
+      labels: null,
     },
   ];
 }

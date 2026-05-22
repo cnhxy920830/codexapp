@@ -6,6 +6,7 @@ import { readPendingWorktreesSnapshot, onPendingWorktreesUpdated } from "../../s
 import { getGlobalState, onGlobalStateUpdated, setGlobalState } from "../../services/settings";
 import {
   LOCAL_SETTINGS_HOST_ID,
+  normalizeRemoteProjectPath,
   onRemoteAppServerConnectionStateChanged,
   onSharedObjectUpdated,
   readConnectedSettingsRemoteConnections,
@@ -13,6 +14,7 @@ import {
   readSettingsRemoteProjectsSnapshot,
   REMOTE_PROJECTS_SHARED_OBJECT_KEY,
   REMOTE_CONNECTIONS_SHARED_OBJECT_KEY,
+  saveRemoteProject,
   type RemoteConnection,
   type RemoteProject,
 } from "../../services/settingsHosts";
@@ -48,7 +50,7 @@ import { RemoteProjectSetupDialog } from "../localEnvironments/RemoteProjectSetu
 
 type SelectWorkspacePageProps = {
   currentWindowHostId: string;
-  onContinueToHome: (state: { focusComposerNonce: number; hostId: string }) => void;
+  onContinueToHome: (state: { focusComposerNonce: number; hostId: string; cwd: string | null }) => void;
   recentThreads: ThreadHistoryEntry[];
 };
 
@@ -751,21 +753,54 @@ export function SelectWorkspacePage({
     }
 
     setSkipErrorMessage(null);
+    const primarySelectedRoot = selectedRootList[0];
     const nextWorkspaceRoots = mergeWorkspaceRootSelectionsForPersistence({
       onboardingOverride: workspaceOnboardingOverride,
       persistedRoots: workspaceRoots,
       selectedRoots: selectedRootList,
     });
     const completedAt = Math.floor(Date.now() / 1000);
+    let activeRemoteProjectIdValue: string | null = null;
+
+    if (isRemoteHost) {
+      const persistedProjectsByPath = new Map(
+        remoteProjects
+          .filter((project) => project.hostId === currentHostId)
+          .map((project) => [
+            normalizeRemoteProjectPath(project.remotePath) ?? project.remotePath,
+            project,
+          ] as const),
+      );
+
+      for (const root of selectedRootList) {
+        const normalizedRoot = normalizeRemoteProjectPath(root) ?? root;
+        let project = persistedProjectsByPath.get(normalizedRoot) ?? null;
+        if (project === null) {
+          const response = await saveRemoteProject({
+            hostId: currentHostId,
+            remotePath: root,
+          });
+          project = response.project;
+          persistedProjectsByPath.set(
+            normalizeRemoteProjectPath(project.remotePath) ?? project.remotePath,
+            project,
+          );
+        }
+
+        if (root === primarySelectedRoot) {
+          activeRemoteProjectIdValue = project.id;
+        }
+      }
+    }
 
     await setGlobalState("last_completed_onboarding", completedAt);
     if (!isRemoteHost) {
       await updateWorkspaceRootOptions(nextWorkspaceRoots);
     }
     await setGlobalState("electron:onboarding-override", "auto");
-    await setGlobalState("active-remote-project-id", null);
+    await setGlobalState("active-remote-project-id", activeRemoteProjectIdValue);
     if (!isRemoteHost) {
-      await setActiveWorkspaceRoot(selectedRootList[0]);
+      await setActiveWorkspaceRoot(primarySelectedRoot);
     }
 
     continueNonceRef.current += 1;
@@ -775,6 +810,7 @@ export function SelectWorkspacePage({
     onContinueToHome({
       focusComposerNonce: continueNonceRef.current,
       hostId: currentHostId,
+      cwd: primarySelectedRoot,
     });
   }
 }

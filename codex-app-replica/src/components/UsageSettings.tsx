@@ -507,8 +507,8 @@ function formatResetAt(locale: string, resetsAt: number | null) {
     return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(0, "second");
   }
 
-  const sixtyDaysInSeconds = 60 * 24 * 60 * 60;
-  if (diffSeconds < sixtyDaysInSeconds) {
+  const oneDayInSeconds = 24 * 60 * 60;
+  if (diffSeconds < oneDayInSeconds) {
     return new Intl.DateTimeFormat(locale, { timeStyle: "short" }).format(date);
   }
 

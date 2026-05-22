@@ -84,6 +84,7 @@ test("automations create dialog keeps extracted shell sizing and pointer-dismiss
 
   assert.match(source, /event\.preventDefault\(\)/);
   assert.match(source, /document\.addEventListener\("pointerdown", handlePointerDown, true\)/);
+  assert.match(source, /className="codex-dialog fixed inset-0 z-30 flex items-center justify-center bg-\[rgba\(0,0,0,0\.24\)\] px-4"/);
   assert.match(source, /automation-form/);
   assert.match(source, /max-h-\[95vh\]/);
   assert.match(source, /max-w-\[800px\]/);

@@ -15,7 +15,7 @@ test("data controls settings keeps extracted settings shell and shared title own
   const titleSource = readSource(TITLE_SOURCE_PATH);
 
   assert.match(source, /<SettingsContentLayout title=\{<SettingsSectionTitle slug="data-controls" \/>\}>/);
-  assert.match(source, /<SettingsGroup>\s*<SettingsGroup\.Content>/s);
+  assert.match(source, /<SettingsGroup className="gap-2">\s*<SettingsGroup\.Content>/s);
   assert.match(source, /<SettingsSurface>/);
   assert.match(source, /<SettingsRow label=\{t\("settings\.dataControls\.archivedChats\.loading"\)\} \/>/);
   assert.match(source, /<SettingsRow label=\{t\("settings\.dataControls\.archivedChats\.error"\)\} \/>/);
@@ -33,6 +33,11 @@ test("data controls settings keeps extracted archived row structure and optimist
   assert.match(source, /const archivedThreadsRequestIdRef = useRef\(0\);/);
   assert.match(source, /const selectedHostIdRef = useRef\(selectedHostId\);/);
   assert.match(source, /void loadArchivedThreads\(\{\s*hostId: selectedHostId,\s*showLoading: true,\s*clearOnError: true,\s*\}\);/s);
+  assert.match(source, /const handleFocus = \(\) => \{/);
+  assert.match(source, /hostId: selectedHostIdRef\.current,/);
+  assert.match(source, /showLoading: false,/);
+  assert.match(source, /clearOnError: false,/);
+  assert.match(source, /window\.addEventListener\("focus", handleFocus\);/);
   assert.match(source, /setArchivedThreads\(\(current\) => current\.filter\(\(entry\) => entry\.id !== thread\.id\)\);/);
   assert.match(source, /setArchivedThreads\(previousThreads\);/);
   assert.match(source, /void loadArchivedThreads\(\{\s*hostId: selectedHostId,\s*showLoading: false,\s*clearOnError: false,\s*\}\);/s);
@@ -43,17 +48,15 @@ test("data controls settings keeps extracted archived row structure and optimist
   assert.match(source, /className="truncate text-token-text-secondary"/);
   assert.match(source, /size="toolbar"/);
   assert.match(source, /loading=\{isPending\}/);
-  assert.match(
-    source,
-    /thread\.name\?\.trim\(\) \|\| thread\.preview\.trim\(\) \|\| t\("settings\.dataControls\.archivedChats\.untitled"\)/,
-  );
-  assert.doesNotMatch(
-    source,
-    /\(thread\.name \?\? thread\.preview\)\.trim\(\) \|\| t\("settings\.dataControls\.archivedChats\.untitled"\)/,
-  );
+  assert.match(source, /normalizeArchivedThreadTitle\(thread\.name\) \?\?/);
+  assert.match(source, /normalizeArchivedThreadTitle\(thread\.preview\) \?\?/);
   assert.match(source, /t\("settings\.dataControls\.archivedChats\.untitled"\)/);
   assert.match(source, /t\("settings\.dataControls\.archivedChats\.dateTimeWithRepo"/);
   assert.match(source, /t\("settings\.dataControls\.archivedChats\.dateTime"/);
+  assert.match(source, /const firstLine = trimmed\.split\(/);
+  assert.match(source, /const normalized = firstLine\.replace\(/);
+  assert.match(source, /const words = trimmed\.split\(\/\\s\+\/u\)\.filter\(Boolean\);/);
+  assert.match(source, /return words\.slice\(0, 3\)\.join\(" "\);/);
 
   assert.match(serviceSource, /invoke<ThreadHistoryEntry\[]>\("list-archived-threads"/);
   assert.match(serviceSource, /invoke<string>\("unarchive-conversation"/);
@@ -70,7 +73,7 @@ test("data controls settings view-now action follows extracted local and remote 
 
   assert.match(
     appSource,
-    /const openArchivedChatsSettings = \(\) => \{\s*setAppToast\(null\);\s*setSettingsSection\("data-controls"\);\s*setCurrentRoute\("settings"\);\s*\};/s,
+    /const openArchivedChatsSettings = \(\) => \{\s*setAppToast\(null\);\s*void handleNavigateToRoute\("\/settings\/data-controls"\);\s*\};/s,
   );
   assert.match(
     viewConversationForHostSource,

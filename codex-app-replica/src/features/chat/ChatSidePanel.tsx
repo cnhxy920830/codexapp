@@ -47,6 +47,7 @@ type ChatSidePanelProps = {
   composerPermissionMode: HotkeyPermissionAgentMode;
   composerPermissionsState: HotkeyPermissionsState;
   followUpQueueMode: FollowUpQueueMode;
+  hidePresentationSpeakerNotes?: boolean;
   reviewDelivery: ReviewDelivery;
   sideChatIsResponseInProgress?: boolean;
   submitButtonMode: "send" | "stop";
@@ -117,6 +118,7 @@ export function ChatSidePanel({
   composerPermissionMode,
   composerPermissionsState,
   followUpQueueMode,
+  hidePresentationSpeakerNotes = false,
   reviewDelivery,
   sideChatIsResponseInProgress = false,
   submitButtonMode,
@@ -226,6 +228,7 @@ export function ChatSidePanel({
       ) : activeTab && isWorkspaceFileRightPanelTab(activeTab) ? (
         <div className="min-h-0 flex-1 overflow-hidden">
           <WorkspaceFilePreviewPanel
+            hidePresentationSpeakerNotes={hidePresentationSpeakerNotes}
             onOpenBrowserTarget={onOpenBrowserTarget}
             onPendingPdfCommentsChange={onPendingPdfCommentsChange}
             onSubmitPdfComment={onSubmitPdfComment}

@@ -1,9 +1,10 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
-import { ArrowTopRightIcon, CheckIcon, ChevronDownIcon, WarningIcon } from "./AppShellIcons";
+import { ArrowTopRightIcon, WarningIcon } from "./AppShellIcons";
 import type { AppToast } from "./AppToastRegion";
 import { AgentExperimentalFeaturesSettings } from "./AgentExperimentalFeaturesSettings";
 import { Button } from "./Button";
 import { MarkdownPreview } from "./MarkdownPreview";
+import { SettingsChoiceMenu } from "./SettingsChoiceMenu";
 import { SettingsContentLayout } from "./SettingsContentLayout";
 import { SettingsGroup } from "./SettingsGroup";
 import { SettingsRow } from "./SettingsRow";
@@ -767,118 +768,48 @@ function AgentConfigScopeSelector({
   t: Translate;
   onSelect: (key: string) => void;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (containerRef.current?.contains(event.target as Node)) {
-        return;
-      }
-      setIsOpen(false);
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-    };
-  }, [isOpen]);
+  const menuSections = [
+    ...(projectScopeOptions.length > 0
+      ? [
+          {
+            label: t("settings.agent.configuration.scope.projectGroup"),
+            options: projectScopeOptions.map((scope) => ({
+              value: scope.key,
+              label: scope.label,
+              title: scope.filePath ?? undefined,
+            })),
+          },
+        ]
+      : []),
+    {
+      label: t("settings.agent.configuration.scope.globalGroup"),
+      options: globalScopeOptions.map((scope) => ({
+        value: scope.key,
+        label:
+          scope.kind === "user"
+            ? t("settings.agent.configuration.scope.user")
+            : scope.kind === "managed"
+              ? t("settings.agent.configuration.scope.managed")
+              : scope.label,
+        title:
+          scope.kind === "managed"
+            ? t("settings.agent.configuration.scope.managedDescription")
+            : scope.filePath ?? undefined,
+      })),
+    },
+  ];
 
   return (
-    <div className="relative w-[240px] max-w-full" ref={containerRef}>
-      <Button
-        className="w-[240px] justify-between"
-        color="secondary"
-        disabled={globalScopeOptions.length + projectScopeOptions.length === 0}
-        size="toolbar"
-        onClick={() => setIsOpen((current) => !current)}
-      >
-        <span className="truncate">
-          {selectedScope?.label ?? t("settings.agent.configuration.scope.loading")}
-        </span>
-        <ChevronDownIcon className="icon-2xs shrink-0 text-token-input-placeholder-foreground" />
-      </Button>
-      {isOpen ? (
-        <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-[240px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
-          {projectScopeOptions.length > 0 ? (
-            <>
-              <div className="px-3 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--app-shell-subtle)]">
-                {t("settings.agent.configuration.scope.projectGroup")}
-              </div>
-              {projectScopeOptions.map((scope) => (
-                <ScopeMenuItem
-                  key={scope.key}
-                  selected={scope.key === selectedScope?.key}
-                  title={scope.filePath ?? undefined}
-                  onSelect={() => {
-                    setIsOpen(false);
-                    onSelect(scope.key);
-                  }}
-                >
-                  {scope.label}
-                </ScopeMenuItem>
-              ))}
-              <div className="my-2 h-px bg-token-border" />
-            </>
-          ) : null}
-          <div className="px-3 py-2 text-[11px] font-medium uppercase tracking-[0.08em] text-[var(--app-shell-subtle)]">
-            {t("settings.agent.configuration.scope.globalGroup")}
-          </div>
-          {globalScopeOptions.map((scope) => (
-            <ScopeMenuItem
-              key={scope.key}
-              selected={scope.key === selectedScope?.key}
-              title={
-                scope.kind === "managed"
-                  ? t("settings.agent.configuration.scope.managedDescription")
-                  : scope.filePath ?? undefined
-              }
-              onSelect={() => {
-                setIsOpen(false);
-                onSelect(scope.key);
-              }}
-            >
-              {scope.kind === "user"
-                ? t("settings.agent.configuration.scope.user")
-                : scope.kind === "managed"
-                  ? t("settings.agent.configuration.scope.managed")
-                  : scope.label}
-            </ScopeMenuItem>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function ScopeMenuItem({
-  children,
-  onSelect,
-  selected,
-  title,
-}: {
-  children: React.ReactNode;
-  onSelect: () => void;
-  selected: boolean;
-  title?: string;
-}) {
-  return (
-    <button
-      type="button"
-      title={title}
-      className={[
-        "flex w-full items-center justify-between gap-3 rounded-[10px] px-3 py-2 text-left text-[13px]",
-        selected ? "app-nav-item-active" : "app-nav-item-idle",
-      ].join(" ")}
-      onClick={onSelect}
-    >
-      <span className="truncate text-sm">{children}</span>
-      {selected ? <CheckIcon className="icon-2xs shrink-0 text-token-text-secondary" /> : null}
-    </button>
+    <SettingsChoiceMenu
+      className="w-[240px]"
+      disabled={globalScopeOptions.length + projectScopeOptions.length === 0}
+      menuClassName="w-[240px]"
+      onChange={onSelect}
+      options={menuSections.flatMap((section) => section.options)}
+      sections={menuSections}
+      triggerLabel={selectedScope?.label ?? t("settings.agent.configuration.scope.loading")}
+      value={selectedScope?.key ?? "user"}
+    />
   );
 }
 
@@ -893,68 +824,13 @@ function ChoiceMenu({
   value: string;
   onChange: (value: string) => void;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (containerRef.current?.contains(event.target as Node)) {
-        return;
-      }
-      setIsOpen(false);
-    };
-
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-    };
-  }, [isOpen]);
-
-  const selectedOption = options.find((option) => option.value === value) ?? null;
-
   return (
-    <div className="relative w-[280px] max-w-full" ref={containerRef}>
-      <Button
-        className="w-full justify-between"
-        color="secondary"
-        disabled={disabled}
-        size="toolbar"
-        onClick={() => setIsOpen((current) => !current)}
-      >
-        <span className="truncate text-left">{selectedOption?.label ?? value}</span>
-        <ChevronDownIcon className="icon-2xs shrink-0 text-token-text-secondary" />
-      </Button>
-      {isOpen ? (
-        <div className="app-card absolute top-[calc(100%+8px)] right-0 z-20 w-full rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
-          <div className="max-h-80 overflow-y-auto">
-            {options.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={[
-                  "flex w-full items-start justify-between gap-3 rounded-[10px] px-3 py-2 text-left",
-                  option.value === value ? "app-nav-item-active" : "app-nav-item-idle",
-                ].join(" ")}
-                onClick={() => {
-                  setIsOpen(false);
-                  onChange(option.value);
-                }}
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm">{option.label}</span>
-                  <span className="mt-1 block text-sm text-token-text-secondary">{option.description}</span>
-                </span>
-                {option.value === value ? <CheckIcon className="icon-2xs shrink-0 text-token-text-secondary" /> : null}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </div>
+    <SettingsChoiceMenu
+      disabled={disabled}
+      onChange={onChange}
+      options={options}
+      value={value}
+    />
   );
 }
 

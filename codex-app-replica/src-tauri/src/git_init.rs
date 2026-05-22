@@ -21,7 +21,10 @@ pub async fn git_init_repo(params: GitInitParams) -> Result<(), String> {
     if let Some(host_id) = params.host_id.as_ref() {
         let trimmed = host_id.trim();
         if !trimmed.is_empty() && trimmed != "local" {
-            return Err(format!("git-init-repo does not support host id: {}", trimmed));
+            return Err(format!(
+                "git-init-repo does not support host id: {}",
+                trimmed
+            ));
         }
     }
 

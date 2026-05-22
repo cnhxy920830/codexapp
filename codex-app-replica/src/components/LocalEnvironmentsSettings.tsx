@@ -1,7 +1,15 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from "react";
 import type { AppToast } from "./AppToastRegion";
 import {
   BackNavigationIcon,
+  CheckIcon,
   FolderIcon,
   PlusIcon,
   PlayOutlineIcon,
@@ -11,11 +19,13 @@ import {
 } from "./AppShellIcons";
 import { Button } from "./Button";
 import { CodeSnippet } from "./CodeSnippet";
+import { SegmentedControl } from "./SegmentedControl";
 import { SettingsContentLayout } from "./SettingsContentLayout";
 import { SettingsGroup } from "./SettingsGroup";
 import { SettingsSectionTitle } from "./SettingsSectionTitle";
 import { SettingsSurface } from "./SettingsSurface";
 import { Spinner } from "./Spinner";
+import { Tooltip } from "./Tooltip";
 import { useI18n } from "../i18n/i18n";
 import type { MessageKey } from "../i18n/messages";
 import {
@@ -1082,14 +1092,10 @@ function Breadcrumbs({
   return (
     <nav className="flex items-center gap-2 text-sm text-token-text-secondary">
       {onBack ? (
-        <button
-          type="button"
-          onClick={onBack}
-          className="app-control flex items-center gap-1 rounded-[11px] px-3 py-1.5 text-[12px]"
-        >
+        <Button color="ghost" size="toolbar" onClick={onBack}>
           <BackNavigationIcon className="icon-xs" />
           {t("settings.localEnvironments.breadcrumb.back")}
-        </button>
+        </Button>
       ) : null}
       <div className="flex items-center gap-1">
         <span>{t("settings.localEnvironments.breadcrumb.root")}</span>
@@ -1749,11 +1755,13 @@ function LocalEnvironmentEditor({
       ) : null}
 
       <div className="flex justify-end">
-        <span className="inline-flex" title={saveDisabledReason ?? undefined}>
-          <Button color="primary" disabled={saveDisabled} size="toolbar" loading={isSaving} type="submit">
-            {t("settings.localEnvironments.preview.save")}
-          </Button>
-        </span>
+        <Tooltip disabled={saveDisabledReason == null} tooltipContent={saveDisabledReason ?? ""}>
+          <span className="inline-flex">
+            <Button color="primary" disabled={saveDisabled} size="toolbar" type="submit">
+              {t("settings.localEnvironments.preview.save")}
+            </Button>
+          </span>
+        </Tooltip>
       </div>
     </form>
   );
@@ -1859,36 +1867,6 @@ function LocalEnvironmentSettingsRow({
   );
 }
 
-function SegmentedControl({
-  ariaLabel,
-  options,
-  selectedId,
-  onSelect,
-}: {
-  ariaLabel: string;
-  options: Array<{ id: string; label: string }>;
-  selectedId: string;
-  onSelect: (id: string) => void;
-}) {
-  return (
-    <div className="app-segmented inline-flex rounded-[12px] p-1" aria-label={ariaLabel}>
-      {options.map((option) => (
-        <button
-          key={option.id}
-          type="button"
-          className={[
-            "rounded-[9px] px-3 py-1.5 text-[13px] transition",
-            option.id === selectedId ? "app-segmented-option-active" : "app-segmented-option-idle",
-          ].join(" ")}
-          onClick={() => onSelect(option.id)}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 function SetupEnvVarsPopover({
   open,
   onOpenChange,
@@ -1900,6 +1878,7 @@ function SetupEnvVarsPopover({
   const isControlled = open !== undefined;
   const [internalOpen, setInternalOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const isOpen = isControlled ? open : internalOpen;
 
   const setOpen = (nextOpen: boolean) => {
@@ -1920,16 +1899,36 @@ function SetupEnvVarsPopover({
       }
       setOpen(false);
     };
+    const handleFocusIn = (event: FocusEvent) => {
+      if (containerRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
 
     document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [isOpen]);
 
   return (
     <div className="relative" ref={containerRef}>
       <Button
+        ref={triggerRef}
+        aria-expanded={isOpen}
+        aria-haspopup="dialog"
         className="w-auto"
         color="ghost"
         size="toolbar"
@@ -1970,6 +1969,7 @@ function ActionEditorCard({
   const { t } = useI18n();
   const isPlatformSpecific = action.platform !== null;
   const selectedPlatform = action.platform ?? "darwin";
+  const checkboxId = `local-env-action-platform-specific-${action.id}`;
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-token-border bg-token-input-background p-3">
@@ -2027,10 +2027,10 @@ function ActionEditorCard({
               </div>
               <div className="relative flex items-center gap-2 text-sm">
                 <input
-                  id={`local-env-action-platform-specific-${action.id}`}
+                  id={checkboxId}
                   type="checkbox"
                   checked={isPlatformSpecific}
-                  className="h-4 w-4 rounded border border-token-border"
+                  className="peer sr-only"
                   onChange={(event) => {
                     if (event.target.checked) {
                       onChange(action.id, { platform: selectedPlatform });
@@ -2039,9 +2039,18 @@ function ActionEditorCard({
                     onChange(action.id, { platform: null });
                   }}
                 />
+                <span
+                  aria-hidden="true"
+                  className={[
+                    "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[3px] border-[1px] border-token-border shadow-sm transition-[background-color,border-color,box-shadow]",
+                    isPlatformSpecific ? "border-token-foreground bg-token-foreground text-token-dropdown-background" : "",
+                  ].join(" ")}
+                >
+                  {isPlatformSpecific ? <CheckIcon className="h-3 w-3" /> : null}
+                </span>
                 <label
                   className="text-token-text-secondary"
-                  htmlFor={`local-env-action-platform-specific-${action.id}`}
+                  htmlFor={checkboxId}
                 >
                   {t("settings.localEnvironments.actions.item.platforms.specific")}
                 </label>
@@ -2062,15 +2071,16 @@ function ActionEditorCard({
         </div>
 
         <div className="flex justify-end sm:justify-center">
-          <Button
-            aria-label={t("settings.localEnvironments.actions.item.button.delete")}
-            color="ghost"
-            size="toolbar"
-            onClick={() => onDelete(action.id)}
-            title={t("settings.localEnvironments.actions.item.tooltip.delete")}
-          >
-            <TrashIcon className="icon-sm" />
-          </Button>
+          <Tooltip tooltipContent={t("settings.localEnvironments.actions.item.tooltip.delete")}>
+            <Button
+              aria-label={t("settings.localEnvironments.actions.item.button.delete")}
+              color="ghost"
+              size="toolbar"
+              onClick={() => onDelete(action.id)}
+            >
+              <TrashIcon className="icon-sm" />
+            </Button>
+          </Tooltip>
         </div>
       </div>
     </div>
@@ -2090,6 +2100,10 @@ function ActionIconMenu({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const shouldFocusFirstItemRef = useRef(false);
+  const menuId = `local-env-action-icon-menu-${value}`;
 
   useEffect(() => {
     if (!isOpen) {
@@ -2102,41 +2116,140 @@ function ActionIconMenu({
       }
       setIsOpen(false);
     };
+    const handleFocusIn = (event: FocusEvent) => {
+      if (containerRef.current?.contains(event.target as Node)) {
+        return;
+      }
+      setIsOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      setIsOpen(false);
+      triggerRef.current?.focus();
+    };
 
     document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
       document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen || !shouldFocusFirstItemRef.current) {
+      return;
+    }
+
+    shouldFocusFirstItemRef.current = false;
+    menuItemRefs.current[0]?.focus();
+  }, [isOpen]);
+
+  const closeMenu = () => {
+    shouldFocusFirstItemRef.current = false;
+    setIsOpen(false);
+  };
+
+  const focusMenuItem = (index: number) => {
+    menuItemRefs.current[index]?.focus();
+  };
+
+  const handleMenuItemKeyDown = (index: number, event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      focusMenuItem(Math.min(index + 1, LOCAL_ENVIRONMENT_ACTION_ICONS.length - 1));
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      focusMenuItem(Math.max(index - 1, 0));
+      return;
+    }
+    if (event.key === "Home") {
+      event.preventDefault();
+      focusMenuItem(0);
+      return;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      focusMenuItem(LOCAL_ENVIRONMENT_ACTION_ICONS.length - 1);
+      return;
+    }
+    if (event.key === "Tab") {
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenu();
+      triggerRef.current?.focus();
+    }
+  };
+
   return (
     <div className="relative" ref={containerRef}>
-      <button
-        type="button"
+      <Button
+        ref={triggerRef}
+        aria-controls={isOpen ? menuId : undefined}
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
         aria-label={ariaLabel}
-        onClick={() => setIsOpen((current) => !current)}
-        className="app-control flex h-[40px] w-[48px] items-center justify-center rounded-[11px]"
+        className="w-12 justify-center text-sm"
+        color="secondary"
+        data-state={isOpen ? "open" : "closed"}
+        size="toolbar"
+        onClick={() => {
+          shouldFocusFirstItemRef.current = false;
+          setIsOpen((current) => !current);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowDown" && event.key !== "Enter" && event.key !== " ") {
+            return;
+          }
+
+          event.preventDefault();
+          shouldFocusFirstItemRef.current = true;
+          setIsOpen(true);
+        }}
       >
         <LocalEnvironmentActionIconGlyph icon={value} />
-      </button>
+      </Button>
 
       {isOpen ? (
-        <div className="app-card absolute top-[calc(100%+8px)] left-0 z-20 w-[170px] rounded-[14px] p-2 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+        <div
+          aria-orientation="vertical"
+          className="no-drag absolute left-0 top-[calc(100%+1px)] z-50 m-px flex w-[170px] select-none flex-col overflow-y-auto rounded-xl bg-token-dropdown-background/90 px-1 py-1 text-token-foreground ring-token-border shadow-xl-spread ring-[0.5px] backdrop-blur-sm"
+          id={menuId}
+          role="menu"
+        >
           <div className="space-y-1">
-            {LOCAL_ENVIRONMENT_ACTION_ICONS.map((icon) => {
+            {LOCAL_ENVIRONMENT_ACTION_ICONS.map((icon, index) => {
               const isSelected = icon === value;
               return (
                 <button
                   key={icon}
                   type="button"
+                  ref={(node) => {
+                    menuItemRefs.current[index] = node;
+                  }}
                   onClick={() => {
-                    setIsOpen(false);
+                    closeMenu();
                     onChange(icon);
                   }}
+                  onKeyDown={(event) => handleMenuItemKeyDown(index, event)}
+                  onMouseMove={(event) => {
+                    event.currentTarget.focus({ preventScroll: true });
+                  }}
                   className={[
-                    "flex w-full items-center gap-3 rounded-[10px] px-3 py-2 text-left text-[13px]",
-                    isSelected ? "app-nav-item-active" : "app-nav-item-idle",
+                    "no-drag flex w-full cursor-interaction items-center gap-3 rounded-lg px-[var(--padding-row-x)] py-[var(--padding-row-y)] text-left text-sm text-token-foreground outline-hidden hover:bg-token-list-hover-background focus:bg-token-list-hover-background",
+                    isSelected ? "font-medium" : "",
                   ].join(" ")}
+                  role="menuitem"
+                  tabIndex={-1}
                 >
                   <LocalEnvironmentActionIconGlyph icon={icon} />
                   <span>{t(getActionIconMessageKey(icon))}</span>

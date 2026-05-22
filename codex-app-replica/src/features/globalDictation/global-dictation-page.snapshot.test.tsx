@@ -13,6 +13,10 @@ const SNAPSHOT_PATH = path.join(
   process.cwd(),
   "src/features/globalDictation/__snapshots__/global-dictation-page.snap.json",
 );
+const PAGE_SOURCE_PATH = path.join(
+  process.cwd(),
+  "src/features/globalDictation/GlobalDictationPage.tsx",
+);
 const UPDATE_SNAPSHOTS =
   process.env.GLOBAL_DICTATION_PAGE_UPDATE_SNAPSHOTS === "1";
 
@@ -70,6 +74,20 @@ test("global dictation page snapshots", async (t) => {
       }
     });
   }
+});
+
+test("global dictation page keeps cleanupEnabled on the recording session until transcription", async () => {
+  const source = await readFile(PAGE_SOURCE_PATH, "utf8");
+
+  assert.match(source, /type ActiveRecordingSession = \{\s*cleanupEnabled: boolean;/s);
+  assert.match(
+    source,
+    /const activeRecording: ActiveRecordingSession = \{\s*cleanupEnabled,\s*chunks: \[\],\s*isStopping: false,/s,
+  );
+  assert.match(
+    source,
+    /await runTranscription\(\{\s*audio: retrySession\.audio,\s*cleanupEnabled: recording\.cleanupEnabled,\s*sessionId: recording\.sessionId,\s*}\);/s,
+  );
 });
 
 type SnapshotMap = {
