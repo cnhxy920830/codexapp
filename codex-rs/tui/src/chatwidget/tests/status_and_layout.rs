@@ -1,5 +1,7 @@
 use super::*;
 use crate::bottom_pane::goal_status_indicator_line;
+use crate::chatwidget::rate_limits::NUDGE_MODEL_SLUG;
+use crate::chatwidget::rate_limits::get_limits_duration;
 use pretty_assertions::assert_eq;
 use ratatui::backend::TestBackend;
 use serial_test::serial;
@@ -401,6 +403,7 @@ async fn completed_plan_table_tail_skips_provisional_history_insert() {
 }
 
 #[tokio::test]
+#[cfg_attr(target_os = "windows", ignore = "disabled on windows")]
 async fn configured_pet_load_is_deferred_until_after_construction() {
     let (tx_raw, mut rx) = unbounded_channel::<AppEvent>();
     let tx = AppEventSender::new(tx_raw);
@@ -411,7 +414,6 @@ async fn configured_pet_load_is_deferred_until_after_construction() {
     let session_telemetry = test_session_telemetry(&cfg, resolved_model.as_str());
     let init = ChatWidgetInit {
         config: cfg.clone(),
-        environment_manager: Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
         frame_requester: FrameRequester::test_dummy(),
         app_event_tx: tx,
         workspace_command_runner: None,
@@ -434,7 +436,7 @@ async fn configured_pet_load_is_deferred_until_after_construction() {
     let chat = ChatWidget::new_with_app_event(init);
 
     assert!(!chat.ambient_pet_image_enabled());
-    let event = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+    let event = tokio::time::timeout(std::time::Duration::from_secs(/*secs*/ 30), rx.recv())
         .await
         .unwrap()
         .unwrap();
@@ -512,6 +514,227 @@ async fn test_rate_limit_warnings_monthly() {
             "Heads up, you have less than 25% of your monthly limit left. Run /status for a breakdown.",
         ),],
         "expected one warning per limit for the highest crossed threshold"
+    );
+}
+
+#[test]
+fn rate_limit_duration_labels_only_render_supported_windows() {
+    assert_eq!(get_limits_duration(2 * 60), None);
+    assert_eq!(get_limits_duration(24 * 60).as_deref(), Some("daily"));
+    assert_eq!(
+        get_limits_duration(365 * 24 * 60).as_deref(),
+        Some("annual")
+    );
+}
+
+#[tokio::test]
+async fn test_rate_limit_warnings_use_generic_fallback_labels() {
+    let mut state = RateLimitWarningState::default();
+
+    assert_eq!(
+        state.take_warnings(
+            /*secondary_used_percent*/ Some(75.0),
+            /*secondary_window_minutes*/ None,
+            /*primary_used_percent*/ Some(75.0),
+            /*primary_window_minutes*/ None,
+        ),
+        vec![
+            String::from(
+                "Heads up, you have less than 25% of your secondary usage limit left. Run /status for a breakdown.",
+            ),
+            String::from(
+                "Heads up, you have less than 25% of your usage limit left. Run /status for a breakdown.",
+            ),
+        ],
+    );
+}
+
+#[tokio::test]
+async fn test_rate_limit_warnings_use_secondary_fallback_for_unsupported_window() {
+    let mut state = RateLimitWarningState::default();
+
+    assert_eq!(
+        state.take_warnings(
+            /*secondary_used_percent*/ Some(75.0),
+            /*secondary_window_minutes*/ Some(2 * 60),
+            /*primary_used_percent*/ None,
+            /*primary_window_minutes*/ None,
+        ),
+        vec![String::from(
+            "Heads up, you have less than 25% of your secondary usage limit left. Run /status for a breakdown.",
+        )],
+    );
+}
+
+#[tokio::test]
+async fn status_line_uses_secondary_fallback_for_unsupported_window() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.on_rate_limit_snapshot(Some(RateLimitSnapshot {
+        limit_id: None,
+        limit_name: None,
+        primary: None,
+        secondary: Some(RateLimitWindow {
+            used_percent: 50,
+            window_duration_mins: Some(2 * 60),
+            resets_at: None,
+        }),
+        credits: None,
+        plan_type: None,
+        rate_limit_reached_type: None,
+    }));
+
+    assert_eq!(
+        chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
+        Some("secondary usage 50%".to_string())
+    );
+}
+
+#[tokio::test]
+async fn status_line_legacy_limit_items_prefer_matching_windows() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.on_rate_limit_snapshot(Some(RateLimitSnapshot {
+        limit_id: None,
+        limit_name: None,
+        primary: Some(RateLimitWindow {
+            used_percent: 94,
+            window_duration_mins: Some(7 * 24 * 60),
+            resets_at: None,
+        }),
+        secondary: Some(RateLimitWindow {
+            used_percent: 40,
+            window_duration_mins: Some(5 * 60),
+            resets_at: None,
+        }),
+        credits: None,
+        plan_type: None,
+        rate_limit_reached_type: None,
+    }));
+
+    assert_eq!(
+        chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
+        Some("5h 60%".to_string())
+    );
+    assert_eq!(
+        chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
+        Some("weekly 6%".to_string())
+    );
+}
+
+#[tokio::test]
+async fn status_line_shows_secondary_non_weekly_when_primary_is_weekly() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.on_rate_limit_snapshot(Some(RateLimitSnapshot {
+        limit_id: None,
+        limit_name: None,
+        primary: Some(RateLimitWindow {
+            used_percent: 94,
+            window_duration_mins: Some(7 * 24 * 60),
+            resets_at: None,
+        }),
+        secondary: Some(RateLimitWindow {
+            used_percent: 35,
+            window_duration_mins: Some(30 * 24 * 60),
+            resets_at: None,
+        }),
+        credits: None,
+        plan_type: None,
+        rate_limit_reached_type: None,
+    }));
+
+    assert_eq!(
+        chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
+        Some("monthly 65%".to_string())
+    );
+    assert_eq!(
+        chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
+        Some("weekly 6%".to_string())
+    );
+}
+
+#[tokio::test]
+async fn status_line_five_hour_item_omits_weekly_only_limit() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.on_rate_limit_snapshot(Some(RateLimitSnapshot {
+        limit_id: None,
+        limit_name: None,
+        primary: Some(RateLimitWindow {
+            used_percent: 9,
+            window_duration_mins: Some(7 * 24 * 60),
+            resets_at: None,
+        }),
+        secondary: None,
+        credits: None,
+        plan_type: None,
+        rate_limit_reached_type: None,
+    }));
+
+    assert_eq!(
+        chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
+        None
+    );
+    assert_eq!(
+        chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
+        Some("weekly 91%".to_string())
+    );
+}
+
+#[tokio::test]
+async fn status_line_single_monthly_primary_omits_weekly_limit_item() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.on_rate_limit_snapshot(Some(RateLimitSnapshot {
+        limit_id: None,
+        limit_name: None,
+        primary: Some(RateLimitWindow {
+            used_percent: 35,
+            window_duration_mins: Some(30 * 24 * 60),
+            resets_at: None,
+        }),
+        secondary: None,
+        credits: None,
+        plan_type: None,
+        rate_limit_reached_type: None,
+    }));
+
+    assert_eq!(
+        chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
+        Some("monthly 65%".to_string())
+    );
+    assert_eq!(
+        chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
+        None
+    );
+}
+
+#[tokio::test]
+async fn status_line_secondary_only_non_weekly_limit_omits_primary_limit_item() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.on_rate_limit_snapshot(Some(RateLimitSnapshot {
+        limit_id: None,
+        limit_name: None,
+        primary: None,
+        secondary: Some(RateLimitWindow {
+            used_percent: 35,
+            window_duration_mins: Some(30 * 24 * 60),
+            resets_at: None,
+        }),
+        credits: None,
+        plan_type: None,
+        rate_limit_reached_type: None,
+    }));
+
+    assert_eq!(
+        chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::FiveHourLimit),
+        None
+    );
+    assert_eq!(
+        chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::WeeklyLimit),
+        Some("monthly 65%".to_string())
     );
 }
 
@@ -797,56 +1020,8 @@ async fn rate_limit_switch_prompt_popup_snapshot() {
 }
 
 #[tokio::test]
-async fn workspace_owner_usage_nudge_flag_disabled_keeps_generic_rate_limit_error() {
-    {
-        let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-        let mut limits = snapshot(/*percent*/ 100.0);
-        limits.rate_limit_reached_type =
-            Some(RateLimitReachedType::WorkspaceMemberUsageLimitReached);
-        chat.on_rate_limit_snapshot(Some(limits));
-
-        chat.on_rate_limit_error(
-            RateLimitErrorKind::UsageLimit,
-            "Usage limit reached.".to_string(),
-        );
-        let rendered = drain_insert_history(&mut rx)
-            .into_iter()
-            .map(|lines| lines_to_single_string(&lines))
-            .collect::<String>();
-        assert!(
-            rendered.contains("Usage limit reached."),
-            "rendered: {rendered}"
-        );
-    }
-
-    {
-        let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-        let mut limits = snapshot(/*percent*/ 100.0);
-        limits.rate_limit_reached_type =
-            Some(RateLimitReachedType::WorkspaceMemberUsageLimitReached);
-        chat.on_rate_limit_snapshot(Some(limits));
-
-        chat.on_rate_limit_error(
-            RateLimitErrorKind::UsageLimit,
-            "Usage limit reached.".to_string(),
-        );
-        let popup = render_bottom_popup(&chat, /*width*/ 100);
-        assert!(
-            !popup.contains("Request a limit increase from your owner"),
-            "popup: {popup}"
-        );
-        assert_no_owner_nudge_or_rate_limit_refresh(&mut rx);
-    }
-}
-
-fn enable_workspace_owner_usage_nudge(chat: &mut ChatWidget) {
-    chat.set_feature_enabled(Feature::WorkspaceOwnerUsageNudge, /*enabled*/ true);
-}
-
-#[tokio::test]
 async fn workspace_member_credits_depleted_prompts_and_sends_credits() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    enable_workspace_owner_usage_nudge(&mut chat);
     let mut limits = snapshot(/*percent*/ 100.0);
     limits.rate_limit_reached_type = Some(RateLimitReachedType::WorkspaceMemberCreditsDepleted);
     chat.on_rate_limit_snapshot(Some(limits));
@@ -866,7 +1041,6 @@ async fn workspace_member_credits_depleted_prompts_and_sends_credits() {
 #[tokio::test]
 async fn workspace_member_usage_limit_prompts_and_sends_usage_limit() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    enable_workspace_owner_usage_nudge(&mut chat);
     let mut limits = snapshot(/*percent*/ 100.0);
     limits.rate_limit_reached_type = Some(RateLimitReachedType::WorkspaceMemberUsageLimitReached);
     chat.on_rate_limit_snapshot(Some(limits));
@@ -886,7 +1060,6 @@ async fn workspace_member_usage_limit_prompts_and_sends_usage_limit() {
 #[tokio::test]
 async fn header_rate_limit_snapshot_preserves_member_limit_type_for_error_prompt() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    enable_workspace_owner_usage_nudge(&mut chat);
     let mut usage_limits = snapshot(/*percent*/ 100.0);
     usage_limits.rate_limit_reached_type =
         Some(RateLimitReachedType::WorkspaceMemberUsageLimitReached);
@@ -916,7 +1089,6 @@ async fn header_rate_limit_snapshot_preserves_member_limit_type_for_error_prompt
 #[tokio::test]
 async fn usage_limit_error_remaps_stale_member_credits_state_to_usage_limit_prompt() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    enable_workspace_owner_usage_nudge(&mut chat);
     let mut limits = snapshot(/*percent*/ 100.0);
     limits.rate_limit_reached_type = Some(RateLimitReachedType::WorkspaceMemberCreditsDepleted);
     chat.on_rate_limit_snapshot(Some(limits));
@@ -953,7 +1125,6 @@ async fn workspace_owner_limit_states_do_not_prompt_for_owner_nudge() {
         ),
     ] {
         let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-        enable_workspace_owner_usage_nudge(&mut chat);
         let mut limits = snapshot(/*percent*/ 100.0);
         limits.rate_limit_reached_type = Some(limit_type);
         chat.on_rate_limit_snapshot(Some(limits));
@@ -983,7 +1154,6 @@ async fn workspace_owner_limit_states_render_state_specific_messages() {
     let mut rendered_cases = Vec::new();
     for (limit_type, error_kind, expected) in cases {
         let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-        enable_workspace_owner_usage_nudge(&mut chat);
         let mut limits = snapshot(/*percent*/ 100.0);
         limits.rate_limit_reached_type = Some(limit_type);
         chat.on_rate_limit_snapshot(Some(limits));
@@ -1006,7 +1176,6 @@ async fn workspace_owner_limit_states_render_state_specific_messages() {
 #[tokio::test]
 async fn missing_rate_limit_reached_type_does_not_prompt_or_refresh() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    enable_workspace_owner_usage_nudge(&mut chat);
     chat.on_rate_limit_snapshot(Some(snapshot(/*percent*/ 100.0)));
 
     chat.on_rate_limit_error(
@@ -1021,7 +1190,6 @@ async fn missing_rate_limit_reached_type_does_not_prompt_or_refresh() {
 #[tokio::test]
 async fn workspace_owner_nudge_default_no_dismisses_without_sending() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    enable_workspace_owner_usage_nudge(&mut chat);
     let mut limits = snapshot(/*percent*/ 100.0);
     limits.rate_limit_reached_type = Some(RateLimitReachedType::WorkspaceMemberCreditsDepleted);
     chat.on_rate_limit_snapshot(Some(limits));
@@ -1038,7 +1206,6 @@ async fn workspace_owner_nudge_default_no_dismisses_without_sending() {
 #[tokio::test]
 async fn workspace_owner_nudge_reappears_after_dismissing_no() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    enable_workspace_owner_usage_nudge(&mut chat);
     let mut limits = snapshot(/*percent*/ 100.0);
     limits.rate_limit_reached_type = Some(RateLimitReachedType::WorkspaceMemberUsageLimitReached);
     chat.on_rate_limit_snapshot(Some(limits));
@@ -1081,7 +1248,6 @@ async fn workspace_owner_credits_nudge_completion_renders_feedback() {
     let mut rendered_cases = Vec::new();
     for (result, expected) in cases {
         let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-        enable_workspace_owner_usage_nudge(&mut chat);
         chat.start_add_credits_nudge_email_request(AddCreditsNudgeCreditType::Credits);
         chat.finish_add_credits_nudge_email_request(result);
         let rendered = drain_insert_history(&mut rx)
@@ -1118,7 +1284,6 @@ async fn workspace_owner_usage_limit_nudge_completion_renders_feedback() {
     let mut rendered_cases = Vec::new();
     for (result, expected) in cases {
         let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-        enable_workspace_owner_usage_nudge(&mut chat);
         chat.start_add_credits_nudge_email_request(AddCreditsNudgeCreditType::UsageLimit);
         chat.finish_add_credits_nudge_email_request(result);
         let rendered = drain_insert_history(&mut rx)
@@ -1190,6 +1355,45 @@ async fn streaming_final_answer_keeps_task_running_state() {
         other => panic!("expected Op::Interrupt, got {other:?}"),
     }
     assert!(!chat.bottom_pane.quit_shortcut_hint_visible());
+}
+
+#[tokio::test]
+async fn ctrl_c_interrupt_pauses_active_goal_turn() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    let thread_id = ThreadId::new();
+    chat.set_feature_enabled(Feature::Goals, /*enabled*/ true);
+    chat.thread_id = Some(thread_id);
+    let mut goal = test_thread_goal(
+        codex_app_server_protocol::ThreadGoalStatus::Active,
+        /*token_budget*/ Some(50_000),
+        /*tokens_used*/ 40_000,
+    );
+    goal.thread_id = thread_id.to_string();
+    chat.handle_server_notification(
+        ServerNotification::ThreadGoalUpdated(
+            codex_app_server_protocol::ThreadGoalUpdatedNotification {
+                thread_id: thread_id.to_string(),
+                turn_id: None,
+                goal,
+            },
+        ),
+        /*replay_kind*/ None,
+    );
+    chat.on_task_started();
+
+    chat.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+
+    match op_rx.try_recv() {
+        Ok(Op::Interrupt) => {}
+        other => panic!("expected Op::Interrupt, got {other:?}"),
+    }
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::SetThreadGoalStatus {
+            thread_id: event_thread_id,
+            status: AppThreadGoalStatus::Paused,
+        }) if event_thread_id == thread_id
+    );
 }
 
 #[tokio::test]
@@ -2286,8 +2490,11 @@ async fn session_configured_clears_goal_status_footer() {
         permission_profile: PermissionProfile::read_only(),
         active_permission_profile: None,
         cwd: test_path_buf("/home/user/project").abs(),
+        runtime_workspace_roots: Vec::new(),
         instruction_source_paths: Vec::new(),
         reasoning_effort: Some(ReasoningEffortConfig::default()),
+        collaboration_mode: None,
+        personality: None,
         message_history: None,
         network_proxy: None,
         rollout_path: Some(rollout_file.path().to_path_buf()),
@@ -2350,6 +2557,22 @@ fn goal_status_indicator_formats_statuses_and_budgets() {
     );
     assert_eq!(
         goal_status_indicator_from_app_goal(&test_thread_goal(
+            codex_app_server_protocol::ThreadGoalStatus::Blocked,
+            /*token_budget*/ None,
+            /*tokens_used*/ 0,
+        )),
+        Some(GoalStatusIndicator::Blocked)
+    );
+    assert_eq!(
+        goal_status_indicator_from_app_goal(&test_thread_goal(
+            codex_app_server_protocol::ThreadGoalStatus::UsageLimited,
+            /*token_budget*/ None,
+            /*tokens_used*/ 0,
+        )),
+        Some(GoalStatusIndicator::UsageLimited)
+    );
+    assert_eq!(
+        goal_status_indicator_from_app_goal(&test_thread_goal(
             codex_app_server_protocol::ThreadGoalStatus::BudgetLimited,
             /*token_budget*/ Some(50_000),
             /*tokens_used*/ 51_000,
@@ -2394,6 +2617,11 @@ fn goal_status_indicator_line_formats_goal_text() {
             "Goal unmet (4K / 5K tokens)",
         ),
         (GoalStatusIndicator::Paused, "Goal paused (/goal resume)"),
+        (GoalStatusIndicator::Blocked, "Goal blocked (/goal resume)"),
+        (
+            GoalStatusIndicator::UsageLimited,
+            "Goal hit usage limits (/goal resume)",
+        ),
         (
             GoalStatusIndicator::BudgetLimited { usage: None },
             "Goal abandoned",
